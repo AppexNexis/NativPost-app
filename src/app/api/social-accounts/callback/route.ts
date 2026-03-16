@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthContext } from '@/libs/auth';
+import { getAuthContext } from '@/lib/auth';
 import { db } from '@/libs/DB';
 import { socialAccountSchema } from '@/models/Schema';
 import { exchangeCodeForTokens, type SocialPlatform } from '@/lib/social-oauth';

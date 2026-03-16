@@ -3,14 +3,12 @@
 import {
   AlertCircle,
   Check,
-  // ExternalLink,
-  // Link2,
   Loader2,
   Plus,
   Trash2,
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 
 import { PageHeader } from '@/features/dashboard/PageHeader';
 
@@ -32,7 +30,10 @@ const PLATFORMS = [
   { id: 'tiktok', name: 'TikTok', emoji: '🎵', color: '#000000' },
 ];
 
-export default function SocialAccountsPage() {
+// -----------------------------------------------------------
+// INNER COMPONENT — uses useSearchParams, must be inside Suspense
+// -----------------------------------------------------------
+function SocialAccountsContent() {
   const searchParams = useSearchParams();
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -59,7 +60,6 @@ export default function SocialAccountsPage() {
   useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
 
   const connectPlatform = (platformId: string) => {
-    // Redirect to OAuth initiation endpoint
     window.location.href = `/api/social-accounts/connect?platform=${platformId}`;
   };
 
@@ -84,22 +84,22 @@ export default function SocialAccountsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Social Accounts"
-        description="Connect your social media platforms to publish content directly from NativPost."
-      />
-
       {/* Success/Error banners */}
       {successPlatform && (
         <div className="mb-6 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
           <Check className="size-4 shrink-0" />
-          <span className="capitalize">{successPlatform}</span> connected successfully!
+          <span className="capitalize">{successPlatform}</span>
+          {' '}
+          connected successfully!
         </div>
       )}
       {errorType && (
         <div className="mb-6 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           <AlertCircle className="size-4 shrink-0" />
-          Failed to connect {errorPlatform || 'platform'}.
+          Failed to connect
+          {' '}
+          {errorPlatform || 'platform'}
+          .
           {errorType === 'token_exchange_failed' && ' Please try again.'}
           {errorType === 'auth' && ' Please sign in first.'}
         </div>
@@ -132,7 +132,8 @@ export default function SocialAccountsPage() {
                         <p className="text-sm font-medium">{platform.name}</p>
                         {connected && account ? (
                           <p className="text-xs text-[#16A34A]">
-                            @{account.platformUsername || 'Connected'}
+                            @
+                            {account.platformUsername || 'Connected'}
                           </p>
                         ) : (
                           <p className="text-xs text-muted-foreground">Not connected</p>
@@ -170,14 +171,18 @@ export default function SocialAccountsPage() {
                         className="flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
                       >
                         <Plus className="size-3" />
-                        Connect {platform.name}
+                        Connect
+                        {' '}
+                        {platform.name}
                       </button>
                     )}
                   </div>
 
                   {connected && account?.connectedAt && (
                     <p className="mt-3 text-xs text-muted-foreground">
-                      Connected {new Date(account.connectedAt).toLocaleDateString()}
+                      Connected
+                      {' '}
+                      {new Date(account.connectedAt).toLocaleDateString()}
                     </p>
                   )}
                 </div>
@@ -194,6 +199,29 @@ export default function SocialAccountsPage() {
           </div>
         </>
       )}
+    </>
+  );
+}
+
+// -----------------------------------------------------------
+// PAGE EXPORT — wraps content in Suspense
+// -----------------------------------------------------------
+export default function SocialAccountsPage() {
+  return (
+    <>
+      <PageHeader
+        title="Social Accounts"
+        description="Connect your social media platforms to publish content directly from NativPost."
+      />
+      <Suspense
+        fallback={(
+          <div className="flex min-h-[300px] items-center justify-center">
+            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          </div>
+        )}
+      >
+        <SocialAccountsContent />
+      </Suspense>
     </>
   );
 }

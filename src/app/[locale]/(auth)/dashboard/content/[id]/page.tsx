@@ -119,7 +119,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     try {
       const res = await fetch(`/api/content/${item.id}/publish`, { method: 'POST' });
       if (res.ok) {
-        const data = await res.json();
+        // const data = await res.json();
         // Refresh the item
         const refreshRes = await fetch(`/api/content/${item.id}`);
         if (refreshRes.ok) {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthContext } from '@/libs/auth';
+import { getAuthContext } from '@/lib/auth';
 import { getOAuthUrl, type SocialPlatform } from '@/lib/social-oauth';
 
 // -----------------------------------------------------------
