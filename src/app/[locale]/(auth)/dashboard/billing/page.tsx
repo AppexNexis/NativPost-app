@@ -293,7 +293,7 @@ function BillingContent() {
             {' '}
             plans?
             {' '}
-            <Link href="/dashboard/settings" className="inline-flex items-center gap-1 font-medium text-primary underline underline-offset-2 hover:text-primary/80">
+            <Link href="https://nativpost.com/contact-us"   target="_blank"  rel="noopener noreferrer"  className="inline-flex items-center gap-1 font-medium text-primary underline underline-offset-2 hover:text-primary/80">
               Contact us
               <ExternalLink className="size-3" />
             </Link>

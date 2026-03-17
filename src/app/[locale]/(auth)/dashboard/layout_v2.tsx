@@ -5,6 +5,7 @@ import {
   BarChart3,
   Calendar,
   CheckCircle2,
+  // ChevronDown,
   CircleCheck,
   Clock,
   CreditCard,
@@ -17,19 +18,16 @@ import {
   Plus,
   Settings,
   Users,
+
 } from 'lucide-react';
-import Image from 'next/image';
+// import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 
-import { getNavForRole, getUserRole, isTeamMember } from '@/lib/roles';
+import { getNavForRole, getUserRole, isTeamMember,} from '@/lib/roles';
 
-// Use the same logos as the marketing site navbar
-import logoDark from '/public/assets/images/shared/logo-dark.svg';
-import logoIcon from '/public/assets/images/shared/logo.svg';
-import mainLogo from '/public/assets/images/shared/main-logo.svg';
-
+// Icon map for dynamic rendering
 const ICONS: Record<string, typeof Calendar> = {
   Calendar, LayoutList, Clock, CheckCircle2, FileText, CircleCheck,
   BarChart3, PenLine, Fingerprint, Link2, Users, Settings, CreditCard,
@@ -45,6 +43,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const navGroups = getNavForRole(role);
   const isTeam = isTeamMember(role);
 
+  // Strip locale prefix for active link matching
   const cleanPath = pathname.replace(/^\/[a-z]{2}(\/|$)/, '/');
 
   const isActive = (href: string) => {
@@ -62,17 +61,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* Logo — same as marketing site navbar */}
-        <div className="flex h-14 items-center border-b px-4">
-          <Link href="/dashboard" className="inline-flex items-center">
-            <figure className="hidden sm:block sm:max-w-[140px]">
-              <Image src={mainLogo} alt="NativPost" className="h-auto w-full dark:invert" priority />
-            </figure>
-            <figure className="block max-w-[32px] sm:hidden">
-              <Image src={logoIcon} alt="NativPost" className="block h-auto w-full dark:hidden" priority />
-              <Image src={logoDark} alt="NativPost" className="hidden h-auto w-full dark:block" priority />
-            </figure>
-          </Link>
+        {/* Logo */}
+        <div className="flex h-14 items-center gap-2.5 border-b px-5">
+          <div className="flex size-7 items-center justify-center rounded-full bg-[#16A34A]">
+            <span className="text-xs font-bold text-white">N</span>
+          </div>
+          <span className="text-sm font-semibold tracking-tight">NativPost</span>
         </div>
 
         {/* Org switcher */}
@@ -88,12 +82,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           />
         </div>
 
-        {/* Create post button (team only) — purple primary */}
+        {/* Create post button (team only) */}
         {isTeam && (
           <div className="px-3 pt-3">
             <Link
               href="/dashboard/content/create"
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#16A34A] px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#15803d]"
             >
               <Plus className="size-4" />
               Create post
@@ -119,7 +113,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       onClick={() => setSidebarOpen(false)}
                       className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors ${
                         active
-                          ? 'bg-primary/10 font-medium text-primary'
+                          ? 'bg-[#16A34A]/10 font-medium text-[#16A34A]'
                           : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                       }`}
                     >

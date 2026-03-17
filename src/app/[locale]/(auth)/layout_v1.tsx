@@ -36,7 +36,7 @@ export default function AuthLayout(props: {
       afterSignOutUrl={afterSignOutUrl}
       appearance={{
         variables: {
-          colorPrimary: '#864FFE',
+          colorPrimary: '#16A34A',
           colorText: '#1A1A1C',
           colorTextSecondary: '#6B7280',
           colorBackground: '#FFFFFF',
@@ -46,19 +46,27 @@ export default function AuthLayout(props: {
           borderRadius: '0.75rem',
         },
         elements: {
+          // Card
           card: 'shadow-lg border rounded-2xl',
+          // Buttons
           formButtonPrimary:
-            'bg-[#864FFE] hover:bg-[#7C31F6] rounded-full text-sm font-medium shadow-sm',
+            'bg-[#16A34A] hover:bg-[#15803d] rounded-full text-sm font-medium shadow-sm',
+          // Social buttons
           socialButtonsBlockButton:
             'border rounded-full hover:bg-gray-50 text-sm',
           socialButtonsBlockButtonText: 'font-medium',
+          // Form fields
           formFieldInput:
-            'rounded-xl border-gray-200 focus:border-[#864FFE] focus:ring-[#864FFE]/20 text-sm',
+            'rounded-xl border-gray-200 focus:border-[#16A34A] focus:ring-[#16A34A]/20 text-sm',
           formFieldLabel: 'text-sm font-medium text-gray-700',
-          footerActionLink: 'text-[#864FFE] hover:text-[#7C31F6] font-medium',
+          // Links
+          footerActionLink: 'text-[#16A34A] hover:text-[#15803d] font-medium',
+          // Header
           headerTitle: 'text-xl font-semibold',
           headerSubtitle: 'text-sm text-gray-500',
+          // Logo / branding
           logoBox: 'h-8',
+          // Organization switcher
           organizationSwitcherTrigger:
             'rounded-lg border px-3 py-2 text-sm hover:bg-gray-50',
         },

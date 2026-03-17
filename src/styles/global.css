@@ -5,17 +5,14 @@
 /*
  * NativPost Web App — Global Styles
  *
- * Maps the NativPost marketing site color palette into the shadcn/ui
- * HSL CSS variable system used by the Ixartz boilerplate.
+ * PRIMARY COLOR: Purple #864FFE (matches marketing site buttons, links, CTAs)
+ * GREEN: Only for success states, checkmarks, and positive indicators
  *
  * Marketing site hex → shadcn HSL mapping:
+ *   --color-primary-500 (#864FFE)   → primary (purple — buttons, links, active states)
  *   --color-secondary (#1A1A1C)     → foreground, card-foreground
  *   --color-background-1 (#FCFCFD)  → background, card
- *   --color-background-2 (#F9FAFB)  → muted
- *   --color-background-3 (#F4F5F8)  → accent (surface)
- *   --color-primary-500 (#864FFE)   → primary (purple)
  *   --color-stroke-3 (#D7DDE5)      → border, input
- *   NativPost green (#16A34A)       → used directly in components
  */
 
 @layer base {
@@ -59,17 +56,20 @@
     /* Ring — matches primary purple */
     --ring: 259 99% 65%;
 
-    /* Radius — slightly larger to match marketing rounded-xl feel */
+    /* Radius */
     --radius: 0.75rem;
 
     /* ============================================
-     * NativPost brand tokens (direct hex, for use
-     * in custom components alongside shadcn vars)
+     * NativPost brand tokens (direct hex)
+     * Purple = primary action color (buttons, links, active nav)
+     * Green = success/positive states only
      * ============================================ */
+    --np-purple: #864FFE;
+    --np-purple-hover: #7C31F6;
+    --np-purple-light: #F4F2FE;
     --np-green: #16A34A;
     --np-green-hover: #15803D;
     --np-green-light: #E8FBC6;
-    --np-purple: #864FFE;
     --np-secondary: #1A1A1C;
     --np-accent: #FCFCFC;
     --np-yellow: #F9EB57;
@@ -90,7 +90,7 @@
     --popover: 220 25% 7.3%;
     --popover-foreground: 210 20% 98%;
 
-    /* Primary — keep purple, flip foreground */
+    /* Primary — purple */
     --primary: 259 99% 65%;
     --primary-foreground: 0 0% 100%;
 
@@ -131,11 +131,26 @@
 }
 
 /*
- * NativPost utility classes — optional, for use
- * in dashboard components that need exact marketing
- * site colors without going through shadcn vars.
+ * NativPost utility classes
+ * Purple = primary interactive color
+ * Green = success/positive states
  */
 @layer utilities {
+  /* Purple — primary actions */
+  .text-np-purple {
+    color: var(--np-purple);
+  }
+  .bg-np-purple {
+    background-color: var(--np-purple);
+  }
+  .bg-np-purple-light {
+    background-color: var(--np-purple-light);
+  }
+  .border-np-purple {
+    border-color: var(--np-purple);
+  }
+
+  /* Green — success states only */
   .text-np-green {
     color: var(--np-green);
   }
@@ -147,8 +162,5 @@
   }
   .border-np-green {
     border-color: var(--np-green);
-  }
-  .ring-np-green {
-    --tw-ring-color: var(--np-green);
   }
 }
