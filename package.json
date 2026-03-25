@@ -58,6 +58,7 @@
     "react-hook-form": "^7.53.0",
     "sharp": "^0.33.5",
     "stripe": "^20.4.1",
+    "svix": "^1.89.0",
     "tailwind-merge": "^2.5.4",
     "zod": "^3.23.8"
   },
