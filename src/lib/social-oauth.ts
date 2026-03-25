@@ -10,9 +10,11 @@
  * 3. Set the callback URL to: https://app.nativpost.com/api/social-accounts/callback?platform=<platform>
  */
 
+import { Buffer } from 'node:buffer';
+
 export type SocialPlatform = 'instagram' | 'facebook' | 'linkedin' | 'twitter' | 'tiktok';
 
-interface PlatformConfig {
+type PlatformConfig = {
   name: string;
   emoji: string;
   authUrl: string;
@@ -20,7 +22,7 @@ interface PlatformConfig {
   scopes: string[];
   clientIdEnv: string;
   clientSecretEnv: string;
-}
+};
 
 export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
   facebook: {
@@ -46,7 +48,8 @@ export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
     emoji: '💼',
     authUrl: 'https://www.linkedin.com/oauth/v2/authorization',
     tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
-    scopes: ['openid', 'profile', 'w_member_social', 'r_organization_social'],
+    // scopes: ['openid', 'profile', 'w_member_social', 'r_organization_social'],
+    scopes: ['openid', 'profile', 'w_member_social'],
     clientIdEnv: 'LINKEDIN_CLIENT_ID',
     clientSecretEnv: 'LINKEDIN_CLIENT_SECRET',
   },
@@ -77,10 +80,14 @@ const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
  */
 export function getOAuthUrl(platform: SocialPlatform): string | null {
   const config = PLATFORM_CONFIGS[platform];
-  if (!config) return null;
+  if (!config) {
+    return null;
+  }
 
   const clientId = process.env[config.clientIdEnv];
-  if (!clientId) return null;
+  if (!clientId) {
+    return null;
+  }
 
   const callbackUrl = `${BASE_URL}/api/social-accounts/callback`;
   const state = `${platform}:${crypto.randomUUID()}`;
@@ -117,7 +124,9 @@ export async function exchangeCodeForTokens(
   const clientId = process.env[config.clientIdEnv];
   const clientSecret = process.env[config.clientSecretEnv];
 
-  if (!clientId || !clientSecret) return null;
+  if (!clientId || !clientSecret) {
+    return null;
+  }
 
   const callbackUrl = `${BASE_URL}/api/social-accounts/callback`;
 
@@ -135,15 +144,15 @@ export async function exchangeCodeForTokens(
   };
 
   if (platform === 'twitter') {
-    headers['Authorization'] = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
-    body['code_verifier'] = 'challenge';
-    delete body['client_id'];
-    delete body['client_secret'];
+    headers.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
+    body.code_verifier = 'challenge';
+    delete body.client_id;
+    delete body.client_secret;
   }
 
   if (platform === 'tiktok') {
-    delete body['client_id'];
-    body['client_key'] = clientId;
+    delete body.client_id;
+    body.client_key = clientId;
   }
 
   try {
