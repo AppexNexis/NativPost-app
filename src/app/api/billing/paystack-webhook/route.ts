@@ -26,7 +26,9 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 // -----------------------------------------------------------
 export async function POST() {
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   try {
     const [org] = await db

@@ -1,20 +1,24 @@
 import { and, eq } from 'drizzle-orm';
-import { NextRequest, NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { db } from '@/lib/db';
+// import { db } from '@/lib/db';
+import { db } from '@/libs/DB';
 import { contentItemSchema } from '@/models/Schema';
 
-interface RouteParams {
+type RouteParams = {
   params: Promise<{ id: string }>;
-}
+};
 
 // -----------------------------------------------------------
 // GET /api/content/[id]
 // -----------------------------------------------------------
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 
@@ -47,7 +51,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 // -----------------------------------------------------------
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 
@@ -57,8 +63,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     // Only allow updating specific fields
     const updates: Record<string, unknown> = { updatedAt: new Date() };
 
-    if (body.caption !== undefined) updates.caption = String(body.caption);
-    if (body.hashtags !== undefined) updates.hashtags = body.hashtags;
+    if (body.caption !== undefined) {
+      updates.caption = String(body.caption);
+    }
+    if (body.hashtags !== undefined) {
+      updates.hashtags = body.hashtags;
+    }
     if (body.status !== undefined) {
       const validStatuses = ['draft', 'pending_review', 'approved', 'scheduled', 'published', 'rejected'];
       if (validStatuses.includes(body.status)) {
@@ -114,7 +124,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 // -----------------------------------------------------------
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 

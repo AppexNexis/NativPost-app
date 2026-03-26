@@ -1,8 +1,9 @@
 import { and, desc, eq } from 'drizzle-orm';
-import { NextRequest, NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { db } from '@/libs/DB';
 import { contentItemSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
@@ -12,7 +13,9 @@ import { contentItemSchema } from '@/models/Schema';
 // -----------------------------------------------------------
 export async function GET(request: NextRequest) {
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { searchParams } = new URL(request.url);
   const status = searchParams.get('status');
@@ -49,7 +52,9 @@ export async function GET(request: NextRequest) {
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   try {
     const body = await request.json();

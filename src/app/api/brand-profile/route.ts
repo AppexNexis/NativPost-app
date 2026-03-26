@@ -1,8 +1,9 @@
 import { eq } from 'drizzle-orm';
-import { NextRequest, NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { db } from '@/libs/DB';
 import { brandProfileSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
@@ -11,7 +12,9 @@ import { brandProfileSchema } from '@/models/Schema';
 // -----------------------------------------------------------
 export async function GET() {
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   try {
     const [profile] = await db
@@ -40,7 +43,9 @@ export async function GET() {
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   try {
     const body = await request.json();
@@ -159,9 +164,13 @@ function calculateCompleteness(body: Record<string, unknown>): number {
   for (const check of checks) {
     const val = body[check.field];
     if (check.isArray) {
-      if (Array.isArray(val) && val.length > 0) score += check.weight;
+      if (Array.isArray(val) && val.length > 0) {
+        score += check.weight;
+      }
     } else {
-      if (val && String(val).trim().length > 0) score += check.weight;
+      if (val && String(val).trim().length > 0) {
+        score += check.weight;
+      }
     }
   }
 

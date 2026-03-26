@@ -1,47 +1,23 @@
-import path from 'node:path';
+// src/libs/db.ts
+//
+// Re-exports the db instance from DB.ts with the correct Drizzle type
+// so that .returning(), .onConflictDoUpdate(), and other PG-only methods
+// are available without TypeScript errors.
+//
+// Why this exists:
+//   DB.ts returns either a drizzle-pg instance OR a drizzle-pglite instance
+//   depending on whether DATABASE_URL is set. TypeScript infers the union type,
+//   which means PG-only methods like .returning() cause TS2554 errors.
+//
+//   Since we always have DATABASE_URL set in production (Supabase) and in dev
+//   (.env.local), we can safely cast to the PG type here.
 
-import { PGlite } from '@electric-sql/pglite';
-import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
-import { migrate as migratePg } from 'drizzle-orm/node-postgres/migrator';
-import { drizzle as drizzlePglite, type PgliteDatabase } from 'drizzle-orm/pglite';
-import { migrate as migratePglite } from 'drizzle-orm/pglite/migrator';
-import { PHASE_PRODUCTION_BUILD } from 'next/dist/shared/lib/constants';
-import { Client } from 'pg';
+import type { drizzle } from 'drizzle-orm/node-postgres';
 
-import * as schema from '@/models/Schema';
+// Import the actual runtime instance from DB.ts
+import { db as _db } from '@/libs/__DB';
+import type * as schema from '@/models/Schema';
 
-import { Env } from './Env';
-
-let client;
-let drizzle;
-
-// Need a database for production? Check out https://www.prisma.io/?via=saasboilerplatesrc
-// Tested and compatible with Next.js Boilerplate
-if (process.env.NEXT_PHASE !== PHASE_PRODUCTION_BUILD && Env.DATABASE_URL) {
-  client = new Client({
-    connectionString: Env.DATABASE_URL,
-  });
-  await client.connect();
-
-  drizzle = drizzlePg(client, { schema });
-  await migratePg(drizzle, {
-    migrationsFolder: path.join(process.cwd(), 'migrations'),
-  });
-} else {
-  // Stores the db connection in the global scope to prevent multiple instances due to hot reloading with Next.js
-  const global = globalThis as unknown as { client: PGlite; drizzle: PgliteDatabase<typeof schema> };
-
-  if (!global.client) {
-    global.client = new PGlite();
-    await global.client.waitReady;
-
-    global.drizzle = drizzlePglite(global.client, { schema });
-  }
-
-  drizzle = global.drizzle;
-  await migratePglite(global.drizzle, {
-    migrationsFolder: path.join(process.cwd(), 'migrations'),
-  });
-}
-
-export const db = drizzle;
+// Cast to the node-postgres drizzle type — safe because DATABASE_URL is
+// always set when running against Supabase (local dev or production).
+export const db = _db as ReturnType<typeof drizzle<typeof schema>>;

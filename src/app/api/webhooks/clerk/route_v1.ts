@@ -1,9 +1,7 @@
-import { eq } from 'drizzle-orm';
 import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { Webhook } from 'svix';
 
-// FIXED: was @/lib/db — correct path is @/libs/DB
 import { db } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 
@@ -12,19 +10,14 @@ import { organizationSchema } from '@/models/Schema';
 // Handles Clerk webhook events
 //
 // Events handled:
-//   - organization.created  → upserts org row in DB
+//   - organization.created  → creates org row in DB
 //   - organization.deleted  → deletes org row from DB (cascades)
 //
 // Setup:
 //   1. Go to Clerk Dashboard → Configure → Webhooks → Add Endpoint
-//   2. Production URL:  https://app.nativpost.com/api/webhooks/clerk
-//   3. Local dev URL:   Use ngrok → https://<your-ngrok>.ngrok.io/api/webhooks/clerk
-//   4. Subscribe to: organization.created, organization.deleted
-//   5. Copy the Signing Secret → add to .env.local as CLERK_WEBHOOK_SECRET
-//
-// NOTE: This webhook is the canonical org creation path in production.
-// However, the OAuth callback route also upserts the org as a safety net,
-// so missing webhooks (e.g. during local dev) never cause FK violations.
+//   2. URL: https://app.nativpost.com/api/webhooks/clerk
+//   3. Subscribe to: organization.created, organization.deleted
+//   4. Copy the Signing Secret → add to .env.local as CLERK_WEBHOOK_SECRET
 // -----------------------------------------------------------
 
 const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
@@ -84,7 +77,6 @@ export async function POST(request: Request) {
   switch (event.type) {
     case 'organization.created': {
       try {
-        // Use upsert (onConflictDoNothing) — idempotent, safe to call multiple times
         await db
           .insert(organizationSchema)
           .values({
@@ -97,9 +89,9 @@ export async function POST(request: Request) {
           })
           .onConflictDoNothing();
 
-        // console.log(`[Clerk Webhook] Organization upserted in DB: ${event.data.id}`);
+        // console.log(`Organization created in DB: ${event.data.id}`);
       } catch (err) {
-        console.error('[Clerk Webhook] Failed to create organization in DB:', err);
+        console.error('Failed to create organization in DB:', err);
         return NextResponse.json(
           { error: 'Failed to create organization' },
           { status: 500 },
@@ -112,11 +104,13 @@ export async function POST(request: Request) {
       try {
         await db
           .delete(organizationSchema)
-          .where(eq(organizationSchema.id, event.data.id));
+          .where(
+            (await import('drizzle-orm')).eq(organizationSchema.id, event.data.id),
+          );
 
-        // console.log(`[Clerk Webhook] Organization deleted from DB: ${event.data.id}`);
+        // console.log(`Organization deleted from DB: ${event.data.id}`);
       } catch (err) {
-        console.error('[Clerk Webhook] Failed to delete organization from DB:', err);
+        console.error('Failed to delete organization from DB:', err);
         return NextResponse.json(
           { error: 'Failed to delete organization' },
           { status: 500 },
@@ -127,7 +121,7 @@ export async function POST(request: Request) {
 
     default:
       // Ignore unhandled events
-      break;
+      // console.log(`Unhandled Clerk webhook event: ${event.type}`);
   }
 
   return NextResponse.json({ received: true }, { status: 200 });

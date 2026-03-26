@@ -1,11 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { headers } from 'next/headers';
-import { NextRequest, NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
+import { getPlanByStripePriceId, PLANS } from '@/lib/plans';
 import { db } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
-import { getPlanByStripePriceId, PLANS } from '@/lib/plans';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
 
@@ -74,26 +75,30 @@ export async function POST(request: NextRequest) {
           const plan = priceId ? getPlanByStripePriceId(priceId) : null;
 
           // Use type-safe access — newer Stripe versions restructured these fields
-         const periodEnd = getField(subscription, 'current_period_end')
-  ?? getField(subscription, 'billing_cycle_anchor')
-  ?? null;
+          const periodEnd = getField(subscription, 'current_period_end')
+            ?? getField(subscription, 'billing_cycle_anchor')
+            ?? null;
 
           await db
             .update(organizationSchema)
             .set({
-              planStatus: subscription.status === 'active' ? 'active' :
-                         subscription.status === 'trialing' ? 'trialing' :
-                         subscription.status === 'past_due' ? 'past_due' : 'cancelled',
+              planStatus: subscription.status === 'active'
+                ? 'active'
+                : subscription.status === 'trialing'
+                  ? 'trialing'
+                  : subscription.status === 'past_due' ? 'past_due' : 'cancelled',
               stripeSubscriptionStatus: subscription.status,
               stripeSubscriptionPriceId: priceId || null,
               ...(typeof periodEnd === 'number'
                 ? { stripeSubscriptionCurrentPeriodEnd: periodEnd }
                 : {}),
-              ...(plan ? {
-                plan: plan.id,
-                postsPerMonth: plan.postsPerMonth,
-                platformsLimit: plan.platformsLimit,
-              } : {}),
+              ...(plan
+                ? {
+                    plan: plan.id,
+                    postsPerMonth: plan.postsPerMonth,
+                    platformsLimit: plan.platformsLimit,
+                  }
+                : {}),
               updatedAt: new Date(),
             })
             .where(eq(organizationSchema.id, orgId));
@@ -112,8 +117,8 @@ export async function POST(request: NextRequest) {
               planStatus: 'cancelled',
               stripeSubscriptionStatus: 'canceled',
               plan: 'starter',
-              postsPerMonth: PLANS['starter']!.postsPerMonth,
-              platformsLimit: PLANS['starter']!.platformsLimit,
+              postsPerMonth: PLANS.starter!.postsPerMonth,
+              platformsLimit: PLANS.starter!.platformsLimit,
               updatedAt: new Date(),
             })
             .where(eq(organizationSchema.id, orgId));

@@ -1,8 +1,9 @@
 import { and, eq } from 'drizzle-orm';
-import { NextRequest, NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { db } from '@/libs/DB';
 import { socialAccountSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
@@ -11,7 +12,9 @@ import { socialAccountSchema } from '@/models/Schema';
 // -----------------------------------------------------------
 export async function GET() {
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   try {
     const accounts = await db
@@ -43,7 +46,9 @@ export async function GET() {
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   try {
     const body = await request.json();
@@ -86,7 +91,9 @@ export async function POST(request: NextRequest) {
 // -----------------------------------------------------------
 export async function DELETE(request: NextRequest) {
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
