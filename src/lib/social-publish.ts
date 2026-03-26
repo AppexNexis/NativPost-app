@@ -118,6 +118,60 @@ export async function publishToLinkedIn(
   imageUrl?: string,
 ): Promise<PublishResult> {
   try {
+    // Format as URN if not already
+    const author = authorUrn.startsWith('urn:li:')
+      ? authorUrn
+      : `urn:li:person:${authorUrn}`;
+
+    const postBody: Record<string, unknown> = {
+      author, // ← was authorUrn
+      lifecycleState: 'PUBLISHED',
+      specificContent: {
+        'com.linkedin.ugc.ShareContent': {
+          shareCommentary: { text: caption },
+          shareMediaCategory: imageUrl ? 'IMAGE' : 'NONE',
+          ...(imageUrl && {
+            media: [{
+              status: 'READY',
+              originalUrl: imageUrl,
+            }],
+          }),
+        },
+      },
+      visibility: {
+        'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC',
+      },
+    };
+
+    const res = await fetch('https://api.linkedin.com/v2/ugcPosts', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'X-Restli-Protocol-Version': '2.0.0',
+      },
+      body: JSON.stringify(postBody),
+    });
+
+    const data = await res.json();
+
+    if (data.id) {
+      return { success: true, platformPostId: data.id };
+    }
+
+    return { success: false, error: data.message || 'LinkedIn publish failed' };
+  } catch (err) {
+    return { success: false, error: `LinkedIn error: ${err}` };
+  }
+}
+
+export async function publishToLinkedIn_v1(
+  accessToken: string,
+  authorUrn: string,
+  caption: string,
+  imageUrl?: string,
+): Promise<PublishResult> {
+  try {
     const postBody: Record<string, unknown> = {
       author: authorUrn,
       lifecycleState: 'PUBLISHED',
