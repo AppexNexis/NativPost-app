@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { db } from '@/libs/DB';
-import { publishingQueueSchema, socialAccountSchema } from '@/models/Schema';
+import { socialAccountSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
 // GET /api/social-accounts
@@ -103,31 +103,19 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
-    // Verify the account belongs to this org before deleting
-    const [account] = await db
-      .select({ id: socialAccountSchema.id })
-      .from(socialAccountSchema)
+    const [deleted] = await db
+      .delete(socialAccountSchema)
       .where(
         and(
           eq(socialAccountSchema.id, id),
           eq(socialAccountSchema.orgId, orgId!),
         ),
       )
-      .limit(1);
+      .returning({ id: socialAccountSchema.id });
 
-    if (!account) {
+    if (!deleted) {
       return NextResponse.json({ error: 'Account not found' }, { status: 404 });
     }
-
-    // Delete publishing queue rows referencing this account first (FK constraint)
-    await db
-      .delete(publishingQueueSchema)
-      .where(eq(publishingQueueSchema.socialAccountId, id));
-
-    // Now safe to delete the social account
-    await db
-      .delete(socialAccountSchema)
-      .where(eq(socialAccountSchema.id, id));
 
     return NextResponse.json({ deleted: true }, { status: 200 });
   } catch (err) {

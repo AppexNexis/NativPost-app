@@ -7,8 +7,6 @@
  * All functions return { success, platformPostId?, error? }
  */
 
-import { Buffer } from 'node:buffer';
-
 type PublishResult = {
   success: boolean;
   platformPostId?: string;
@@ -161,98 +159,32 @@ export async function publishToLinkedIn(
 }
 
 // -----------------------------------------------------------
-// X / TWITTER via API v2 — OAuth 2.0 User Context
+// X / TWITTER via API v2
 // -----------------------------------------------------------
 
 export async function publishToTwitter(
   accessToken: string,
   caption: string,
-  refreshToken?: string,
-  onTokenRefresh?: (newAccessToken: string, newRefreshToken: string) => Promise<void>,
 ): Promise<PublishResult> {
   try {
-    const result = await postTweet(accessToken, caption);
-
-    // If unauthorized and we have a refresh token, try refreshing first
-    if (!result.success && result.error === 'Unauthorized' && refreshToken) {
-      const refreshed = await refreshTwitterToken(refreshToken);
-      if (!refreshed) {
-        return {
-          success: false,
-          error: 'Twitter token expired. Please reconnect your Twitter account.',
-        };
-      }
-
-      // Persist the new tokens if caller provided a handler
-      if (onTokenRefresh) {
-        await onTokenRefresh(refreshed.accessToken, refreshed.refreshToken);
-      }
-
-      // Retry with new token
-      return postTweet(refreshed.accessToken, caption);
-    }
-
-    return result;
-  } catch (err) {
-    return { success: false, error: `Twitter error: ${err}` };
-  }
-}
-
-async function postTweet(accessToken: string, caption: string): Promise<PublishResult> {
-  const res = await fetch('https://api.x.com/2/tweets', {
-    method: 'POST',
-    headers: {
-      // OAuth 2.0 User Context — NOT App-Only Bearer
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ text: caption }),
-  });
-
-  const data = await res.json();
-
-  if (res.status === 401) {
-    return { success: false, error: 'Unauthorized' };
-  }
-
-  if (data.data?.id) {
-    return { success: true, platformPostId: data.data.id };
-  }
-
-  return { success: false, error: data.detail || data.title || 'Twitter publish failed' };
-}
-
-async function refreshTwitterToken(
-  refreshToken: string,
-): Promise<{ accessToken: string; refreshToken: string } | null> {
-  try {
-    const clientId = process.env.TWITTER_CLIENT_ID!;
-    const clientSecret = process.env.TWITTER_CLIENT_SECRET!;
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-
-    const res = await fetch('https://api.x.com/2/oauth2/token', {
+    const res = await fetch('https://api.x.com/2/tweets', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${credentials}`,
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
       },
-      body: new URLSearchParams({
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-        client_id: clientId,
-      }),
+      body: JSON.stringify({ text: caption }),
     });
 
     const data = await res.json();
-    if (data.access_token) {
-      return {
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token || refreshToken,
-      };
+
+    if (data.data?.id) {
+      return { success: true, platformPostId: data.data.id };
     }
-    return null;
-  } catch {
-    return null;
+
+    return { success: false, error: data.detail || data.title || 'Twitter publish failed' };
+  } catch (err) {
+    return { success: false, error: `Twitter error: ${err}` };
   }
 }
 
@@ -278,17 +210,12 @@ export async function publishToTikTok(
 // DISPATCHER — routes to the right publisher
 // -----------------------------------------------------------
 
-// Replace your existing publishToplatform dispatcher with this:
-
 export async function publishToplatform(
   platform: string,
   accessToken: string,
   platformUserId: string,
   caption: string,
   imageUrl?: string,
-  // New optional params for Twitter token refresh
-  refreshToken?: string,
-  onTokenRefresh?: (newAccessToken: string, newRefreshToken: string) => Promise<void>,
 ): Promise<PublishResult> {
   switch (platform) {
     case 'facebook':
@@ -301,7 +228,7 @@ export async function publishToplatform(
     case 'linkedin':
       return publishToLinkedIn(accessToken, platformUserId, caption, imageUrl);
     case 'twitter':
-      return publishToTwitter(accessToken, caption, refreshToken, onTokenRefresh);
+      return publishToTwitter(accessToken, caption);
     case 'tiktok':
       return publishToTikTok(accessToken, caption);
     default:
