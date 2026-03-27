@@ -108,8 +108,94 @@ export async function publishToInstagram(
 }
 
 // -----------------------------------------------------------
-// LINKEDIN via API v2
+// LINKEDIN via UGC Posts API
+//
+// LinkedIn DOES NOT accept external image URLs directly.
+// Images must be:
+//   1. Registered with LinkedIn → get an upload URL + asset URN
+//   2. Uploaded as binary to that URL
+//   3. Referenced by asset URN in the post body
 // -----------------------------------------------------------
+
+async function uploadImageToLinkedIn(
+  accessToken: string,
+  authorUrn: string,
+  imageUrl: string,
+): Promise<string | null> {
+  try {
+    // Step 1: Register the image upload with LinkedIn
+    const registerRes = await fetch(
+      'https://api.linkedin.com/v2/assets?action=registerUpload',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'X-Restli-Protocol-Version': '2.0.0',
+        },
+        body: JSON.stringify({
+          registerUploadRequest: {
+            recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
+            owner: authorUrn,
+            serviceRelationships: [
+              {
+                relationshipType: 'OWNER',
+                identifier: 'urn:li:userGeneratedContent',
+              },
+            ],
+          },
+        }),
+      },
+    );
+
+    const registerData = await registerRes.json();
+
+    const uploadUrl
+      = registerData?.value?.uploadMechanism?.[
+        'com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest'
+      ]?.uploadUrl;
+
+    const assetUrn = registerData?.value?.asset;
+
+    if (!uploadUrl || !assetUrn) {
+      console.error('[LinkedIn] Failed to register upload:', JSON.stringify(registerData));
+      return null;
+    }
+
+    // Step 2: Download the image from Uploadcare (or any CDN)
+    const imageRes = await fetch(imageUrl);
+    if (!imageRes.ok) {
+      console.error('[LinkedIn] Failed to fetch image from URL:', imageUrl);
+      return null;
+    }
+
+    const imageBuffer = await imageRes.arrayBuffer();
+    const contentType = imageRes.headers.get('content-type') || 'image/jpeg';
+
+    // Step 3: Upload the binary to LinkedIn's upload URL
+    const uploadRes = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': contentType,
+      },
+      body: imageBuffer,
+    });
+
+    // LinkedIn returns 201 or 200 on success — no JSON body
+    if (uploadRes.ok || uploadRes.status === 201) {
+      // eslint-disable-next-line no-console
+      console.log('[LinkedIn] Image uploaded successfully, asset URN:', assetUrn);
+      return assetUrn as string;
+    }
+
+    console.error('[LinkedIn] Image upload failed, status:', uploadRes.status);
+    return null;
+  } catch (err) {
+    console.error('[LinkedIn] uploadImageToLinkedIn error:', err);
+    return null;
+  }
+}
 
 export async function publishToLinkedIn(
   accessToken: string,
@@ -118,23 +204,37 @@ export async function publishToLinkedIn(
   imageUrl?: string,
 ): Promise<PublishResult> {
   try {
-    // Format as URN if not already
+    // Format author URN correctly
     const author = authorUrn.startsWith('urn:li:')
       ? authorUrn
       : `urn:li:person:${authorUrn}`;
 
+    let assetUrn: string | null = null;
+
+    // If there's an image, upload it to LinkedIn first to get an asset URN
+    if (imageUrl) {
+      assetUrn = await uploadImageToLinkedIn(accessToken, author, imageUrl);
+
+      if (!assetUrn) {
+        // Fall back to text-only post if image upload fails
+        console.warn('[LinkedIn] Image upload failed — falling back to text-only post');
+      }
+    }
+
     const postBody: Record<string, unknown> = {
-      author, // ← was authorUrn
+      author,
       lifecycleState: 'PUBLISHED',
       specificContent: {
         'com.linkedin.ugc.ShareContent': {
           shareCommentary: { text: caption },
-          shareMediaCategory: imageUrl ? 'IMAGE' : 'NONE',
-          ...(imageUrl && {
-            media: [{
-              status: 'READY',
-              originalUrl: imageUrl,
-            }],
+          shareMediaCategory: assetUrn ? 'IMAGE' : 'NONE',
+          ...(assetUrn && {
+            media: [
+              {
+                status: 'READY',
+                media: assetUrn, // LinkedIn asset URN — NOT an external URL
+              },
+            ],
           }),
         },
       },
@@ -159,55 +259,7 @@ export async function publishToLinkedIn(
       return { success: true, platformPostId: data.id };
     }
 
-    return { success: false, error: data.message || 'LinkedIn publish failed' };
-  } catch (err) {
-    return { success: false, error: `LinkedIn error: ${err}` };
-  }
-}
-
-export async function publishToLinkedIn_v1(
-  accessToken: string,
-  authorUrn: string,
-  caption: string,
-  imageUrl?: string,
-): Promise<PublishResult> {
-  try {
-    const postBody: Record<string, unknown> = {
-      author: authorUrn,
-      lifecycleState: 'PUBLISHED',
-      specificContent: {
-        'com.linkedin.ugc.ShareContent': {
-          shareCommentary: { text: caption },
-          shareMediaCategory: imageUrl ? 'IMAGE' : 'NONE',
-          ...(imageUrl && {
-            media: [{
-              status: 'READY',
-              originalUrl: imageUrl,
-            }],
-          }),
-        },
-      },
-      visibility: {
-        'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC',
-      },
-    };
-
-    const res = await fetch('https://api.linkedin.com/v2/ugcPosts', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'X-Restli-Protocol-Version': '2.0.0',
-      },
-      body: JSON.stringify(postBody),
-    });
-
-    const data = await res.json();
-
-    if (data.id) {
-      return { success: true, platformPostId: data.id };
-    }
-
+    console.error('[LinkedIn] Post failed:', JSON.stringify(data));
     return { success: false, error: data.message || 'LinkedIn publish failed' };
   } catch (err) {
     return { success: false, error: `LinkedIn error: ${err}` };
@@ -256,7 +308,6 @@ async function postTweet(accessToken: string, caption: string): Promise<PublishR
   const res = await fetch('https://api.x.com/2/tweets', {
     method: 'POST',
     headers: {
-      // OAuth 2.0 User Context — NOT App-Only Bearer
       'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     },
@@ -311,16 +362,13 @@ async function refreshTwitterToken(
 }
 
 // -----------------------------------------------------------
-// TIKTOK — Video posts require upload flow, text posts via API
+// TIKTOK
 // -----------------------------------------------------------
 
 export async function publishToTikTok(
   accessToken: string,
   caption: string,
 ): Promise<PublishResult> {
-  // TikTok Content Posting API is primarily for video
-  // Text-only / image posts have limited API support
-  // For MVP: return manual posting instruction
   console.error({ accessToken, caption });
   return {
     success: false,
@@ -329,10 +377,8 @@ export async function publishToTikTok(
 }
 
 // -----------------------------------------------------------
-// DISPATCHER — routes to the right publisher
+// DISPATCHER
 // -----------------------------------------------------------
-
-// Replace your existing publishToplatform dispatcher with this:
 
 export async function publishToplatform(
   platform: string,
@@ -340,7 +386,6 @@ export async function publishToplatform(
   platformUserId: string,
   caption: string,
   imageUrl?: string,
-  // New optional params for Twitter token refresh
   refreshToken?: string,
   onTokenRefresh?: (newAccessToken: string, newRefreshToken: string) => Promise<void>,
 ): Promise<PublishResult> {
