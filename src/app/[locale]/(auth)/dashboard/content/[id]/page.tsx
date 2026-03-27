@@ -264,15 +264,15 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const isSingleImage = item.contentType === 'single_image';
   const hasMedia = item.graphicUrls && item.graphicUrls.length > 0;
 
-  // For reel: need at least one image OR a generated video
-  const hasVideo = isReel && hasMedia;
+  // Detect if graphicUrls contains generated/uploaded videos (MP4 URLs)
+  const hasGeneratedVideo = isReel && hasMedia
+    && item.graphicUrls.some(url => url.includes('.mp4') || url.includes('video'));
+
+  // For reel: must have an actual video (not just source images)
+  const hasVideo = isReel && hasGeneratedVideo;
   // For image/carousel: need images
   const hasImages = (isSingleImage || isCarousel) && hasMedia;
   const canPublish = item.status === 'approved' && (!needsMedia || hasVideo || hasImages);
-
-  // Detect if graphicUrls contains generated videos (MP4 URLs)
-  const hasGeneratedVideo = isReel && hasMedia
-    && item.graphicUrls.some(url => url.includes('.mp4') || url.includes('video'));
 
   // Source images for reel (stored in platformSpecific.sourceImages after video gen)
   const sourceImages = (item.platformSpecific?.sourceImages as string[]) || [];
