@@ -204,17 +204,25 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         method: 'POST',
       });
       const data = await res.json();
-      if (res.ok) {
-        // Refresh item to get new graphicUrls
-        const refreshRes = await fetch(`/api/content/${item.id}`);
-        if (refreshRes.ok) {
-          const refreshData = await refreshRes.json();
-          setItem(refreshData.item);
+      if (res.ok && data.success) {
+        // Only refresh if we got valid URLs back
+        if (data.vertical && data.square) {
+          const refreshRes = await fetch(`/api/content/${item.id}`);
+          if (refreshRes.ok) {
+            const refreshData = await refreshRes.json();
+            // Guard: only update state if item is valid
+            if (refreshData?.item?.id) {
+              setItem(refreshData.item);
+            }
+          }
+        } else {
+          setVideoGenError('Video generated but URLs were invalid. Please try again.');
         }
       } else {
-        setVideoGenError(data.error || 'Video generation failed');
+        setVideoGenError(data.error || 'Video generation failed. Please try again.');
       }
-    } catch {
+    } catch (err) {
+      console.error('[Video] generateVideo error:', err);
       setVideoGenError('Network error. Please try again.');
     } finally {
       setIsGeneratingVideo(false);
@@ -264,18 +272,19 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const isSingleImage = item.contentType === 'single_image';
   const hasMedia = item.graphicUrls && item.graphicUrls.length > 0;
 
-  // Detect if graphicUrls contains generated/uploaded videos (MP4 URLs)
-  const hasGeneratedVideo = isReel && hasMedia
-    && item.graphicUrls.some(url => url.includes('.mp4') || url.includes('video'));
+  // Source images stored in platformSpecific after video generation
+  const sourceImages = (item.platformSpecific?.sourceImages as string[]) || [];
 
-  // For reel: must have an actual video (not just source images)
+  // A reel has a generated video if sourceImages exist in platformSpecific
+  // (they get stored there when generate-video succeeds)
+  // Uploadcare video URLs look like ucarecdn.com/uuid/ — no .mp4 extension
+  const hasGeneratedVideo = isReel && sourceImages.length > 0 && hasMedia;
+
+  // For reel: must have an actual video (graphicUrls populated after generation)
   const hasVideo = isReel && hasGeneratedVideo;
   // For image/carousel: need images
   const hasImages = (isSingleImage || isCarousel) && hasMedia;
   const canPublish = item.status === 'approved' && (!needsMedia || hasVideo || hasImages);
-
-  // Source images for reel (stored in platformSpecific.sourceImages after video gen)
-  const sourceImages = (item.platformSpecific?.sourceImages as string[]) || [];
 
   return (
     <>

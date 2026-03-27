@@ -19,7 +19,10 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
   const { id } = await params;
 
+  // Debug: log config on every call
+
   console.log('[Video] VIDEO_RENDERER_URL:', VIDEO_RENDERER_URL);
+
   console.log('[Video] ENGINE_API_KEY set:', !!ENGINE_API_KEY);
 
   try {
@@ -67,9 +70,10 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     };
 
     console.log('[Video] Calling renderer at:', `${VIDEO_RENDERER_URL}/render`);
+
     console.log('[Video] Payload images count:', imageUrls.length);
 
-    // 180s timeout
+    // 180s timeout — free tier renders slowly
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180_000);
 
@@ -90,7 +94,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       console.error('[Video] Fetch error:', fetchErr);
       if (isAbort) {
         return NextResponse.json(
-          { error: 'Video renderer timed out after 3 minutes. Try again.' },
+          { error: 'Video renderer timed out after 3 minutes. The free tier may be under load — try again.' },
           { status: 503 },
         );
       }
@@ -105,33 +109,26 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     if (!renderRes.ok) {
       const errText = await renderRes.text();
       console.error('[Video] Renderer returned error:', renderRes.status, errText);
+      // Return the actual error from the renderer so we can debug
       return NextResponse.json(
-        { error: 'Video generation failed.', detail: errText, rendererStatus: renderRes.status },
+        {
+          error: 'Video generation failed.',
+          detail: errText,
+          rendererStatus: renderRes.status,
+        },
         { status: 502 },
       );
     }
 
     const renderData = await renderRes.json() as {
-      vertical?: string;
-      square?: string;
-      durationSeconds?: number;
+      vertical: string;
+      square: string;
+      durationSeconds: number;
     };
 
     console.log('[Video] Render success:', renderData.vertical, renderData.square);
 
-    // Guard against undefined URLs — never store them
-    const vertical = renderData.vertical;
-    const square = renderData.square;
-
-    if (!vertical || !square) {
-      console.error('[Video] Renderer returned undefined URLs:', renderData);
-      return NextResponse.json(
-        { error: 'Video generation failed — renderer returned empty URLs. Please try again.' },
-        { status: 502 },
-      );
-    }
-
-    const videoUrls = [vertical, square];
+    const videoUrls = [renderData.vertical, renderData.square];
 
     await db
       .update(contentItemSchema)
@@ -140,7 +137,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
         platformSpecific: {
           ...(item.platformSpecific as object),
           sourceImages: imageUrls,
-          videoDurationSeconds: renderData.durationSeconds ?? 0,
+          videoDurationSeconds: renderData.durationSeconds,
         },
         updatedAt: new Date(),
       })
@@ -148,15 +145,12 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({
       success: true,
-      vertical,
-      square,
-      durationSeconds: renderData.durationSeconds ?? 0,
+      vertical: renderData.vertical,
+      square: renderData.square,
+      durationSeconds: renderData.durationSeconds,
     });
   } catch (err) {
     console.error('[Video] generate-video failed:', err);
-    return NextResponse.json(
-      { error: `Video generation failed: ${String(err)}` },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: `Video generation failed: ${String(err)}` }, { status: 500 });
   }
 }
