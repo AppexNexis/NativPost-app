@@ -1,12 +1,13 @@
+import { clerkClient } from '@clerk/nextjs/server';
 import { and, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { sendPublishedNotification } from '@/lib/email';
 import { publishToplatform } from '@/lib/social-publish';
 import { db } from '@/libs/DB';
 import { contentItemSchema, publishingQueueSchema, socialAccountSchema } from '@/models/Schema';
-// import { sendPublishedNotification } from '@/lib/email';
 
 type RouteParams = {
   params: Promise<{ id: string }>;
@@ -16,11 +17,10 @@ type RouteParams = {
 // POST /api/content/[id]/publish
 // Publishes an approved content item to all target platforms
 // -----------------------------------------------------------
-// export async function POST(request: NextRequest, { params }: RouteParams) {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   // eslint-disable-next-line no-console
   console.log({ request });
-  const { error, orgId } = await getAuthContext();
+  const { error, orgId, userId } = await getAuthContext();
   if (error) {
     return error;
   }
@@ -82,20 +82,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       const platformCaptions = (item.platformSpecific as Record<string, string>) || {};
       const caption = platformCaptions[platform] || item.caption;
 
-      // Get image URL (first graphic)
+      // Get all graphic URLs — supports text (empty), single image, and carousel
       const graphicUrls = (item.graphicUrls as string[]) || [];
-      const imageUrl = graphicUrls[0] || undefined;
-
-      // Publish
-      // In your publish route, replace the publishToplatform call with this:
 
       const result = await publishToplatform(
         platform,
         account.accessToken,
         account.platformUserId || '',
         caption,
-        imageUrl,
-        // Pass refresh token and a save handler for Twitter
+        graphicUrls, // full array — dispatcher handles text/single/carousel
         account.refreshToken || undefined,
         async (newAccessToken: string, newRefreshToken: string) => {
           await db
@@ -103,18 +98,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             .set({
               accessToken: newAccessToken,
               refreshToken: newRefreshToken,
-              tokenExpiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours
+              tokenExpiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
             })
             .where(eq(socialAccountSchema.id, account.id));
         },
       );
-      // const result = await publishToplatform(
-      //   platform,
-      //   account.accessToken,
-      //   account.platformUserId || '',
-      //   caption,
-      //   imageUrl,
-      // );
 
       results.push({ platform, ...result });
 
@@ -132,25 +120,51 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // 5. Update content item status
-    const allSucceeded = results.every(r => r.success);
     const someSucceeded = results.some(r => r.success);
 
     await db
       .update(contentItemSchema)
       .set({
-        status: allSucceeded ? 'published' : someSucceeded ? 'published' : 'approved',
+        status: someSucceeded ? 'published' : 'approved',
         publishedAt: someSucceeded ? new Date() : null,
         updatedAt: new Date(),
       })
       .where(eq(contentItemSchema.id, id));
 
-    // 6. Send email notification (non-blocking)
+    // 6. Send email notification (non-blocking — never throws)
     if (someSucceeded) {
-      const successPlatforms = results.filter(r => r.success).map(r => r.platform).join(', ');
-      // TODO: Get user email from Clerk
-      // sendPublishedNotification(userEmail, brandName, successPlatforms, item.caption);
+      const successPlatforms = results
+        .filter(r => r.success)
+        .map(r => r.platform)
+        .join(', ');
+
       // eslint-disable-next-line no-console
       console.log({ successPlatforms, caption: item.caption });
+
+      // Fetch user email from Clerk and send notification
+      try {
+        const clerk = await clerkClient();
+        // Fetch user email and org name in parallel
+        const [user, org] = await Promise.all([
+          clerk.users.getUser(userId!),
+          clerk.organizations.getOrganization({ organizationId: orgId! }),
+        ]);
+        const userEmail = user.emailAddresses[0]?.emailAddress;
+        const orgName = org.name || orgId!;
+
+        if (userEmail) {
+          // Fire-and-forget — never blocks the response
+          sendPublishedNotification(
+            userEmail,
+            orgName,
+            successPlatforms,
+            item.caption,
+          ).catch(err => console.error('[Email] sendPublishedNotification failed:', err));
+        }
+      } catch (emailErr) {
+        // Never let email failure affect the publish response
+        console.error('[Email] Failed to send publish notification:', emailErr);
+      }
     }
 
     return NextResponse.json({
