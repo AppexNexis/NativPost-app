@@ -1,0 +1,19 @@
+name: Publish Scheduled Posts
+
+on:
+  schedule:
+    - cron: '*/5 * * * *' # Every 5 minutes
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger publish endpoint
+        run: |
+          curl -X GET \
+            https://app.nativpost.com/api/cron/publish-scheduled \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --fail \
+            --silent \
+            --show-error
