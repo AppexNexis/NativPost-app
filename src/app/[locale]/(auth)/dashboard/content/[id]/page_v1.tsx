@@ -2,9 +2,11 @@
 
 import {
   ArrowLeft,
+  Calendar,
   Check,
   Copy,
   Edit3,
+  ImageIcon,
   Loader2,
   Send,
   Trash2,
@@ -14,8 +16,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
+import { MediaUploader } from '@/components/media/MediaUploader';
 import { PageHeader } from '@/features/dashboard/PageHeader';
 
+// -----------------------------------------------------------
+// TYPES
+// -----------------------------------------------------------
 type ContentItem = {
   id: string;
   caption: string;
@@ -36,6 +42,9 @@ type ContentItem = {
   updatedAt: string;
 };
 
+// -----------------------------------------------------------
+// CONFIG
+// -----------------------------------------------------------
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   draft: { label: 'Draft', color: 'bg-gray-100 text-gray-600' },
   pending_review: { label: 'Pending review', color: 'bg-yellow-50 text-yellow-700' },
@@ -45,14 +54,20 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   rejected: { label: 'Rejected', color: 'bg-red-50 text-red-700' },
 };
 
-const PLATFORM_EMOJI: Record<string, string> = {
-  instagram: '📸',
-  linkedin: '💼',
-  twitter: '𝕏',
-  facebook: '📘',
-  tiktok: '🎵',
+const PLATFORM_LABELS: Record<string, string> = {
+  instagram: 'Instagram',
+  linkedin: 'LinkedIn',
+  twitter: 'X / Twitter',
+  facebook: 'Facebook',
+  tiktok: 'TikTok',
 };
 
+// Content types that require media
+const MEDIA_CONTENT_TYPES = ['single_image', 'carousel'];
+
+// -----------------------------------------------------------
+// PAGE
+// -----------------------------------------------------------
 export default function ContentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const [item, setItem] = useState<ContentItem | null>(null);
@@ -60,6 +75,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [isEditing, setIsEditing] = useState(false);
   const [editCaption, setEditCaption] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [showScheduler, setShowScheduler] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState('');
+  const [scheduleTime, setScheduleTime] = useState('');
 
   useEffect(() => {
     async function load() {
@@ -70,6 +88,12 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           const data = await res.json();
           setItem(data.item);
           setEditCaption(data.item.caption);
+          // Pre-fill schedule fields if already scheduled
+          if (data.item.scheduledFor) {
+            const d = new Date(data.item.scheduledFor);
+            setScheduleDate(d.toISOString().split('T')[0] ?? '');
+            setScheduleTime(d.toISOString().split('T')[1]?.slice(0, 5) ?? '');
+          }
         }
       } catch (err) {
         console.error('Failed to load content:', err);
@@ -129,8 +153,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     try {
       const res = await fetch(`/api/content/${item.id}/publish`, { method: 'POST' });
       if (res.ok) {
-        // const data = await res.json();
-        // Refresh the item
         const refreshRes = await fetch(`/api/content/${item.id}`);
         if (refreshRes.ok) {
           const refreshData = await refreshRes.json();
@@ -141,6 +163,42 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       setActionLoading(null);
     }
   };
+
+  const schedulePost = async () => {
+    if (!item || !scheduleDate || !scheduleTime) {
+      return;
+    }
+    setActionLoading('schedule');
+    try {
+      const scheduledFor = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
+      const res = await fetch(`/api/content/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'scheduled', scheduledFor }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setItem(data.item);
+        setShowScheduler(false);
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // TODO: remove confirmation modal instead of window.confirm
+  // const deleteItem = async () => {
+  //   if (!item || !confirm('Delete this content? This cannot be undone.')) {
+  //     return;
+  //   }
+  //   setActionLoading('delete');
+  //   try {
+  //     await fetch(`/api/content/${item.id}`, { method: 'DELETE' });
+  //     router.push('/dashboard/posts');
+  //   } finally {
+  //     setActionLoading(null);
+  //   }
+  // };
 
   const deleteItem = async () => {
     if (!item) {
@@ -172,19 +230,29 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     return (
       <div className="py-20 text-center">
         <p className="text-sm text-muted-foreground">Content not found.</p>
-        <Link href="/dashboard/content" className="mt-2 text-sm text-[#16A34A] underline">Back to calendar</Link>
+        <Link href="/dashboard/posts" className="mt-2 text-sm text-primary underline">
+          Back to posts
+        </Link>
       </div>
     );
   }
 
   const statusConfig = STATUS_CONFIG[item.status] || { label: item.status, color: 'bg-muted' };
+  const needsMedia = MEDIA_CONTENT_TYPES.includes(item.contentType);
+  const hasMedia = item.graphicUrls && item.graphicUrls.length > 0;
+
+  // Warning: image post with no image shouldn't be published
+  const canPublish = item.status === 'approved' && (!needsMedia || hasMedia);
 
   return (
     <>
       <PageHeader
         title="Content detail"
         actions={(
-          <Link href="/dashboard/content" className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted">
+          <Link
+            href="/dashboard/posts"
+            className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted"
+          >
             <ArrowLeft className="size-4" />
             Back
           </Link>
@@ -192,7 +260,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       />
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Main content */}
+        {/* ---- Main content ---- */}
         <div className="space-y-4 lg:col-span-2">
           {/* Caption card */}
           <div className="rounded-xl border bg-card p-5">
@@ -202,13 +270,21 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               </span>
               <div className="flex items-center gap-2">
                 {!isEditing && (
-                  <button onClick={() => setIsEditing(true)} className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                  >
                     <Edit3 className="size-3" />
                     {' '}
                     Edit
                   </button>
                 )}
-                <button onClick={() => navigator.clipboard.writeText(item.caption)} className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted">
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(item.caption)}
+                  className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                >
                   <Copy className="size-3" />
                   {' '}
                   Copy
@@ -223,15 +299,26 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                       value={editCaption}
                       onChange={e => setEditCaption(e.target.value)}
                       rows={8}
-                      className="w-full resize-none rounded-lg border bg-background px-3.5 py-2.5 text-sm leading-relaxed focus:border-[#16A34A] focus:outline-none focus:ring-2 focus:ring-[#16A34A]/30"
+                      className="w-full resize-none rounded-lg border bg-background px-3.5 py-2.5 text-sm leading-relaxed focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                     />
                     <div className="mt-3 flex gap-2">
-                      <button onClick={saveEdit} disabled={actionLoading === 'save'} className="inline-flex items-center gap-1 rounded-lg bg-[#16A34A] px-3 py-2 text-xs font-medium text-white hover:bg-[#15803d] disabled:opacity-60">
-                        {actionLoading === 'save' ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-                        {' '}
+                      <button
+                        type="button"
+                        onClick={saveEdit}
+                        disabled={actionLoading === 'save'}
+                        className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                      >
+                        {actionLoading === 'save'
+                          ? (
+                              <Loader2 className="size-3 animate-spin" />
+                            )
+                          : (
+                              <Check className="size-3" />
+                            )}
                         Save changes
                       </button>
                       <button
+                        type="button"
                         onClick={() => {
                           setIsEditing(false);
                           setEditCaption(item.caption);
@@ -249,12 +336,37 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
 
             {item.hashtags.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-1">
-                {(item.hashtags as string[]).map(tag => (
-                  <span key={tag} className="text-xs text-[#16A34A]">{tag}</span>
+                {item.hashtags.map(tag => (
+                  <span key={tag} className="text-xs text-primary">
+                    {tag}
+                  </span>
                 ))}
               </div>
             )}
           </div>
+
+          {/* ---- Media section (image / carousel posts only) ---- */}
+          {needsMedia && (
+            <div className="rounded-xl border bg-card p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <ImageIcon className="size-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">
+                  {item.contentType === 'carousel' ? 'Carousel images' : 'Post image'}
+                </h3>
+                {needsMedia && !hasMedia && (
+                  <span className="ml-auto rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                    Image required to publish
+                  </span>
+                )}
+              </div>
+
+              <MediaUploader
+                contentItemId={item.id}
+                existingUrls={item.graphicUrls || []}
+                onUpdate={urls => setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev)}
+              />
+            </div>
+          )}
 
           {/* Platform adaptations */}
           {Object.keys(item.platformSpecific || {}).length > 0 && (
@@ -264,8 +376,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 {Object.entries(item.platformSpecific).map(([platform, text]) => (
                   <div key={platform} className="rounded-lg bg-muted/50 p-3">
                     <div className="mb-1 flex items-center gap-1.5">
-                      <span>{PLATFORM_EMOJI[platform] || ''}</span>
-                      <span className="text-xs font-semibold capitalize">{platform}</span>
+                      <span className="text-xs font-semibold capitalize">
+                        {PLATFORM_LABELS[platform] || platform}
+                      </span>
                     </div>
                     <p className="text-sm text-muted-foreground">{text}</p>
                   </div>
@@ -283,54 +396,203 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           )}
         </div>
 
-        {/* Sidebar */}
+        {/* ---- Sidebar ---- */}
         <div className="space-y-4">
-          {/* Actions card */}
+          {/* Actions */}
           <div className="space-y-3 rounded-xl border bg-card p-5">
             <h3 className="text-sm font-semibold">Actions</h3>
+
+            {/* Approve */}
             {(item.status === 'pending_review' || item.status === 'draft') && (
-              <button onClick={() => updateStatus('approved')} disabled={!!actionLoading} className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#16A34A] px-3 py-2.5 text-sm font-medium text-white hover:bg-[#15803d] disabled:opacity-60">
+              <button
+                type="button"
+                onClick={() => updateStatus('approved')}
+                disabled={!!actionLoading}
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+              >
                 <Check className="size-4" />
                 {' '}
                 Approve
               </button>
             )}
+
+            {/* Publish now */}
             {item.status === 'approved' && (
-              <button onClick={publishNow} disabled={!!actionLoading} className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 py-2.5 text-sm font-medium text-background hover:opacity-90 disabled:opacity-60">
-                {actionLoading === 'publish' ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-                Publish now
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={publishNow}
+                  disabled={!!actionLoading || !canPublish}
+                  title={needsMedia && !hasMedia ? 'Add an image before publishing' : undefined}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 py-2.5 text-sm font-medium text-background hover:opacity-90 disabled:opacity-50"
+                >
+                  {actionLoading === 'publish'
+                    ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      )
+                    : (
+                        <Send className="size-4" />
+                      )}
+                  Publish now
+                </button>
+
+                {/* Schedule button */}
+                <button
+                  type="button"
+                  onClick={() => setShowScheduler(prev => !prev)}
+                  disabled={!!actionLoading || (needsMedia && !hasMedia)}
+                  title={needsMedia && !hasMedia ? 'Add an image before scheduling' : undefined}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-medium hover:bg-muted disabled:opacity-50"
+                >
+                  <Calendar className="size-4" />
+                  {item.scheduledFor ? 'Reschedule' : 'Schedule'}
+                </button>
+              </>
             )}
+
+            {/* Unschedule / publish now for scheduled posts */}
+            {item.status === 'scheduled' && (
+              <>
+                <div className="rounded-lg bg-purple-50 px-3 py-2.5 text-center">
+                  <p className="text-xs text-purple-700">
+                    Scheduled for
+                    {' '}
+                    <span className="font-semibold">
+                      {new Date(item.scheduledFor!).toLocaleString()}
+                    </span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowScheduler(prev => !prev)}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-medium hover:bg-muted"
+                >
+                  <Calendar className="size-4" />
+                  {' '}
+                  Reschedule
+                </button>
+                <button
+                  type="button"
+                  onClick={publishNow}
+                  disabled={!!actionLoading}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 py-2.5 text-sm font-medium text-background hover:opacity-90 disabled:opacity-50"
+                >
+                  {actionLoading === 'publish'
+                    ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      )
+                    : (
+                        <Send className="size-4" />
+                      )}
+                  Publish now
+                </button>
+              </>
+            )}
+
+            {/* Scheduler panel */}
+            {showScheduler && (
+              <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs font-medium">Pick a date and time</p>
+                <div className="space-y-2">
+                  <input
+                    type="date"
+                    value={scheduleDate}
+                    min={new Date().toISOString().split('T')[0]}
+                    onChange={e => setScheduleDate(e.target.value)}
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                  <input
+                    type="time"
+                    value={scheduleTime}
+                    onChange={e => setScheduleTime(e.target.value)}
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={schedulePost}
+                    disabled={!scheduleDate || !scheduleTime || actionLoading === 'schedule'}
+                    className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                  >
+                    {actionLoading === 'schedule'
+                      ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        )
+                      : (
+                          <Check className="size-3" />
+                        )}
+                    Confirm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowScheduler(false)}
+                    className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Reject */}
             {item.status !== 'published' && item.status !== 'rejected' && (
-              <button onClick={() => updateStatus('rejected')} disabled={!!actionLoading} className="flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-medium hover:bg-red-50 hover:text-red-600">
+              <button
+                type="button"
+                onClick={() => updateStatus('rejected')}
+                disabled={!!actionLoading}
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-medium hover:bg-red-50 hover:text-red-600"
+              >
                 <X className="size-4" />
                 {' '}
                 Reject
               </button>
             )}
-            <button onClick={deleteItem} disabled={!!actionLoading} className="flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-medium text-red-500 hover:bg-red-50">
+
+            {/* Delete */}
+            <button
+              type="button"
+              onClick={deleteItem}
+              disabled={!!actionLoading}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-medium text-red-500 hover:bg-red-50"
+            >
               <Trash2 className="size-4" />
               {' '}
               Delete
             </button>
+
+            {/* Warning if image post has no image */}
+            {needsMedia && !hasMedia && item.status === 'approved' && (
+              <p className="text-center text-[11px] text-amber-600">
+                Add an image in the media section before publishing.
+              </p>
+            )}
           </div>
 
-          {/* Details card */}
+          {/* Details */}
           <div className="space-y-3 rounded-xl border bg-card p-5">
             <h3 className="text-sm font-semibold">Details</h3>
-            <DetailRow label="Type" value={item.contentType.replace('_', ' ')} />
+            <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
             <DetailRow label="Topic" value={item.topic || 'Auto-selected'} />
-            <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_EMOJI[p] || p).join(' ')} />
+            <DetailRow
+              label="Platforms"
+              value={(item.targetPlatforms || [])
+                .map(p => PLATFORM_LABELS[p] || p)
+                .join(', ')}
+            />
             {item.antiSlopScore !== null && (
               <DetailRow label="Quality score" value={`${Math.round(item.antiSlopScore * 100)}%`} />
             )}
             <DetailRow label="Created" value={new Date(item.createdAt).toLocaleString()} />
+            {item.scheduledFor && (
+              <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />
+            )}
             {item.publishedAt && (
               <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />
             )}
           </div>
 
-          {/* Engagement card (for published content) */}
+          {/* Engagement (published only) */}
           {item.status === 'published' && (
             <div className="space-y-3 rounded-xl border bg-card p-5">
               <h3 className="text-sm font-semibold">Engagement</h3>
@@ -355,9 +617,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="text-sm font-medium">{value}</span>
+    <div className="flex items-start justify-between gap-3">
+      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
+      <span className="text-right text-sm font-medium capitalize">{value}</span>
     </div>
   );
 }

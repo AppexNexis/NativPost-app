@@ -82,7 +82,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       const platformCaptions = (item.platformSpecific as Record<string, string>) || {};
       const caption = platformCaptions[platform] || item.caption;
 
-      // Get all graphic URLs — supports text (empty), single image, carousel, and video
+      // Get all graphic URLs — supports text (empty), single image, and carousel
       const graphicUrls = (item.graphicUrls as string[]) || [];
 
       const result = await publishToplatform(
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         account.accessToken,
         account.platformUserId || '',
         caption,
-        graphicUrls,
+        graphicUrls, // full array — dispatcher handles text/single/carousel
         account.refreshToken || undefined,
         async (newAccessToken: string, newRefreshToken: string) => {
           await db
@@ -102,7 +102,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             })
             .where(eq(socialAccountSchema.id, account.id));
         },
-        item.contentType, // ← tells dispatcher whether this is a reel/video post
       );
 
       results.push({ platform, ...result });
@@ -142,8 +141,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       // eslint-disable-next-line no-console
       console.log({ successPlatforms, caption: item.caption });
 
+      // Fetch user email from Clerk and send notification
       try {
         const clerk = await clerkClient();
+        // Fetch user email and org name in parallel
         const [user, org] = await Promise.all([
           clerk.users.getUser(userId!),
           clerk.organizations.getOrganization({ organizationId: orgId! }),
@@ -152,6 +153,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         const orgName = org.name || orgId!;
 
         if (userEmail) {
+          // Fire-and-forget — never blocks the response
           sendPublishedNotification(
             userEmail,
             orgName,
@@ -160,6 +162,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           ).catch(err => console.error('[Email] sendPublishedNotification failed:', err));
         }
       } catch (emailErr) {
+        // Never let email failure affect the publish response
         console.error('[Email] Failed to send publish notification:', emailErr);
       }
     }

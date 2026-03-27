@@ -1,9 +1,7 @@
 /**
  * NativPost Social Publishing Service
  *
- * Publishes content to connected social platforms.
- * Supports: text, single image, and carousel (multi-image) posts.
- *
+ * Supports: text, single image, carousel, and video (reel) posts.
  * All functions return { success, platformPostId?, error? }
  */
 
@@ -16,6 +14,27 @@ export type PublishResult = {
 };
 
 // ============================================================
+// SHARED UTILITIES
+// ============================================================
+
+/** Fetch a remote file and return its buffer + content-type */
+async function fetchMediaBuffer(
+  url: string,
+): Promise<{ buffer: ArrayBuffer; contentType: string } | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      return null;
+    }
+    const buffer = await res.arrayBuffer();
+    const contentType = res.headers.get('content-type') || 'application/octet-stream';
+    return { buffer, contentType };
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================
 // FACEBOOK
 // ============================================================
 
@@ -24,8 +43,31 @@ export async function publishToFacebook(
   pageId: string,
   caption: string,
   imageUrls: string[] = [],
+  videoUrl?: string,
 ): Promise<PublishResult> {
   try {
+    // --- Video post ---
+    if (videoUrl) {
+      // Facebook accepts external video URLs via /videos endpoint
+      const res = await fetch(
+        `https://graph.facebook.com/v21.0/${pageId}/videos`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            file_url: videoUrl,
+            description: caption,
+            access_token: accessToken,
+          }),
+        },
+      );
+      const data = await res.json();
+      if (data.id) {
+        return { success: true, platformPostId: data.id };
+      }
+      return { success: false, error: data.error?.message || 'Facebook video post failed' };
+    }
+
     // --- No images: text post ---
     if (imageUrls.length === 0) {
       const res = await fetch(
@@ -61,31 +103,24 @@ export async function publishToFacebook(
       if (data.id) {
         return { success: true, platformPostId: data.id };
       }
-      return { success: false, error: data.error?.message || 'Facebook single image post failed' };
+      return { success: false, error: data.error?.message || 'Facebook image post failed' };
     }
 
-    // --- Carousel: upload each photo as unpublished, then post with attached_media ---
+    // --- Carousel: upload each photo unpublished then attach ---
     const photoIds: string[] = [];
-
     for (const url of imageUrls) {
       const res = await fetch(
         `https://graph.facebook.com/v21.0/${pageId}/photos`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url,
-            published: false,
-            access_token: accessToken,
-          }),
+          body: JSON.stringify({ url, published: false, access_token: accessToken }),
         },
       );
       const data = await res.json();
-      if (!data.id) {
-        console.error('[Facebook] Failed to upload photo for carousel:', JSON.stringify(data));
-        continue;
+      if (data.id) {
+        photoIds.push(data.id);
       }
-      photoIds.push(data.id);
     }
 
     if (photoIds.length === 0) {
@@ -105,7 +140,6 @@ export async function publishToFacebook(
       },
     );
     const feedData = await feedRes.json();
-
     if (feedData.id) {
       return { success: true, platformPostId: feedData.id };
     }
@@ -124,10 +158,71 @@ export async function publishToInstagram(
   igUserId: string,
   caption: string,
   imageUrls: string[] = [],
+  videoUrl?: string,
 ): Promise<PublishResult> {
   try {
+    // --- Reel (video) ---
+    if (videoUrl) {
+      // Step 1: Create reel container
+      const containerRes = await fetch(
+        `https://graph.facebook.com/v21.0/${igUserId}/media`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            media_type: 'REELS',
+            video_url: videoUrl,
+            caption,
+            share_to_feed: true,
+            access_token: accessToken,
+          }),
+        },
+      );
+      const containerData = await containerRes.json();
+      if (!containerData.id) {
+        return {
+          success: false,
+          error: containerData.error?.message || 'IG Reel container creation failed',
+        };
+      }
+
+      // Step 2: Poll until status = FINISHED (max 30 attempts, 3s apart)
+      const creationId = containerData.id;
+      for (let attempt = 0; attempt < 30; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        const statusRes = await fetch(
+          `https://graph.facebook.com/v21.0/${creationId}?fields=status_code&access_token=${accessToken}`,
+        );
+        const statusData = await statusRes.json();
+        // eslint-disable-next-line no-console
+        console.log(`[Instagram] Reel status: ${statusData.status_code} (attempt ${attempt + 1})`);
+
+        if (statusData.status_code === 'FINISHED') {
+          break;
+        }
+        if (statusData.status_code === 'ERROR') {
+          return { success: false, error: 'IG Reel processing failed on Instagram servers' };
+        }
+      }
+
+      // Step 3: Publish
+      const publishRes = await fetch(
+        `https://graph.facebook.com/v21.0/${igUserId}/media_publish`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ creation_id: creationId, access_token: accessToken }),
+        },
+      );
+      const publishData = await publishRes.json();
+      if (publishData.id) {
+        return { success: true, platformPostId: publishData.id };
+      }
+      return { success: false, error: publishData.error?.message || 'IG Reel publish failed' };
+    }
+
     if (imageUrls.length === 0) {
-      return { success: false, error: 'Instagram requires at least one image' };
+      return { success: false, error: 'Instagram requires at least one image or a video' };
     }
 
     // --- Single image ---
@@ -148,16 +243,12 @@ export async function publishToInstagram(
       if (!containerData.id) {
         return { success: false, error: containerData.error?.message || 'IG container creation failed' };
       }
-
       const publishRes = await fetch(
         `https://graph.facebook.com/v21.0/${igUserId}/media_publish`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            creation_id: containerData.id,
-            access_token: accessToken,
-          }),
+          body: JSON.stringify({ creation_id: containerData.id, access_token: accessToken }),
         },
       );
       const publishData = await publishRes.json();
@@ -167,10 +258,8 @@ export async function publishToInstagram(
       return { success: false, error: publishData.error?.message || 'IG publish failed' };
     }
 
-    // --- Carousel (2–10 images) ---
-    // Step 1: Create a child container per image
+    // --- Carousel (2-10 images) ---
     const childIds: string[] = [];
-
     for (const url of imageUrls.slice(0, 10)) {
       const childRes = await fetch(
         `https://graph.facebook.com/v21.0/${igUserId}/media`,
@@ -185,21 +274,15 @@ export async function publishToInstagram(
         },
       );
       const childData = await childRes.json();
-      if (!childData.id) {
-        console.error('[Instagram] Failed to create child container:', JSON.stringify(childData));
-        continue;
+      if (childData.id) {
+        childIds.push(childData.id);
       }
-      childIds.push(childData.id);
     }
 
     if (childIds.length < 2) {
-      return {
-        success: false,
-        error: `Instagram carousel requires at least 2 images. Only ${childIds.length} uploaded successfully.`,
-      };
+      return { success: false, error: `Instagram carousel needs at least 2 images. Got ${childIds.length}.` };
     }
 
-    // Step 2: Create the parent carousel container
     const carouselRes = await fetch(
       `https://graph.facebook.com/v21.0/${igUserId}/media`,
       {
@@ -214,25 +297,19 @@ export async function publishToInstagram(
       },
     );
     const carouselData = await carouselRes.json();
-
     if (!carouselData.id) {
       return { success: false, error: carouselData.error?.message || 'IG carousel container failed' };
     }
 
-    // Step 3: Publish the carousel
     const publishRes = await fetch(
       `https://graph.facebook.com/v21.0/${igUserId}/media_publish`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          creation_id: carouselData.id,
-          access_token: accessToken,
-        }),
+        body: JSON.stringify({ creation_id: carouselData.id, access_token: accessToken }),
       },
     );
     const publishData = await publishRes.json();
-
     if (publishData.id) {
       return { success: true, platformPostId: publishData.id };
     }
@@ -244,11 +321,6 @@ export async function publishToInstagram(
 
 // ============================================================
 // LINKEDIN
-//
-// LinkedIn does NOT accept external image URLs.
-// Every image must be registered + uploaded to LinkedIn CDN first
-// to get an asset URN, then referenced in the post.
-// Works for both single image and carousel (array of URNs).
 // ============================================================
 
 async function uploadImageToLinkedIn(
@@ -257,7 +329,6 @@ async function uploadImageToLinkedIn(
   imageUrl: string,
 ): Promise<string | null> {
   try {
-    // 1. Register the upload with LinkedIn
     const registerRes = await fetch(
       'https://api.linkedin.com/v2/assets?action=registerUpload',
       {
@@ -272,10 +343,7 @@ async function uploadImageToLinkedIn(
             recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
             owner: authorUrn,
             serviceRelationships: [
-              {
-                relationshipType: 'OWNER',
-                identifier: 'urn:li:userGeneratedContent',
-              },
+              { relationshipType: 'OWNER', identifier: 'urn:li:userGeneratedContent' },
             ],
           },
         }),
@@ -283,46 +351,111 @@ async function uploadImageToLinkedIn(
     );
 
     const registerData = await registerRes.json();
-    const uploadUrl
-      = registerData?.value?.uploadMechanism?.[
-        'com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest'
-      ]?.uploadUrl;
+    const uploadUrl = registerData?.value?.uploadMechanism?.[
+      'com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest'
+    ]?.uploadUrl;
     const assetUrn = registerData?.value?.asset;
 
     if (!uploadUrl || !assetUrn) {
-      console.error('[LinkedIn] Register upload failed:', JSON.stringify(registerData));
+      console.error('[LinkedIn] Register image upload failed:', JSON.stringify(registerData));
       return null;
     }
 
-    // 2. Fetch the image bytes from Uploadcare/CDN
-    const imageRes = await fetch(imageUrl);
-    if (!imageRes.ok) {
-      console.error('[LinkedIn] Failed to fetch image:', imageUrl);
+    const media = await fetchMediaBuffer(imageUrl);
+    if (!media) {
       return null;
     }
-    const imageBuffer = await imageRes.arrayBuffer();
-    const contentType = imageRes.headers.get('content-type') || 'image/jpeg';
 
-    // 3. PUT the bytes to LinkedIn's upload URL
     const uploadRes = await fetch(uploadUrl, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': contentType,
+        'Content-Type': media.contentType,
       },
-      body: imageBuffer,
+      body: media.buffer,
+    });
+
+    if (uploadRes.ok || uploadRes.status === 201) {
+      return assetUrn as string;
+    }
+    console.error('[LinkedIn] Image binary upload failed:', uploadRes.status);
+    return null;
+  } catch (err) {
+    console.error('[LinkedIn] uploadImageToLinkedIn error:', err);
+    return null;
+  }
+}
+
+async function uploadVideoToLinkedIn(
+  accessToken: string,
+  authorUrn: string,
+  videoUrl: string,
+): Promise<string | null> {
+  try {
+    // Step 1: Register video upload — uses feedshare-video recipe
+    const registerRes = await fetch(
+      'https://api.linkedin.com/v2/assets?action=registerUpload',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'X-Restli-Protocol-Version': '2.0.0',
+        },
+        body: JSON.stringify({
+          registerUploadRequest: {
+            recipes: ['urn:li:digitalmediaRecipe:feedshare-video'],
+            owner: authorUrn,
+            serviceRelationships: [
+              { relationshipType: 'OWNER', identifier: 'urn:li:userGeneratedContent' },
+            ],
+          },
+        }),
+      },
+    );
+
+    const registerData = await registerRes.json();
+    const uploadUrl = registerData?.value?.uploadMechanism?.[
+      'com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest'
+    ]?.uploadUrl;
+    const assetUrn = registerData?.value?.asset;
+
+    if (!uploadUrl || !assetUrn) {
+      console.error('[LinkedIn] Register video upload failed:', JSON.stringify(registerData));
+      return null;
+    }
+
+    // Step 2: Fetch video bytes from Uploadcare CDN
+    // eslint-disable-next-line no-console
+    console.log('[LinkedIn] Fetching video for upload...');
+    const media = await fetchMediaBuffer(videoUrl);
+    if (!media) {
+      console.error('[LinkedIn] Failed to fetch video from URL:', videoUrl);
+      return null;
+    }
+
+    // Step 3: Upload binary to LinkedIn
+    // eslint-disable-next-line no-console
+    console.log(`[LinkedIn] Uploading video (${(media.buffer.byteLength / 1024 / 1024).toFixed(1)} MB)...`);
+    const uploadRes = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'video/mp4',
+      },
+      body: media.buffer,
     });
 
     if (uploadRes.ok || uploadRes.status === 201) {
       // eslint-disable-next-line no-console
-      console.log('[LinkedIn] Image uploaded, URN:', assetUrn);
+      console.log('[LinkedIn] Video uploaded, URN:', assetUrn);
       return assetUrn as string;
     }
 
-    console.error('[LinkedIn] Binary upload failed, status:', uploadRes.status);
+    console.error('[LinkedIn] Video upload failed, status:', uploadRes.status);
     return null;
   } catch (err) {
-    console.error('[LinkedIn] uploadImageToLinkedIn error:', err);
+    console.error('[LinkedIn] uploadVideoToLinkedIn error:', err);
     return null;
   }
 }
@@ -332,13 +465,54 @@ export async function publishToLinkedIn(
   authorUrn: string,
   caption: string,
   imageUrls: string[] = [],
+  videoUrl?: string,
 ): Promise<PublishResult> {
   try {
     const author = authorUrn.startsWith('urn:li:')
       ? authorUrn
       : `urn:li:person:${authorUrn}`;
 
-    // Upload all images sequentially and collect their URNs
+    // --- Video post ---
+    if (videoUrl) {
+      const assetUrn = await uploadVideoToLinkedIn(accessToken, author, videoUrl);
+
+      if (!assetUrn) {
+        console.warn('[LinkedIn] Video upload failed — falling back to text-only post');
+        // Fall through to text-only
+      } else {
+        const postBody = {
+          author,
+          lifecycleState: 'PUBLISHED',
+          specificContent: {
+            'com.linkedin.ugc.ShareContent': {
+              shareCommentary: { text: caption },
+              shareMediaCategory: 'VIDEO',
+              media: [{ status: 'READY', media: assetUrn }],
+            },
+          },
+          visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' },
+        };
+
+        const res = await fetch('https://api.linkedin.com/v2/ugcPosts', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'X-Restli-Protocol-Version': '2.0.0',
+          },
+          body: JSON.stringify(postBody),
+        });
+
+        const data = await res.json();
+        if (data.id) {
+          return { success: true, platformPostId: data.id };
+        }
+        console.error('[LinkedIn] Video post failed:', JSON.stringify(data));
+        return { success: false, error: data.message || 'LinkedIn video post failed' };
+      }
+    }
+
+    // --- Image / carousel / text post ---
     const assetUrns: string[] = [];
     for (const url of imageUrls) {
       const urn = await uploadImageToLinkedIn(accessToken, author, url);
@@ -347,29 +521,19 @@ export async function publishToLinkedIn(
       }
     }
 
-    if (imageUrls.length > 0 && assetUrns.length === 0) {
-      console.warn('[LinkedIn] All image uploads failed — falling back to text-only post');
-    }
-
-    const postBody: Record<string, unknown> = {
+    const postBody = {
       author,
       lifecycleState: 'PUBLISHED',
       specificContent: {
         'com.linkedin.ugc.ShareContent': {
           shareCommentary: { text: caption },
-          // IMAGE category works for both single and carousel (array of URNs)
           shareMediaCategory: assetUrns.length > 0 ? 'IMAGE' : 'NONE',
           ...(assetUrns.length > 0 && {
-            media: assetUrns.map(urn => ({
-              status: 'READY',
-              media: urn,
-            })),
+            media: assetUrns.map(urn => ({ status: 'READY', media: urn })),
           }),
         },
       },
-      visibility: {
-        'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC',
-      },
+      visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' },
     };
 
     const res = await fetch('https://api.linkedin.com/v2/ugcPosts', {
@@ -383,11 +547,9 @@ export async function publishToLinkedIn(
     });
 
     const data = await res.json();
-
     if (data.id) {
       return { success: true, platformPostId: data.id };
     }
-
     console.error('[LinkedIn] Post failed:', JSON.stringify(data));
     return { success: false, error: data.message || 'LinkedIn publish failed' };
   } catch (err) {
@@ -397,19 +559,14 @@ export async function publishToLinkedIn(
 
 // ============================================================
 // TWITTER / X
-//
-// Twitter v2 API (OAuth 2.0 user tokens) only supports text tweets.
-// Attaching images requires v1.1 media/upload with OAuth 1.0a
-// app-level credentials — a separate auth flow not currently stored.
-//
-// Carousel posts publish as text-only for now.
-// Full image support requires storing OAuth 1.0a tokens at connect time.
+// (OAuth 2.0 — text only. Media requires OAuth 1.0a, out of scope)
 // ============================================================
 
 export async function publishToTwitter(
   accessToken: string,
   caption: string,
   imageUrls: string[] = [],
+  videoUrl?: string,
   refreshToken?: string,
   onTokenRefresh?: (newAccessToken: string, newRefreshToken: string) => Promise<void>,
 ): Promise<PublishResult> {
@@ -419,10 +576,7 @@ export async function publishToTwitter(
     if (!result.success && result.error === 'Unauthorized' && refreshToken) {
       const refreshed = await refreshTwitterToken(refreshToken);
       if (!refreshed) {
-        return {
-          success: false,
-          error: 'Twitter token expired. Please reconnect your Twitter account.',
-        };
+        return { success: false, error: 'Twitter token expired. Please reconnect your Twitter account.' };
       }
       if (onTokenRefresh) {
         await onTokenRefresh(refreshed.accessToken, refreshed.refreshToken);
@@ -430,11 +584,9 @@ export async function publishToTwitter(
       return postTweet(refreshed.accessToken, caption);
     }
 
-    if (result.success && imageUrls.length > 0) {
+    if (result.success && (imageUrls.length > 0 || videoUrl)) {
       // eslint-disable-next-line no-console
-      console.log(
-        `[Twitter] Published as text-only. ${imageUrls.length} image(s) skipped — requires OAuth 1.0a for media upload.`,
-      );
+      console.log('[Twitter] Published as text-only — media upload requires OAuth 1.0a (future implementation)');
     }
 
     return result;
@@ -452,9 +604,7 @@ async function postTweet(accessToken: string, text: string): Promise<PublishResu
     },
     body: JSON.stringify({ text }),
   });
-
   const data = await res.json();
-
   if (res.status === 401) {
     return { success: false, error: 'Unauthorized' };
   }
@@ -471,7 +621,6 @@ async function refreshTwitterToken(
     const clientId = process.env.TWITTER_CLIENT_ID!;
     const clientSecret = process.env.TWITTER_CLIENT_SECRET!;
     const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-
     const res = await fetch('https://api.x.com/2/oauth2/token', {
       method: 'POST',
       headers: {
@@ -484,13 +633,9 @@ async function refreshTwitterToken(
         client_id: clientId,
       }),
     });
-
     const data = await res.json();
     if (data.access_token) {
-      return {
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token || refreshToken,
-      };
+      return { accessToken: data.access_token, refreshToken: data.refresh_token || refreshToken };
     }
     return null;
   } catch {
@@ -516,8 +661,9 @@ export async function publishToTikTok(
 // ============================================================
 // DISPATCHER
 //
-// imageUrls is now a string array instead of a single optional string.
-// The publish route must pass the full graphicUrls array here.
+// graphicUrls convention for reel posts:
+//   [0] = 9:16 vertical MP4  → used for Instagram
+//   [1] = 1:1 square MP4     → used for LinkedIn, Facebook
 // ============================================================
 
 export async function publishToplatform(
@@ -525,22 +671,38 @@ export async function publishToplatform(
   accessToken: string,
   platformUserId: string,
   caption: string,
-  imageUrls: string[] = [],
+  graphicUrls: string[] = [],
   refreshToken?: string,
   onTokenRefresh?: (newAccessToken: string, newRefreshToken: string) => Promise<void>,
+  contentType?: string,
 ): Promise<PublishResult> {
+  const isVideo = contentType === 'reel';
+
+  // For video posts: pick the right version per platform
+  // graphicUrls[0] = 9:16 vertical, graphicUrls[1] = 1:1 square
+  const verticalVideo = isVideo ? graphicUrls[0] : undefined; // Instagram
+  const squareVideo = isVideo ? (graphicUrls[1] || graphicUrls[0]) : undefined; // LinkedIn/Facebook
+  const imageUrls = isVideo ? [] : graphicUrls;
+
   switch (platform) {
     case 'facebook':
-      return publishToFacebook(accessToken, platformUserId, caption, imageUrls);
+      return publishToFacebook(accessToken, platformUserId, caption, imageUrls, squareVideo);
 
     case 'instagram':
-      return publishToInstagram(accessToken, platformUserId, caption, imageUrls);
+      return publishToInstagram(accessToken, platformUserId, caption, imageUrls, verticalVideo);
 
     case 'linkedin':
-      return publishToLinkedIn(accessToken, platformUserId, caption, imageUrls);
+      return publishToLinkedIn(accessToken, platformUserId, caption, imageUrls, squareVideo);
 
     case 'twitter':
-      return publishToTwitter(accessToken, caption, imageUrls, refreshToken, onTokenRefresh);
+      return publishToTwitter(
+        accessToken,
+        caption,
+        imageUrls,
+        verticalVideo,
+        refreshToken,
+        onTokenRefresh,
+      );
 
     case 'tiktok':
       return publishToTikTok(accessToken, caption);
