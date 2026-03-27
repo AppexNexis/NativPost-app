@@ -9,18 +9,6 @@ import { brandProfileSchema, contentItemSchema } from '@/models/Schema';
 const VIDEO_RENDERER_URL = process.env.NATIVPOST_VIDEO_URL || 'http://localhost:3001';
 const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 
-// -----------------------------------------------------------
-// POST /api/content/[id]/generate-video
-//
-// Calls the Remotion renderer to produce two MP4 versions:
-//   - 9:16 vertical  (Instagram Reels, TikTok)
-//   - 1:1 square     (LinkedIn, Facebook)
-//
-// Stores both URLs in graphicUrls:
-//   graphicUrls[0] = vertical (9:16)
-//   graphicUrls[1] = square   (1:1)
-// -----------------------------------------------------------
-
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function POST(_request: NextRequest, { params }: RouteParams) {
@@ -31,8 +19,13 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
   const { id } = await params;
 
+  // Debug: log config on every call
+  // eslint-disable-next-line no-console
+  console.log('[Video] VIDEO_RENDERER_URL:', VIDEO_RENDERER_URL);
+  // eslint-disable-next-line no-console
+  console.log('[Video] ENGINE_API_KEY set:', !!ENGINE_API_KEY);
+
   try {
-    // 1. Fetch content item
     const [item] = await db
       .select()
       .from(contentItemSchema)
@@ -58,7 +51,6 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // 2. Fetch brand profile for colors + name
     const [profile] = await db
       .select({
         brandName: brandProfileSchema.brandName,
@@ -69,10 +61,21 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       .where(eq(brandProfileSchema.orgId, orgId!))
       .limit(1);
 
-    // 3. Call Remotion renderer
-    // 120s timeout — rendering two 15s videos takes ~30-60s
+    const payload = {
+      images: imageUrls,
+      caption: item.caption,
+      brandPrimary: profile?.primaryColor || '#864FFE',
+      brandSecondary: profile?.secondaryColor || '#1A1A1C',
+      brandName: profile?.brandName || 'NativPost',
+    };
+    // eslint-disable-next-line no-console
+    console.log('[Video] Calling renderer at:', `${VIDEO_RENDERER_URL}/render`);
+    // eslint-disable-next-line no-console
+    console.log('[Video] Payload images count:', imageUrls.length);
+
+    // 180s timeout — free tier renders slowly
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120_000);
+    const timeoutId = setTimeout(() => controller.abort(), 180_000);
 
     let renderRes: Response;
     try {
@@ -83,33 +86,36 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${ENGINE_API_KEY}`,
         },
-        body: JSON.stringify({
-          images: imageUrls,
-          caption: item.caption,
-          brandPrimary: profile?.primaryColor || '#864FFE',
-          brandSecondary: profile?.secondaryColor || '#1A1A1C',
-          brandName: profile?.brandName || 'NativPost',
-        }),
+        body: JSON.stringify(payload),
       });
     } catch (fetchErr: unknown) {
       clearTimeout(timeoutId);
       const isAbort = fetchErr instanceof Error && fetchErr.name === 'AbortError';
+      console.error('[Video] Fetch error:', fetchErr);
       if (isAbort) {
         return NextResponse.json(
-          { error: 'Video renderer timed out. Try again in a moment.' },
+          { error: 'Video renderer timed out after 3 minutes. The free tier may be under load — try again.' },
           { status: 503 },
         );
       }
-      throw fetchErr;
+      return NextResponse.json(
+        { error: `Cannot reach video renderer: ${String(fetchErr)}` },
+        { status: 502 },
+      );
     } finally {
       clearTimeout(timeoutId);
     }
 
     if (!renderRes.ok) {
-      const err = await renderRes.text();
-      console.error('[Video] Renderer error:', err);
+      const errText = await renderRes.text();
+      console.error('[Video] Renderer returned error:', renderRes.status, errText);
+      // Return the actual error from the renderer so we can debug
       return NextResponse.json(
-        { error: 'Video generation failed. Please try again.' },
+        {
+          error: 'Video generation failed.',
+          detail: errText,
+          rendererStatus: renderRes.status,
+        },
         { status: 502 },
       );
     }
@@ -119,17 +125,15 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       square: string;
       durationSeconds: number;
     };
+    // eslint-disable-next-line no-console
+    console.log('[Video] Render success:', renderData.vertical, renderData.square);
 
-    // 4. Store video URLs in graphicUrls
-    // Convention: [0] = vertical 9:16, [1] = square 1:1
-    // Images that were used as source are stored in platformSpecific.sourceImages
     const videoUrls = [renderData.vertical, renderData.square];
 
     await db
       .update(contentItemSchema)
       .set({
         graphicUrls: videoUrls,
-        // Store source images in platformSpecific for reference
         platformSpecific: {
           ...(item.platformSpecific as object),
           sourceImages: imageUrls,
@@ -147,6 +151,6 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     });
   } catch (err) {
     console.error('[Video] generate-video failed:', err);
-    return NextResponse.json({ error: 'Video generation failed' }, { status: 500 });
+    return NextResponse.json({ error: `Video generation failed: ${String(err)}` }, { status: 500 });
   }
 }
