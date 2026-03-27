@@ -3,7 +3,6 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-// import { db } from '@/lib/db';
 import { db } from '@/libs/DB';
 import { contentItemSchema } from '@/models/Schema';
 
@@ -47,7 +46,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
 // -----------------------------------------------------------
 // PATCH /api/content/[id]
-// Update a content item (edit caption, change status, approve/reject)
+// Update caption, status, scheduledFor, graphicUrls, etc.
 // -----------------------------------------------------------
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const { error, orgId } = await getAuthContext();
@@ -60,7 +59,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const body = await request.json();
 
-    // Only allow updating specific fields
     const updates: Record<string, unknown> = { updatedAt: new Date() };
 
     if (body.caption !== undefined) {
@@ -69,32 +67,52 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (body.hashtags !== undefined) {
       updates.hashtags = body.hashtags;
     }
+
     if (body.status !== undefined) {
       const validStatuses = ['draft', 'pending_review', 'approved', 'scheduled', 'published', 'rejected'];
       if (validStatuses.includes(body.status)) {
         updates.status = body.status;
       }
     }
+
     if (body.scheduledFor !== undefined) {
       updates.scheduledFor = body.scheduledFor ? new Date(body.scheduledFor) : null;
     }
+
     if (body.publishedAt !== undefined) {
       updates.publishedAt = body.publishedAt ? new Date(body.publishedAt) : null;
     }
+
     if (body.rejectionFeedback !== undefined) {
       updates.rejectionFeedback = body.rejectionFeedback;
     }
+
     if (body.targetPlatforms !== undefined) {
       updates.targetPlatforms = body.targetPlatforms;
     }
+
     if (body.platformSpecific !== undefined) {
       updates.platformSpecific = body.platformSpecific;
     }
+
     if (body.isSelectedVariant !== undefined) {
       updates.isSelectedVariant = Boolean(body.isSelectedVariant);
     }
+
     if (body.engagementData !== undefined) {
       updates.engagementData = body.engagementData;
+    }
+
+    // --- Graphic URLs (image/carousel media) ---
+    if (body.graphicUrls !== undefined) {
+      if (!Array.isArray(body.graphicUrls)) {
+        return NextResponse.json({ error: 'graphicUrls must be an array' }, { status: 400 });
+      }
+      // Validate each entry is a string URL
+      const urls = body.graphicUrls.filter(
+        (u: unknown) => typeof u === 'string' && u.startsWith('http'),
+      );
+      updates.graphicUrls = urls;
     }
 
     const [updated] = await db
