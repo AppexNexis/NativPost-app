@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export type BrandProfileData = {
   brandName: string;
@@ -42,7 +42,7 @@ export const DEFAULT_PROFILE: BrandProfileData = {
   vocabulary: [],
   forbiddenWords: [],
   communicationStyle: '',
-  primaryColor: '#16A34A',
+  primaryColor: '#864FFE',
   secondaryColor: '#1A1A1C',
   accentColor: '#FCFCFC',
   fontPreference: '',
@@ -58,6 +58,41 @@ export const DEFAULT_PROFILE: BrandProfileData = {
   tiktokVoice: '',
 };
 
+const DRAFT_KEY = 'nativpost:brand-profile-draft';
+
+// -----------------------------------------------------------
+// Persist draft to localStorage — debounced to avoid thrashing
+// -----------------------------------------------------------
+function saveDraft(data: BrandProfileData) {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(data));
+  } catch {
+    // localStorage unavailable (SSR, private mode, full storage)
+  }
+}
+
+function loadDraft(): BrandProfileData | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as Partial<BrandProfileData>;
+    // Merge with defaults to handle schema additions over time
+    return { ...DEFAULT_PROFILE, ...parsed };
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft() {
+  try {
+    localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 type UseBrandProfileReturn = {
   data: BrandProfileData;
   setData: React.Dispatch<React.SetStateAction<BrandProfileData>>;
@@ -68,6 +103,8 @@ type UseBrandProfileReturn = {
   profileCompleteness: number;
   save: () => Promise<boolean>;
   error: string | null;
+  hasDraft: boolean;
+  discardDraft: () => void;
 };
 
 export function useBrandProfile(): UseBrandProfileReturn {
@@ -77,19 +114,26 @@ export function useBrandProfile(): UseBrandProfileReturn {
   const [hasProfile, setHasProfile] = useState(false);
   const [profileCompleteness, setProfileCompleteness] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [hasDraft, setHasDraft] = useState(false);
 
-  // Load existing profile on mount
+  // Debounce timer ref
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // -----------------------------------------------------------
+  // On mount: load from API first, then overlay any draft
+  // -----------------------------------------------------------
   useEffect(() => {
     async function load() {
       try {
         const res = await fetch('/api/brand-profile');
+        let serverData: BrandProfileData | null = null;
+
         if (res.ok) {
           const json = await res.json();
           if (json.profile) {
             setHasProfile(true);
             setProfileCompleteness(json.profile.profileCompleteness || 0);
-            // Map DB fields back to client state
-            setData({
+            serverData = {
               brandName: json.profile.brandName || '',
               industry: json.profile.industry || '',
               targetAudience: json.profile.targetAudience || '',
@@ -101,7 +145,7 @@ export function useBrandProfile(): UseBrandProfileReturn {
               vocabulary: json.profile.vocabulary || [],
               forbiddenWords: json.profile.forbiddenWords || [],
               communicationStyle: json.profile.communicationStyle || '',
-              primaryColor: json.profile.primaryColor || '#16A34A',
+              primaryColor: json.profile.primaryColor || '#864FFE',
               secondaryColor: json.profile.secondaryColor || '#1A1A1C',
               accentColor: json.profile.accentColor || '#FCFCFC',
               fontPreference: json.profile.fontPreference || '',
@@ -115,11 +159,27 @@ export function useBrandProfile(): UseBrandProfileReturn {
               twitterVoice: json.profile.twitterVoice || '',
               facebookVoice: json.profile.facebookVoice || '',
               tiktokVoice: json.profile.tiktokVoice || '',
-            });
+            };
           }
+        }
+
+        // Check for a local draft (unsaved edits made since last save)
+        const draft = loadDraft();
+        if (draft) {
+          setHasDraft(true);
+          // Draft takes priority over server data — user was mid-edit
+          setData(draft);
+        } else if (serverData) {
+          setData(serverData);
         }
       } catch (err) {
         console.error('Failed to load brand profile:', err);
+        // Fall back to draft if server is unreachable
+        const draft = loadDraft();
+        if (draft) {
+          setHasDraft(true);
+          setData(draft);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -127,8 +187,37 @@ export function useBrandProfile(): UseBrandProfileReturn {
     load();
   }, []);
 
+  // -----------------------------------------------------------
+  // Auto-save draft to localStorage on every data change
+  // Debounced 500ms so we don't write on every keystroke
+  // -----------------------------------------------------------
+  useEffect(() => {
+    if (isLoading) {
+      return;
+    } // Don't save the initial DEFAULT_PROFILE
+
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    debounceRef.current = setTimeout(() => {
+      saveDraft(data);
+      setHasDraft(true);
+    }, 500);
+
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, [data, isLoading]);
+
   const updateData = useCallback((updates: Partial<BrandProfileData>) => {
     setData(prev => ({ ...prev, ...updates }));
+  }, []);
+
+  const discardDraft = useCallback(() => {
+    clearDraft();
+    setHasDraft(false);
   }, []);
 
   const save = useCallback(async (): Promise<boolean> => {
@@ -150,6 +239,10 @@ export function useBrandProfile(): UseBrandProfileReturn {
       const json = await res.json();
       setHasProfile(true);
       setProfileCompleteness(json.profile.profileCompleteness || 0);
+
+      // Clear draft on successful save — data is now persisted server-side
+      clearDraft();
+      setHasDraft(false);
       return true;
     } catch (err) {
       console.error('Failed to save brand profile:', err);
@@ -170,5 +263,7 @@ export function useBrandProfile(): UseBrandProfileReturn {
     profileCompleteness,
     save,
     error,
+    hasDraft,
+    discardDraft,
   };
 }

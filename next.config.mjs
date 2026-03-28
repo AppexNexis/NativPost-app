@@ -27,6 +27,22 @@ export default withSentryConfig(
       experimental: {
         serverComponentsExternalPackages: ['@electric-sql/pglite'],
       },
+      images: {
+        remotePatterns: [
+          {
+            protocol: 'https',
+            hostname: '32v3ws8ss0.ucarecd.net',
+          },
+          {
+            protocol: 'https',
+            hostname: 'ucarecdn.com',
+          },
+          {
+            protocol: 'https',
+            hostname: '*.ucarecd.net',
+          },
+        ],
+      },
     }),
   ),
   {
