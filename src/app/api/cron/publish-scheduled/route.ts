@@ -2,26 +2,24 @@ import { and, eq, lte } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+import { publishToplatform } from '@/lib/social-publish';
 import { db } from '@/libs/DB';
-import { contentItemSchema } from '@/models/Schema';
+import {
+  contentItemSchema,
+  publishingQueueSchema,
+  socialAccountSchema,
+} from '@/models/Schema';
 
 // -----------------------------------------------------------
 // GET /api/cron/publish-scheduled
 //
-// Publishes all posts where:
-//   status = 'scheduled'  AND  scheduledFor <= now
+// Publishes all posts where status='scheduled' AND scheduledFor <= now
+// Called by GitHub Actions every 5 minutes.
+// Protected by CRON_SECRET header.
 //
-// Called by Render Cron Job every minute.
-// Protected by a secret key so only Render (or you) can trigger it.
-//
-// Render cron config (render.yaml):
-//   - type: cron
-//     name: nativpost-scheduler
-//     schedule: "* * * * *"   ← every minute
-//     command: "curl -X GET https://app.nativpost.com/api/cron/publish-scheduled -H 'Authorization: Bearer $CRON_SECRET'"
+// IMPORTANT: This route publishes directly via DB — no Clerk session needed.
 // -----------------------------------------------------------
 export async function GET(request: NextRequest) {
-  // Verify the cron secret so this endpoint can't be called publicly
   const authHeader = request.headers.get('Authorization');
   const cronSecret = process.env.CRON_SECRET;
 
@@ -31,20 +29,17 @@ export async function GET(request: NextRequest) {
   }
 
   if (authHeader !== `Bearer ${cronSecret}`) {
+    console.error('[Cron] Unauthorized attempt. Header:', authHeader?.slice(0, 20));
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const now = new Date();
+  console.log(`[Cron] Running at ${now.toISOString()}`);
 
   try {
-    // Find all posts that are scheduled and due
+    // 1. Find all due scheduled posts
     const duePosts = await db
-      .select({
-        id: contentItemSchema.id,
-        orgId: contentItemSchema.orgId,
-        targetPlatforms: contentItemSchema.targetPlatforms,
-        scheduledFor: contentItemSchema.scheduledFor,
-      })
+      .select()
       .from(contentItemSchema)
       .where(
         and(
@@ -56,42 +51,113 @@ export async function GET(request: NextRequest) {
     if (duePosts.length === 0) {
       return NextResponse.json({ published: 0, message: 'No posts due' });
     }
-    // eslint-disable-next-line no-console
-    console.log(`[Cron] Found ${duePosts.length} post(s) due for publishing`);
 
+    console.log(`[Cron] Found ${duePosts.length} post(s) due`);
     const results = [];
 
-    for (const post of duePosts) {
+    for (const item of duePosts) {
+      console.log(`[Cron] Publishing post ${item.id} for org ${item.orgId}`);
+
       try {
-        // Call the existing publish endpoint internally
-        // We use the full URL from the request origin so it works in any environment
-        const origin = new URL(request.url).origin;
-        const publishRes = await fetch(`${origin}/api/content/${post.id}/publish`, {
-          method: 'POST',
-          headers: {
-            // Pass org context via a special internal header
-            // The publish route uses getAuthContext() which reads Clerk session —
-            // for cron, we bypass auth by calling a direct DB publish instead.
-            'x-internal-cron': cronSecret,
-            'x-org-id': post.orgId,
-          },
+        const platforms = (item.targetPlatforms as string[]) || [];
+        if (platforms.length === 0) {
+          results.push({ id: item.id, success: false, error: 'No target platforms' });
+          continue;
+        }
+
+        // 2. Get connected social accounts for this org
+        const accounts = await db
+          .select()
+          .from(socialAccountSchema)
+          .where(
+            and(
+              eq(socialAccountSchema.orgId, item.orgId),
+              eq(socialAccountSchema.isActive, true),
+            ),
+          );
+
+        const platformResults: Array<{
+          platform: string;
+          success: boolean;
+          platformPostId?: string;
+          error?: string;
+        }> = [];
+
+        const graphicUrls = (item.graphicUrls as string[]) || [];
+        const platformCaptions = (item.platformSpecific as Record<string, string>) || {};
+
+        // 3. Publish to each platform
+        for (const platform of platforms) {
+          const account = accounts.find(a => a.platform === platform);
+
+          if (!account?.accessToken) {
+            platformResults.push({
+              platform,
+              success: false,
+              error: `No connected ${platform} account`,
+            });
+            continue;
+          }
+
+          const caption = platformCaptions[platform] || item.caption;
+
+          const result = await publishToplatform(
+            platform,
+            account.accessToken,
+            account.platformUserId || '',
+            caption,
+            graphicUrls,
+            account.refreshToken || undefined,
+            async (newAccessToken: string, newRefreshToken: string) => {
+              await db
+                .update(socialAccountSchema)
+                .set({
+                  accessToken: newAccessToken,
+                  refreshToken: newRefreshToken,
+                  tokenExpiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+                })
+                .where(eq(socialAccountSchema.id, account.id));
+            },
+            item.contentType,
+          );
+
+          platformResults.push({ platform, ...result });
+
+          // 4. Record in publishing queue
+          await db.insert(publishingQueueSchema).values({
+            contentItemId: item.id,
+            socialAccountId: account.id,
+            platform,
+            scheduledFor: new Date(),
+            status: result.success ? 'published' : 'failed',
+            platformPostId: result.platformPostId || null,
+            errorMessage: result.error || null,
+            publishedAt: result.success ? new Date() : null,
+          });
+        }
+
+        const someSucceeded = platformResults.some(r => r.success);
+
+        // 5. Update content item status
+        await db
+          .update(contentItemSchema)
+          .set({
+            status: someSucceeded ? 'published' : 'approved',
+            publishedAt: someSucceeded ? new Date() : null,
+            updatedAt: new Date(),
+          })
+          .where(eq(contentItemSchema.id, item.id));
+
+        results.push({
+          id: item.id,
+          success: someSucceeded,
+          platforms: platformResults,
         });
 
-        if (publishRes.ok) {
-          const data = await publishRes.json();
-          results.push({ id: post.id, success: true, results: data.results });
-          // eslint-disable-next-line no-console
-          console.log(`[Cron] Published post ${post.id}`);
-        } else {
-          const err = await publishRes.text();
-          results.push({ id: post.id, success: false, error: err });
-
-          console.error(`[Cron] Failed to publish post ${post.id}:`, err);
-        }
+        console.log(`[Cron] Post ${item.id}: ${someSucceeded ? 'published' : 'failed'}`);
       } catch (err) {
-        results.push({ id: post.id, success: false, error: String(err) });
-
-        console.error(`[Cron] Error publishing post ${post.id}:`, err);
+        console.error(`[Cron] Error publishing post ${item.id}:`, err);
+        results.push({ id: item.id, success: false, error: String(err) });
       }
     }
 
