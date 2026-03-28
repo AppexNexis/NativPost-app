@@ -889,7 +889,7 @@ function LogoUploader({ value, onChange }: { value: string; onChange: (v: string
       }
 
       const data = await res.json() as { file: string };
-      onChange(`https://ucarecdn.com/${data.file}/`);
+      onChange(`https://32v3ws8ss0.ucarecd.net/${data.file}/`);
     } catch {
       setUploadError('Upload failed. Please try again.');
     } finally {
