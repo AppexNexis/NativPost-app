@@ -11,15 +11,32 @@ type MediaUploaderProps = {
   contentItemId: string;
   existingUrls: string[];
   onUpdate: (urls: string[]) => void;
-  /** 'image' = images only, 'video' = video only, 'any' = both */
   mediaType?: 'image' | 'video' | 'any';
-  /** Max files allowed (1 for single_image/reel, unlimited for carousel) */
   maxFiles?: number;
 };
 
-// Detect if a URL is a video by extension or Uploadcare MIME type
+// Detect video by extension OR by Uploadcare CDN subdomain pattern.
+// Generated videos use: 32v3ws8ss0.ucarecd.net/uuid/filename.mp4
+// Uploaded videos via Uploadcare widget use: ucarecdn.com/uuid/ (no extension)
+// We treat any ucarecd.net URL as potentially video when mediaType === 'video'.
 function isVideoUrl(url: string): boolean {
-  return /\.(?:mp4|mov|webm|avi|mkv)(?:\?|$)/i.test(url) || url.includes('video');
+  return /\.(?:mp4|mov|webm|avi|mkv)(?:[/?#]|$)/i.test(url)
+    || url.includes('video')
+    || url.includes('.mp4');
+}
+
+// Build a playable video src from a bare Uploadcare CDN URL.
+// If the URL already has a filename with extension, use it as-is.
+// If it's a bare UUID URL, append a generic filename so browsers
+// can infer the MIME type.
+function toPlayableVideoSrc(url: string): string {
+  // Already has a video extension — use as-is
+  if (/\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(url)) {
+    return url;
+  }
+  // Bare Uploadcare URL — append filename so browser knows it's a video
+  const base = url.endsWith('/') ? url : `${url}/`;
+  return `${base}video.mp4`;
 }
 
 export function MediaUploader({
@@ -57,7 +74,6 @@ export function MediaUploader({
       return;
     }
 
-    // For video/single_image: replace existing. For carousel: merge.
     const merged = maxFiles === 1 ? newUrls : [...existingUrls, ...newUrls];
 
     setIsSaving(true);
@@ -69,11 +85,9 @@ export function MediaUploader({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ graphicUrls: merged }),
       });
-
       if (!res.ok) {
         throw new Error('Failed to save');
       }
-
       onUpdate(merged);
     } catch {
       setError('Failed to save media. Please try again.');
@@ -94,11 +108,9 @@ export function MediaUploader({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ graphicUrls: updated }),
       });
-
       if (!res.ok) {
         throw new Error('Failed to save');
       }
-
       onUpdate(updated);
     } catch {
       setError('Failed to remove media. Please try again.');
@@ -107,7 +119,6 @@ export function MediaUploader({
     }
   };
 
-  // Uploadcare config per media type
   const uploaderConfig = {
     image: {
       imgOnly: true,
@@ -129,22 +140,18 @@ export function MediaUploader({
     },
   }[mediaType];
 
-  const isVideo = mediaType === 'video';
-  const Icon = isVideo ? Video : ImageIcon;
+  const isVideoMode = mediaType === 'video';
+  const Icon = isVideoMode ? Video : ImageIcon;
 
   const uploadLabel = () => {
-    if (isVideo) {
-      return existingUrls.length === 0
-        ? 'Upload your video'
-        : 'Replace video';
+    if (isVideoMode) {
+      return existingUrls.length === 0 ? 'Upload your video' : 'Replace video';
     }
-    return existingUrls.length === 0
-      ? 'Add an image to this post'
-      : 'Add more images';
+    return existingUrls.length === 0 ? 'Add an image to this post' : 'Add more images';
   };
 
   const uploadHint = () => {
-    if (isVideo) {
+    if (isVideoMode) {
       return 'MP4, MOV, or WebM · Max 500MB · Upload from your computer, Drive, or Dropbox';
     }
     return 'Upload from your computer, URL, Unsplash, Google Drive, Dropbox, or Instagram';
@@ -154,14 +161,11 @@ export function MediaUploader({
     <div className="space-y-4">
       {/* Existing media previews */}
       {existingUrls.length > 0 && (
-        <div className={
-          isVideo
-            ? 'space-y-3'
-            : 'grid gap-3 sm:grid-cols-2'
-        }
-        >
+        <div className={isVideoMode ? 'space-y-3' : 'grid gap-3 sm:grid-cols-2'}>
           {existingUrls.map((url, i) => {
-            const isVid = isVideoUrl(url) || isVideo;
+            // Force video treatment when in video mode, otherwise detect by URL
+            const isVid = isVideoMode || isVideoUrl(url);
+            const videoSrc = isVid ? toPlayableVideoSrc(url) : url;
 
             return (
               <div
@@ -169,18 +173,17 @@ export function MediaUploader({
                 className="group relative overflow-hidden rounded-lg border bg-muted/30"
               >
                 {isVid ? (
-                  /* Video preview */
                   <div className="relative aspect-video w-full bg-black">
                     {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                     <video
-                      src={url}
+                      src={videoSrc}
                       className="size-full object-contain"
                       controls
                       preload="metadata"
+                      playsInline
                     />
                   </div>
                 ) : (
-                  /* Image preview */
                   <div className="relative aspect-video w-full">
                     <Image
                       src={url}
@@ -195,7 +198,7 @@ export function MediaUploader({
                 {/* Overlay controls */}
                 <div className="absolute right-2 top-2 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
                   <a
-                    href={url}
+                    href={isVid ? videoSrc : url}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex size-7 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black"
@@ -226,7 +229,7 @@ export function MediaUploader({
         </div>
       )}
 
-      {/* Upload widget — hide if at max */}
+      {/* Upload widget */}
       {!atMaxFiles && (
         <div className="relative">
           {isSaving && (
@@ -238,17 +241,13 @@ export function MediaUploader({
           <div className="rounded-lg border-2 border-dashed border-border/60 bg-muted/20 transition-colors hover:border-primary/40 hover:bg-muted/40">
             <div className="flex flex-col items-center gap-2 p-4 text-center">
               <Icon className="size-8 text-muted-foreground/40" />
-              <p className="text-sm font-medium text-muted-foreground">
-                {uploadLabel()}
-              </p>
-              <p className="text-xs text-muted-foreground/60">
-                {uploadHint()}
-              </p>
+              <p className="text-sm font-medium text-muted-foreground">{uploadLabel()}</p>
+              <p className="text-xs text-muted-foreground/60">{uploadHint()}</p>
             </div>
 
             <FileUploaderRegular
               pubkey={pubkey}
-              multiple={!isVideo && maxFiles !== 1}
+              multiple={!isVideoMode && maxFiles !== 1}
               imgOnly={uploaderConfig.imgOnly}
               accept={uploaderConfig.accept}
               sourceList={uploaderConfig.sourceList}
@@ -256,7 +255,6 @@ export function MediaUploader({
               onDoneClick={(files) => {
                 const uploaded = files.allEntries
                   .filter(f => f.status === 'success')
-
                   .map(f => ({ cdnUrl: (f as any).cdnUrl as string | null }));
                 handleUploadComplete(uploaded);
               }}
@@ -269,10 +267,9 @@ export function MediaUploader({
 
       {error && <p className="text-xs text-red-500">{error}</p>}
 
-      {/* Status text */}
       {existingUrls.length > 0 && (
         <p className="text-xs text-muted-foreground">
-          {isVideo
+          {isVideoMode
             ? 'Video attached. This will be published to all selected platforms.'
             : existingUrls.length === 1
               ? '1 image attached. This will be used when publishing.'

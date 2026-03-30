@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Calendar,
   Check,
+  ChevronRight,
   Copy,
   Edit3,
   ImageIcon,
@@ -16,7 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { MediaUploader } from '@/components/media/MediaUploader';
@@ -49,11 +50,11 @@ type ContentItem = {
 // CONFIG
 // -----------------------------------------------------------
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  draft: { label: 'Draft', color: 'bg-gray-100 text-gray-600' },
-  pending_review: { label: 'Pending review', color: 'bg-yellow-50 text-yellow-700' },
+  draft: { label: 'Draft', color: 'bg-zinc-100 text-zinc-600' },
+  pending_review: { label: 'Pending review', color: 'bg-amber-50 text-amber-700' },
   approved: { label: 'Approved', color: 'bg-blue-50 text-blue-700' },
-  scheduled: { label: 'Scheduled', color: 'bg-purple-50 text-purple-700' },
-  published: { label: 'Published', color: 'bg-green-50 text-green-700' },
+  scheduled: { label: 'Scheduled', color: 'bg-violet-50 text-violet-700' },
+  published: { label: 'Published', color: 'bg-emerald-50 text-emerald-700' },
   rejected: { label: 'Rejected', color: 'bg-red-50 text-red-700' },
 };
 
@@ -67,11 +68,23 @@ const PLATFORM_LABELS: Record<string, string> = {
 
 const MEDIA_CONTENT_TYPES = ['single_image', 'carousel', 'reel'];
 
+// Build a playable video src — bare Uploadcare URLs need a filename appended
+// so the browser can infer MIME type and render the video element correctly.
+function toVideoSrc(url: string): string {
+  if (/\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(url)) {
+    return url;
+  }
+  const base = url.endsWith('/') ? url : `${url}/`;
+  return `${base}video.mp4`;
+}
+
 // -----------------------------------------------------------
 // PAGE
 // -----------------------------------------------------------
 export default function ContentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [item, setItem] = useState<ContentItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
@@ -82,6 +95,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [scheduleTime, setScheduleTime] = useState('');
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [videoGenError, setVideoGenError] = useState<string | null>(null);
+  const [copyDone, setCopyDone] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -94,12 +108,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           setEditCaption(data.item.caption);
           if (data.item.scheduledFor) {
             const d = new Date(data.item.scheduledFor);
-            setScheduleDate(
-              d.toISOString().split('T')[0] ?? '',
-            );
-            setScheduleTime(
-              d.toISOString().split('T')[1]?.slice(0, 5) ?? '',
-            );
+            setScheduleDate(d.toISOString().split('T')[0] ?? '');
+            setScheduleTime(d.toISOString().split('T')[1]?.slice(0, 5) ?? '');
           }
         }
       } catch (err) {
@@ -110,6 +120,16 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     }
     load();
   }, [params]);
+
+  // Pre-fill scheduler if user arrived from the calendar with autoSchedule param
+  useEffect(() => {
+    const autoSchedule = searchParams.get('autoSchedule');
+    if (autoSchedule && !isLoading) {
+      setScheduleDate(autoSchedule);
+      setScheduleTime('09:00');
+      setShowScheduler(true);
+    }
+  }, [searchParams, isLoading]);
 
   const updateStatus = async (status: string) => {
     if (!item) {
@@ -150,6 +170,15 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const copyCaption = () => {
+    if (!item) {
+      return;
+    }
+    navigator.clipboard.writeText(item.caption);
+    setCopyDone(true);
+    setTimeout(() => setCopyDone(false), 1500);
   };
 
   const publishNow = async () => {
@@ -200,17 +229,13 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     setIsGeneratingVideo(true);
     setVideoGenError(null);
     try {
-      const res = await fetch(`/api/content/${item.id}/generate-video`, {
-        method: 'POST',
-      });
+      const res = await fetch(`/api/content/${item.id}/generate-video`, { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.success) {
-        // Only refresh if we got valid URLs back
         if (data.vertical && data.square) {
           const refreshRes = await fetch(`/api/content/${item.id}`);
           if (refreshRes.ok) {
             const refreshData = await refreshRes.json();
-            // Guard: only update state if item is valid
             if (refreshData?.item?.id) {
               setItem(refreshData.item);
             }
@@ -272,17 +297,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const isSingleImage = item.contentType === 'single_image';
   const hasMedia = item.graphicUrls && item.graphicUrls.length > 0;
 
-  // Source images stored in platformSpecific after video generation
   const sourceImages = (item.platformSpecific?.sourceImages as string[]) || [];
-
-  // A reel has a generated video if sourceImages exist in platformSpecific
-  // (they get stored there when generate-video succeeds)
-  // Uploadcare video URLs look like ucarecdn.com/uuid/ — no .mp4 extension
   const hasGeneratedVideo = isReel && sourceImages.length > 0 && hasMedia;
-
-  // For reel: must have an actual video (graphicUrls populated after generation)
   const hasVideo = isReel && hasGeneratedVideo;
-  // For image/carousel: need images
   const hasImages = (isSingleImage || isCarousel) && hasMedia;
   const canPublish = item.status === 'approved' && (!needsMedia || hasVideo || hasImages);
 
@@ -302,10 +319,10 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       />
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* ── Main content ── */}
+        {/* ── Main content ─────────────────────────────────── */}
         <div className="space-y-4 lg:col-span-2">
 
-          {/* Caption card */}
+          {/* Caption */}
           <div className="rounded-xl border bg-card p-5">
             <div className="mb-4 flex items-center justify-between">
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusConfig.color}`}>
@@ -316,21 +333,19 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   <button
                     type="button"
                     onClick={() => setIsEditing(true)}
-                    className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                    className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
                   >
                     <Edit3 className="size-3" />
-                    {' '}
                     Edit
                   </button>
                 )}
                 <button
                   type="button"
-                  onClick={() => navigator.clipboard.writeText(item.caption)}
-                  className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+                  onClick={copyCaption}
+                  className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
                 >
-                  <Copy className="size-3" />
-                  {' '}
-                  Copy
+                  {copyDone ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
+                  {copyDone ? 'Copied' : 'Copy'}
                 </button>
               </div>
             </div>
@@ -348,16 +363,17 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     type="button"
                     onClick={saveEdit}
                     disabled={actionLoading === 'save'}
-                    className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
                   >
-                    {actionLoading === 'save' ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+                    {actionLoading === 'save'
+                      ? <Loader2 className="size-3 animate-spin" />
+                      : <Check className="size-3" />}
                     Save changes
                   </button>
                   <button
                     type="button"
                     onClick={() => {
-                      setIsEditing(false);
-                      setEditCaption(item.caption);
+                      setIsEditing(false); setEditCaption(item.caption);
                     }}
                     className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
                   >
@@ -370,27 +386,28 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             )}
 
             {item.hashtags.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-1">
+              <div className="mt-4 flex flex-wrap gap-1.5 border-t pt-4">
                 {item.hashtags.map(tag => (
-                  <span key={tag} className="text-xs text-primary">{tag}</span>
+                  <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{tag}</span>
                 ))}
               </div>
             )}
           </div>
 
-          {/* ── REEL / VIDEO section ── */}
+          {/* ── Reel / Video ─────────────────────────────────── */}
           {isReel && (
             <div className="rounded-xl border bg-card p-5">
-              <div className="mb-4 flex items-center gap-2">
+              <div className="mb-4 flex items-center gap-2 border-b pb-4">
                 <Video className="size-4 text-muted-foreground" />
                 <h3 className="text-sm font-semibold">Video post</h3>
               </div>
 
-              {/* Step 1: Upload source images */}
-              <div className="mb-4">
-                <p className="mb-3 text-xs font-medium text-muted-foreground">
-                  Step 1 — Upload 3-5 images for the slideshow
-                </p>
+              {/* Step 1 */}
+              <div className="mb-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">1</span>
+                  <p className="text-xs font-medium text-muted-foreground">Upload 3–5 images for the slideshow</p>
+                </div>
                 <MediaUploader
                   contentItemId={item.id}
                   existingUrls={hasGeneratedVideo ? sourceImages : item.graphicUrls}
@@ -400,45 +417,45 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 />
               </div>
 
-              {/* Step 2: Generate video */}
+              {/* Step 2 */}
               {(hasGeneratedVideo ? sourceImages.length : item.graphicUrls.length) > 0 && (
-                <div className="border-t pt-4">
-                  <p className="mb-3 text-xs font-medium text-muted-foreground">
-                    Step 2 — Generate branded video
-                  </p>
+                <div className="border-t pt-5">
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">2</span>
+                    <p className="text-xs font-medium text-muted-foreground">Generate branded video</p>
+                  </div>
 
                   {hasGeneratedVideo ? (
-                    /* Show generated videos */
                     <div className="space-y-3">
                       <div className="grid gap-3 sm:grid-cols-2">
-                        {/* Vertical 9:16 */}
                         {item.graphicUrls[0] && (
-                          <div className="rounded-lg border bg-muted/30 p-3">
-                            <p className="mb-2 text-[11px] font-semibold text-muted-foreground">
-                              9:16 — Instagram Reels, TikTok
-                            </p>
+                          <div className="overflow-hidden rounded-lg border bg-black">
+                            <div className="border-b px-3 py-2">
+                              <p className="text-[11px] font-medium text-muted-foreground">9:16 — Instagram Reels, TikTok</p>
+                            </div>
                             {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                             <video
-                              src={item.graphicUrls[0]}
-                              className="w-full rounded-lg"
+                              src={toVideoSrc(item.graphicUrls[0])}
+                              className="w-full"
                               controls
                               preload="metadata"
-                              style={{ maxHeight: 280 }}
+                              playsInline
+                              style={{ maxHeight: 300 }}
                             />
                           </div>
                         )}
-                        {/* Square 1:1 */}
                         {item.graphicUrls[1] && (
-                          <div className="rounded-lg border bg-muted/30 p-3">
-                            <p className="mb-2 text-[11px] font-semibold text-muted-foreground">
-                              1:1 — LinkedIn, Facebook
-                            </p>
+                          <div className="overflow-hidden rounded-lg border bg-black">
+                            <div className="border-b px-3 py-2">
+                              <p className="text-[11px] font-medium text-muted-foreground">1:1 — LinkedIn, Facebook</p>
+                            </div>
                             {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                             <video
-                              src={item.graphicUrls[1]}
-                              className="w-full rounded-lg"
+                              src={toVideoSrc(item.graphicUrls[1])}
+                              className="w-full"
                               controls
                               preload="metadata"
+                              playsInline
                             />
                           </div>
                         )}
@@ -449,16 +466,13 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                         disabled={isGeneratingVideo}
                         className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-60"
                       >
-                        {isGeneratingVideo ? (
-                          <Loader2 className="size-3 animate-spin" />
-                        ) : (
-                          <Sparkles className="size-3" />
-                        )}
+                        {isGeneratingVideo
+                          ? <Loader2 className="size-3 animate-spin" />
+                          : <Sparkles className="size-3" />}
                         Regenerate video
                       </button>
                     </div>
                   ) : (
-                    /* Generate button */
                     <div>
                       <button
                         type="button"
@@ -469,7 +483,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                         {isGeneratingVideo ? (
                           <>
                             <Loader2 className="size-4 animate-spin" />
-                            Generating video (~30-60s)...
+                            Generating video (~30–60s)...
                           </>
                         ) : (
                           <>
@@ -479,8 +493,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                         )}
                       </button>
                       <p className="mt-2 text-xs text-muted-foreground">
-                        Renders two versions: 9:16 for Reels/TikTok and 1:1 for LinkedIn/Facebook.
-                        Takes about 30-60 seconds.
+                        Renders two versions: 9:16 for Reels/TikTok and 1:1 for LinkedIn/Facebook. Takes about 30–60 seconds.
                       </p>
                     </div>
                   )}
@@ -491,17 +504,15 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               )}
 
-              {/* Or: upload your own video */}
-              <div className="mt-4 border-t pt-4">
-                <p className="mb-3 text-xs font-medium text-muted-foreground">
-                  Or upload your own video
-                </p>
+              {/* Upload own video */}
+              <div className="mt-5 border-t pt-5">
+                <p className="mb-3 text-xs font-medium text-muted-foreground">Or upload your own video</p>
                 <MediaUploader
                   contentItemId={item.id}
                   existingUrls={
                     hasGeneratedVideo
                       ? []
-                      : item.graphicUrls.filter(u => u.includes('.mp4') || u.includes('video'))
+                      : item.graphicUrls.filter(u => /\.(?:mp4|mov|webm)/i.test(u) || u.includes('video'))
                   }
                   onUpdate={urls => setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev)}
                   mediaType="video"
@@ -511,15 +522,13 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             </div>
           )}
 
-          {/* ── IMAGE section (single_image / carousel) ── */}
+          {/* ── Image / Carousel ─────────────────────────────── */}
           {(isSingleImage || isCarousel) && (
             <div className="rounded-xl border bg-card p-5">
-              <div className="mb-4 flex items-center gap-2">
-                {isCarousel ? (
-                  <Layers className="size-4 text-muted-foreground" />
-                ) : (
-                  <ImageIcon className="size-4 text-muted-foreground" />
-                )}
+              <div className="mb-4 flex items-center gap-2 border-b pb-4">
+                {isCarousel
+                  ? <Layers className="size-4 text-muted-foreground" />
+                  : <ImageIcon className="size-4 text-muted-foreground" />}
                 <h3 className="text-sm font-semibold">
                   {isCarousel ? 'Carousel images' : 'Post image'}
                 </h3>
@@ -529,7 +538,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   </span>
                 )}
               </div>
-
               <MediaUploader
                 contentItemId={item.id}
                 existingUrls={item.graphicUrls || []}
@@ -546,18 +554,16 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             ([k]) => !['sourceImages', 'videoDurationSeconds'].includes(k),
           ) && (
             <div className="rounded-xl border bg-card p-5">
-              <h3 className="mb-3 text-sm font-semibold">Platform adaptations</h3>
+              <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Platform adaptations</h3>
               <div className="space-y-3">
                 {Object.entries(item.platformSpecific)
                   .filter(([k]) => !['sourceImages', 'videoDurationSeconds'].includes(k))
                   .map(([platform, text]) => (
-                    <div key={platform} className="rounded-lg bg-muted/50 p-3">
-                      <div className="mb-1">
-                        <span className="text-xs font-semibold capitalize">
-                          {PLATFORM_LABELS[platform] || platform}
-                        </span>
-                      </div>
-                      <p className="text-sm text-muted-foreground">{String(text)}</p>
+                    <div key={platform} className="rounded-lg border bg-muted/30 p-3">
+                      <span className="mb-1.5 block text-xs font-semibold capitalize">
+                        {PLATFORM_LABELS[platform] || platform}
+                      </span>
+                      <p className="text-sm leading-relaxed text-muted-foreground">{String(text)}</p>
                     </div>
                   ))}
               </div>
@@ -573,20 +579,23 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           )}
         </div>
 
-        {/* ── Sidebar ── */}
+        {/* ── Sidebar ──────────────────────────────────────── */}
         <div className="space-y-4">
-          <div className="space-y-3 rounded-xl border bg-card p-5">
-            <h3 className="text-sm font-semibold">Actions</h3>
+
+          {/* Actions */}
+          <div className="space-y-2.5 rounded-xl border bg-card p-5">
+            <h3 className="mb-3 text-sm font-semibold">Actions</h3>
 
             {(item.status === 'pending_review' || item.status === 'draft') && (
               <button
                 type="button"
                 onClick={() => updateStatus('approved')}
                 disabled={!!actionLoading}
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
               >
-                <Check className="size-4" />
-                {' '}
+                {actionLoading === item.status
+                  ? <Loader2 className="size-4 animate-spin" />
+                  : <Check className="size-4" />}
                 Approve
               </button>
             )}
@@ -598,13 +607,11 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   onClick={publishNow}
                   disabled={!!actionLoading || !canPublish}
                   title={needsMedia && !hasMedia ? 'Add media before publishing' : undefined}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 py-2.5 text-sm font-medium text-background hover:opacity-90 disabled:opacity-50"
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-foreground px-3 py-2.5 text-sm font-medium text-background transition-colors hover:opacity-90 disabled:opacity-50"
                 >
-                  {actionLoading === 'publish' ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Send className="size-4" />
-                  )}
+                  {actionLoading === 'publish'
+                    ? <Loader2 className="size-4 animate-spin" />
+                    : <Send className="size-4" />}
                   Publish now
                 </button>
 
@@ -612,20 +619,18 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   type="button"
                   onClick={() => setShowScheduler(p => !p)}
                   disabled={!!actionLoading || (needsMedia && !hasMedia)}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-medium hover:bg-muted disabled:opacity-50"
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
                 >
                   <Calendar className="size-4" />
-                  {item.scheduledFor
-                    ? 'Reschedule'
-                    : 'Schedule'}
+                  {item.scheduledFor ? 'Reschedule' : 'Schedule'}
                 </button>
               </>
             )}
 
             {item.status === 'scheduled' && (
               <>
-                <div className="rounded-lg bg-purple-50 px-3 py-2.5 text-center">
-                  <p className="text-xs text-purple-700">
+                <div className="rounded-lg border bg-violet-50 px-3 py-2.5">
+                  <p className="text-center text-xs text-violet-700">
                     Scheduled for
                     {' '}
                     <span className="font-semibold">
@@ -636,27 +641,29 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <button
                   type="button"
                   onClick={() => setShowScheduler(p => !p)}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-medium hover:bg-muted"
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors hover:bg-muted"
                 >
                   <Calendar className="size-4" />
-                  {' '}
                   Reschedule
                 </button>
                 <button
                   type="button"
                   onClick={publishNow}
                   disabled={!!actionLoading}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 py-2.5 text-sm font-medium text-background hover:opacity-90 disabled:opacity-50"
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-foreground px-3 py-2.5 text-sm font-medium text-background transition-colors hover:opacity-90 disabled:opacity-50"
                 >
-                  {actionLoading === 'publish' ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                  {actionLoading === 'publish'
+                    ? <Loader2 className="size-4 animate-spin" />
+                    : <Send className="size-4" />}
                   Publish now
                 </button>
               </>
             )}
 
+            {/* Scheduler inline panel */}
             {showScheduler && (
               <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
-                <p className="text-xs font-medium">Pick a date and time</p>
+                <p className="text-xs font-medium">Date and time</p>
                 <input
                   type="date"
                   value={scheduleDate}
@@ -675,9 +682,11 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     type="button"
                     onClick={schedulePost}
                     disabled={!scheduleDate || !scheduleTime || actionLoading === 'schedule'}
-                    className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
                   >
-                    {actionLoading === 'schedule' ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+                    {actionLoading === 'schedule'
+                      ? <Loader2 className="size-3 animate-spin" />
+                      : <Check className="size-3" />}
                     Confirm
                   </button>
                   <button
@@ -696,10 +705,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 type="button"
                 onClick={() => updateStatus('rejected')}
                 disabled={!!actionLoading}
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-medium hover:bg-red-50 hover:text-red-600"
+                className="flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors hover:bg-red-50 hover:text-red-600"
               >
                 <X className="size-4" />
-                {' '}
                 Reject
               </button>
             )}
@@ -708,10 +716,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               type="button"
               onClick={deleteItem}
               disabled={!!actionLoading}
-              className="flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-medium text-red-500 hover:bg-red-50"
+              className="flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium text-red-500 transition-colors hover:bg-red-50"
             >
               <Trash2 className="size-4" />
-              {' '}
               Delete
             </button>
 
@@ -723,40 +730,58 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           </div>
 
           {/* Details */}
-          <div className="space-y-3 rounded-xl border bg-card p-5">
-            <h3 className="text-sm font-semibold">Details</h3>
-            <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
-            <DetailRow label="Topic" value={item.topic || 'Auto-selected'} />
-            <DetailRow
-              label="Platforms"
-              value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')}
-            />
-            {item.antiSlopScore !== null && (
-              <DetailRow label="Quality score" value={`${Math.round(item.antiSlopScore * 100)}%`} />
-            )}
-            {isReel && (item.platformSpecific?.videoDurationSeconds as number) > 0 && (
+          <div className="rounded-xl border bg-card p-5">
+            <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Details</h3>
+            <div className="space-y-3">
+              <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
+              <DetailRow label="Topic" value={item.topic || 'Auto-selected'} />
               <DetailRow
-                label="Video duration"
-                value={`${item.platformSpecific.videoDurationSeconds}s`}
+                label="Platforms"
+                value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')}
               />
-            )}
-            <DetailRow label="Created" value={new Date(item.createdAt).toLocaleString()} />
+              {item.antiSlopScore !== null && (
+                <DetailRow label="Quality score" value={`${Math.round(item.antiSlopScore * 100)}%`} />
+              )}
+              {isReel && (item.platformSpecific?.videoDurationSeconds as number) > 0 && (
+                <DetailRow
+                  label="Video duration"
+                  value={`${item.platformSpecific.videoDurationSeconds}s`}
+                />
+              )}
+              <DetailRow label="Created" value={new Date(item.createdAt).toLocaleString()} />
+              {item.scheduledFor && (
+                <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />
+              )}
+              {item.publishedAt && (
+                <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />
+              )}
+            </div>
+
+            {/* View on calendar shortcut */}
             {item.scheduledFor && (
-              <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />
-            )}
-            {item.publishedAt && (
-              <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />
+              <div className="mt-4 border-t pt-3">
+                <Link
+                  href={`/dashboard/calendar?selected=${item.scheduledFor.split('T')[0]}`}
+                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <Calendar className="size-3.5" />
+                  View on calendar
+                  <ChevronRight className="size-3" />
+                </Link>
+              </div>
             )}
           </div>
 
           {/* Engagement */}
           {item.status === 'published' && (
-            <div className="space-y-3 rounded-xl border bg-card p-5">
-              <h3 className="text-sm font-semibold">Engagement</h3>
+            <div className="rounded-xl border bg-card p-5">
+              <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Engagement</h3>
               {Object.keys(item.engagementData || {}).length > 0 ? (
-                Object.entries(item.engagementData).map(([key, val]) => (
-                  <DetailRow key={key} label={key} value={String(val)} />
-                ))
+                <div className="space-y-3">
+                  {Object.entries(item.engagementData).map(([key, val]) => (
+                    <DetailRow key={key} label={key} value={String(val)} />
+                  ))}
+                </div>
               ) : (
                 <p className="text-xs text-muted-foreground">
                   Engagement data will appear here once the post has been live for a few hours.
