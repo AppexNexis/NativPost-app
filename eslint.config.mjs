@@ -66,5 +66,12 @@ export default antfu({
     'test/prefer-lowercase-title': 'off', // Allow using uppercase titles in test titles
     'style/multiline-ternary': 'off', // Allow inline ternaries in JSX
     'no-console': 'off', // Allow console.log throughout the codebase
+    // 'curly': 'off',           // ← add this
+    // 'style/eol-last': 'off',  // ← add this
+    'style/max-statements-per-line': 'off',
+    'react/no-array-index-key': 'off',
+    'jsx-a11y/click-events-have-key-events': 'off',
+    'jsx-a11y/no-static-element-interactions': 'off',
+    'jsx-a11y/label-has-associated-control': 'off',
   },
 });

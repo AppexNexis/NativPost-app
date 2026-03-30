@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { MediaUploader } from '@/components/media/MediaUploader';
@@ -72,6 +72,8 @@ const MEDIA_CONTENT_TYPES = ['single_image', 'carousel', 'reel'];
 // -----------------------------------------------------------
 export default function ContentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [item, setItem] = useState<ContentItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
@@ -94,12 +96,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           setEditCaption(data.item.caption);
           if (data.item.scheduledFor) {
             const d = new Date(data.item.scheduledFor);
-            setScheduleDate(
-              d.toISOString().split('T')[0] ?? '',
-            );
-            setScheduleTime(
-              d.toISOString().split('T')[1]?.slice(0, 5) ?? '',
-            );
+            setScheduleDate(d.toISOString().split('T')[0] ?? '');
+            setScheduleTime(d.toISOString().split('T')[1]?.slice(0, 5) ?? '');
           }
         }
       } catch (err) {
@@ -110,6 +108,17 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     }
     load();
   }, [params]);
+
+  // If the user arrived from the calendar via autoSchedule param, pre-fill
+  // the date and open the scheduler panel once the item has loaded.
+  useEffect(() => {
+    const autoSchedule = searchParams.get('autoSchedule');
+    if (autoSchedule && !isLoading) {
+      setScheduleDate(autoSchedule);
+      setScheduleTime('09:00');
+      setShowScheduler(true);
+    }
+  }, [searchParams, isLoading]);
 
   const updateStatus = async (status: string) => {
     if (!item) {
@@ -205,12 +214,10 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        // Only refresh if we got valid URLs back
         if (data.vertical && data.square) {
           const refreshRes = await fetch(`/api/content/${item.id}`);
           if (refreshRes.ok) {
             const refreshData = await refreshRes.json();
-            // Guard: only update state if item is valid
             if (refreshData?.item?.id) {
               setItem(refreshData.item);
             }
@@ -272,17 +279,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const isSingleImage = item.contentType === 'single_image';
   const hasMedia = item.graphicUrls && item.graphicUrls.length > 0;
 
-  // Source images stored in platformSpecific after video generation
   const sourceImages = (item.platformSpecific?.sourceImages as string[]) || [];
-
-  // A reel has a generated video if sourceImages exist in platformSpecific
-  // (they get stored there when generate-video succeeds)
-  // Uploadcare video URLs look like ucarecdn.com/uuid/ — no .mp4 extension
   const hasGeneratedVideo = isReel && sourceImages.length > 0 && hasMedia;
-
-  // For reel: must have an actual video (graphicUrls populated after generation)
   const hasVideo = isReel && hasGeneratedVideo;
-  // For image/carousel: need images
   const hasImages = (isSingleImage || isCarousel) && hasMedia;
   const canPublish = item.status === 'approved' && (!needsMedia || hasVideo || hasImages);
 
@@ -386,7 +385,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <h3 className="text-sm font-semibold">Video post</h3>
               </div>
 
-              {/* Step 1: Upload source images */}
               <div className="mb-4">
                 <p className="mb-3 text-xs font-medium text-muted-foreground">
                   Step 1 — Upload 3-5 images for the slideshow
@@ -400,7 +398,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 />
               </div>
 
-              {/* Step 2: Generate video */}
               {(hasGeneratedVideo ? sourceImages.length : item.graphicUrls.length) > 0 && (
                 <div className="border-t pt-4">
                   <p className="mb-3 text-xs font-medium text-muted-foreground">
@@ -408,10 +405,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   </p>
 
                   {hasGeneratedVideo ? (
-                    /* Show generated videos */
                     <div className="space-y-3">
                       <div className="grid gap-3 sm:grid-cols-2">
-                        {/* Vertical 9:16 */}
                         {item.graphicUrls[0] && (
                           <div className="rounded-lg border bg-muted/30 p-3">
                             <p className="mb-2 text-[11px] font-semibold text-muted-foreground">
@@ -427,7 +422,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                             />
                           </div>
                         )}
-                        {/* Square 1:1 */}
                         {item.graphicUrls[1] && (
                           <div className="rounded-lg border bg-muted/30 p-3">
                             <p className="mb-2 text-[11px] font-semibold text-muted-foreground">
@@ -449,16 +443,13 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                         disabled={isGeneratingVideo}
                         className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-60"
                       >
-                        {isGeneratingVideo ? (
-                          <Loader2 className="size-3 animate-spin" />
-                        ) : (
-                          <Sparkles className="size-3" />
-                        )}
+                        {isGeneratingVideo
+                          ? <Loader2 className="size-3 animate-spin" />
+                          : <Sparkles className="size-3" />}
                         Regenerate video
                       </button>
                     </div>
                   ) : (
-                    /* Generate button */
                     <div>
                       <button
                         type="button"
@@ -491,7 +482,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               )}
 
-              {/* Or: upload your own video */}
               <div className="mt-4 border-t pt-4">
                 <p className="mb-3 text-xs font-medium text-muted-foreground">
                   Or upload your own video
@@ -511,15 +501,13 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             </div>
           )}
 
-          {/* ── IMAGE section (single_image / carousel) ── */}
+          {/* ── IMAGE section ── */}
           {(isSingleImage || isCarousel) && (
             <div className="rounded-xl border bg-card p-5">
               <div className="mb-4 flex items-center gap-2">
-                {isCarousel ? (
-                  <Layers className="size-4 text-muted-foreground" />
-                ) : (
-                  <ImageIcon className="size-4 text-muted-foreground" />
-                )}
+                {isCarousel
+                  ? <Layers className="size-4 text-muted-foreground" />
+                  : <ImageIcon className="size-4 text-muted-foreground" />}
                 <h3 className="text-sm font-semibold">
                   {isCarousel ? 'Carousel images' : 'Post image'}
                 </h3>
@@ -529,7 +517,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   </span>
                 )}
               </div>
-
               <MediaUploader
                 contentItemId={item.id}
                 existingUrls={item.graphicUrls || []}
@@ -600,11 +587,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   title={needsMedia && !hasMedia ? 'Add media before publishing' : undefined}
                   className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 py-2.5 text-sm font-medium text-background hover:opacity-90 disabled:opacity-50"
                 >
-                  {actionLoading === 'publish' ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Send className="size-4" />
-                  )}
+                  {actionLoading === 'publish'
+                    ? <Loader2 className="size-4 animate-spin" />
+                    : <Send className="size-4" />}
                   Publish now
                 </button>
 
@@ -615,9 +600,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   className="flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-medium hover:bg-muted disabled:opacity-50"
                 >
                   <Calendar className="size-4" />
-                  {item.scheduledFor
-                    ? 'Reschedule'
-                    : 'Schedule'}
+                  {item.scheduledFor ? 'Reschedule' : 'Schedule'}
                 </button>
               </>
             )}
@@ -648,7 +631,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   disabled={!!actionLoading}
                   className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 py-2.5 text-sm font-medium text-background hover:opacity-90 disabled:opacity-50"
                 >
-                  {actionLoading === 'publish' ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                  {actionLoading === 'publish'
+                    ? <Loader2 className="size-4 animate-spin" />
+                    : <Send className="size-4" />}
                   Publish now
                 </button>
               </>
@@ -677,7 +662,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     disabled={!scheduleDate || !scheduleTime || actionLoading === 'schedule'}
                     className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
                   >
-                    {actionLoading === 'schedule' ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+                    {actionLoading === 'schedule'
+                      ? <Loader2 className="size-3 animate-spin" />
+                      : <Check className="size-3" />}
                     Confirm
                   </button>
                   <button

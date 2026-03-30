@@ -13,18 +13,17 @@ import {
   Video,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import {  useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 import {
   PLATFORMS,
- 
 } from '@/components/icons/PlatformIcons';
 
 // -----------------------------------------------------------
 // TYPES
 // -----------------------------------------------------------
-interface Variant {
+type Variant = {
   id: string;
   caption: string;
   hashtags: string[];
@@ -32,14 +31,14 @@ interface Variant {
   qualityFlags: string[];
   variantNumber: number;
   platformSpecific: Record<string, string>;
-}
+};
 
-interface ConnectedAccount {
+type ConnectedAccount = {
   id: string;
   platform: string;
   platformUsername: string | null;
   isActive: boolean;
-}
+};
 
 const CONTENT_TYPES = [
   { id: 'text_only', label: 'Text Post', description: 'Text-only post for platforms that support it', icon: AlignLeft },
@@ -53,6 +52,11 @@ const CONTENT_TYPES = [
 // -----------------------------------------------------------
 export default function ContentCreatePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // If the user arrived from the calendar, this will be set (e.g. "2026-03-29")
+  const scheduledDate = searchParams.get('scheduledDate') || '';
+
   const [step, setStep] = useState<'type' | 'configure' | 'review'>('type');
   const [contentType, setContentType] = useState('');
   const [topic, setTopic] = useState('');
@@ -64,7 +68,6 @@ export default function ContentCreatePage() {
   const [error, setError] = useState<string | null>(null);
   const [isApproving, setIsApproving] = useState(false);
 
-  // Fetch connected accounts
   useEffect(() => {
     async function load() {
       try {
@@ -81,12 +84,12 @@ export default function ContentCreatePage() {
   }, []);
 
   const connectedPlatformIds = connectedAccounts
-    .filter((a) => a.isActive)
-    .map((a) => a.platform);
+    .filter(a => a.isActive)
+    .map(a => a.platform);
 
   const togglePlatform = (id: string) => {
-    setSelectedPlatforms((prev) =>
-      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id],
+    setSelectedPlatforms(prev =>
+      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id],
     );
   };
 
@@ -145,7 +148,9 @@ export default function ContentCreatePage() {
   };
 
   const handleApprove = async () => {
-    if (!selectedVariant) return;
+    if (!selectedVariant) {
+      return;
+    }
     setIsApproving(true);
     try {
       await fetch(`/api/content/${selectedVariant}`, {
@@ -153,10 +158,17 @@ export default function ContentCreatePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'approved', isSelectedVariant: true }),
       });
-      router.push('/dashboard/posts');
+
+      // If we came from the calendar with a scheduled date, redirect to the
+      // content detail page with autoSchedule so the scheduler opens pre-filled.
+      // Otherwise go to the posts list as before.
+      if (scheduledDate) {
+        router.push(`/dashboard/content/${selectedVariant}?autoSchedule=${scheduledDate}`);
+      } else {
+        router.push('/dashboard/posts');
+      }
     } catch {
       setError('Failed to approve.');
-    } finally {
       setIsApproving(false);
     }
   };
@@ -175,6 +187,7 @@ export default function ContentCreatePage() {
         </div>
         {step !== 'type' && (
           <button
+            type="button"
             onClick={() => setStep(step === 'review' ? 'configure' : 'type')}
             className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-muted"
           >
@@ -184,32 +197,54 @@ export default function ContentCreatePage() {
         )}
       </div>
 
+      {/* Calendar context banner — shown when user came from the calendar */}
+      {scheduledDate && (
+        <div className="mb-5 flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+          <div className="size-1.5 rounded-full bg-violet-500" />
+          <p className="text-sm text-muted-foreground">
+            This post will be scheduled for
+            {' '}
+            <span className="font-medium text-foreground">
+              {new Date(`${scheduledDate}T12:00:00`).toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric',
+              })}
+            </span>
+            . You will set the time after content is generated.
+          </p>
+        </div>
+      )}
+
       {/* STEP 1: Choose content type */}
       {step === 'type' && (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {CONTENT_TYPES.map((type) => {
               const Icon = type.icon;
-              // Determine which platforms support this type
               const supported = type.id === 'text_only'
                 ? ['facebook', 'twitter', 'linkedin']
                 : type.id === 'reel'
-                  ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube']
+                  ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin']
                   : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok'];
 
               return (
                 <button
                   key={type.id}
+                  type="button"
                   onClick={() => selectContentType(type.id)}
-                  className="group flex flex-col items-center rounded-xl border-2 border-dashed border-border/60 bg-card p-8 text-center transition-all hover:border-[#16A34A]/40 hover:bg-[#16A34A]/5"
+                  className="group flex flex-col items-center rounded-xl border-2 border-dashed border-border/60 bg-card p-8 text-center transition-all hover:border-primary/40 hover:bg-primary/5"
                 >
                   <Icon className="mb-4 size-10 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" strokeWidth={1.2} />
                   <h3 className="text-sm font-semibold">{type.label}</h3>
                   <p className="mt-1 text-xs text-muted-foreground">{type.description}</p>
                   <div className="mt-4 flex items-center gap-1.5">
                     {supported.map((p) => {
-                      const platform = PLATFORMS.find((pl) => pl.id === p);
-                      if (!platform) return null;
+                      const platform = PLATFORMS.find(pl => pl.id === p);
+                      if (!platform) {
+                        return null;
+                      }
                       const PIcon = platform.icon;
                       return <PIcon key={p} className="size-4 text-muted-foreground/50" />;
                     })}
@@ -219,22 +254,16 @@ export default function ContentCreatePage() {
             })}
           </div>
 
-          {/* Connect accounts prompt */}
           {connectedAccounts.length === 0 && (
             <div className="mt-6 flex items-center justify-between rounded-xl bg-muted/50 px-5 py-4">
-              <div className="flex items-center gap-3">
-                <div className="flex size-8 items-center justify-center rounded-full border">
-                  <span className="text-sm text-muted-foreground">i</span>
-                </div>
-                <span className="text-sm text-muted-foreground">
-                  Connect your social media accounts to publish content
-                </span>
-              </div>
+              <p className="text-sm text-muted-foreground">
+                Connect your social media accounts to publish content.
+              </p>
               <Link
                 href="/dashboard/connections"
-                className="rounded-lg bg-[#16A34A] px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-[#15803d]"
+                className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-primary/90"
               >
-                Connect Accounts
+                Connect accounts
               </Link>
             </div>
           )}
@@ -244,12 +273,12 @@ export default function ContentCreatePage() {
       {/* STEP 2: Configure post */}
       {step === 'configure' && (
         <div className="mx-auto max-w-2xl space-y-6">
-          {/* Selected type badge */}
           <div className="flex items-center gap-2">
             <span className="rounded-lg bg-muted px-3 py-1.5 text-xs font-medium">
-              {CONTENT_TYPES.find((t) => t.id === contentType)?.label}
+              {CONTENT_TYPES.find(t => t.id === contentType)?.label}
             </span>
             <button
+              type="button"
               onClick={() => setStep('type')}
               className="text-xs text-muted-foreground underline hover:text-foreground"
             >
@@ -257,25 +286,23 @@ export default function ContentCreatePage() {
             </button>
           </div>
 
-          {/* Topic */}
           <div>
             <label className="mb-1.5 block text-sm font-medium">
               Topic
-              <span className="ml-1 text-muted-foreground font-normal">(optional)</span>
+              <span className="ml-1 font-normal text-muted-foreground">(optional)</span>
             </label>
             <textarea
               value={topic}
-              onChange={(e) => setTopic(e.target.value)}
+              onChange={e => setTopic(e.target.value)}
               placeholder="e.g. New product launch, Behind the scenes, Industry tip, Customer spotlight..."
               rows={3}
-              className="w-full resize-none rounded-lg border bg-background px-3.5 py-2.5 text-sm placeholder:text-muted-foreground focus:border-[#16A34A] focus:outline-none focus:ring-2 focus:ring-[#16A34A]/20"
+              className="w-full resize-none rounded-lg border bg-background px-3.5 py-2.5 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
             <p className="mt-1 text-xs text-muted-foreground">
               Leave blank and NativPost will choose a topic based on your Brand Profile.
             </p>
           </div>
 
-          {/* Platform selection */}
           <div>
             <label className="mb-2 block text-sm font-medium">Target platforms</label>
             <div className="space-y-2">
@@ -287,23 +314,20 @@ export default function ContentCreatePage() {
                 return (
                   <button
                     key={platform.id}
+                    type="button"
                     onClick={() => togglePlatform(platform.id)}
                     disabled={!isConnected}
                     className={`flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left text-sm transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
-                      isSelected
-                        ? 'border-[#16A34A] bg-[#16A34A]/5'
-                        : 'hover:bg-muted'
+                      isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted'
                     }`}
                   >
-                    <PIcon className={`size-5 ${isSelected ? 'text-[#16A34A]' : 'text-muted-foreground'}`} />
-                    <span className={`flex-1 ${isSelected ? 'font-medium' : ''}`}>
-                      {platform.name}
-                    </span>
+                    <PIcon className={`size-5 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <span className={`flex-1 ${isSelected ? 'font-medium' : ''}`}>{platform.name}</span>
                     {!isConnected && (
                       <span className="text-xs text-muted-foreground">Not connected</span>
                     )}
                     {isConnected && isSelected && (
-                      <Check className="size-4 text-[#16A34A]" />
+                      <Check className="size-4 text-primary" />
                     )}
                   </button>
                 );
@@ -311,39 +335,42 @@ export default function ContentCreatePage() {
             </div>
             {connectedPlatformIds.length === 0 && (
               <p className="mt-2 text-xs text-muted-foreground">
-                No accounts connected.{' '}
-                <Link href="/dashboard/connections" className="text-[#16A34A] underline">
+                No accounts connected.
+                {' '}
+                <Link href="/dashboard/connections" className="text-primary underline">
                   Connect platforms
-                </Link>{' '}
+                </Link>
+                {' '}
                 to select them here.
               </p>
             )}
           </div>
 
-          {/* Error */}
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </div>
           )}
 
-          {/* Generate */}
           <button
+            type="button"
             onClick={handleGenerate}
             disabled={isGenerating || selectedPlatforms.length === 0}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#16A34A] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#15803d] disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
-            {isGenerating ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Generating variants...
-              </>
-            ) : (
-              <>
-                <Sparkles className="size-4" />
-                Generate content
-              </>
-            )}
+            {isGenerating
+              ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Generating variants...
+                  </>
+                )
+              : (
+                  <>
+                    <Sparkles className="size-4" />
+                    Generate content
+                  </>
+                )}
           </button>
         </div>
       )}
@@ -353,11 +380,18 @@ export default function ContentCreatePage() {
         <div className="mx-auto max-w-3xl space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold">{variants.length} variants generated</h2>
+              <h2 className="text-sm font-semibold">
+                {variants.length}
+                {' '}
+                variants generated
+              </h2>
               <p className="text-xs text-muted-foreground">Select the best one, then approve.</p>
             </div>
             <button
-              onClick={() => { setStep('configure'); setVariants([]); }}
+              type="button"
+              onClick={() => {
+                setStep('configure'); setVariants([]);
+              }}
               className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
             >
               <RefreshCw className="size-3" />
@@ -365,13 +399,14 @@ export default function ContentCreatePage() {
             </button>
           </div>
 
-          {variants.map((variant) => (
+          {variants.map(variant => (
             <button
               key={variant.id}
+              type="button"
               onClick={() => setSelectedVariant(variant.id)}
               className={`w-full rounded-xl border bg-card p-5 text-left transition-all ${
                 selectedVariant === variant.id
-                  ? 'border-[#16A34A] ring-2 ring-[#16A34A]/15'
+                  ? 'border-primary ring-2 ring-primary/15'
                   : 'hover:border-muted-foreground/20'
               }`}
             >
@@ -380,21 +415,31 @@ export default function ContentCreatePage() {
                   <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-semibold">
                     {variant.variantNumber}
                   </span>
-                  <span className="text-xs text-muted-foreground">Variant {variant.variantNumber}</span>
+                  <span className="text-xs text-muted-foreground">
+                    Variant
+                    {' '}
+                    {variant.variantNumber}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   {variant.antiSlopScore !== null && (
                     <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                      variant.antiSlopScore >= 0.8 ? 'bg-green-50 text-green-700' :
-                      variant.antiSlopScore >= 0.7 ? 'bg-yellow-50 text-yellow-700' :
-                      'bg-red-50 text-red-700'
-                    }`}>
-                      {Math.round(variant.antiSlopScore * 100)}% quality
+                      variant.antiSlopScore >= 0.8 ? 'bg-green-50 text-green-700'
+                        : variant.antiSlopScore >= 0.7 ? 'bg-yellow-50 text-yellow-700'
+                          : 'bg-red-50 text-red-700'
+                    }`}
+                    >
+                      {Math.round(variant.antiSlopScore * 100)}
+                      % quality
                     </span>
                   )}
                   <button
-                    onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(variant.caption); }}
-                    className="rounded p-1.5 hover:bg-muted" title="Copy"
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation(); navigator.clipboard.writeText(variant.caption);
+                    }}
+                    className="rounded p-1.5 hover:bg-muted"
+                    title="Copy"
                   >
                     <Copy className="size-3.5 text-muted-foreground" />
                   </button>
@@ -405,7 +450,7 @@ export default function ContentCreatePage() {
 
               {variant.hashtags.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1.5">
-                  {(variant.hashtags as string[]).map((tag) => (
+                  {variant.hashtags.map(tag => (
                     <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{tag}</span>
                   ))}
                 </div>
@@ -413,16 +458,18 @@ export default function ContentCreatePage() {
 
               {Object.keys(variant.platformSpecific).length > 0 && (
                 <div className="mt-4 space-y-2 border-t pt-3">
-                  <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">Platform versions</span>
+                  <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                    Platform versions
+                  </span>
                   {Object.entries(variant.platformSpecific).map(([platform, text]) => {
-                    const PIcon = PLATFORMS.find((p) => p.id === platform)?.icon;
+                    const PIcon = PLATFORMS.find(p => p.id === platform)?.icon;
                     return (
                       <div key={platform} className="rounded-lg bg-muted/40 p-3">
                         <div className="mb-1 flex items-center gap-1.5">
                           {PIcon && <PIcon className="size-3.5 text-muted-foreground" />}
                           <span className="text-[11px] font-medium capitalize">{platform}</span>
                         </div>
-                        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">{text}</p>
+                        <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">{text}</p>
                       </div>
                     );
                   })}
@@ -433,13 +480,22 @@ export default function ContentCreatePage() {
 
           {selectedVariant && (
             <button
+              type="button"
               onClick={handleApprove}
               disabled={isApproving}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#16A34A] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#15803d] disabled:opacity-50"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
-              {isApproving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-              Approve selected variant
+              {isApproving
+                ? <Loader2 className="size-4 animate-spin" />
+                : <Check className="size-4" />}
+              {scheduledDate ? 'Approve and set schedule' : 'Approve selected variant'}
             </button>
+          )}
+
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
           )}
         </div>
       )}
