@@ -298,8 +298,11 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const hasMedia = item.graphicUrls && item.graphicUrls.length > 0;
 
   const sourceImages = (item.platformSpecific?.sourceImages as string[]) || [];
+  // hasGeneratedVideo: remotion-generated video — sourceImages are stored in platformSpecific
   const hasGeneratedVideo = isReel && sourceImages.length > 0 && hasMedia;
-  const hasVideo = isReel && hasGeneratedVideo;
+  // hasUploadedVideo: user uploaded their own video directly (no sourceImages)
+  const hasUploadedVideo = isReel && hasMedia && !hasGeneratedVideo;
+  const hasVideo = isReel && (hasGeneratedVideo || hasUploadedVideo);
   const hasImages = (isSingleImage || isCarousel) && hasMedia;
   const canPublish = item.status === 'approved' && (!needsMedia || hasVideo || hasImages);
 
@@ -402,23 +405,25 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <h3 className="text-sm font-semibold">Video post</h3>
               </div>
 
-              {/* Step 1 */}
-              <div className="mb-5">
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">1</span>
-                  <p className="text-xs font-medium text-muted-foreground">Upload 3–5 images for the slideshow</p>
+              {/* Step 1 — only show image uploader when no uploaded video exists */}
+              {!hasUploadedVideo && (
+                <div className="mb-5">
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">1</span>
+                    <p className="text-xs font-medium text-muted-foreground">Upload 3–5 images for the slideshow</p>
+                  </div>
+                  <MediaUploader
+                    contentItemId={item.id}
+                    existingUrls={hasGeneratedVideo ? sourceImages : item.graphicUrls}
+                    onUpdate={urls => setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev)}
+                    mediaType="image"
+                    maxFiles={5}
+                  />
                 </div>
-                <MediaUploader
-                  contentItemId={item.id}
-                  existingUrls={hasGeneratedVideo ? sourceImages : item.graphicUrls}
-                  onUpdate={urls => setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev)}
-                  mediaType="image"
-                  maxFiles={5}
-                />
-              </div>
+              )}
 
-              {/* Step 2 */}
-              {(hasGeneratedVideo ? sourceImages.length : item.graphicUrls.length) > 0 && (
+              {/* Step 2 — only show when images are uploaded (not for direct video uploads) */}
+              {!hasUploadedVideo && (hasGeneratedVideo ? sourceImages.length : item.graphicUrls.length) > 0 && (
                 <div className="border-t pt-5">
                   <div className="mb-3 flex items-center gap-2">
                     <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">2</span>
@@ -504,17 +509,37 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               )}
 
+              {/* Uploaded video player — shown when user uploaded their own video */}
+              {hasUploadedVideo && (
+                <div className="mb-5">
+                  <p className="mb-3 text-xs font-medium text-muted-foreground">Uploaded video</p>
+                  <div className="overflow-hidden rounded-lg border bg-black">
+                    {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                    <video
+                      src={toVideoSrc(item.graphicUrls[0]!)}
+                      className="w-full"
+                      controls
+                      preload="metadata"
+                      playsInline
+                      style={{ maxHeight: 400 }}
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* Upload own video */}
               <div className="mt-5 border-t pt-5">
-                <p className="mb-3 text-xs font-medium text-muted-foreground">Or upload your own video</p>
+                <p className="mb-3 text-xs font-medium text-muted-foreground">
+                  {hasUploadedVideo ? 'Replace video' : 'Or upload your own video'}
+                </p>
                 <MediaUploader
                   contentItemId={item.id}
-                  existingUrls={
-                    hasGeneratedVideo
-                      ? []
-                      : item.graphicUrls.filter(u => /\.(?:mp4|mov|webm)/i.test(u) || u.includes('video'))
-                  }
-                  onUpdate={urls => setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev)}
+                  existingUrls={[]}
+                  onUpdate={(urls) => {
+                    if (urls.length > 0) {
+                      setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev);
+                    }
+                  }}
                   mediaType="video"
                   maxFiles={1}
                 />

@@ -38,45 +38,67 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Call the Python content engine
-    const engineResponse = await fetch(`${ENGINE_URL}/api/generate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${ENGINE_API_KEY}`,
-      },
-      body: JSON.stringify({
-        brand_profile: {
-          brand_name: profile.brandName,
-          industry: profile.industry,
-          target_audience: profile.targetAudience,
-          company_description: profile.companyDescription,
-          tone_formality: profile.toneFormality,
-          tone_humor: profile.toneHumor,
-          tone_energy: profile.toneEnergy,
-          vocabulary: profile.vocabulary,
-          forbidden_words: profile.forbiddenWords,
-          communication_style: profile.communicationStyle,
-          primary_color: profile.primaryColor,
-          image_style: profile.imageStyle,
-          content_examples: profile.contentExamples,
-          anti_patterns: profile.antiPatterns,
-          hashtag_strategy: profile.hashtagStrategy,
-          linkedin_voice: profile.linkedinVoice,
-          instagram_voice: profile.instagramVoice,
-          twitter_voice: profile.twitterVoice,
-          facebook_voice: profile.facebookVoice,
-          tiktok_voice: profile.tiktokVoice,
-          mission: profile.mission,
-          values: profile.values,
-          products_services: profile.productsServices,
-          key_differentiators: profile.keyDifferentiators,
+    // 90s timeout — Render free tier can take 50s+ on cold start
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 90_000);
+
+    let engineResponse: Response;
+    try {
+      engineResponse = await fetch(`${ENGINE_URL}/api/generate`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ENGINE_API_KEY}`,
         },
-        topic: topic || null,
-        content_type: contentType || 'single_image',
-        target_platforms: targetPlatforms || ['instagram', 'linkedin'],
-        num_variants: numVariants || 3,
-      }),
-    });
+        body: JSON.stringify({
+          brand_profile: {
+            brand_name: profile.brandName,
+            industry: profile.industry,
+            target_audience: profile.targetAudience,
+            company_description: profile.companyDescription,
+            tone_formality: profile.toneFormality,
+            tone_humor: profile.toneHumor,
+            tone_energy: profile.toneEnergy,
+            vocabulary: profile.vocabulary,
+            forbidden_words: profile.forbiddenWords,
+            communication_style: profile.communicationStyle,
+            primary_color: profile.primaryColor,
+            image_style: profile.imageStyle,
+            content_examples: profile.contentExamples,
+            anti_patterns: profile.antiPatterns,
+            hashtag_strategy: profile.hashtagStrategy,
+            linkedin_voice: profile.linkedinVoice,
+            instagram_voice: profile.instagramVoice,
+            twitter_voice: profile.twitterVoice,
+            facebook_voice: profile.facebookVoice,
+            tiktok_voice: profile.tiktokVoice,
+            mission: profile.mission,
+            values: profile.values,
+            products_services: profile.productsServices,
+            key_differentiators: profile.keyDifferentiators,
+          },
+          topic: topic || null,
+          content_type: contentType || 'single_image',
+          target_platforms: targetPlatforms || ['instagram', 'linkedin'],
+          num_variants: numVariants || 3,
+        }),
+      });
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      if (fetchErr.name === 'AbortError') {
+        return NextResponse.json(
+          {
+            error:
+              'The content engine is warming up (cold start). Please wait 30 seconds and try again.',
+          },
+          { status: 503 },
+        );
+      }
+      throw fetchErr;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!engineResponse.ok) {
       const err = await engineResponse.text();

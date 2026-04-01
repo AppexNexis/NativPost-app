@@ -12,9 +12,13 @@ import {
 } from 'drizzle-orm/pg-core';
 
 // ============================================================
-// NATIVPOST DATABASE SCHEMA
+// NATIVPOST DATABASE SCHEMA v2
 // Using Drizzle ORM with Supabase PostgreSQL
 // Run: npm run db:generate → npm run db:migrate
+//
+// v2 additions:
+// - brandProfileSchema: growthStage
+// - contentItemSchema: contentMode, enrichmentData, enrichmentApplied
 // ============================================================
 
 // -----------------------------------------------------------
@@ -102,6 +106,8 @@ export const brandProfileSchema = pgTable('brand_profile', {
   values: jsonb('values').default([]),
   productsServices: jsonb('products_services').default([]),
   keyDifferentiators: text('key_differentiators'),
+  // --- v2: Growth Stage ---
+  growthStage: text('growth_stage').default('early'), // early, growing, established, authority
   // --- Status ---
   profileCompleteness: integer('profile_completeness').default(0), // 0-100
   onboardingCompleted: boolean('onboarding_completed').default(false),
@@ -169,6 +175,10 @@ export const contentItemSchema = pgTable('content_item', {
   // Quality
   antiSlopScore: real('anti_slop_score'),
   qualityFlags: jsonb('quality_flags').default([]),
+  // v2: Content Mode & Enrichment
+  contentMode: text('content_mode').default('normal'), // normal, concise, controversial
+  enrichmentData: jsonb('enrichment_data').default({}), // the enrichment options used
+  enrichmentApplied: jsonb('enrichment_applied').default([]), // which elements were woven in
   // Engagement (post-publish)
   engagementData: jsonb('engagement_data').default({}),
   // Metadata

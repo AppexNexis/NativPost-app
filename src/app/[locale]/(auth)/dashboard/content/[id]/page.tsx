@@ -9,12 +9,14 @@ import {
   Edit3,
   ImageIcon,
   Layers,
+  Link2,
   Loader2,
   Send,
   Sparkles,
   Trash2,
   Video,
   X,
+  Zap,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -37,6 +39,9 @@ type ContentItem = {
   platformSpecific: Record<string, unknown>;
   antiSlopScore: number | null;
   qualityFlags: string[];
+  contentMode: string | null;
+  enrichmentData: Record<string, unknown>;
+  enrichmentApplied: string[];
   scheduledFor: string | null;
   publishedAt: string | null;
   rejectionFeedback: string | null;
@@ -58,6 +63,12 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   rejected: { label: 'Rejected', color: 'bg-red-50 text-red-700' },
 };
 
+const MODE_CONFIG: Record<string, { label: string; color: string; icon?: typeof Zap }> = {
+  normal: { label: 'Normal', color: 'bg-zinc-100 text-zinc-600' },
+  concise: { label: 'Concise', color: 'bg-blue-50 text-blue-700' },
+  controversial: { label: 'Controversial', color: 'bg-orange-50 text-orange-700', icon: Zap },
+};
+
 const PLATFORM_LABELS: Record<string, string> = {
   instagram: 'Instagram',
   linkedin: 'LinkedIn',
@@ -68,14 +79,28 @@ const PLATFORM_LABELS: Record<string, string> = {
 
 const MEDIA_CONTENT_TYPES = ['single_image', 'carousel', 'reel'];
 
-// Build a playable video src — bare Uploadcare URLs need a filename appended
-// so the browser can infer MIME type and render the video element correctly.
 function toVideoSrc(url: string): string {
   if (/\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(url)) {
     return url;
   }
   const base = url.endsWith('/') ? url : `${url}/`;
   return `${base}video.mp4`;
+}
+
+function scoreLabel(score: number): { text: string; color: string } {
+  if (score >= 0.9) {
+    return { text: 'Excellent', color: 'bg-emerald-50 text-emerald-700' };
+  }
+  if (score >= 0.8) {
+    return { text: 'Great', color: 'bg-green-50 text-green-700' };
+  }
+  if (score >= 0.7) {
+    return { text: 'Good', color: 'bg-yellow-50 text-yellow-700' };
+  }
+  if (score >= 0.5) {
+    return { text: 'Needs work', color: 'bg-orange-50 text-orange-700' };
+  }
+  return { text: 'Poor', color: 'bg-red-50 text-red-700' };
 }
 
 // -----------------------------------------------------------
@@ -96,6 +121,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [videoGenError, setVideoGenError] = useState<string | null>(null);
   const [copyDone, setCopyDone] = useState(false);
+  const [showQualityFlags, setShowQualityFlags] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -121,7 +147,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     load();
   }, [params]);
 
-  // Pre-fill scheduler if user arrived from the calendar with autoSchedule param
   useEffect(() => {
     const autoSchedule = searchParams.get('autoSchedule');
     if (autoSchedule && !isLoading) {
@@ -291,6 +316,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   }
 
   const statusConfig = STATUS_CONFIG[item.status] || { label: item.status, color: 'bg-muted' };
+  const modeConfig = MODE_CONFIG[item.contentMode || 'normal'] ?? { label: 'Normal', color: 'bg-zinc-100 text-zinc-600' };
   const needsMedia = MEDIA_CONTENT_TYPES.includes(item.contentType);
   const isReel = item.contentType === 'reel';
   const isCarousel = item.contentType === 'carousel';
@@ -298,13 +324,31 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const hasMedia = item.graphicUrls && item.graphicUrls.length > 0;
 
   const sourceImages = (item.platformSpecific?.sourceImages as string[]) || [];
-  // hasGeneratedVideo: remotion-generated video — sourceImages are stored in platformSpecific
   const hasGeneratedVideo = isReel && sourceImages.length > 0 && hasMedia;
-  // hasUploadedVideo: user uploaded their own video directly (no sourceImages)
   const hasUploadedVideo = isReel && hasMedia && !hasGeneratedVideo;
   const hasVideo = isReel && (hasGeneratedVideo || hasUploadedVideo);
   const hasImages = (isSingleImage || isCarousel) && hasMedia;
   const canPublish = item.status === 'approved' && (!needsMedia || hasVideo || hasImages);
+
+  // Enrichment display — cast to known shape
+  type EnrichmentShape = {
+    cta_url?: string;
+    cta_label?: string;
+    reference_links?: string[];
+    contact_info?: string;
+    promo_code?: string;
+    event_details?: string;
+    custom_mentions?: string[];
+  };
+  const enrichment = (item.enrichmentData || {}) as EnrichmentShape;
+  const hasEnrichment = !!(
+    enrichment.cta_url
+    || enrichment.promo_code
+    || enrichment.contact_info
+    || enrichment.event_details
+    || (enrichment.reference_links && enrichment.reference_links.length > 0)
+    || (enrichment.custom_mentions && enrichment.custom_mentions.length > 0)
+  );
 
   return (
     <>
@@ -328,9 +372,17 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           {/* Caption */}
           <div className="rounded-xl border bg-card p-5">
             <div className="mb-4 flex items-center justify-between">
-              <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusConfig.color}`}>
-                {statusConfig.label}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusConfig.color}`}>
+                  {statusConfig.label}
+                </span>
+                {item.contentMode && item.contentMode !== 'normal' && (
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${modeConfig.color}`}>
+                    {modeConfig.icon && <Zap className="size-3" />}
+                    {modeConfig.label}
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 {!isEditing && (
                   <button
@@ -397,6 +449,43 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             )}
           </div>
 
+          {/* ── Enrichment Summary ────────────────────────────── */}
+          {hasEnrichment && (
+            <div className="rounded-xl border bg-card p-5">
+              <div className="mb-3 flex items-center gap-2 border-b pb-3">
+                <Link2 className="size-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Post enrichment</h3>
+                {item.enrichmentApplied && item.enrichmentApplied.length > 0 && (
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                    {item.enrichmentApplied.length}
+                    {' '}
+                    applied
+                  </span>
+                )}
+              </div>
+              <div className="space-y-2">
+                {enrichment.cta_url && (
+                  <EnrichmentRow label="CTA" value={`${enrichment.cta_label || 'Link'} → ${enrichment.cta_url}`} />
+                )}
+                {enrichment.promo_code && (
+                  <EnrichmentRow label="Promo code" value={enrichment.promo_code} />
+                )}
+                {enrichment.contact_info && (
+                  <EnrichmentRow label="Contact" value={enrichment.contact_info} />
+                )}
+                {enrichment.event_details && (
+                  <EnrichmentRow label="Event" value={enrichment.event_details} />
+                )}
+                {enrichment.reference_links && enrichment.reference_links.length > 0 && (
+                  <EnrichmentRow label="Links" value={enrichment.reference_links.join(', ')} />
+                )}
+                {enrichment.custom_mentions && enrichment.custom_mentions.length > 0 && (
+                  <EnrichmentRow label="Mentions" value={enrichment.custom_mentions.join(' ')} />
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ── Reel / Video ─────────────────────────────────── */}
           {isReel && (
             <div className="rounded-xl border bg-card p-5">
@@ -405,7 +494,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <h3 className="text-sm font-semibold">Video post</h3>
               </div>
 
-              {/* Step 1 — only show image uploader when no uploaded video exists */}
               {!hasUploadedVideo && (
                 <div className="mb-5">
                   <div className="mb-3 flex items-center gap-2">
@@ -422,7 +510,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               )}
 
-              {/* Step 2 — only show when images are uploaded (not for direct video uploads) */}
               {!hasUploadedVideo && (hasGeneratedVideo ? sourceImages.length : item.graphicUrls.length) > 0 && (
                 <div className="border-t pt-5">
                   <div className="mb-3 flex items-center gap-2">
@@ -439,14 +526,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                               <p className="text-[11px] font-medium text-muted-foreground">9:16 — Instagram Reels, TikTok</p>
                             </div>
                             {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                            <video
-                              src={toVideoSrc(item.graphicUrls[0])}
-                              className="w-full"
-                              controls
-                              preload="metadata"
-                              playsInline
-                              style={{ maxHeight: 300 }}
-                            />
+                            <video src={toVideoSrc(item.graphicUrls[0])} className="w-full" controls preload="metadata" playsInline style={{ maxHeight: 300 }} />
                           </div>
                         )}
                         {item.graphicUrls[1] && (
@@ -455,13 +535,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                               <p className="text-[11px] font-medium text-muted-foreground">1:1 — LinkedIn, Facebook</p>
                             </div>
                             {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                            <video
-                              src={toVideoSrc(item.graphicUrls[1])}
-                              className="w-full"
-                              controls
-                              preload="metadata"
-                              playsInline
-                            />
+                            <video src={toVideoSrc(item.graphicUrls[1])} className="w-full" controls preload="metadata" playsInline />
                           </div>
                         )}
                       </div>
@@ -509,25 +583,16 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               )}
 
-              {/* Uploaded video player — shown when user uploaded their own video */}
               {hasUploadedVideo && (
                 <div className="mb-5">
                   <p className="mb-3 text-xs font-medium text-muted-foreground">Uploaded video</p>
                   <div className="overflow-hidden rounded-lg border bg-black">
                     {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                    <video
-                      src={toVideoSrc(item.graphicUrls[0]!)}
-                      className="w-full"
-                      controls
-                      preload="metadata"
-                      playsInline
-                      style={{ maxHeight: 400 }}
-                    />
+                    <video src={toVideoSrc(item.graphicUrls[0]!)} className="w-full" controls preload="metadata" playsInline style={{ maxHeight: 400 }} />
                   </div>
                 </div>
               )}
 
-              {/* Upload own video */}
               <div className="mt-5 border-t pt-5">
                 <p className="mb-3 text-xs font-medium text-muted-foreground">
                   {hasUploadedVideo ? 'Replace video' : 'Or upload your own video'}
@@ -754,19 +819,90 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             )}
           </div>
 
+          {/* Quality Score */}
+          {item.antiSlopScore !== null && (
+            <div className="rounded-xl border bg-card p-5">
+              <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="relative size-12">
+                    <svg className="size-12 -rotate-90" viewBox="0 0 36 36">
+                      <path
+                        d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        className="text-muted/30"
+                      />
+                      <path
+                        d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeDasharray={`${item.antiSlopScore * 100}, 100`}
+                        className={
+                          item.antiSlopScore >= 0.8 ? 'text-emerald-500'
+                            : item.antiSlopScore >= 0.7 ? 'text-yellow-500'
+                              : item.antiSlopScore >= 0.5 ? 'text-orange-500'
+                                : 'text-red-500'
+                        }
+                      />
+                    </svg>
+                    <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">
+                      {Math.round(item.antiSlopScore * 100)}
+                    </span>
+                  </div>
+                  <div>
+                    <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>
+                      {scoreLabel(item.antiSlopScore).text}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">Anti-slop score</p>
+                  </div>
+                </div>
+              </div>
+
+              {item.qualityFlags.length > 0 && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowQualityFlags(p => !p)}
+                    className="mb-2 text-xs text-muted-foreground underline hover:text-foreground"
+                  >
+                    {showQualityFlags ? 'Hide' : 'Show'}
+                    {' '}
+                    {item.qualityFlags.length}
+                    {' '}
+                    quality
+                    {' '}
+                    {item.qualityFlags.length === 1 ? 'note' : 'notes'}
+                  </button>
+                  {showQualityFlags && (
+                    <div className="space-y-1.5">
+                      {item.qualityFlags.map((flag, i) => (
+                        <p key={i} className="text-[11px] leading-snug text-muted-foreground">
+                          {flag}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Details */}
           <div className="rounded-xl border bg-card p-5">
             <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Details</h3>
             <div className="space-y-3">
               <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
               <DetailRow label="Topic" value={item.topic || 'Auto-selected'} />
+              {item.contentMode && (
+                <DetailRow label="Mode" value={item.contentMode} />
+              )}
               <DetailRow
                 label="Platforms"
                 value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')}
               />
-              {item.antiSlopScore !== null && (
-                <DetailRow label="Quality score" value={`${Math.round(item.antiSlopScore * 100)}%`} />
-              )}
               {isReel && (item.platformSpecific?.videoDurationSeconds as number) > 0 && (
                 <DetailRow
                   label="Video duration"
@@ -782,7 +918,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               )}
             </div>
 
-            {/* View on calendar shortcut */}
             {item.scheduledFor && (
               <div className="mt-4 border-t pt-3">
                 <Link
@@ -825,6 +960,15 @@ function DetailRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-start justify-between gap-3">
       <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
       <span className="text-right text-sm font-medium capitalize">{value}</span>
+    </div>
+  );
+}
+
+function EnrichmentRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="shrink-0 text-xs font-medium text-muted-foreground">{label}</span>
+      <span className="break-all text-xs text-foreground">{value}</span>
     </div>
   );
 }
