@@ -28,6 +28,8 @@ export type BrandProfileData = {
   twitterVoice: string;
   facebookVoice: string;
   tiktokVoice: string;
+  // v2
+  growthStage: string;
 };
 
 export const DEFAULT_PROFILE: BrandProfileData = {
@@ -56,6 +58,8 @@ export const DEFAULT_PROFILE: BrandProfileData = {
   twitterVoice: '',
   facebookVoice: '',
   tiktokVoice: '',
+  // v2
+  growthStage: 'early',
 };
 
 const DRAFT_KEY = 'nativpost:brand-profile-draft';
@@ -94,6 +98,39 @@ function clearDraft() {
   } catch {
     // ignore
   }
+}
+
+/** Maps a server profile JSON object to local BrandProfileData shape. */
+function mapServerProfile(profile: Record<string, unknown>): BrandProfileData {
+  return {
+    brandName: (profile.brandName as string) || '',
+    industry: (profile.industry as string) || '',
+    targetAudience: (profile.targetAudience as string) || '',
+    companyDescription: (profile.companyDescription as string) || '',
+    websiteUrl: (profile.websiteUrl as string) || '',
+    toneFormality: (profile.toneFormality as number) ?? 5,
+    toneHumor: (profile.toneHumor as number) ?? 5,
+    toneEnergy: (profile.toneEnergy as number) ?? 5,
+    vocabulary: (profile.vocabulary as string[]) || [],
+    forbiddenWords: (profile.forbiddenWords as string[]) || [],
+    communicationStyle: (profile.communicationStyle as string) || '',
+    primaryColor: (profile.primaryColor as string) || '#864FFE',
+    secondaryColor: (profile.secondaryColor as string) || '#1A1A1C',
+    accentColor: (profile.accentColor as string) || '#FCFCFC',
+    fontPreference: (profile.fontPreference as string) || '',
+    imageStyle: (profile.imageStyle as string) || 'professional',
+    logoUrl: (profile.logoUrl as string) || '',
+    contentExamples: (profile.contentExamples as string[]) || [],
+    antiPatterns: (profile.antiPatterns as string[]) || [],
+    hashtagStrategy: (profile.hashtagStrategy as string) || '',
+    linkedinVoice: (profile.linkedinVoice as string) || '',
+    instagramVoice: (profile.instagramVoice as string) || '',
+    twitterVoice: (profile.twitterVoice as string) || '',
+    facebookVoice: (profile.facebookVoice as string) || '',
+    tiktokVoice: (profile.tiktokVoice as string) || '',
+    // v2
+    growthStage: (profile.growthStage as string) || 'early',
+  };
 }
 
 type UseBrandProfileReturn = {
@@ -141,44 +178,14 @@ export function useBrandProfile(): UseBrandProfileReturn {
           if (json.profile) {
             setHasProfile(true);
             setProfileCompleteness(json.profile.profileCompleteness || 0);
-            // Parse the server's updatedAt so we can compare with draft timestamp
             serverUpdatedAt = json.profile.updatedAt
               ? new Date(json.profile.updatedAt).getTime()
               : 0;
-
-            serverData = {
-              brandName: json.profile.brandName || '',
-              industry: json.profile.industry || '',
-              targetAudience: json.profile.targetAudience || '',
-              companyDescription: json.profile.companyDescription || '',
-              websiteUrl: json.profile.websiteUrl || '',
-              toneFormality: json.profile.toneFormality ?? 5,
-              toneHumor: json.profile.toneHumor ?? 5,
-              toneEnergy: json.profile.toneEnergy ?? 5,
-              vocabulary: json.profile.vocabulary || [],
-              forbiddenWords: json.profile.forbiddenWords || [],
-              communicationStyle: json.profile.communicationStyle || '',
-              primaryColor: json.profile.primaryColor || '#864FFE',
-              secondaryColor: json.profile.secondaryColor || '#1A1A1C',
-              accentColor: json.profile.accentColor || '#FCFCFC',
-              fontPreference: json.profile.fontPreference || '',
-              imageStyle: json.profile.imageStyle || 'professional',
-              logoUrl: json.profile.logoUrl || '',
-              contentExamples: json.profile.contentExamples || [],
-              antiPatterns: json.profile.antiPatterns || [],
-              hashtagStrategy: json.profile.hashtagStrategy || '',
-              linkedinVoice: json.profile.linkedinVoice || '',
-              instagramVoice: json.profile.instagramVoice || '',
-              twitterVoice: json.profile.twitterVoice || '',
-              facebookVoice: json.profile.facebookVoice || '',
-              tiktokVoice: json.profile.tiktokVoice || '',
-            };
+            serverData = mapServerProfile(json.profile);
           }
         }
 
         // Only restore draft if it was saved after the last server update.
-        // This means the user started editing but didn't finish.
-        // If server data is newer, discard the stale draft silently.
         const draft = loadDraft();
         const draftIsNewer = draft && draft.savedAt > serverUpdatedAt;
 
@@ -186,7 +193,6 @@ export function useBrandProfile(): UseBrandProfileReturn {
           setHasDraft(true);
           setData(draft.data);
         } else {
-          // Server data is authoritative — discard any stale draft
           if (draft) {
             clearDraft();
           }
@@ -211,7 +217,6 @@ export function useBrandProfile(): UseBrandProfileReturn {
 
   // -----------------------------------------------------------
   // Auto-save draft to localStorage on every data change.
-  // Only fires after initial load is complete.
   // -----------------------------------------------------------
   useEffect(() => {
     if (!loadedRef.current) {
@@ -240,7 +245,6 @@ export function useBrandProfile(): UseBrandProfileReturn {
   const discardDraft = useCallback(() => {
     clearDraft();
     setHasDraft(false);
-    // Reload server data to restore the saved state
     fetch('/api/brand-profile').then(async (res) => {
       if (!res.ok) {
         return;
@@ -249,33 +253,7 @@ export function useBrandProfile(): UseBrandProfileReturn {
       if (!json.profile) {
         return;
       }
-      setData({
-        brandName: json.profile.brandName || '',
-        industry: json.profile.industry || '',
-        targetAudience: json.profile.targetAudience || '',
-        companyDescription: json.profile.companyDescription || '',
-        websiteUrl: json.profile.websiteUrl || '',
-        toneFormality: json.profile.toneFormality ?? 5,
-        toneHumor: json.profile.toneHumor ?? 5,
-        toneEnergy: json.profile.toneEnergy ?? 5,
-        vocabulary: json.profile.vocabulary || [],
-        forbiddenWords: json.profile.forbiddenWords || [],
-        communicationStyle: json.profile.communicationStyle || '',
-        primaryColor: json.profile.primaryColor || '#864FFE',
-        secondaryColor: json.profile.secondaryColor || '#1A1A1C',
-        accentColor: json.profile.accentColor || '#FCFCFC',
-        fontPreference: json.profile.fontPreference || '',
-        imageStyle: json.profile.imageStyle || 'professional',
-        logoUrl: json.profile.logoUrl || '',
-        contentExamples: json.profile.contentExamples || [],
-        antiPatterns: json.profile.antiPatterns || [],
-        hashtagStrategy: json.profile.hashtagStrategy || '',
-        linkedinVoice: json.profile.linkedinVoice || '',
-        instagramVoice: json.profile.instagramVoice || '',
-        twitterVoice: json.profile.twitterVoice || '',
-        facebookVoice: json.profile.facebookVoice || '',
-        tiktokVoice: json.profile.tiktokVoice || '',
-      });
+      setData(mapServerProfile(json.profile));
     });
   }, []);
 

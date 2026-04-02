@@ -59,27 +59,29 @@ export const DEFAULT_PROFILE: BrandProfileData = {
 };
 
 const DRAFT_KEY = 'nativpost:brand-profile-draft';
+const DRAFT_TIMESTAMP_KEY = 'nativpost:brand-profile-draft-ts';
 
-// -----------------------------------------------------------
-// Persist draft to localStorage — debounced to avoid thrashing
-// -----------------------------------------------------------
 function saveDraft(data: BrandProfileData) {
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify(data));
+    localStorage.setItem(DRAFT_TIMESTAMP_KEY, Date.now().toString());
   } catch {
-    // localStorage unavailable (SSR, private mode, full storage)
+    // localStorage unavailable
   }
 }
 
-function loadDraft(): BrandProfileData | null {
+function loadDraft(): { data: BrandProfileData; savedAt: number } | null {
   try {
     const raw = localStorage.getItem(DRAFT_KEY);
+    const ts = localStorage.getItem(DRAFT_TIMESTAMP_KEY);
     if (!raw) {
       return null;
     }
     const parsed = JSON.parse(raw) as Partial<BrandProfileData>;
-    // Merge with defaults to handle schema additions over time
-    return { ...DEFAULT_PROFILE, ...parsed };
+    return {
+      data: { ...DEFAULT_PROFILE, ...parsed },
+      savedAt: ts ? Number(ts) : 0,
+    };
   } catch {
     return null;
   }
@@ -88,6 +90,7 @@ function loadDraft(): BrandProfileData | null {
 function clearDraft() {
   try {
     localStorage.removeItem(DRAFT_KEY);
+    localStorage.removeItem(DRAFT_TIMESTAMP_KEY);
   } catch {
     // ignore
   }
@@ -116,23 +119,33 @@ export function useBrandProfile(): UseBrandProfileReturn {
   const [error, setError] = useState<string | null>(null);
   const [hasDraft, setHasDraft] = useState(false);
 
-  // Debounce timer ref
+  // Track whether we've finished the initial load so auto-save doesn't
+  // write the DEFAULT_PROFILE to localStorage before the server data arrives.
+  const loadedRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // -----------------------------------------------------------
-  // On mount: load from API first, then overlay any draft
+  // Load on mount: server data is authoritative.
+  // Draft is only applied if it was saved AFTER the last server save,
+  // meaning the user had unsaved in-progress edits.
   // -----------------------------------------------------------
   useEffect(() => {
     async function load() {
       try {
         const res = await fetch('/api/brand-profile');
         let serverData: BrandProfileData | null = null;
+        let serverUpdatedAt: number = 0;
 
         if (res.ok) {
           const json = await res.json();
           if (json.profile) {
             setHasProfile(true);
             setProfileCompleteness(json.profile.profileCompleteness || 0);
+            // Parse the server's updatedAt so we can compare with draft timestamp
+            serverUpdatedAt = json.profile.updatedAt
+              ? new Date(json.profile.updatedAt).getTime()
+              : 0;
+
             serverData = {
               brandName: json.profile.brandName || '',
               industry: json.profile.industry || '',
@@ -163,24 +176,33 @@ export function useBrandProfile(): UseBrandProfileReturn {
           }
         }
 
-        // Check for a local draft (unsaved edits made since last save)
+        // Only restore draft if it was saved after the last server update.
+        // This means the user started editing but didn't finish.
+        // If server data is newer, discard the stale draft silently.
         const draft = loadDraft();
-        if (draft) {
+        const draftIsNewer = draft && draft.savedAt > serverUpdatedAt;
+
+        if (draftIsNewer) {
           setHasDraft(true);
-          // Draft takes priority over server data — user was mid-edit
-          setData(draft);
-        } else if (serverData) {
-          setData(serverData);
+          setData(draft.data);
+        } else {
+          // Server data is authoritative — discard any stale draft
+          if (draft) {
+            clearDraft();
+          }
+          if (serverData) {
+            setData(serverData);
+          }
         }
       } catch (err) {
         console.error('Failed to load brand profile:', err);
-        // Fall back to draft if server is unreachable
         const draft = loadDraft();
         if (draft) {
           setHasDraft(true);
-          setData(draft);
+          setData(draft.data);
         }
       } finally {
+        loadedRef.current = true;
         setIsLoading(false);
       }
     }
@@ -188,13 +210,13 @@ export function useBrandProfile(): UseBrandProfileReturn {
   }, []);
 
   // -----------------------------------------------------------
-  // Auto-save draft to localStorage on every data change
-  // Debounced 500ms so we don't write on every keystroke
+  // Auto-save draft to localStorage on every data change.
+  // Only fires after initial load is complete.
   // -----------------------------------------------------------
   useEffect(() => {
-    if (isLoading) {
+    if (!loadedRef.current) {
       return;
-    } // Don't save the initial DEFAULT_PROFILE
+    }
 
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
@@ -202,14 +224,14 @@ export function useBrandProfile(): UseBrandProfileReturn {
     debounceRef.current = setTimeout(() => {
       saveDraft(data);
       setHasDraft(true);
-    }, 500);
+    }, 600);
 
     return () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
       }
     };
-  }, [data, isLoading]);
+  }, [data]);
 
   const updateData = useCallback((updates: Partial<BrandProfileData>) => {
     setData(prev => ({ ...prev, ...updates }));
@@ -218,6 +240,43 @@ export function useBrandProfile(): UseBrandProfileReturn {
   const discardDraft = useCallback(() => {
     clearDraft();
     setHasDraft(false);
+    // Reload server data to restore the saved state
+    fetch('/api/brand-profile').then(async (res) => {
+      if (!res.ok) {
+        return;
+      }
+      const json = await res.json();
+      if (!json.profile) {
+        return;
+      }
+      setData({
+        brandName: json.profile.brandName || '',
+        industry: json.profile.industry || '',
+        targetAudience: json.profile.targetAudience || '',
+        companyDescription: json.profile.companyDescription || '',
+        websiteUrl: json.profile.websiteUrl || '',
+        toneFormality: json.profile.toneFormality ?? 5,
+        toneHumor: json.profile.toneHumor ?? 5,
+        toneEnergy: json.profile.toneEnergy ?? 5,
+        vocabulary: json.profile.vocabulary || [],
+        forbiddenWords: json.profile.forbiddenWords || [],
+        communicationStyle: json.profile.communicationStyle || '',
+        primaryColor: json.profile.primaryColor || '#864FFE',
+        secondaryColor: json.profile.secondaryColor || '#1A1A1C',
+        accentColor: json.profile.accentColor || '#FCFCFC',
+        fontPreference: json.profile.fontPreference || '',
+        imageStyle: json.profile.imageStyle || 'professional',
+        logoUrl: json.profile.logoUrl || '',
+        contentExamples: json.profile.contentExamples || [],
+        antiPatterns: json.profile.antiPatterns || [],
+        hashtagStrategy: json.profile.hashtagStrategy || '',
+        linkedinVoice: json.profile.linkedinVoice || '',
+        instagramVoice: json.profile.instagramVoice || '',
+        twitterVoice: json.profile.twitterVoice || '',
+        facebookVoice: json.profile.facebookVoice || '',
+        tiktokVoice: json.profile.tiktokVoice || '',
+      });
+    });
   }, []);
 
   const save = useCallback(async (): Promise<boolean> => {
@@ -239,8 +298,6 @@ export function useBrandProfile(): UseBrandProfileReturn {
       const json = await res.json();
       setHasProfile(true);
       setProfileCompleteness(json.profile.profileCompleteness || 0);
-
-      // Clear draft on successful save — data is now persisted server-side
       clearDraft();
       setHasDraft(false);
       return true;

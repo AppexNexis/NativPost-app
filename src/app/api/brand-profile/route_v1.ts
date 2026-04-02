@@ -133,8 +133,6 @@ function sanitizeProfileData(body: Record<string, unknown>) {
     values: Array.isArray(body.values) ? body.values : [],
     productsServices: Array.isArray(body.productsServices) ? body.productsServices : [],
     keyDifferentiators: body.keyDifferentiators ? String(body.keyDifferentiators) : null,
-    // v2
-    growthStage: body.growthStage ? String(body.growthStage) : 'early',
   };
 }
 

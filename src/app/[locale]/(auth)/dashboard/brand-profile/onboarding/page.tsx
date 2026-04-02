@@ -38,6 +38,32 @@ const STEPS = [
 ] as const;
 
 // -----------------------------------------------------------
+// GROWTH STAGE OPTIONS
+// -----------------------------------------------------------
+const GROWTH_STAGES = [
+  {
+    value: 'early',
+    label: '0 – 1K',
+    description: 'Building from scratch, finding your voice',
+  },
+  {
+    value: 'growing',
+    label: '1K – 20K',
+    description: 'Found traction, deepening relationships',
+  },
+  {
+    value: 'established',
+    label: '20K – 100K',
+    description: 'Authority forming, thought leadership',
+  },
+  {
+    value: 'authority',
+    label: '100K+',
+    description: 'Recognized voice, setting the agenda',
+  },
+];
+
+// -----------------------------------------------------------
 // VALIDATION
 // -----------------------------------------------------------
 function validateStep(stepId: string, data: BrandProfileData): string[] {
@@ -349,6 +375,35 @@ function StepBusinessBasics({ data, onChange, errors }: StepProps) {
         onChange={v => onChange({ websiteUrl: v })}
         type="url"
       />
+
+      {/* Growth Stage Selector */}
+      <div>
+        <label className="mb-1 block text-sm font-medium">Growth stage</label>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Where your brand is in its social media journey. This shapes the language, strategy, and content formats NativPost generates.
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {GROWTH_STAGES.map(stage => (
+            <button
+              type="button"
+              key={stage.value}
+              onClick={() => onChange({ growthStage: stage.value })}
+              className={`rounded-lg border px-4 py-3 text-left transition-all ${
+                data.growthStage === stage.value
+                  ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                  : 'hover:bg-muted'
+              }`}
+            >
+              <span className={`text-sm font-semibold ${data.growthStage === stage.value ? 'text-primary' : ''}`}>
+                {stage.label}
+                {' '}
+                followers
+              </span>
+              <p className="mt-0.5 text-xs text-muted-foreground">{stage.description}</p>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -558,6 +613,8 @@ function StepPlatformVoices({ data, onChange }: StepProps) {
 
 // ── Step 6: Review ───────────────────────────────────────────
 function StepReview({ data }: { data: BrandProfileData }) {
+  const stageLabel = GROWTH_STAGES.find(s => s.value === data.growthStage)?.label || data.growthStage;
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
@@ -569,6 +626,7 @@ function StepReview({ data }: { data: BrandProfileData }) {
         <ReviewItem label="Industry" value={data.industry} />
         <ReviewItem label="Target audience" value={data.targetAudience} />
         <ReviewItem label="Website" value={data.websiteUrl} />
+        <ReviewItem label="Growth stage" value={`${stageLabel} followers`} />
         {data.companyDescription && <ReviewItem label="Description" value={data.companyDescription} />}
       </ReviewSection>
 
@@ -912,7 +970,6 @@ function LogoUploader({ value, onChange }: { value: string; onChange: (v: string
         Used in branded video outros and profile pages. PNG, SVG, JPG or WebP, max 2MB.
       </p>
 
-      {/* Hidden file input — always in DOM so it can always be triggered */}
       <input
         id="logo-upload"
         type="file"

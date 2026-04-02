@@ -18,6 +18,13 @@ import { useBrandProfile } from '@/features/brand-profile/useBrandProfile';
 import { EmptyState } from '@/features/dashboard/EmptyState';
 import { PageHeader } from '@/features/dashboard/PageHeader';
 
+const GROWTH_STAGE_LABELS: Record<string, string> = {
+  early: '0 – 1K followers',
+  growing: '1K – 20K followers',
+  established: '20K – 100K followers',
+  authority: '100K+ followers',
+};
+
 export default function BrandProfilePage() {
   const { data, isLoading, hasProfile, profileCompleteness } = useBrandProfile();
 
@@ -114,6 +121,14 @@ export default function BrandProfilePage() {
           )}
           {data.targetAudience && <ProfileField label="Target audience" value={data.targetAudience} truncate />}
           {data.companyDescription && <ProfileField label="Description" value={data.companyDescription} truncate />}
+          {data.growthStage && (
+            <div>
+              <span className="text-xs text-muted-foreground">Growth stage</span>
+              <p className="mt-0.5 text-sm">
+                {GROWTH_STAGE_LABELS[data.growthStage] || data.growthStage}
+              </p>
+            </div>
+          )}
         </ProfileCard>
 
         {/* Voice & tone */}
@@ -158,7 +173,6 @@ export default function BrandProfilePage() {
                   alt="Brand logo"
                   width={80}
                   height={32}
-                  // TODO: Remove 32v3ws8ss0 workaround and switch back to original URL once Uploadcare fixes their CORS headers
                   unoptimized
                   className="max-h-8 w-auto rounded border object-contain"
                 />
