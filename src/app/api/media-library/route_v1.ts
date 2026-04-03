@@ -33,10 +33,12 @@ function ucAuthHeader() {
 //   https://32v3ws8ss0.ucarecd.net/{uuid}/filename.mp4
 //   https://ucarecdn.com/{uuid}/
 function extractUuid(url: string): string | null {
-  const match = url.match(
-    /(?:ucarecd\.net|ucarecdn\.com)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
-  );
-  return match?.[1] ?? null;
+  // const match = url.match(
+  //   /(?:ucarecd\.net|ucarecdn\.com)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+  // );
+  // return match?.[1] ?? null;
+  const segment = /(?:ucarecd\.net|ucarecdn\.com)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(url)?.[0];
+  return segment ? segment.split('/').pop() ?? null : null;
 }
 
 function isVideoFilename(name: string): boolean {
