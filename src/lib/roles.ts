@@ -14,9 +14,15 @@
 export type UserRole = 'admin' | 'editor' | 'member';
 
 export function getUserRole(orgRole: string | null | undefined): UserRole {
-  if (!orgRole) return 'member';
-  if (orgRole === 'org:admin') return 'admin';
-  if (orgRole === 'org:editor') return 'editor';
+  if (!orgRole) {
+    return 'member';
+  }
+  if (orgRole === 'org:admin') {
+    return 'admin';
+  }
+  if (orgRole === 'org:editor') {
+    return 'editor';
+  }
   return 'member';
 }
 
@@ -33,14 +39,14 @@ export function isCustomer(role: UserRole): boolean {
  * Team members see everything.
  * Customers see a simplified, approval-focused dashboard.
  */
-export interface NavItem {
+export type NavItem = {
   label: string;
   href: string;
   icon: string; // lucide icon name
   roles: UserRole[]; // who can see this item
   group: string;
   badge?: string;
-}
+};
 
 export const NAV_ITEMS: NavItem[] = [
   // --- Posts ---
@@ -55,6 +61,7 @@ export const NAV_ITEMS: NavItem[] = [
   // --- Create (team only) ---
   { label: 'New post', href: '/dashboard/content/create', icon: 'PenLine', roles: ['admin', 'editor'], group: 'Create' },
   { label: 'Brand Profile', href: '/dashboard/brand-profile', icon: 'Fingerprint', roles: ['admin', 'editor'], group: 'Create' },
+  { label: 'Media library', href: '/dashboard/media-library', icon: 'Image', roles: ['admin', 'editor'], group: 'Create' },
 
   // --- Workspace ---
   { label: 'Connections', href: '/dashboard/connections', icon: 'Link2', roles: ['admin', 'editor', 'member'], group: 'Workspace' },
@@ -66,10 +73,12 @@ export const NAV_ITEMS: NavItem[] = [
 ];
 
 export function getNavForRole(role: UserRole): Record<string, NavItem[]> {
-  const filtered = NAV_ITEMS.filter((item) => item.roles.includes(role));
+  const filtered = NAV_ITEMS.filter(item => item.roles.includes(role));
   const grouped: Record<string, NavItem[]> = {};
   for (const item of filtered) {
-    if (!grouped[item.group]) grouped[item.group] = [];
+    if (!grouped[item.group]) {
+      grouped[item.group] = [];
+    }
     grouped[item.group]!.push(item);
   }
   return grouped;

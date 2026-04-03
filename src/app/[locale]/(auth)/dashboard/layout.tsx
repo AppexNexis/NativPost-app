@@ -1,6 +1,6 @@
 'use client';
 
-import { useAuth, useOrganization, UserButton, OrganizationSwitcher } from '@clerk/nextjs';
+import { OrganizationSwitcher, useAuth, useOrganization, UserButton } from '@clerk/nextjs';
 import {
   BarChart3,
   Calendar,
@@ -10,6 +10,7 @@ import {
   CreditCard,
   FileText,
   Fingerprint,
+  Image,
   LayoutList,
   Link2,
   Menu,
@@ -18,21 +19,31 @@ import {
   Settings,
   Users,
 } from 'lucide-react';
-import Image from 'next/image';
+import NextImage from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 
+import logoIcon from '/public/assets/images/shared/logo.svg';
+import logoDark from '/public/assets/images/shared/logo-dark.svg';
+import mainLogo from '/public/assets/images/shared/main-logo.svg';
 import { getNavForRole, getUserRole, isTeamMember } from '@/lib/roles';
 
-// Use the same logos as the marketing site navbar
-import logoDark from '/public/assets/images/shared/logo-dark.svg';
-import logoIcon from '/public/assets/images/shared/logo.svg';
-import mainLogo from '/public/assets/images/shared/main-logo.svg';
-
 const ICONS: Record<string, typeof Calendar> = {
-  Calendar, LayoutList, Clock, CheckCircle2, FileText, CircleCheck,
-  BarChart3, PenLine, Fingerprint, Link2, Users, Settings, CreditCard,
+  Calendar,
+  LayoutList,
+  Clock,
+  CheckCircle2,
+  FileText,
+  CircleCheck,
+  BarChart3,
+  PenLine,
+  Fingerprint,
+  Link2,
+  Users,
+  Settings,
+  CreditCard,
+  Image,
 };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -51,7 +62,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (href.includes('?')) {
       return cleanPath === href.split('?')[0] && pathname.includes(href.split('?')[1] || '');
     }
-    return cleanPath === href || cleanPath.startsWith(href + '/');
+    return cleanPath === href || cleanPath.startsWith(`${href}/`);
   };
 
   return (
@@ -62,15 +73,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* Logo — same as marketing site navbar */}
+        {/* Logo */}
         <div className="flex h-14 items-center border-b px-4">
           <Link href="/dashboard" className="inline-flex items-center">
             <figure className="hidden sm:block sm:max-w-[140px]">
-              <Image src={mainLogo} alt="NativPost" className="h-auto w-full dark:invert" priority />
+              <NextImage src={mainLogo} alt="NativPost" className="h-auto w-full dark:invert" priority />
             </figure>
             <figure className="block max-w-[32px] sm:hidden">
-              <Image src={logoIcon} alt="NativPost" className="block h-auto w-full dark:hidden" priority />
-              <Image src={logoDark} alt="NativPost" className="hidden h-auto w-full dark:block" priority />
+              <NextImage src={logoIcon} alt="NativPost" className="block h-auto w-full dark:hidden" priority />
+              <NextImage src={logoDark} alt="NativPost" className="hidden h-auto w-full dark:block" priority />
             </figure>
           </Link>
         </div>
@@ -88,7 +99,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           />
         </div>
 
-        {/* Create post button (team only) — purple primary */}
+        {/* Create post button (team only) */}
         {isTeam && (
           <div className="px-3 pt-3">
             <Link
@@ -102,7 +113,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         )}
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto px-3 py-3">
+        <nav className="flex-1 overflow-y-auto p-3">
           {Object.entries(navGroups).map(([group, items]) => (
             <div key={group} className="mb-4">
               <p className="mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
@@ -134,7 +145,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
 
         {/* User section */}
-        <div className="border-t px-3 py-3">
+        <div className="border-t p-3">
           <div className="flex items-center gap-2.5">
             <UserButton
               afterSignOutUrl="/"
@@ -165,6 +176,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Top bar */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b bg-background px-4 lg:px-6">
           <button
+            type="button"
             onClick={() => setSidebarOpen(true)}
             className="rounded-lg p-2 hover:bg-muted lg:hidden"
           >
