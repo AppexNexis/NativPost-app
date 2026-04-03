@@ -3,11 +3,9 @@
 import '@uploadcare/react-uploader/core.css';
 
 import { FileUploaderRegular } from '@uploadcare/react-uploader/next';
-import { ExternalLink, ImageIcon, Library, Loader2, Trash2, Video } from 'lucide-react';
+import { ExternalLink, ImageIcon, Loader2, Trash2, Video } from 'lucide-react';
 import Image from 'next/image';
 import { useState } from 'react';
-
-import { MediaPicker } from '@/components/media/MediaPicker';
 
 type MediaUploaderProps = {
   contentItemId: string;
@@ -17,16 +15,26 @@ type MediaUploaderProps = {
   maxFiles?: number;
 };
 
+// Detect video by extension OR by Uploadcare CDN subdomain pattern.
+// Generated videos use: 32v3ws8ss0.ucarecd.net/uuid/filename.mp4
+// Uploaded videos via Uploadcare widget use: ucarecdn.com/uuid/ (no extension)
+// We treat any ucarecd.net URL as potentially video when mediaType === 'video'.
 function isVideoUrl(url: string): boolean {
   return /\.(?:mp4|mov|webm|avi|mkv)(?:[/?#]|$)/i.test(url)
     || url.includes('video')
     || url.includes('.mp4');
 }
 
+// Build a playable video src from a bare Uploadcare CDN URL.
+// If the URL already has a filename with extension, use it as-is.
+// If it's a bare UUID URL, append a generic filename so browsers
+// can infer the MIME type.
 function toPlayableVideoSrc(url: string): string {
+  // Already has a video extension — use as-is
   if (/\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(url)) {
     return url;
   }
+  // Bare Uploadcare URL — append filename so browser knows it's a video
   const base = url.endsWith('/') ? url : `${url}/`;
   return `${base}video.mp4`;
 }
@@ -40,7 +48,6 @@ export function MediaUploader({
 }: MediaUploaderProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
 
   const pubkey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY;
 
@@ -57,22 +64,31 @@ export function MediaUploader({
   }
 
   const atMaxFiles = maxFiles !== undefined && existingUrls.length >= maxFiles;
-  const isVideoMode = mediaType === 'video';
-  const Icon = isVideoMode ? Video : ImageIcon;
 
-  const saveUrls = async (urls: string[]) => {
+  const handleUploadComplete = async (files: { cdnUrl: string | null }[]) => {
+    const newUrls = files
+      .map(f => f.cdnUrl)
+      .filter((url): url is string => url !== null);
+
+    if (newUrls.length === 0) {
+      return;
+    }
+
+    const merged = maxFiles === 1 ? newUrls : [...existingUrls, ...newUrls];
+
     setIsSaving(true);
     setError(null);
+
     try {
       const res = await fetch(`/api/content/${contentItemId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ graphicUrls: urls }),
+        body: JSON.stringify({ graphicUrls: merged }),
       });
       if (!res.ok) {
         throw new Error('Failed to save');
       }
-      onUpdate(urls);
+      onUpdate(merged);
     } catch {
       setError('Failed to save media. Please try again.');
     } finally {
@@ -80,28 +96,27 @@ export function MediaUploader({
     }
   };
 
-  const handleUploadComplete = async (files: { cdnUrl: string | null }[]) => {
-    const newUrls = files
-      .map(f => f.cdnUrl)
-      .filter((url): url is string => url !== null);
-    if (newUrls.length === 0) {
-      return;
-    }
-    const merged = maxFiles === 1 ? newUrls : [...existingUrls, ...newUrls];
-    await saveUrls(merged);
-  };
-
-  const handlePickerSelect = async (urls: string[]) => {
-    if (urls.length === 0) {
-      return;
-    }
-    const merged = maxFiles === 1 ? urls : [...existingUrls, ...urls];
-    await saveUrls(merged);
-  };
-
   const removeMedia = async (urlToRemove: string) => {
     const updated = existingUrls.filter(u => u !== urlToRemove);
-    await saveUrls(updated);
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/content/${contentItemId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ graphicUrls: updated }),
+      });
+      if (!res.ok) {
+        throw new Error('Failed to save');
+      }
+      onUpdate(updated);
+    } catch {
+      setError('Failed to remove media. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const uploaderConfig = {
@@ -125,6 +140,9 @@ export function MediaUploader({
     },
   }[mediaType];
 
+  const isVideoMode = mediaType === 'video';
+  const Icon = isVideoMode ? Video : ImageIcon;
+
   const uploadLabel = () => {
     if (isVideoMode) {
       return existingUrls.length === 0 ? 'Upload your video' : 'Replace video';
@@ -139,24 +157,13 @@ export function MediaUploader({
     return 'Upload from your computer, URL, Unsplash, Google Drive, Dropbox, or Instagram';
   };
 
-  const pickerAccept = isVideoMode ? 'video' : mediaType === 'any' ? 'all' : 'image';
-
   return (
     <div className="space-y-4">
-      {/* Media picker modal */}
-      <MediaPicker
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onSelect={handlePickerSelect}
-        multiple={!isVideoMode && maxFiles !== 1}
-        accept={pickerAccept as 'image' | 'video' | 'all'}
-        title={isVideoMode ? 'Select video from library' : 'Select images from library'}
-      />
-
       {/* Existing media previews */}
       {existingUrls.length > 0 && (
         <div className={isVideoMode ? 'space-y-3' : 'grid gap-3 sm:grid-cols-2'}>
           {existingUrls.map((url, i) => {
+            // Force video treatment when in video mode, otherwise detect by URL
             const isVid = isVideoMode || isVideoUrl(url);
             const videoSrc = isVid ? toPlayableVideoSrc(url) : url;
 
@@ -222,52 +229,39 @@ export function MediaUploader({
         </div>
       )}
 
-      {/* Upload widget + library picker */}
+      {/* Upload widget */}
       {!atMaxFiles && (
-        <div className="space-y-2">
-          <div className="relative">
-            {isSaving && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/70">
-                <Loader2 className="size-5 animate-spin text-primary" />
-              </div>
-            )}
-
-            <div className="rounded-lg border-2 border-dashed border-border/60 bg-muted/20 transition-colors hover:border-primary/40 hover:bg-muted/40">
-              <div className="flex flex-col items-center gap-2 p-4 text-center">
-                <Icon className="size-8 text-muted-foreground/40" />
-                <p className="text-sm font-medium text-muted-foreground">{uploadLabel()}</p>
-                <p className="text-xs text-muted-foreground/60">{uploadHint()}</p>
-              </div>
-
-              <FileUploaderRegular
-                pubkey={pubkey}
-                multiple={!isVideoMode && maxFiles !== 1}
-                imgOnly={uploaderConfig.imgOnly}
-                accept={uploaderConfig.accept}
-                sourceList={uploaderConfig.sourceList}
-                useCloudImageEditor={uploaderConfig.useCloudImageEditor}
-                onDoneClick={(files) => {
-                  const uploaded = files.allEntries
-                    .filter(f => f.status === 'success')
-                    .map(f => ({ cdnUrl: (f as any).cdnUrl as string | null }));
-                  handleUploadComplete(uploaded);
-                }}
-                classNameUploader="uc-light"
-                className="w-full"
-              />
+        <div className="relative">
+          {isSaving && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/70">
+              <Loader2 className="size-5 animate-spin text-primary" />
             </div>
-          </div>
+          )}
 
-          {/* Select from library button */}
-          <button
-            type="button"
-            onClick={() => setPickerOpen(true)}
-            disabled={isSaving}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60"
-          >
-            <Library className="size-3.5" />
-            Select from library
-          </button>
+          <div className="rounded-lg border-2 border-dashed border-border/60 bg-muted/20 transition-colors hover:border-primary/40 hover:bg-muted/40">
+            <div className="flex flex-col items-center gap-2 p-4 text-center">
+              <Icon className="size-8 text-muted-foreground/40" />
+              <p className="text-sm font-medium text-muted-foreground">{uploadLabel()}</p>
+              <p className="text-xs text-muted-foreground/60">{uploadHint()}</p>
+            </div>
+
+            <FileUploaderRegular
+              pubkey={pubkey}
+              multiple={!isVideoMode && maxFiles !== 1}
+              imgOnly={uploaderConfig.imgOnly}
+              accept={uploaderConfig.accept}
+              sourceList={uploaderConfig.sourceList}
+              useCloudImageEditor={uploaderConfig.useCloudImageEditor}
+              onDoneClick={(files) => {
+                const uploaded = files.allEntries
+                  .filter(f => f.status === 'success')
+                  .map(f => ({ cdnUrl: (f as any).cdnUrl as string | null }));
+                handleUploadComplete(uploaded);
+              }}
+              classNameUploader="uc-light"
+              className="w-full"
+            />
+          </div>
         </div>
       )}
 
