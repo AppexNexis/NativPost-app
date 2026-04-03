@@ -1,10 +1,11 @@
+import { and, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { exchangeCodeForTokens, type SocialPlatform } from '@/lib/social-oauth';
 import { db } from '@/libs/DB';
-import { socialAccountSchema } from '@/models/Schema';
+import { organizationSchema, socialAccountSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
 // GET /api/social-accounts/callback?code=...&state=platform:uuid
@@ -13,9 +14,8 @@ import { socialAccountSchema } from '@/models/Schema';
 export async function GET(request: NextRequest) {
   const { error, orgId } = await getAuthContext();
   if (error) {
-    // Redirect to social accounts page with error
     return NextResponse.redirect(
-      new URL('/dashboard/social-accounts?error=auth', request.url),
+      new URL('/dashboard/connections?error=auth', request.url),
     );
   }
 
@@ -25,56 +25,109 @@ export async function GET(request: NextRequest) {
 
   if (errorParam) {
     return NextResponse.redirect(
-      new URL(`/dashboard/social-accounts?error=${errorParam}`, request.url),
+      new URL(`/dashboard/connections?error=${errorParam}`, request.url),
     );
   }
 
   if (!code || !state) {
     return NextResponse.redirect(
-      new URL('/dashboard/social-accounts?error=missing_params', request.url),
+      new URL('/dashboard/connections?error=missing_params', request.url),
     );
   }
 
-  // Extract platform from state (format: "platform:uuid")
   const platform = state.split(':')[0] as SocialPlatform;
 
-  // Exchange code for tokens
-  // const tokens = await exchangeCodeForTokens(platform, code);
+  // -----------------------------------------------------------
+  // SAFETY NET: Ensure org row exists before any FK-dependent insert.
+  //
+  // The Clerk webhook handles this in production, but it cannot
+  // reach localhost during local dev — so the webhook never fires
+  // and the org row never gets created. Without this upsert, every
+  // social account connect attempt throws:
+  //   "violates foreign key constraint social_account_org_id_organization_id_fk"
+  //
+  // onConflictDoNothing() makes this fully idempotent — if the row
+  // already exists (webhook worked), this is a no-op.
+  // -----------------------------------------------------------
+  await db
+    .insert(organizationSchema)
+    .values({
+      id: orgId!,
+      plan: 'starter',
+      planStatus: 'trialing',
+      postsPerMonth: 20,
+      platformsLimit: 3,
+      setupFeePaid: false,
+    })
+    .onConflictDoNothing();
+
+  // Exchange authorization code for access/refresh tokens
   const tokens = await exchangeCodeForTokens(platform, code, state);
 
   if (!tokens) {
     return NextResponse.redirect(
-      new URL(`/dashboard/social-accounts?error=token_exchange_failed&platform=${platform}`, request.url),
+      new URL(`/dashboard/connections?error=token_exchange_failed&platform=${platform}`, request.url),
     );
   }
 
   try {
-    // Fetch user profile from platform to get username/ID
+    // Fetch user profile from platform
     const profile = await fetchPlatformProfile(platform, tokens.accessToken);
 
-    // Save to database
-    await db.insert(socialAccountSchema).values({
-      orgId: orgId!,
-      platform,
-      platformUserId: profile?.id || null,
-      platformUsername: profile?.username || null,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken || null,
-      tokenExpiresAt: tokens.expiresIn
-        ? new Date(Date.now() + tokens.expiresIn * 1000)
-        : null,
-      accountType: profile?.type || 'page',
-      profileImageUrl: profile?.imageUrl || null,
-      isActive: true,
-    });
+    // Check if this platform is already connected for this org
+    const existing = await db
+      .select({ id: socialAccountSchema.id })
+      .from(socialAccountSchema)
+      .where(
+        and(
+          eq(socialAccountSchema.orgId, orgId!),
+          eq(socialAccountSchema.platform, platform),
+        ),
+      )
+      .limit(1);
+
+    if (existing.length > 0 && existing[0]) {
+      // Reconnect — update tokens on the existing row
+      await db
+        .update(socialAccountSchema)
+        .set({
+          platformUserId: profile?.id ?? null,
+          platformUsername: profile?.username ?? null,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken ?? null,
+          tokenExpiresAt: tokens.expiresIn
+            ? new Date(Date.now() + tokens.expiresIn * 1000)
+            : null,
+          profileImageUrl: profile?.imageUrl ?? null,
+          isActive: true,
+          // updatedAt: new Date(),
+        })
+        .where(eq(socialAccountSchema.id, existing[0].id));
+    } else {
+      // New connection
+      await db.insert(socialAccountSchema).values({
+        orgId: orgId!,
+        platform,
+        platformUserId: profile?.id ?? null,
+        platformUsername: profile?.username ?? null,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken ?? null,
+        tokenExpiresAt: tokens.expiresIn
+          ? new Date(Date.now() + tokens.expiresIn * 1000)
+          : null,
+        accountType: profile?.type ?? 'personal',
+        profileImageUrl: profile?.imageUrl ?? null,
+        isActive: true,
+      });
+    }
 
     return NextResponse.redirect(
-      new URL(`/dashboard/social-accounts?success=${platform}`, request.url),
+      new URL(`/dashboard/connections?success=${platform}`, request.url),
     );
   } catch (err) {
     console.error('Failed to save social account:', err);
     return NextResponse.redirect(
-      new URL(`/dashboard/social-accounts?error=save_failed&platform=${platform}`, request.url),
+      new URL(`/dashboard/connections?error=save_failed&platform=${platform}`, request.url),
     );
   }
 }
@@ -122,9 +175,10 @@ async function fetchPlatformProfile(
         };
       }
       case 'twitter': {
-        const res = await fetch('https://api.x.com/2/users/me?user.fields=profile_image_url', {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
+        const res = await fetch(
+          'https://api.x.com/2/users/me?user.fields=profile_image_url',
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
         const data = await res.json();
         return {
           id: data.data?.id,

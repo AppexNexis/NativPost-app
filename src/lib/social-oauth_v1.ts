@@ -4,90 +4,105 @@
  * Each platform has its own OAuth flow. This file centralizes
  * the URLs, scopes, and credential handling.
  *
- * To enable a platform:
- * 1. Create a developer app on the platform
- * 2. Add the credentials to your .env.local
- * 3. Set the callback URL to: https://app.nativpost.com/api/social-accounts/callback?platform=<platform>
+ * Callback URL to register on each platform:
+ *   Development: http://localhost:3000/api/social-accounts/callback
+ *   Production:  https://app.nativpost.com/api/social-accounts/callback
  */
 
 import { Buffer } from 'node:buffer';
+import crypto from 'node:crypto';
 
 export type SocialPlatform = 'instagram' | 'facebook' | 'linkedin' | 'twitter' | 'tiktok';
 
-// Add this at the top of the file
-const pkceVerifiers = new Map<string, string>();
+// -----------------------------------------------------------
+// PKCE storage (in-memory, per-server-instance)
+// In production, use Redis or a DB table for multi-instance support
+// -----------------------------------------------------------
+const pkceStore = new Map<string, string>();
 
-export function getPkceVerifier(state: string): string | undefined {
-  return pkceVerifiers.get(state);
+function generateCodeVerifier(): string {
+  // 43-128 chars, URL-safe base64
+  return crypto.randomBytes(48).toString('base64url');
 }
 
+async function generateCodeChallengeS256(verifier: string): Promise<string> {
+  const hash = crypto.createHash('sha256').update(verifier).digest();
+  return hash.toString('base64url');
+}
+
+// -----------------------------------------------------------
+// PLATFORM CONFIGS
+// -----------------------------------------------------------
 type PlatformConfig = {
   name: string;
-  emoji: string;
   authUrl: string;
   tokenUrl: string;
   scopes: string[];
   clientIdEnv: string;
   clientSecretEnv: string;
+  scopeSeparator: string;
+  pkceMethod: 'none' | 'plain' | 'S256';
 };
 
 export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
   facebook: {
     name: 'Facebook',
-    emoji: '📘',
     authUrl: 'https://www.facebook.com/v21.0/dialog/oauth',
     tokenUrl: 'https://graph.facebook.com/v21.0/oauth/access_token',
     scopes: ['pages_manage_posts', 'pages_read_engagement', 'pages_show_list', 'pages_read_user_content'],
-    //  scopes: ['email', 'public_profile', 'pages_show_list'],
     clientIdEnv: 'META_APP_ID',
     clientSecretEnv: 'META_APP_SECRET',
+    scopeSeparator: ',',
+    pkceMethod: 'none',
   },
   instagram: {
     name: 'Instagram',
-    emoji: '📸',
     authUrl: 'https://www.facebook.com/v21.0/dialog/oauth',
     tokenUrl: 'https://graph.facebook.com/v21.0/oauth/access_token',
     scopes: ['instagram_basic', 'instagram_content_publish', 'instagram_manage_insights', 'pages_show_list'],
-    //  scopes: ['email', 'public_profile', 'instagram_basic'],
     clientIdEnv: 'META_APP_ID',
     clientSecretEnv: 'META_APP_SECRET',
+    scopeSeparator: ',',
+    pkceMethod: 'none',
   },
   linkedin: {
     name: 'LinkedIn',
-    emoji: '💼',
     authUrl: 'https://www.linkedin.com/oauth/v2/authorization',
     tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
-    // scopes: ['openid', 'profile', 'w_member_social', 'r_organization_social'],
     scopes: ['openid', 'profile', 'w_member_social'],
     clientIdEnv: 'LINKEDIN_CLIENT_ID',
     clientSecretEnv: 'LINKEDIN_CLIENT_SECRET',
+    scopeSeparator: ' ',
+    pkceMethod: 'none',
   },
   twitter: {
     name: 'X / Twitter',
-    emoji: '𝕏',
     authUrl: 'https://twitter.com/i/oauth2/authorize',
     tokenUrl: 'https://api.x.com/2/oauth2/token',
     scopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'],
     clientIdEnv: 'TWITTER_CLIENT_ID',
     clientSecretEnv: 'TWITTER_CLIENT_SECRET',
+    scopeSeparator: ' ',
+    pkceMethod: 'S256',
   },
   tiktok: {
     name: 'TikTok',
-    emoji: '🎵',
     authUrl: 'https://www.tiktok.com/v2/auth/authorize/',
     tokenUrl: 'https://open.tiktokapis.com/v2/oauth/token/',
     scopes: ['user.info.basic', 'video.publish', 'video.upload'],
     clientIdEnv: 'TIKTOK_CLIENT_KEY',
     clientSecretEnv: 'TIKTOK_CLIENT_SECRET',
+    scopeSeparator: ',',
+    pkceMethod: 'S256',
   },
 };
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
-/**
- * Generates the OAuth authorization URL for a given platform.
- */
-export function getOAuthUrl_v1(platform: SocialPlatform): string | null {
+// -----------------------------------------------------------
+// GENERATE OAUTH URL
+// -----------------------------------------------------------
+export async function getOAuthUrl(platform: SocialPlatform): Promise<string | null> {
   const config = PLATFORM_CONFIGS[platform];
   if (!config) {
     return null;
@@ -102,68 +117,39 @@ export function getOAuthUrl_v1(platform: SocialPlatform): string | null {
   const state = `${platform}:${crypto.randomUUID()}`;
 
   const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: callbackUrl,
     response_type: 'code',
-    scope: config.scopes.join(platform === 'twitter' ? ' ' : ','),
+    redirect_uri: callbackUrl,
+    scope: config.scopes.join(config.scopeSeparator),
     state,
   });
 
-  // Platform-specific params
-  if (platform === 'twitter') {
-    params.set('code_challenge', 'challenge');
-    params.set('code_challenge_method', 'plain');
-  }
+  // Set client_id (platform-specific key name)
   if (platform === 'tiktok') {
-    params.delete('client_id');
     params.set('client_key', clientId);
+  } else {
+    params.set('client_id', clientId);
   }
 
-  return `${config.authUrl}?${params.toString()}`;
-}
-
-export function getOAuthUrl(platform: SocialPlatform): string | null {
-  const config = PLATFORM_CONFIGS[platform];
-  if (!config) {
-    return null;
-  }
-
-  const clientId = process.env[config.clientIdEnv];
-  if (!clientId) {
-    return null;
-  }
-
-  const callbackUrl = `${BASE_URL}/api/social-accounts/callback`;
-  const state = `${platform}:${crypto.randomUUID()}`;
-
-  const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: callbackUrl,
-    response_type: 'code',
-    scope: config.scopes.join(platform === 'twitter' ? ' ' : ','),
-    state,
-  });
-
-  if (platform === 'twitter') {
-    // Generate a proper PKCE verifier
-    const verifier = crypto.randomUUID().replace(/-/g, '')
-      + crypto.randomUUID().replace(/-/g, '');
-    pkceVerifiers.set(state, verifier); // store for callback
+  // PKCE handling
+  if (config.pkceMethod === 'S256') {
+    const verifier = generateCodeVerifier();
+    const challenge = await generateCodeChallengeS256(verifier);
+    pkceStore.set(state, verifier);
+    params.set('code_challenge', challenge);
+    params.set('code_challenge_method', 'S256');
+  } else if (config.pkceMethod === 'plain') {
+    const verifier = generateCodeVerifier();
+    pkceStore.set(state, verifier);
     params.set('code_challenge', verifier);
     params.set('code_challenge_method', 'plain');
   }
 
-  if (platform === 'tiktok') {
-    params.delete('client_id');
-    params.set('client_key', clientId);
-  }
-
   return `${config.authUrl}?${params.toString()}`;
 }
 
-/**
- * Exchanges an OAuth code for access + refresh tokens.
- */
+// -----------------------------------------------------------
+// EXCHANGE CODE FOR TOKENS
+// -----------------------------------------------------------
 export async function exchangeCodeForTokens(
   platform: SocialPlatform,
   code: string,
@@ -180,38 +166,34 @@ export async function exchangeCodeForTokens(
   const callbackUrl = `${BASE_URL}/api/social-accounts/callback`;
 
   const body: Record<string, string> = {
-    client_id: clientId,
-    client_secret: clientSecret,
     code,
     redirect_uri: callbackUrl,
     grant_type: 'authorization_code',
   };
 
-  // Twitter uses basic auth
   const headers: Record<string, string> = {
     'Content-Type': 'application/x-www-form-urlencoded',
   };
 
-  // if (platform === 'twitter') {
-  //   headers.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
-  //   body.code_verifier = 'challenge';
-  //   delete body.client_id;
-  //   delete body.client_secret;
-  // }
-
+  // Platform-specific auth handling
   if (platform === 'twitter') {
+    // Twitter uses HTTP Basic Auth with client credentials
     headers.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
-    // Use stored verifier instead of hardcoded 'challenge'
-    const verifier = state ? getPkceVerifier(state) : undefined;
-    body.code_verifier = verifier || '';
-    pkceVerifiers.delete(state || ''); // clean up
-    delete body.client_id;
-    delete body.client_secret;
+  } else if (platform === 'tiktok') {
+    body.client_key = clientId;
+    body.client_secret = clientSecret;
+  } else {
+    body.client_id = clientId;
+    body.client_secret = clientSecret;
   }
 
-  if (platform === 'tiktok') {
-    delete body.client_id;
-    body.client_key = clientId;
+  // PKCE verifier
+  if (config.pkceMethod !== 'none' && state) {
+    const verifier = pkceStore.get(state);
+    if (verifier) {
+      body.code_verifier = verifier;
+      pkceStore.delete(state);
+    }
   }
 
   try {
@@ -222,7 +204,8 @@ export async function exchangeCodeForTokens(
     });
 
     if (!res.ok) {
-      console.error(`Token exchange failed for ${platform}:`, await res.text());
+      const errorText = await res.text();
+      console.error(`Token exchange failed for ${platform}:`, errorText);
       return null;
     }
 

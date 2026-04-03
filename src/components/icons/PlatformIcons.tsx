@@ -1,7 +1,6 @@
 /**
  * Social Platform Icons — SVG components
  * Clean, monochrome icons for use across the dashboard.
- * No emojis. Professional.
  */
 
 export function InstagramIcon({ className = 'size-4' }: { className?: string }) {
@@ -54,33 +53,51 @@ export function YoutubeIcon({ className = 'size-4' }: { className?: string }) {
   );
 }
 
-// Platform config used across the dashboard
-export interface PlatformInfo {
+export function ThreadsIcon({ className = 'size-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12.186 24h-.007c-3.581-.024-6.334-1.205-8.184-3.509C2.35 18.44 1.5 15.586 1.473 12.01v-.017c.027-3.579.877-6.433 2.525-8.482C5.845 1.205 8.6.024 12.18 0h.014c2.746.018 5.143.725 7.132 2.102 1.85 1.287 3.156 3.087 3.88 5.352l-2.208.761c-1.226-3.772-4.102-5.831-8.808-5.863-2.916.02-5.129.831-6.58 2.408-1.42 1.544-2.145 3.874-2.167 6.929.022 3.048.747 5.375 2.166 6.916 1.451 1.575 3.665 2.385 6.583 2.405 2.674-.018 4.737-.715 6.131-2.07.897-.864 1.491-2.009 1.763-3.411h-8.24v-2.35h10.68c.081.492.12.991.12 1.49 0 5.973-3.978 9.331-10.46 9.331z" />
+    </svg>
+  );
+}
+
+export function PinterestIcon({ className = 'size-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 0C5.373 0 0 5.372 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 01.083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z" />
+    </svg>
+  );
+}
+
+export type PlatformInfo = {
   id: string;
   name: string;
   icon: typeof InstagramIcon;
   color: string;
-}
+  accountType?: 'personal' | 'page' | 'organization';
+  description?: string;
+};
 
 export const PLATFORMS: PlatformInfo[] = [
-  { id: 'instagram', name: 'Instagram', icon: InstagramIcon, color: '#E4405F' },
-  { id: 'facebook', name: 'Facebook', icon: FacebookIcon, color: '#1877F2' },
-  { id: 'linkedin', name: 'LinkedIn', icon: LinkedInIcon, color: '#0A66C2' },
-  { id: 'twitter', name: 'X / Twitter', icon: TwitterIcon, color: '#000000' },
-  { id: 'tiktok', name: 'TikTok', icon: TikTokIcon, color: '#000000' },
+  { id: 'instagram', name: 'Instagram', icon: InstagramIcon, color: '#E4405F', accountType: 'personal' },
+  { id: 'facebook', name: 'Facebook', icon: FacebookIcon, color: '#1877F2', accountType: 'page' },
+  { id: 'linkedin', name: 'LinkedIn', icon: LinkedInIcon, color: '#0A66C2', accountType: 'personal', description: 'Personal profile' },
+  { id: 'linkedin_page', name: 'LinkedIn Page', icon: LinkedInIcon, color: '#0A66C2', accountType: 'organization', description: 'Company page' },
+  { id: 'twitter', name: 'X / Twitter', icon: TwitterIcon, color: '#000000', accountType: 'personal' },
+  { id: 'threads', name: 'Threads', icon: ThreadsIcon, color: '#000000', accountType: 'personal' },
+  { id: 'tiktok', name: 'TikTok', icon: TikTokIcon, color: '#000000', accountType: 'personal' },
+  { id: 'youtube', name: 'YouTube', icon: YoutubeIcon, color: '#FF0000', accountType: 'personal', description: 'Video only' },
+  { id: 'pinterest', name: 'Pinterest', icon: PinterestIcon, color: '#E60023', accountType: 'personal' },
 ];
 
 export function getPlatformIcon(platformId: string) {
-  return PLATFORMS.find((p) => p.id === platformId)?.icon || InstagramIcon;
+  return PLATFORMS.find(p => p.id === platformId)?.icon || InstagramIcon;
 }
 
 export function getPlatformName(platformId: string) {
-  return PLATFORMS.find((p) => p.id === platformId)?.name || platformId;
+  return PLATFORMS.find(p => p.id === platformId)?.name || platformId;
 }
 
-/**
- * Renders a row of platform icons for a list of platform IDs.
- */
 export function PlatformIcons({ platforms, className = 'size-3.5' }: { platforms: string[]; className?: string }) {
   return (
     <span className="flex items-center gap-1">
