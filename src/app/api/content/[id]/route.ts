@@ -47,6 +47,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 // -----------------------------------------------------------
 // PATCH /api/content/[id]
 // Update caption, status, scheduledFor, graphicUrls, etc.
+//
+// platformSpecific is MERGED not replaced — sending
+// { platformSpecific: { linkedin: "..." } } will update only
+// the linkedin key, leaving sourceImages, title, etc. intact.
 // -----------------------------------------------------------
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const { error, orgId } = await getAuthContext();
@@ -91,8 +95,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       updates.targetPlatforms = body.targetPlatforms;
     }
 
+    // platformSpecific is always MERGED with the existing value.
+    // This prevents a partial update (e.g. editing one platform's caption)
+    // from wiping unrelated keys like sourceImages, videoDurationSeconds, or title.
     if (body.platformSpecific !== undefined) {
-      updates.platformSpecific = body.platformSpecific;
+      // Fetch current value to merge into
+      const [current] = await db
+        .select({ platformSpecific: contentItemSchema.platformSpecific })
+        .from(contentItemSchema)
+        .where(and(eq(contentItemSchema.id, id), eq(contentItemSchema.orgId, orgId!)))
+        .limit(1);
+
+      const existing = (current?.platformSpecific as Record<string, unknown>) || {};
+      updates.platformSpecific = { ...existing, ...body.platformSpecific };
     }
 
     if (body.isSelectedVariant !== undefined) {
@@ -103,19 +118,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       updates.engagementData = body.engagementData;
     }
 
-    // --- Graphic URLs (image/carousel media) ---
     if (body.graphicUrls !== undefined) {
       if (!Array.isArray(body.graphicUrls)) {
         return NextResponse.json({ error: 'graphicUrls must be an array' }, { status: 400 });
       }
-      // Validate each entry is a string URL
       const urls = body.graphicUrls.filter(
         (u: unknown) => typeof u === 'string' && u.startsWith('http'),
       );
       updates.graphicUrls = urls;
     }
 
-    // --- v2: Content Mode ---
     if (body.contentMode !== undefined) {
       const validModes = ['normal', 'concise', 'controversial'];
       if (validModes.includes(body.contentMode)) {
@@ -123,12 +135,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // --- v2: Enrichment Data ---
     if (body.enrichmentData !== undefined) {
       updates.enrichmentData = body.enrichmentData;
     }
 
-    // --- v2: Enrichment Applied (which enrichment elements were woven in) ---
     if (body.enrichmentApplied !== undefined) {
       updates.enrichmentApplied = body.enrichmentApplied;
     }

@@ -115,6 +115,24 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       updates.graphicUrls = urls;
     }
 
+    // --- v2: Content Mode ---
+    if (body.contentMode !== undefined) {
+      const validModes = ['normal', 'concise', 'controversial'];
+      if (validModes.includes(body.contentMode)) {
+        updates.contentMode = body.contentMode;
+      }
+    }
+
+    // --- v2: Enrichment Data ---
+    if (body.enrichmentData !== undefined) {
+      updates.enrichmentData = body.enrichmentData;
+    }
+
+    // --- v2: Enrichment Applied (which enrichment elements were woven in) ---
+    if (body.enrichmentApplied !== undefined) {
+      updates.enrichmentApplied = body.enrichmentApplied;
+    }
+
     const [updated] = await db
       .update(contentItemSchema)
       .set(updates)

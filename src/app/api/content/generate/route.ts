@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { TITLE_PLATFORMS } from '@/lib/title-platforms';
 import { db } from '@/libs/DB';
 import { brandProfileSchema, contentItemSchema } from '@/models/Schema';
 
@@ -11,7 +12,6 @@ const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 
 // -----------------------------------------------------------
 // POST /api/content/generate
-// Sends brand profile + request to Python engine, saves results
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
   const { error, orgId } = await getAuthContext();
@@ -45,7 +45,6 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Call the Python content engine
-    // 90s timeout — Render free tier can take 50s+ on cold start
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 90_000);
 
@@ -84,14 +83,12 @@ export async function POST(request: NextRequest) {
             values: profile.values,
             products_services: profile.productsServices,
             key_differentiators: profile.keyDifferentiators,
-            // v2: growth stage
             growth_stage: (profile as any).growthStage || 'early',
           },
           topic: topic || null,
           content_type: contentType || 'single_image',
           target_platforms: targetPlatforms || ['instagram', 'linkedin'],
           num_variants: numVariants || 3,
-          // v2: content mode and enrichment
           content_mode: contentMode || 'normal',
           enrichment: enrichment || null,
         }),
@@ -100,10 +97,7 @@ export async function POST(request: NextRequest) {
       clearTimeout(timeoutId);
       if (fetchErr.name === 'AbortError') {
         return NextResponse.json(
-          {
-            error:
-              'The content engine is warming up (cold start). Please wait 30 seconds and try again.',
-          },
+          { error: 'The content engine is warming up (cold start). Please wait 30 seconds and try again.' },
           { status: 503 },
         );
       }
@@ -128,7 +122,20 @@ export async function POST(request: NextRequest) {
     const variantGroupId = crypto.randomUUID();
     const savedItems = [];
 
+    const platforms: string[] = targetPlatforms || ['instagram', 'linkedin'];
+    const needsTitle = platforms.some(p => TITLE_PLATFORMS.includes(p as any));
+
     for (const variant of variants) {
+      // Merge engine-returned platformSpecific with the generated title.
+      // The engine returns platform-adapted captions keyed by platform name.
+      // We store the title under platformSpecific.title so the UI can
+      // surface and edit it without a separate DB column.
+      const platformSpecific: Record<string, unknown> = variant.platform_specific || {};
+
+      if (needsTitle && variant.title) {
+        platformSpecific.title = variant.title;
+      }
+
       const [saved] = await db
         .insert(contentItemSchema)
         .values({
@@ -142,12 +149,11 @@ export async function POST(request: NextRequest) {
           variantGroupId,
           variantNumber: variant.variant_number || 1,
           isSelectedVariant: false,
-          targetPlatforms: targetPlatforms || ['instagram', 'linkedin'],
-          platformSpecific: variant.platform_specific || {},
+          targetPlatforms: platforms,
+          platformSpecific,
           status: 'pending_review',
           antiSlopScore: variant.anti_slop_score || null,
           qualityFlags: variant.quality_flags || [],
-          // v2: content mode and enrichment tracking
           contentMode: contentMode || 'normal',
           enrichmentData: enrichment || {},
           enrichmentApplied: variant.enrichment_applied || [],

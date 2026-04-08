@@ -81,6 +81,13 @@ const PLATFORM_LABELS: Record<string, string> = {
   pinterest: 'Pinterest',
 };
 
+// Platforms that use a distinct title field separate from the caption.
+// Must stay in sync with TITLE_PLATFORMS in generate/route.ts and content_generator.py.
+const TITLE_PLATFORMS = new Set(['youtube', 'pinterest']);
+
+// Internal platformSpecific keys that are not platform-name captions.
+const PLATFORM_SPECIFIC_SYSTEM_KEYS = ['sourceImages', 'videoDurationSeconds', 'title'];
+
 const MEDIA_CONTENT_TYPES = ['single_image', 'carousel', 'reel'];
 
 // Returns true only if the URL is definitively a video file.
@@ -134,6 +141,14 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [copyDone, setCopyDone] = useState(false);
   const [showQualityFlags, setShowQualityFlags] = useState(false);
 
+  // Title editing (YouTube / Pinterest only)
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+
+  // Per-platform adaptation editing
+  const [editingAdaptation, setEditingAdaptation] = useState<string | null>(null);
+  const [editAdaptationText, setEditAdaptationText] = useState('');
+
   useEffect(() => {
     async function load() {
       const { id } = await params;
@@ -143,6 +158,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           const data = await res.json();
           setItem(data.item);
           setEditCaption(data.item.caption);
+          setEditTitle((data.item.platformSpecific?.title as string) || '');
           if (data.item.scheduledFor) {
             const d = new Date(data.item.scheduledFor);
             setScheduleDate(d.toISOString().split('T')[0] ?? '');
@@ -202,6 +218,50 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         const data = await res.json();
         setItem(data.item);
         setIsEditing(false);
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Saves platformSpecific.title — server merges, won't overwrite other keys
+  const saveTitle = async () => {
+    if (!item) {
+      return;
+    }
+    setActionLoading('save-title');
+    try {
+      const res = await fetch(`/api/content/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platformSpecific: { title: editTitle.trim() } }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setItem(data.item);
+        setIsEditingTitle(false);
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Saves a single platform's adapted caption — server merges, won't overwrite other keys
+  const saveAdaptation = async (platform: string) => {
+    if (!item) {
+      return;
+    }
+    setActionLoading(`adaptation-${platform}`);
+    try {
+      const res = await fetch(`/api/content/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platformSpecific: { [platform]: editAdaptationText } }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setItem(data.item);
+        setEditingAdaptation(null);
       }
     } finally {
       setActionLoading(null);
@@ -337,24 +397,14 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const sourceImages = (item.platformSpecific?.sourceImages as string[]) || [];
 
   // hasGeneratedVideo: video was generated from source images.
-  // sourceImages is populated only after successful video generation.
   const hasGeneratedVideo = isReel && sourceImages.length > 0 && hasMedia;
 
   // hasUploadedVideo: user directly uploaded a video file (not images).
-  //
-  // Detection strategy (in order):
-  // 1. Primary: any URL has a video file extension — reliable for all new uploads
-  //    because MediaUploader now normalizes video CDN URLs to include /video.mp4.
-  // 2. Fallback for legacy data: if it's a reel with exactly 1 URL, no sourceImages,
-  //    and no video extension — it was uploaded before normalization was added.
-  //    A slideshow needs 3–5 images so exactly 1 bare URL is almost certainly a video.
   const hasVideoExtension = isReel && hasMedia && item.graphicUrls.some(url => isVideoFileUrl(url));
   const isLikelyLegacyVideo = isReel && !hasGeneratedVideo && item.graphicUrls.length === 1
     && !isVideoFileUrl(item.graphicUrls[0]!);
   const hasUploadedVideo = !hasGeneratedVideo && (hasVideoExtension || isLikelyLegacyVideo);
 
-  // Images uploaded for slideshow — bare Uploadcare CDN URLs with no extension,
-  // more than 1 URL (single images go to legacy video path above)
   const uploadedSlideImages = isReel && !hasGeneratedVideo && !hasUploadedVideo
     ? item.graphicUrls
     : [];
@@ -363,6 +413,12 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const hasImages = (isSingleImage || isCarousel) && hasMedia;
   const canPublish = item.status === 'approved' && (!needsMedia || hasVideo || hasImages);
 
+  // Title field — only shown when targeting YouTube or Pinterest
+  const platformsWithTitle = (item.targetPlatforms || []).filter(p => TITLE_PLATFORMS.has(p));
+  const showTitleField = platformsWithTitle.length > 0;
+  const currentTitle = (item.platformSpecific?.title as string) || '';
+
+  // Enrichment display
   type EnrichmentShape = {
     cta_url?: string;
     cta_label?: string;
@@ -481,7 +537,83 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             )}
           </div>
 
-          {/* Enrichment Summary */}
+          {/* ── Title field (YouTube / Pinterest only) ────────── */}
+          {showTitleField && (
+            <div className="rounded-xl border bg-card p-5">
+              <div className="mb-3 flex items-center justify-between border-b pb-3">
+                <div>
+                  <h3 className="text-sm font-semibold">Post title</h3>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Headline on
+                    {' '}
+                    {platformsWithTitle.map(p => PLATFORM_LABELS[p] || p).join(' and ')}
+                    . Max 100 characters.
+                  </p>
+                </div>
+                {!isEditingTitle && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditingTitle(true); setEditTitle(currentTitle);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
+                  >
+                    <Edit3 className="size-3" />
+                    {currentTitle ? 'Edit' : 'Add title'}
+                  </button>
+                )}
+              </div>
+
+              {isEditingTitle ? (
+                <div>
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={e => setEditTitle(e.target.value.slice(0, 100))}
+                    maxLength={100}
+                    placeholder="Write a clear, descriptive title..."
+                    className="w-full rounded-lg border bg-background px-3.5 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">
+                      {editTitle.length}
+                      /100
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={saveTitle}
+                        disabled={actionLoading === 'save-title'}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                      >
+                        {actionLoading === 'save-title'
+                          ? <Loader2 className="size-3 animate-spin" />
+                          : <Check className="size-3" />}
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingTitle(false)}
+                        className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm">
+                  {currentTitle || (
+                    <span className="italic text-muted-foreground">
+                      No title set. The first 100 characters of the caption will be used as fallback.
+                    </span>
+                  )}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── Enrichment Summary ────────────────────────────── */}
           {hasEnrichment && (
             <div className="rounded-xl border bg-card p-5">
               <div className="mb-3 flex items-center gap-2 border-b pb-3">
@@ -690,24 +822,74 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             </div>
           )}
 
-          {/* Platform adaptations */}
+          {/* ── Platform adaptations (editable) ──────────────── */}
           {Object.keys(item.platformSpecific || {}).length > 0
           && Object.entries(item.platformSpecific).some(
-            ([k]) => !['sourceImages', 'videoDurationSeconds'].includes(k),
+            ([k]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k),
           ) && (
             <div className="rounded-xl border bg-card p-5">
               <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Platform adaptations</h3>
               <div className="space-y-3">
                 {Object.entries(item.platformSpecific)
-                  .filter(([k]) => !['sourceImages', 'videoDurationSeconds'].includes(k))
-                  .map(([platform, text]) => (
-                    <div key={platform} className="rounded-lg border bg-muted/30 p-3">
-                      <span className="mb-1.5 block text-xs font-semibold capitalize">
-                        {PLATFORM_LABELS[platform] || platform}
-                      </span>
-                      <p className="text-sm leading-relaxed text-muted-foreground">{String(text)}</p>
-                    </div>
-                  ))}
+                  .filter(([k]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k))
+                  .map(([platform, text]) => {
+                    const isEditingThis = editingAdaptation === platform;
+                    const loadingKey = `adaptation-${platform}`;
+                    return (
+                      <div key={platform} className="rounded-lg border bg-muted/30 p-3">
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <span className="text-xs font-semibold capitalize">
+                            {PLATFORM_LABELS[platform] || platform}
+                          </span>
+                          {!isEditingThis && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingAdaptation(platform);
+                                setEditAdaptationText(String(text));
+                              }}
+                              className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium transition-colors hover:bg-muted"
+                            >
+                              <Edit3 className="size-3" />
+                              Edit
+                            </button>
+                          )}
+                        </div>
+                        {isEditingThis ? (
+                          <div>
+                            <textarea
+                              value={editAdaptationText}
+                              onChange={e => setEditAdaptationText(e.target.value)}
+                              rows={5}
+                              className="w-full resize-none rounded-lg border bg-background px-3 py-2.5 text-sm leading-relaxed focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            />
+                            <div className="mt-2 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => saveAdaptation(platform)}
+                                disabled={actionLoading === loadingKey}
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                              >
+                                {actionLoading === loadingKey
+                                  ? <Loader2 className="size-3 animate-spin" />
+                                  : <Check className="size-3" />}
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingAdaptation(null)}
+                                className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-sm leading-relaxed text-muted-foreground">{String(text)}</p>
+                        )}
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           )}

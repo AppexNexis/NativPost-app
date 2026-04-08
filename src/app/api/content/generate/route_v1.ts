@@ -21,7 +21,14 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { topic, contentType, targetPlatforms, numVariants } = body;
+    const {
+      topic,
+      contentType,
+      targetPlatforms,
+      numVariants,
+      contentMode,
+      enrichment,
+    } = body;
 
     // 1. Fetch the org's brand profile
     const [profile] = await db
@@ -77,11 +84,16 @@ export async function POST(request: NextRequest) {
             values: profile.values,
             products_services: profile.productsServices,
             key_differentiators: profile.keyDifferentiators,
+            // v2: growth stage
+            growth_stage: (profile as any).growthStage || 'early',
           },
           topic: topic || null,
           content_type: contentType || 'single_image',
           target_platforms: targetPlatforms || ['instagram', 'linkedin'],
           num_variants: numVariants || 3,
+          // v2: content mode and enrichment
+          content_mode: contentMode || 'normal',
+          enrichment: enrichment || null,
         }),
       });
     } catch (fetchErr: any) {
@@ -135,6 +147,10 @@ export async function POST(request: NextRequest) {
           status: 'pending_review',
           antiSlopScore: variant.anti_slop_score || null,
           qualityFlags: variant.quality_flags || [],
+          // v2: content mode and enrichment tracking
+          contentMode: contentMode || 'normal',
+          enrichmentData: enrichment || {},
+          enrichmentApplied: variant.enrichment_applied || [],
         })
         .returning();
 
@@ -146,6 +162,7 @@ export async function POST(request: NextRequest) {
         variantGroupId,
         variants: savedItems,
         count: savedItems.length,
+        contentMode: contentMode || 'normal',
       },
       { status: 201 },
     );
