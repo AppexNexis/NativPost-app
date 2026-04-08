@@ -4,11 +4,10 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { db } from '@/libs/DB';
-import { brandProfileSchema } from '@/models/Schema';
+import { brandProfileSchema, organizationSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
 // GET /api/brand-profile
-// Returns the brand profile for the current org
 // -----------------------------------------------------------
 export async function GET() {
   const { error, orgId } = await getAuthContext();
@@ -30,16 +29,19 @@ export async function GET() {
     return NextResponse.json({ profile }, { status: 200 });
   } catch (err) {
     console.error('Failed to fetch brand profile:', err);
-    return NextResponse.json(
-      { error: 'Failed to fetch brand profile' },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: 'Failed to fetch brand profile' }, { status: 500 });
   }
 }
 
 // -----------------------------------------------------------
 // POST /api/brand-profile
-// Creates or updates the brand profile for the current org
+// Creates or updates the brand profile for the current org.
+//
+// Safety net: ensures the organization row exists before any
+// FK-dependent insert. The Clerk webhook handles this in production
+// but cannot reach localhost during local dev, so the org row never
+// gets created there. onConflictDoNothing() makes this fully
+// idempotent — if the row already exists, this is a no-op.
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
   const { error, orgId } = await getAuthContext();
@@ -50,10 +52,21 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    // Calculate profile completeness
+    // Ensure org row exists before writing brand profile (FK safety net)
+    await db
+      .insert(organizationSchema)
+      .values({
+        id: orgId!,
+        plan: 'starter',
+        planStatus: 'trialing',
+        postsPerMonth: 20,
+        platformsLimit: 3,
+        setupFeePaid: false,
+      })
+      .onConflictDoNothing();
+
     const completeness = calculateCompleteness(body);
 
-    // Check if profile already exists for this org
     const [existing] = await db
       .select({ id: brandProfileSchema.id })
       .from(brandProfileSchema)
@@ -61,7 +74,6 @@ export async function POST(request: NextRequest) {
       .limit(1);
 
     if (existing) {
-      // Update existing profile
       const [updated] = await db
         .update(brandProfileSchema)
         .set({
@@ -76,7 +88,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ profile: updated }, { status: 200 });
     }
 
-    // Create new profile
     const [created] = await db
       .insert(brandProfileSchema)
       .values({
@@ -90,10 +101,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ profile: created }, { status: 201 });
   } catch (err) {
     console.error('Failed to save brand profile:', err);
-    return NextResponse.json(
-      { error: 'Failed to save brand profile' },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: 'Failed to save brand profile' }, { status: 500 });
   }
 }
 
@@ -102,7 +110,6 @@ export async function POST(request: NextRequest) {
 // -----------------------------------------------------------
 
 function sanitizeProfileData(body: Record<string, unknown>) {
-  // Only allow known fields — prevent injection of arbitrary columns
   return {
     brandName: String(body.brandName || ''),
     industry: body.industry ? String(body.industry) : null,
@@ -133,7 +140,6 @@ function sanitizeProfileData(body: Record<string, unknown>) {
     values: Array.isArray(body.values) ? body.values : [],
     productsServices: Array.isArray(body.productsServices) ? body.productsServices : [],
     keyDifferentiators: body.keyDifferentiators ? String(body.keyDifferentiators) : null,
-    // v2
     growthStage: body.growthStage ? String(body.growthStage) : 'early',
   };
 }
@@ -141,23 +147,18 @@ function sanitizeProfileData(body: Record<string, unknown>) {
 function calculateCompleteness(body: Record<string, unknown>): number {
   let score = 0;
   const checks = [
-    // Step 1: Business basics (25 points)
     { field: 'brandName', weight: 10 },
     { field: 'industry', weight: 5 },
     { field: 'targetAudience', weight: 5 },
     { field: 'companyDescription', weight: 5 },
-    // Step 2: Voice & personality (25 points)
     { field: 'communicationStyle', weight: 10 },
     { field: 'vocabulary', weight: 8, isArray: true },
     { field: 'forbiddenWords', weight: 7, isArray: true },
-    // Step 3: Visual identity (20 points)
     { field: 'primaryColor', weight: 7 },
     { field: 'imageStyle', weight: 7 },
     { field: 'logoUrl', weight: 6 },
-    // Step 4: Content preferences (15 points)
     { field: 'contentExamples', weight: 8, isArray: true },
     { field: 'antiPatterns', weight: 7, isArray: true },
-    // Step 5: Platform voices (15 points)
     { field: 'linkedinVoice', weight: 5 },
     { field: 'instagramVoice', weight: 5 },
     { field: 'twitterVoice', weight: 5 },
