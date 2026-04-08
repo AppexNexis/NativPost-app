@@ -17,17 +17,39 @@ type MediaUploaderProps = {
   maxFiles?: number;
 };
 
+// A URL is a video if it has a video file extension.
+// Bare Uploadcare CDN URLs (no extension) are images.
+// Video URLs uploaded through the video uploader are always
+// normalized to include /video.mp4 before saving, so this
+// check is reliable.
 function isVideoUrl(url: string): boolean {
-  return /\.(?:mp4|mov|webm|avi|mkv)(?:[/?#]|$)/i.test(url)
-    || url.includes('video')
-    || url.includes('.mp4');
+  return /\.(?:mp4|mov|webm|avi|mkv)(?:[/?#]|$)/i.test(url);
 }
 
+// Ensures a video URL is directly playable by the browser.
+// Bare Uploadcare URLs like https://cdn.ucarecd.net/uuid/ become
+// https://cdn.ucarecd.net/uuid/video.mp4
 function toPlayableVideoSrc(url: string): string {
   if (/\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(url)) {
     return url;
   }
   const base = url.endsWith('/') ? url : `${url}/`;
+  return `${base}video.mp4`;
+}
+
+// Normalizes a CDN URL returned by the Uploadcare widget.
+// For video uploads, appends /video.mp4 so the URL is
+// identifiable as a video without needing MIME type checks.
+function normalizeUploadedUrl(cdnUrl: string, isVideo: boolean): string {
+  if (!isVideo) {
+    return cdnUrl;
+  }
+  // Already has a video extension — return as-is
+  if (/\.(?:mp4|mov|webm|avi|mkv)(?:[/?#]|$)/i.test(cdnUrl)) {
+    return cdnUrl;
+  }
+  // Bare CDN URL — append /video.mp4
+  const base = cdnUrl.endsWith('/') ? cdnUrl : `${cdnUrl}/`;
   return `${base}video.mp4`;
 }
 
@@ -57,6 +79,8 @@ export function MediaUploader({
   }
 
   const atMaxFiles = maxFiles !== undefined && existingUrls.length >= maxFiles;
+  const isVideoMode = mediaType === 'video';
+  const Icon = isVideoMode ? Video : ImageIcon;
 
   const saveUrls = async (merged: string[]) => {
     setIsSaving(true);
@@ -81,10 +105,14 @@ export function MediaUploader({
   const handleUploadComplete = async (files: { cdnUrl: string | null }[]) => {
     const newUrls = files
       .map(f => f.cdnUrl)
-      .filter((url): url is string => url !== null);
+      .filter((url): url is string => url !== null)
+      // Normalize video URLs so they are always identifiable by extension
+      .map(url => normalizeUploadedUrl(url, isVideoMode));
+
     if (newUrls.length === 0) {
       return;
     }
+    // For video (maxFiles=1), replace entirely. For images, append.
     const merged = maxFiles === 1 ? newUrls : [...existingUrls, ...newUrls];
     await saveUrls(merged);
   };
@@ -125,13 +153,7 @@ export function MediaUploader({
     },
   }[mediaType];
 
-  const isVideoMode = mediaType === 'video';
-  const Icon = isVideoMode ? Video : ImageIcon;
-
-  // Picker accept type maps from mediaType
   const pickerAccept = mediaType === 'video' ? 'video' : mediaType === 'image' ? 'image' : 'all';
-
-  // How many more files can be selected from the library
   const remainingSlots = maxFiles !== undefined ? maxFiles - existingUrls.length : undefined;
 
   const uploadLabel = () => {
@@ -165,6 +187,8 @@ export function MediaUploader({
       {existingUrls.length > 0 && (
         <div className={isVideoMode ? 'space-y-3' : 'grid gap-3 sm:grid-cols-2'}>
           {existingUrls.map((url, i) => {
+            // In video mode every item is a video regardless of URL shape.
+            // In image/any mode, check by extension.
             const isVid = isVideoMode || isVideoUrl(url);
             const videoSrc = isVid ? toPlayableVideoSrc(url) : url;
 

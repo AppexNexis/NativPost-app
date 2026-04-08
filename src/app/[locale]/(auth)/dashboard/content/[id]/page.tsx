@@ -72,12 +72,23 @@ const MODE_CONFIG: Record<string, { label: string; color: string; icon?: typeof 
 const PLATFORM_LABELS: Record<string, string> = {
   instagram: 'Instagram',
   linkedin: 'LinkedIn',
+  linkedin_page: 'LinkedIn Page',
   twitter: 'X / Twitter',
   facebook: 'Facebook',
   tiktok: 'TikTok',
+  youtube: 'YouTube',
+  threads: 'Threads',
+  pinterest: 'Pinterest',
 };
 
 const MEDIA_CONTENT_TYPES = ['single_image', 'carousel', 'reel'];
+
+// Returns true only if the URL is definitively a video file.
+// Bare Uploadcare CDN URLs (no extension) are NOT treated as videos —
+// those are images uploaded by the user for slideshow generation.
+function isVideoFileUrl(url: string): boolean {
+  return /\.(?:mp4|mov|webm|avi|mkv)(?:[/?#]|$)/i.test(url);
+}
 
 function toVideoSrc(url: string): string {
   if (/\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(url)) {
@@ -324,13 +335,34 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const hasMedia = item.graphicUrls && item.graphicUrls.length > 0;
 
   const sourceImages = (item.platformSpecific?.sourceImages as string[]) || [];
+
+  // hasGeneratedVideo: video was generated from source images.
+  // sourceImages is populated only after successful video generation.
   const hasGeneratedVideo = isReel && sourceImages.length > 0 && hasMedia;
-  const hasUploadedVideo = isReel && hasMedia && !hasGeneratedVideo;
+
+  // hasUploadedVideo: user directly uploaded a video file (not images).
+  //
+  // Detection strategy (in order):
+  // 1. Primary: any URL has a video file extension — reliable for all new uploads
+  //    because MediaUploader now normalizes video CDN URLs to include /video.mp4.
+  // 2. Fallback for legacy data: if it's a reel with exactly 1 URL, no sourceImages,
+  //    and no video extension — it was uploaded before normalization was added.
+  //    A slideshow needs 3–5 images so exactly 1 bare URL is almost certainly a video.
+  const hasVideoExtension = isReel && hasMedia && item.graphicUrls.some(url => isVideoFileUrl(url));
+  const isLikelyLegacyVideo = isReel && !hasGeneratedVideo && item.graphicUrls.length === 1
+    && !isVideoFileUrl(item.graphicUrls[0]!);
+  const hasUploadedVideo = !hasGeneratedVideo && (hasVideoExtension || isLikelyLegacyVideo);
+
+  // Images uploaded for slideshow — bare Uploadcare CDN URLs with no extension,
+  // more than 1 URL (single images go to legacy video path above)
+  const uploadedSlideImages = isReel && !hasGeneratedVideo && !hasUploadedVideo
+    ? item.graphicUrls
+    : [];
+
   const hasVideo = isReel && (hasGeneratedVideo || hasUploadedVideo);
   const hasImages = (isSingleImage || isCarousel) && hasMedia;
   const canPublish = item.status === 'approved' && (!needsMedia || hasVideo || hasImages);
 
-  // Enrichment display — cast to known shape
   type EnrichmentShape = {
     cta_url?: string;
     cta_label?: string;
@@ -449,7 +481,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             )}
           </div>
 
-          {/* ── Enrichment Summary ────────────────────────────── */}
+          {/* Enrichment Summary */}
           {hasEnrichment && (
             <div className="rounded-xl border bg-card p-5">
               <div className="mb-3 flex items-center gap-2 border-b pb-3">
@@ -494,7 +526,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <h3 className="text-sm font-semibold">Video post</h3>
               </div>
 
-              {!hasUploadedVideo && (
+              {/* Step 1: Image uploader for slideshow generation.
+                  Hidden once the user has an uploaded video file or a generated video. */}
+              {!hasUploadedVideo && !hasGeneratedVideo && (
                 <div className="mb-5">
                   <div className="mb-3 flex items-center gap-2">
                     <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">1</span>
@@ -502,7 +536,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                   <MediaUploader
                     contentItemId={item.id}
-                    existingUrls={hasGeneratedVideo ? sourceImages : item.graphicUrls}
+                    existingUrls={uploadedSlideImages}
                     onUpdate={urls => setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev)}
                     mediaType="image"
                     maxFiles={5}
@@ -510,90 +544,108 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               )}
 
-              {!hasUploadedVideo && (hasGeneratedVideo ? sourceImages.length : item.graphicUrls.length) > 0 && (
+              {/* Step 2: Generate video button — shown when images are uploaded but no video yet */}
+              {!hasUploadedVideo && !hasGeneratedVideo && uploadedSlideImages.length > 0 && (
                 <div className="border-t pt-5">
                   <div className="mb-3 flex items-center gap-2">
                     <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">2</span>
                     <p className="text-xs font-medium text-muted-foreground">Generate branded video</p>
                   </div>
-
-                  {hasGeneratedVideo ? (
-                    <div className="space-y-3">
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {item.graphicUrls[0] && (
-                          <div className="overflow-hidden rounded-lg border bg-black">
-                            <div className="border-b px-3 py-2">
-                              <p className="text-[11px] font-medium text-muted-foreground">9:16 — Instagram Reels, TikTok</p>
-                            </div>
-                            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                            <video src={toVideoSrc(item.graphicUrls[0])} className="w-full" controls preload="metadata" playsInline style={{ maxHeight: 300 }} />
-                          </div>
-                        )}
-                        {item.graphicUrls[1] && (
-                          <div className="overflow-hidden rounded-lg border bg-black">
-                            <div className="border-b px-3 py-2">
-                              <p className="text-[11px] font-medium text-muted-foreground">1:1 — LinkedIn, Facebook</p>
-                            </div>
-                            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                            <video src={toVideoSrc(item.graphicUrls[1])} className="w-full" controls preload="metadata" playsInline />
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={generateVideo}
-                        disabled={isGeneratingVideo}
-                        className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-60"
-                      >
-                        {isGeneratingVideo
-                          ? <Loader2 className="size-3 animate-spin" />
-                          : <Sparkles className="size-3" />}
-                        Regenerate video
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <button
-                        type="button"
-                        onClick={generateVideo}
-                        disabled={isGeneratingVideo}
-                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                      >
-                        {isGeneratingVideo ? (
-                          <>
-                            <Loader2 className="size-4 animate-spin" />
-                            Generating video (~30–60s)...
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="size-4" />
-                            Generate branded video
-                          </>
-                        )}
-                      </button>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        Renders two versions: 9:16 for Reels/TikTok and 1:1 for LinkedIn/Facebook. Takes about 30–60 seconds.
-                      </p>
-                    </div>
-                  )}
-
+                  <div>
+                    <button
+                      type="button"
+                      onClick={generateVideo}
+                      disabled={isGeneratingVideo}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                    >
+                      {isGeneratingVideo ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin" />
+                          Generating video (~30–60s)...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="size-4" />
+                          Generate branded video
+                        </>
+                      )}
+                    </button>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Renders two versions: 9:16 for Reels/TikTok and 1:1 for LinkedIn/Facebook. Takes about 30–60 seconds.
+                    </p>
+                  </div>
                   {videoGenError && (
                     <p className="mt-2 text-xs text-red-500">{videoGenError}</p>
                   )}
                 </div>
               )}
 
+              {/* Generated video players */}
+              {hasGeneratedVideo && (
+                <div className="mb-5">
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">2</span>
+                    <p className="text-xs font-medium text-muted-foreground">Generated branded video</p>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {item.graphicUrls[0] && (
+                        <div className="overflow-hidden rounded-lg border bg-black">
+                          <div className="border-b px-3 py-2">
+                            <p className="text-[11px] font-medium text-muted-foreground">9:16 — Instagram Reels, TikTok</p>
+                          </div>
+                          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                          <video src={toVideoSrc(item.graphicUrls[0])} className="w-full" controls preload="metadata" playsInline style={{ maxHeight: 300 }} />
+                        </div>
+                      )}
+                      {item.graphicUrls[1] && (
+                        <div className="overflow-hidden rounded-lg border bg-black">
+                          <div className="border-b px-3 py-2">
+                            <p className="text-[11px] font-medium text-muted-foreground">1:1 — LinkedIn, Facebook</p>
+                          </div>
+                          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                          <video src={toVideoSrc(item.graphicUrls[1])} className="w-full" controls preload="metadata" playsInline />
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={generateVideo}
+                      disabled={isGeneratingVideo}
+                      className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-60"
+                    >
+                      {isGeneratingVideo
+                        ? <Loader2 className="size-3 animate-spin" />
+                        : <Sparkles className="size-3" />}
+                      Regenerate video
+                    </button>
+                    {videoGenError && (
+                      <p className="mt-1 text-xs text-red-500">{videoGenError}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Directly uploaded video player */}
               {hasUploadedVideo && (
                 <div className="mb-5">
                   <p className="mb-3 text-xs font-medium text-muted-foreground">Uploaded video</p>
                   <div className="overflow-hidden rounded-lg border bg-black">
                     {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                    <video src={toVideoSrc(item.graphicUrls[0]!)} className="w-full" controls preload="metadata" playsInline style={{ maxHeight: 400 }} />
+                    <video
+                      src={toVideoSrc(item.graphicUrls[0]!)}
+                      className="w-full"
+                      controls
+                      preload="metadata"
+                      playsInline
+                      style={{ maxHeight: 400 }}
+                    />
                   </div>
                 </div>
               )}
 
-              <div className="mt-5 border-t pt-5">
+              {/* Upload your own video — always shown at bottom of reel section */}
+              <div className={!hasUploadedVideo && !hasGeneratedVideo && uploadedSlideImages.length === 0 ? '' : 'mt-5 border-t pt-5'}>
                 <p className="mb-3 text-xs font-medium text-muted-foreground">
                   {hasUploadedVideo ? 'Replace video' : 'Or upload your own video'}
                 </p>
@@ -814,7 +866,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
 
             {needsMedia && !hasMedia && item.status === 'approved' && (
               <p className="text-center text-[11px] text-amber-600">
-                {isReel ? 'Add images and generate a video before publishing.' : 'Add an image before publishing.'}
+                {isReel ? 'Add images and generate a video, or upload a video directly.' : 'Add an image before publishing.'}
               </p>
             )}
           </div>

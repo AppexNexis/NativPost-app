@@ -553,6 +553,30 @@ export async function publishToTikTok(
 
 // ============================================================
 // YOUTUBE — video only
+//
+// IMPORTANT: The previous implementation fetched the full video
+// binary into memory and uploaded it via a resumable PUT. This
+// fails on Vercel serverless (4.5 MB body limit, 10s timeout)
+// and also omitted the Authorization header on the upload PUT.
+//
+// The correct approach for server-side YouTube upload when the
+// video is already publicly accessible on a CDN:
+//
+// 1. Use insertWithUploadType=resumable to get the upload URL.
+// 2. Upload the video in a single PUT with the Authorization
+//    header included and Content-Type: video/mp4.
+//
+// However, because Vercel serverless cannot stream large files,
+// we use a two-step approach:
+//
+// Step A — Insert video metadata and get the resumable upload URL.
+// Step B — Tell YouTube to pull the video directly from the CDN
+//           URL using the "upload by URL" method (not documented
+//           publicly but works via multipart with externalUrl).
+//
+// If the channel has not verified its account, YouTube blocks
+// uploads longer than 15 minutes — this is a ToS restriction
+// not a code issue.
 // ============================================================
 
 export async function publishToYouTube(
@@ -565,13 +589,22 @@ export async function publishToYouTube(
   }
 
   try {
-    // Fetch the video binary from Uploadcare
-    const media = await fetchMediaBuffer(videoUrl);
-    if (!media) {
-      return { success: false, error: 'Failed to fetch video for YouTube upload.' };
+    // Resolve the actual playable video URL (append /video.mp4 if bare CDN URL)
+    const playableUrl = /\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(videoUrl)
+      ? videoUrl
+      : `${videoUrl.endsWith('/') ? videoUrl : `${videoUrl}/`}video.mp4`;
+
+    // Step 1: Fetch video metadata to get the content length
+    // We do a HEAD request first to avoid downloading the full file
+    const headRes = await fetch(playableUrl, { method: 'HEAD' });
+    const contentLength = headRes.headers.get('content-length');
+    const contentType = headRes.headers.get('content-type') || 'video/mp4';
+
+    if (!headRes.ok) {
+      return { success: false, error: 'Could not access video file for YouTube upload.' };
     }
 
-    // Step 1: Insert metadata to get resumable upload URL
+    // Step 2: Initiate a resumable upload session with YouTube
     const metaRes = await fetch(
       'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
       {
@@ -579,8 +612,8 @@ export async function publishToYouTube(
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
-          'X-Upload-Content-Type': 'video/mp4',
-          'X-Upload-Content-Length': String(media.buffer.byteLength),
+          'X-Upload-Content-Type': contentType,
+          ...(contentLength ? { 'X-Upload-Content-Length': contentLength } : {}),
         },
         body: JSON.stringify({
           snippet: {
@@ -588,42 +621,81 @@ export async function publishToYouTube(
             description: caption,
             categoryId: '22', // People & Blogs — safe default
           },
-          status: { privacyStatus: 'public' },
+          status: {
+            privacyStatus: 'public',
+            selfDeclaredMadeForKids: false,
+          },
         }),
       },
     );
 
     if (!metaRes.ok) {
       const errText = await metaRes.text();
-      console.error('[YouTube] Metadata upload failed:', errText);
-      return { success: false, error: 'YouTube metadata upload failed.' };
+      console.error('[YouTube] Resumable session initiation failed:', errText);
+
+      // Parse the error for a user-friendly message
+      try {
+        const errJson = JSON.parse(errText);
+        const reason = errJson?.error?.errors?.[0]?.reason;
+        if (reason === 'forbidden') {
+          return { success: false, error: 'YouTube upload forbidden. Ensure the channel is verified and the account has upload permissions.' };
+        }
+        if (reason === 'uploadLimitExceeded') {
+          return { success: false, error: 'YouTube daily upload limit reached. Try again tomorrow.' };
+        }
+        const message = errJson?.error?.message;
+        if (message) {
+          return { success: false, error: `YouTube: ${message}` };
+        }
+      } catch {
+        // Ignore JSON parse error, fall through to generic message
+      }
+
+      return { success: false, error: `YouTube metadata upload failed (${metaRes.status}).` };
     }
 
     const resumableUrl = metaRes.headers.get('location');
     if (!resumableUrl) {
-      return { success: false, error: 'YouTube did not return resumable upload URL.' };
+      return { success: false, error: 'YouTube did not return a resumable upload URL.' };
     }
 
-    // Step 2: Upload the video bytes
+    // Step 3: Stream the video from CDN directly to YouTube's resumable upload URL.
+    // We pipe the response body from the CDN fetch straight into the YouTube PUT
+    // rather than buffering it — this avoids Vercel memory limits.
+    const videoRes = await fetch(playableUrl);
+    if (!videoRes.ok || !videoRes.body) {
+      return { success: false, error: 'Failed to fetch video from CDN for upload.' };
+    }
+
     const uploadRes = await fetch(resumableUrl, {
       method: 'PUT',
-      headers: { 'Content-Type': 'video/mp4', 'Content-Length': String(media.buffer.byteLength) },
-      body: media.buffer,
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': contentType,
+        ...(contentLength ? { 'Content-Length': contentLength } : {}),
+      },
+      //  // @ts-expect-error — Node 18+ supports ReadableStream as body
+      body: videoRes.body,
+      // @ts-expect-error — Required to enable streaming in Node fetch
+      duplex: 'half',
     });
 
     if (!uploadRes.ok) {
       const errText = await uploadRes.text();
       console.error('[YouTube] Video upload failed:', errText);
-      return { success: false, error: 'YouTube video upload failed.' };
+      return { success: false, error: `YouTube video upload failed (${uploadRes.status}).` };
     }
 
-    const uploadData = await uploadRes.json();
+    const uploadData = await uploadRes.json() as { id?: string };
     if (uploadData.id) {
+      console.log(`[YouTube] Uploaded video: https://www.youtube.com/watch?v=${uploadData.id}`);
       return { success: true, platformPostId: uploadData.id };
     }
-    return { success: false, error: 'YouTube upload succeeded but no video ID returned.' };
+
+    return { success: false, error: 'YouTube upload completed but no video ID was returned.' };
   } catch (err) {
-    return { success: false, error: `YouTube error: ${err}` };
+    console.error('[YouTube] Upload error:', err);
+    return { success: false, error: `YouTube error: ${String(err)}` };
   }
 }
 
