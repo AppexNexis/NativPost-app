@@ -1,5 +1,6 @@
 'use client';
 
+import { useOrganization } from '@clerk/nextjs';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 export type BrandProfileData = {
@@ -28,7 +29,6 @@ export type BrandProfileData = {
   twitterVoice: string;
   facebookVoice: string;
   tiktokVoice: string;
-  // v2
   growthStage: string;
 };
 
@@ -58,26 +58,35 @@ export const DEFAULT_PROFILE: BrandProfileData = {
   twitterVoice: '',
   facebookVoice: '',
   tiktokVoice: '',
-  // v2
   growthStage: 'early',
 };
 
-const DRAFT_KEY = 'nativpost:brand-profile-draft';
-const DRAFT_TIMESTAMP_KEY = 'nativpost:brand-profile-draft-ts';
+// -----------------------------------------------------------
+// Draft helpers — all keyed by orgId so drafts never bleed
+// between accounts, even on the same device.
+// -----------------------------------------------------------
 
-function saveDraft(data: BrandProfileData) {
+function draftKey(orgId: string) {
+  return `nativpost:brand-profile-draft:${orgId}`;
+}
+
+function draftTsKey(orgId: string) {
+  return `nativpost:brand-profile-draft-ts:${orgId}`;
+}
+
+function saveDraft(orgId: string, data: BrandProfileData) {
   try {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(data));
-    localStorage.setItem(DRAFT_TIMESTAMP_KEY, Date.now().toString());
+    localStorage.setItem(draftKey(orgId), JSON.stringify(data));
+    localStorage.setItem(draftTsKey(orgId), Date.now().toString());
   } catch {
-    // localStorage unavailable
+    // localStorage unavailable (SSR, private browsing, storage full)
   }
 }
 
-function loadDraft(): { data: BrandProfileData; savedAt: number } | null {
+function loadDraft(orgId: string): { data: BrandProfileData; savedAt: number } | null {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
-    const ts = localStorage.getItem(DRAFT_TIMESTAMP_KEY);
+    const raw = localStorage.getItem(draftKey(orgId));
+    const ts = localStorage.getItem(draftTsKey(orgId));
     if (!raw) {
       return null;
     }
@@ -91,16 +100,42 @@ function loadDraft(): { data: BrandProfileData; savedAt: number } | null {
   }
 }
 
-function clearDraft() {
+function clearDraft(orgId: string) {
   try {
-    localStorage.removeItem(DRAFT_KEY);
-    localStorage.removeItem(DRAFT_TIMESTAMP_KEY);
+    localStorage.removeItem(draftKey(orgId));
+    localStorage.removeItem(draftTsKey(orgId));
   } catch {
     // ignore
   }
 }
 
-/** Maps a server profile JSON object to local BrandProfileData shape. */
+// Migrate any legacy unscoped draft to the new org-scoped key, then
+// remove the old key so it can never leak to another org again.
+function migrateLegacyDraft(orgId: string) {
+  try {
+    const legacyRaw = localStorage.getItem('nativpost:brand-profile-draft');
+    const legacyTs = localStorage.getItem('nativpost:brand-profile-draft-ts');
+    if (!legacyRaw) {
+      return;
+    }
+    // Only migrate if the org doesn't already have a scoped draft
+    if (!localStorage.getItem(draftKey(orgId))) {
+      localStorage.setItem(draftKey(orgId), legacyRaw);
+      if (legacyTs) {
+        localStorage.setItem(draftTsKey(orgId), legacyTs);
+      }
+    }
+    // Always remove the legacy keys regardless
+    localStorage.removeItem('nativpost:brand-profile-draft');
+    localStorage.removeItem('nativpost:brand-profile-draft-ts');
+  } catch {
+    // ignore
+  }
+}
+
+// -----------------------------------------------------------
+// Server profile mapper
+// -----------------------------------------------------------
 function mapServerProfile(profile: Record<string, unknown>): BrandProfileData {
   return {
     brandName: (profile.brandName as string) || '',
@@ -128,11 +163,13 @@ function mapServerProfile(profile: Record<string, unknown>): BrandProfileData {
     twitterVoice: (profile.twitterVoice as string) || '',
     facebookVoice: (profile.facebookVoice as string) || '',
     tiktokVoice: (profile.tiktokVoice as string) || '',
-    // v2
     growthStage: (profile.growthStage as string) || 'early',
   };
 }
 
+// -----------------------------------------------------------
+// Hook
+// -----------------------------------------------------------
 type UseBrandProfileReturn = {
   data: BrandProfileData;
   setData: React.Dispatch<React.SetStateAction<BrandProfileData>>;
@@ -148,6 +185,11 @@ type UseBrandProfileReturn = {
 };
 
 export function useBrandProfile(): UseBrandProfileReturn {
+  // Clerk's useOrganization gives us the org ID on the client without
+  // needing to pass it as a prop. organization is null while loading.
+  const { organization } = useOrganization();
+  const orgId = organization?.id ?? null;
+
   const [data, setData] = useState<BrandProfileData>(DEFAULT_PROFILE);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -156,22 +198,27 @@ export function useBrandProfile(): UseBrandProfileReturn {
   const [error, setError] = useState<string | null>(null);
   const [hasDraft, setHasDraft] = useState(false);
 
-  // Track whether we've finished the initial load so auto-save doesn't
-  // write the DEFAULT_PROFILE to localStorage before the server data arrives.
+  // Prevent auto-save from writing DEFAULT_PROFILE before server data arrives
   const loadedRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // -----------------------------------------------------------
-  // Load on mount: server data is authoritative.
-  // Draft is only applied if it was saved AFTER the last server save,
-  // meaning the user had unsaved in-progress edits.
+  // Load: runs once orgId is known. Server data is authoritative.
+  // Draft is only restored if it was saved after the last server save.
   // -----------------------------------------------------------
   useEffect(() => {
+    // Wait until Clerk has resolved the org before doing anything
+    if (!orgId) {
+      return;
+    }
+
     async function load() {
+      migrateLegacyDraft(orgId!);
+
       try {
         const res = await fetch('/api/brand-profile');
         let serverData: BrandProfileData | null = null;
-        let serverUpdatedAt: number = 0;
+        let serverUpdatedAt = 0;
 
         if (res.ok) {
           const json = await res.json();
@@ -185,16 +232,16 @@ export function useBrandProfile(): UseBrandProfileReturn {
           }
         }
 
-        // Only restore draft if it was saved after the last server update.
-        const draft = loadDraft();
+        const draft = loadDraft(orgId!);
         const draftIsNewer = draft && draft.savedAt > serverUpdatedAt;
 
         if (draftIsNewer) {
           setHasDraft(true);
           setData(draft.data);
         } else {
+          // Draft is stale or doesn't exist — clear it and use server data
           if (draft) {
-            clearDraft();
+            clearDraft(orgId!);
           }
           if (serverData) {
             setData(serverData);
@@ -202,7 +249,8 @@ export function useBrandProfile(): UseBrandProfileReturn {
         }
       } catch (err) {
         console.error('Failed to load brand profile:', err);
-        const draft = loadDraft();
+        // Fall back to draft on network error, still org-scoped
+        const draft = loadDraft(orgId!);
         if (draft) {
           setHasDraft(true);
           setData(draft.data);
@@ -212,22 +260,25 @@ export function useBrandProfile(): UseBrandProfileReturn {
         setIsLoading(false);
       }
     }
+
     load();
-  }, []);
+  }, [orgId]);
 
   // -----------------------------------------------------------
-  // Auto-save draft to localStorage on every data change.
+  // Auto-save draft on data change — org-scoped, debounced 600ms
+  // Skipped until both the org is known and initial load is done
   // -----------------------------------------------------------
   useEffect(() => {
-    if (!loadedRef.current) {
+    if (!loadedRef.current || !orgId) {
       return;
     }
 
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
+
     debounceRef.current = setTimeout(() => {
-      saveDraft(data);
+      saveDraft(orgId, data);
       setHasDraft(true);
     }, 600);
 
@@ -236,14 +287,17 @@ export function useBrandProfile(): UseBrandProfileReturn {
         clearTimeout(debounceRef.current);
       }
     };
-  }, [data]);
+  }, [data, orgId]);
 
   const updateData = useCallback((updates: Partial<BrandProfileData>) => {
     setData(prev => ({ ...prev, ...updates }));
   }, []);
 
   const discardDraft = useCallback(() => {
-    clearDraft();
+    if (!orgId) {
+      return;
+    }
+    clearDraft(orgId);
     setHasDraft(false);
     fetch('/api/brand-profile').then(async (res) => {
       if (!res.ok) {
@@ -255,7 +309,7 @@ export function useBrandProfile(): UseBrandProfileReturn {
       }
       setData(mapServerProfile(json.profile));
     });
-  }, []);
+  }, [orgId]);
 
   const save = useCallback(async (): Promise<boolean> => {
     setIsSaving(true);
@@ -276,7 +330,9 @@ export function useBrandProfile(): UseBrandProfileReturn {
       const json = await res.json();
       setHasProfile(true);
       setProfileCompleteness(json.profile.profileCompleteness || 0);
-      clearDraft();
+      if (orgId) {
+        clearDraft(orgId);
+      }
       setHasDraft(false);
       return true;
     } catch (err) {
@@ -286,7 +342,7 @@ export function useBrandProfile(): UseBrandProfileReturn {
     } finally {
       setIsSaving(false);
     }
-  }, [data]);
+  }, [data, orgId]);
 
   return {
     data,
