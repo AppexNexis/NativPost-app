@@ -1,0 +1,19 @@
+name: Sync Analytics
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # Every 6 hours
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger analytics sync endpoint
+        run: |
+          curl -X GET \
+            https://app.nativpost.com/api/cron/sync-analytics \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --fail \
+            --silent \
+            --show-error
