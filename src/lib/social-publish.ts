@@ -406,9 +406,6 @@ export async function publishToLinkedIn(
 
 // ============================================================
 // LINKEDIN PAGE — organization account
-// The platformUserId stored for linkedin_page is the org URN
-// (e.g. urn:li:organization:12345). Publishing uses ugcPosts
-// with the org URN as author.
 // ============================================================
 
 export async function publishToLinkedInPage(
@@ -419,7 +416,6 @@ export async function publishToLinkedInPage(
   videoUrl?: string,
 ): Promise<PublishResult> {
   try {
-    // Org URN is already in urn:li:organization:xxx format from the callback
     const author = orgUrn.startsWith('urn:li:') ? orgUrn : `urn:li:organization:${orgUrn}`;
 
     if (videoUrl) {
@@ -530,7 +526,6 @@ export async function publishToTikTok(
   }
 
   try {
-    // Step 1: Initialize upload
     const initRes = await fetch('https://open.tiktokapis.com/v2/post/publish/video/init/', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' },
@@ -554,48 +549,94 @@ export async function publishToTikTok(
 // ============================================================
 // YOUTUBE — video only
 //
-// IMPORTANT: The previous implementation fetched the full video
-// binary into memory and uploaded it via a resumable PUT. This
-// fails on Vercel serverless (4.5 MB body limit, 10s timeout)
-// and also omitted the Authorization header on the upload PUT.
-//
-// The correct approach for server-side YouTube upload when the
-// video is already publicly accessible on a CDN:
-//
-// 1. Use insertWithUploadType=resumable to get the upload URL.
-// 2. Upload the video in a single PUT with the Authorization
-//    header included and Content-Type: video/mp4.
-//
-// However, because Vercel serverless cannot stream large files,
-// we use a two-step approach:
-//
-// Step A — Insert video metadata and get the resumable upload URL.
-// Step B — Tell YouTube to pull the video directly from the CDN
-//           URL using the "upload by URL" method (not documented
-//           publicly but works via multipart with externalUrl).
-//
-// If the channel has not verified its account, YouTube blocks
-// uploads longer than 15 minutes — this is a ToS restriction
-// not a code issue.
+// Google OAuth tokens expire after 1 hour. When a 401/auth error
+// is received, the token is refreshed automatically using the
+// stored refresh token and the upload is retried once.
+// Google only sends a new refresh_token occasionally — the old
+// one is kept as fallback if absent from the refresh response.
 // ============================================================
+
+async function refreshGoogleToken(
+  refreshToken: string,
+): Promise<{ accessToken: string; refreshToken: string } | null> {
+  try {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: process.env.GOOGLE_CLIENT_ID!,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('[YouTube] Token refresh failed:', err);
+      return null;
+    }
+
+    const data = await res.json() as { access_token: string; refresh_token?: string };
+    return {
+      accessToken: data.access_token,
+      // Google only returns a new refresh_token occasionally — keep the old one if absent
+      refreshToken: data.refresh_token || refreshToken,
+    };
+  } catch (err) {
+    console.error('[YouTube] Token refresh error:', err);
+    return null;
+  }
+}
 
 export async function publishToYouTube(
   accessToken: string,
   caption: string,
   videoUrl?: string,
+  refreshToken?: string,
+  onTokenRefresh?: (newAccessToken: string, newRefreshToken: string) => Promise<void>,
 ): Promise<PublishResult> {
   if (!videoUrl) {
     return { success: false, error: 'YouTube requires a video. Create a video post first.' };
   }
 
+  const result = await _uploadToYouTube(accessToken, caption, videoUrl);
+
+  // Auth error — refresh token and retry once
+  if (!result.success && result.error?.includes('authentication') && refreshToken) {
+    console.log('[YouTube] Access token expired, refreshing...');
+    const refreshed = await refreshGoogleToken(refreshToken);
+
+    if (!refreshed) {
+      return {
+        success: false,
+        error: 'YouTube token expired and could not be refreshed. Please reconnect your YouTube account.',
+      };
+    }
+
+    if (onTokenRefresh) {
+      await onTokenRefresh(refreshed.accessToken, refreshed.refreshToken);
+    }
+
+    console.log('[YouTube] Token refreshed, retrying upload...');
+    return _uploadToYouTube(refreshed.accessToken, caption, videoUrl);
+  }
+
+  return result;
+}
+
+async function _uploadToYouTube(
+  accessToken: string,
+  caption: string,
+  videoUrl: string,
+): Promise<PublishResult> {
   try {
-    // Resolve the actual playable video URL (append /video.mp4 if bare CDN URL)
+    // Resolve playable URL — bare Uploadcare CDN URLs need /video.mp4 appended
     const playableUrl = /\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(videoUrl)
       ? videoUrl
       : `${videoUrl.endsWith('/') ? videoUrl : `${videoUrl}/`}video.mp4`;
 
-    // Step 1: Fetch video metadata to get the content length
-    // We do a HEAD request first to avoid downloading the full file
+    // HEAD request to get content metadata without downloading the file
     const headRes = await fetch(playableUrl, { method: 'HEAD' });
     const contentLength = headRes.headers.get('content-length');
     const contentType = headRes.headers.get('content-type') || 'video/mp4';
@@ -604,7 +645,7 @@ export async function publishToYouTube(
       return { success: false, error: 'Could not access video file for YouTube upload.' };
     }
 
-    // Step 2: Initiate a resumable upload session with YouTube
+    // Step 1: Initiate a resumable upload session
     const metaRes = await fetch(
       'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
       {
@@ -619,7 +660,7 @@ export async function publishToYouTube(
           snippet: {
             title: caption.slice(0, 100),
             description: caption,
-            categoryId: '22', // People & Blogs — safe default
+            categoryId: '22', // People & Blogs
           },
           status: {
             privacyStatus: 'public',
@@ -631,24 +672,28 @@ export async function publishToYouTube(
 
     if (!metaRes.ok) {
       const errText = await metaRes.text();
-      console.error('[YouTube] Resumable session initiation failed:', errText);
+      console.error('[YouTube] Resumable session failed:', errText);
 
-      // Parse the error for a user-friendly message
       try {
         const errJson = JSON.parse(errText);
         const reason = errJson?.error?.errors?.[0]?.reason;
+        const message = errJson?.error?.message;
+
         if (reason === 'forbidden') {
-          return { success: false, error: 'YouTube upload forbidden. Ensure the channel is verified and the account has upload permissions.' };
+          return { success: false, error: 'YouTube upload forbidden. Ensure the channel is verified and has upload permissions.' };
         }
         if (reason === 'uploadLimitExceeded') {
           return { success: false, error: 'YouTube daily upload limit reached. Try again tomorrow.' };
         }
-        const message = errJson?.error?.message;
+        // Surface auth errors so the caller can attempt a token refresh
+        if (message?.includes('authentication') || message?.includes('credentials') || metaRes.status === 401) {
+          return { success: false, error: `YouTube: ${message || 'Request had invalid authentication credentials.'}` };
+        }
         if (message) {
           return { success: false, error: `YouTube: ${message}` };
         }
       } catch {
-        // Ignore JSON parse error, fall through to generic message
+        // JSON parse failed — fall through
       }
 
       return { success: false, error: `YouTube metadata upload failed (${metaRes.status}).` };
@@ -659,9 +704,7 @@ export async function publishToYouTube(
       return { success: false, error: 'YouTube did not return a resumable upload URL.' };
     }
 
-    // Step 3: Stream the video from CDN directly to YouTube's resumable upload URL.
-    // We pipe the response body from the CDN fetch straight into the YouTube PUT
-    // rather than buffering it — this avoids Vercel memory limits.
+    // Step 2: Stream video from CDN directly to YouTube — avoids buffering in memory
     const videoRes = await fetch(playableUrl);
     if (!videoRes.ok || !videoRes.body) {
       return { success: false, error: 'Failed to fetch video from CDN for upload.' };
@@ -674,7 +717,7 @@ export async function publishToYouTube(
         'Content-Type': contentType,
         ...(contentLength ? { 'Content-Length': contentLength } : {}),
       },
-      //  // @ts-expect-error — Node 18+ supports ReadableStream as body
+      // // @ts-expect-error — Node 18+ supports ReadableStream as body
       body: videoRes.body,
       // @ts-expect-error — Required to enable streaming in Node fetch
       duplex: 'half',
@@ -688,7 +731,7 @@ export async function publishToYouTube(
 
     const uploadData = await uploadRes.json() as { id?: string };
     if (uploadData.id) {
-      console.log(`[YouTube] Uploaded video: https://www.youtube.com/watch?v=${uploadData.id}`);
+      console.log(`[YouTube] Uploaded: https://www.youtube.com/watch?v=${uploadData.id}`);
       return { success: true, platformPostId: uploadData.id };
     }
 
@@ -721,7 +764,6 @@ export async function publishToThreads(
       mediaType = 'IMAGE';
       mediaUrl = imageUrls[0];
     } else if (imageUrls.length > 1) {
-      // Threads carousel: create a container per image, then a carousel container
       const childIds: string[] = [];
       for (const url of imageUrls.slice(0, 10)) {
         const childRes = await fetch(`https://graph.threads.net/v1.0/${userId}/threads`, {
@@ -771,7 +813,6 @@ export async function publishToThreads(
       return { success: false, error: publishData.error?.message || 'Threads carousel publish failed' };
     }
 
-    // Single media or text post
     const containerBody: Record<string, string> = {
       media_type: mediaType,
       text: caption,
@@ -820,7 +861,6 @@ export async function publishToPinterest(
   videoUrl?: string,
 ): Promise<PublishResult> {
   try {
-    // First fetch the user's boards to get a default board ID
     const boardsRes = await fetch('https://api.pinterest.com/v5/boards?page_size=1', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -840,7 +880,6 @@ export async function publishToPinterest(
     if (imageUrls.length > 0) {
       pinBody.media_source = { source_type: 'image_url', url: imageUrls[0] };
     } else if (videoUrl) {
-      // Pinterest video pins require a different upload flow — use image fallback
       pinBody.media_source = { source_type: 'image_url', url: videoUrl };
     } else {
       return { success: false, error: 'Pinterest requires at least one image.' };
@@ -901,7 +940,13 @@ export async function publishToplatform(
       return publishToTikTok(accessToken, caption, verticalVideo);
 
     case 'youtube':
-      return publishToYouTube(accessToken, caption, squareVideo ?? verticalVideo);
+      return publishToYouTube(
+        accessToken,
+        caption,
+        squareVideo ?? verticalVideo,
+        refreshToken,
+        onTokenRefresh,
+      );
 
     case 'threads':
       return publishToThreads(accessToken, platformUserId, caption, imageUrls, verticalVideo);
