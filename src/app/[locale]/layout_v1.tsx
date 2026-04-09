@@ -1,43 +1,14 @@
 import '@/styles/global.css';
 
+// import '@/app/globals.css';
 import type { Metadata } from 'next';
 import { NextIntlClientProvider, useMessages } from 'next-intl';
 import { unstable_setRequestLocale } from 'next-intl/server';
 
+// import { DemoBadge } from '@/components/DemoBadge';
 import { AllLocales } from '@/utils/AppConfig';
 
-// -----------------------------------------------------------
-// Base metadata — applies to all pages unless overridden.
-// Page-level exports of `metadata` or `generateMetadata` will
-// be deep-merged with this by Next.js automatically.
-// -----------------------------------------------------------
 export const metadata: Metadata = {
-  title: {
-    default: 'NativPost',
-    // Used by child pages: "Dashboard | NativPost"
-    template: '%s | NativPost',
-  },
-  description:
-    'Studio-quality social content for your brand. AI-powered content generation, scheduling, and publishing — built for agencies and growing businesses.',
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_APP_URL || 'https://app.nativpost.com',
-  ),
-  openGraph: {
-    siteName: 'NativPost',
-    type: 'website',
-    locale: 'en_US',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    site: '@nativpost',
-    creator: '@nativpost',
-  },
-  // Default robots — individual pages override this
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: { index: true, follow: true },
-  },
   icons: [
     {
       rel: 'apple-touch-icon',
@@ -72,16 +43,25 @@ export default function RootLayout(props: {
 }) {
   unstable_setRequestLocale(props.params.locale);
 
+  // Using internationalization in Client Components
   const messages = useMessages();
 
+  // The `suppressHydrationWarning` in <html> is used to prevent hydration errors caused by `next-themes`.
+  // Solution provided by the package itself: https://github.com/pacocoursey/next-themes?tab=readme-ov-file#with-app
+
+  // The `suppressHydrationWarning` attribute in <body> is used to prevent hydration errors caused by Sentry Overlay,
+  // which dynamically adds a `style` attribute to the body tag.
   return (
     <html lang={props.params.locale} suppressHydrationWarning>
       <body className="bg-background text-foreground antialiased" suppressHydrationWarning>
+        {/* PRO: Dark mode support for Shadcn UI */}
         <NextIntlClientProvider
           locale={props.params.locale}
           messages={messages}
         >
           {props.children}
+
+          {/* <DemoBadge /> */}
         </NextIntlClientProvider>
       </body>
     </html>

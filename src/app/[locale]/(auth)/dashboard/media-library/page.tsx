@@ -51,7 +51,6 @@ function formatDate(iso: string): string {
   });
 }
 
-// Build a playable video src — same logic as content detail page
 function toVideoSrc(url: string): string {
   if (/\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(url)) {
     return url;
@@ -60,13 +59,236 @@ function toVideoSrc(url: string): string {
   return `${base}video.mp4`;
 }
 
-// Uploadcare image CDN transformation for thumbnails
-// The -/preview/ operation resizes safely without cropping
 function toThumbnailSrc(cdnUrl: string, size = 300): string {
   const base = cdnUrl.endsWith('/') ? cdnUrl : `${cdnUrl}/`;
   return `${base}-/preview/${size}x${size}/-/format/webp/-/quality/smart/`;
 }
 
+// -----------------------------------------------------------
+// DETAIL PANEL — shared between sidebar (desktop) and modal (mobile)
+// -----------------------------------------------------------
+function AssetDetail({
+  asset,
+  onClose,
+  onDelete,
+  deleting,
+}: {
+  asset: MediaAsset;
+  onClose: () => void;
+  onDelete: (asset: MediaAsset) => void;
+  deleting: string | null;
+}) {
+  return (
+    <>
+      <div className="flex items-center justify-between border-b px-4 py-3">
+        <p className="text-xs font-semibold">Asset details</p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded p-1 text-muted-foreground hover:bg-muted"
+          aria-label="Close"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+
+      <div className="overflow-y-auto p-4">
+        {/* Preview */}
+        <div className="mb-4 overflow-hidden rounded-lg border bg-muted/30">
+          {asset.isImage ? (
+            <div className="relative aspect-video w-full">
+              <Image
+                src={toThumbnailSrc(asset.cdnUrl, 600)}
+                alt={asset.name}
+                fill
+                className="object-contain"
+                unoptimized
+              />
+            </div>
+          ) : asset.isVideo ? (
+            <div className="aspect-video w-full bg-black">
+              {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+              <video
+                src={toVideoSrc(asset.cdnUrl)}
+                className="size-full object-contain"
+                controls
+                preload="metadata"
+                playsInline
+              />
+            </div>
+          ) : (
+            <div className="flex aspect-video w-full items-center justify-center">
+              <FileVideo className="size-8 text-muted-foreground/40" />
+            </div>
+          )}
+        </div>
+
+        {/* Details */}
+        <div className="space-y-2.5">
+          <SidebarRow label="Filename" value={asset.name} />
+          <div className="grid grid-cols-2 gap-2">
+            <SidebarRow label="Type" value={asset.mimeType || 'Unknown'} />
+            <SidebarRow label="Size" value={formatBytes(asset.size)} />
+          </div>
+          {asset.width && asset.height && (
+            <SidebarRow
+              label="Dimensions"
+              value={`${asset.width} × ${asset.height} px`}
+            />
+          )}
+          <SidebarRow label="Uploaded" value={formatDate(asset.uploadedAt)} />
+          <div>
+            <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              CDN URL
+            </p>
+            <p className="break-all font-mono text-[10px] text-muted-foreground">
+              {asset.cdnUrl}
+            </p>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="mt-4 space-y-2 border-t pt-4">
+          <a
+            href={asset.isVideo ? toVideoSrc(asset.cdnUrl) : asset.cdnUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex w-full items-center justify-center rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
+          >
+            Open in new tab
+          </a>
+          <button
+            type="button"
+            onClick={() => onDelete(asset)}
+            disabled={deleting === asset.uuid}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-red-500 transition-colors hover:bg-red-50 disabled:opacity-60"
+          >
+            {deleting === asset.uuid
+              ? <Loader2 className="size-3 animate-spin" />
+              : <Trash2 className="size-3" />}
+            Delete
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// -----------------------------------------------------------
+// ASSET CARD
+// -----------------------------------------------------------
+function AssetCard({
+  asset,
+  isSelected,
+  isDeleting,
+  onClick,
+  onDelete,
+}: {
+  asset: MediaAsset;
+  isSelected: boolean;
+  isDeleting: boolean;
+  onClick: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      onClick={onClick}
+      className={`group relative cursor-pointer overflow-hidden rounded-lg border bg-card transition-all ${
+        isSelected
+          ? 'border-primary ring-2 ring-primary/20'
+          : 'hover:border-muted-foreground/30'
+      }`}
+    >
+      <div className="relative aspect-square overflow-hidden bg-muted/30">
+        {asset.isImage ? (
+          <Image
+            src={toThumbnailSrc(asset.cdnUrl, 200)}
+            alt={asset.name}
+            fill
+            className="object-cover"
+            unoptimized
+          />
+        ) : asset.isVideo ? (
+          <div className="relative size-full bg-zinc-900">
+            <video
+              src={toVideoSrc(asset.cdnUrl)}
+              className="size-full object-cover"
+              preload="metadata"
+              playsInline
+              muted
+            />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="flex size-7 items-center justify-center rounded-full bg-black/50">
+                <FileVideo className="size-3.5 text-white" />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex size-full flex-col items-center justify-center gap-1.5">
+            <ImageIcon className="size-6 text-muted-foreground/40" />
+            <p className="line-clamp-2 px-2 text-center text-[9px] text-muted-foreground/60">
+              {asset.name}
+            </p>
+          </div>
+        )}
+
+        {/* Selection checkmark */}
+        {isSelected && (
+          <div className="absolute inset-0 bg-primary/10">
+            <div className="absolute right-1.5 top-1.5 flex size-5 items-center justify-center rounded-full bg-primary">
+              <svg className="size-3 text-white" viewBox="0 0 12 12" fill="none">
+                <path
+                  d="M2 6l3 3 5-5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+          </div>
+        )}
+
+        {/* Delete on hover */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation(); onDelete();
+          }}
+          disabled={isDeleting}
+          className="absolute right-1 top-1 flex size-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity disabled:opacity-40 group-hover:opacity-100"
+          aria-label="Delete"
+        >
+          {isDeleting
+            ? <Loader2 className="size-3 animate-spin" />
+            : <Trash2 className="size-3" />}
+        </button>
+      </div>
+
+      <div className="border-t px-1.5 py-1">
+        <p className="truncate text-[10px] text-muted-foreground">{asset.name}</p>
+      </div>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------
+// SIDEBAR ROW
+// -----------------------------------------------------------
+function SidebarRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <p className="break-all text-xs">{value}</p>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------
+// PAGE
+// -----------------------------------------------------------
 export default function MediaLibraryPage() {
   const [assets, setAssets] = useState<MediaAsset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -139,8 +361,7 @@ export default function MediaLibraryPage() {
       .map(f => f.uuid as string);
 
     if (uploaded.length === 0) {
-      setShowUploader(false);
-      return;
+      setShowUploader(false); return;
     }
 
     setIsTagging(true);
@@ -170,9 +391,7 @@ export default function MediaLibraryPage() {
     }
     setDeleting(asset.uuid);
     try {
-      const res = await fetch(`/api/media-library?uuid=${asset.uuid}`, {
-        method: 'DELETE',
-      });
+      const res = await fetch(`/api/media-library?uuid=${asset.uuid}`, { method: 'DELETE' });
       if (res.ok) {
         setAssets(prev => prev.filter(a => a.uuid !== asset.uuid));
         setTotal(prev => prev - 1);
@@ -192,19 +411,21 @@ export default function MediaLibraryPage() {
   ];
 
   return (
-    <div className="flex h-full gap-0">
-      {/* ── Main panel ─────────────────────────────── */}
-      <div className="flex min-w-0 flex-1 flex-col">
+    // Outer wrapper: on desktop, flex row with sidebar. On mobile, single column.
+    <div className="relative flex min-h-0 flex-col gap-0 lg:flex-row lg:gap-5">
+
+      {/* ── Main panel ────────────────────────────── */}
+      <div className="min-w-0 flex-1">
 
         {/* Header */}
-        <div className="mb-5 flex items-center justify-between">
-          <div>
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <h1 className="text-xl font-semibold tracking-tight">Media library</h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
               {isLoading ? 'Loading...' : `${total} ${total === 1 ? 'asset' : 'assets'}`}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={() => load(filter)}
@@ -219,7 +440,7 @@ export default function MediaLibraryPage() {
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             >
               <Upload className="size-4" />
-              Upload
+              <span className="hidden sm:inline">Upload</span>
             </button>
           </div>
         </div>
@@ -276,32 +497,38 @@ export default function MediaLibraryPage() {
 
         {/* Grid */}
         {isLoading ? (
-          <div className="flex flex-1 items-center justify-center py-20">
+          <div className="flex items-center justify-center py-20">
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
         ) : assets.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center py-20 text-center">
+          <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="mb-3 rounded-xl border border-dashed p-4">
               <ImageIcon className="size-8 text-muted-foreground/40" />
             </div>
             <p className="text-sm font-medium text-muted-foreground">No assets yet</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Assets attached to your posts will appear here.
+            <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+              Upload images and videos to use across your posts.
             </p>
+            <button
+              type="button"
+              onClick={() => setShowUploader(true)}
+              className="mt-4 inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
+            >
+              <Upload className="size-3.5" />
+              Upload your first asset
+            </button>
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+            {/* Responsive grid: 3 cols mobile → 4 → 5 → 6 on large screens */}
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-3 md:grid-cols-5 xl:grid-cols-6">
               {assets.map(asset => (
                 <AssetCard
                   key={asset.uuid}
                   asset={asset}
                   isSelected={selected?.uuid === asset.uuid}
                   isDeleting={deleting === asset.uuid}
-                  onClick={() =>
-                    setSelected(prev =>
-                      prev?.uuid === asset.uuid ? null : asset,
-                    )}
+                  onClick={() => setSelected(prev => prev?.uuid === asset.uuid ? null : asset)}
                   onDelete={() => handleDelete(asset)}
                 />
               ))}
@@ -324,224 +551,30 @@ export default function MediaLibraryPage() {
         )}
       </div>
 
-      {/* ── Detail sidebar ──────────────────────────── */}
+      {/* ── Detail panel — sidebar on desktop, bottom sheet on mobile ── */}
       {selected && (
-        <div className="ml-4 w-72 shrink-0 rounded-xl border bg-card">
-          <div className="flex items-center justify-between border-b px-4 py-3">
-            <p className="text-xs font-semibold">Asset details</p>
-            <button
-              type="button"
-              onClick={() => setSelected(null)}
-              className="rounded p-1 text-muted-foreground hover:bg-muted"
-            >
-              <X className="size-3.5" />
-            </button>
-          </div>
-
-          <div className="p-4">
-            {/* Preview */}
-            <div className="mb-4 overflow-hidden rounded-lg border bg-muted/30">
-              {selected.isImage ? (
-                <div className="relative aspect-video w-full">
-                  <Image
-                    src={toThumbnailSrc(selected.cdnUrl, 600)}
-                    alt={selected.name}
-                    fill
-                    className="object-contain"
-                    unoptimized
-                  />
-                </div>
-              ) : selected.isVideo ? (
-                <div className="aspect-video w-full bg-black">
-                  {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                  <video
-                    src={toVideoSrc(selected.cdnUrl)}
-                    className="size-full object-contain"
-                    controls
-                    preload="metadata"
-                    playsInline
-                  />
-                </div>
-              ) : (
-                <div className="flex aspect-video w-full items-center justify-center">
-                  <FileVideo className="size-8 text-muted-foreground/40" />
-                </div>
-              )}
-            </div>
-
-            {/* Details */}
-            <div className="space-y-2.5">
-              <SidebarRow label="Filename" value={selected.name} mono={false} />
-              <div className="grid grid-cols-2 gap-2">
-                <SidebarRow label="Type" value={selected.mimeType || 'Unknown'} />
-                <SidebarRow label="Size" value={formatBytes(selected.size)} />
-              </div>
-              {selected.width && selected.height && (
-                <SidebarRow
-                  label="Dimensions"
-                  value={`${selected.width} × ${selected.height} px`}
-                />
-              )}
-              <SidebarRow label="Uploaded" value={formatDate(selected.uploadedAt)} />
-              <div>
-                <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  CDN URL
-                </p>
-                <p className="break-all font-mono text-[10px] text-muted-foreground">
-                  {selected.cdnUrl}
-                </p>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="mt-4 space-y-2 border-t pt-4">
-              <a
-                href={selected.isVideo ? toVideoSrc(selected.cdnUrl) : selected.cdnUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex w-full items-center justify-center rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
-              >
-                Open in new tab
-              </a>
-              <button
-                type="button"
-                onClick={() => handleDelete(selected)}
-                disabled={deleting === selected.uuid}
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-red-500 transition-colors hover:bg-red-50 disabled:opacity-60"
-              >
-                {deleting === selected.uuid
-                  ? <Loader2 className="size-3 animate-spin" />
-                  : <Trash2 className="size-3" />}
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// -----------------------------------------------------------
-// Asset card
-// -----------------------------------------------------------
-function AssetCard({
-  asset,
-  isSelected,
-  isDeleting,
-  onClick,
-  onDelete,
-}: {
-  asset: MediaAsset;
-  isSelected: boolean;
-  isDeleting: boolean;
-  onClick: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <div
-      onClick={onClick}
-      className={`group relative cursor-pointer overflow-hidden rounded-lg border bg-card transition-all ${
-        isSelected
-          ? 'border-primary ring-2 ring-primary/20'
-          : 'hover:border-muted-foreground/30'
-      }`}
-    >
-      {/* Thumbnail */}
-      <div className="relative aspect-square overflow-hidden bg-muted/30">
-        {asset.isImage ? (
-          // Use next/image with the Uploadcare transformation URL
-          <Image
-            src={toThumbnailSrc(asset.cdnUrl, 200)}
-            alt={asset.name}
-            fill
-            className="object-cover"
-            unoptimized
-          />
-        ) : asset.isVideo ? (
-          <div className="relative size-full bg-zinc-900">
-            { }
-            <video
-              src={toVideoSrc(asset.cdnUrl)}
-              className="size-full object-cover"
-              preload="metadata"
-              playsInline
-              muted
+        <>
+          {/* Mobile: full-screen overlay */}
+          <div className="fixed inset-0 z-50 flex flex-col bg-background lg:hidden">
+            <AssetDetail
+              asset={selected}
+              onClose={() => setSelected(null)}
+              onDelete={handleDelete}
+              deleting={deleting}
             />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="flex size-7 items-center justify-center rounded-full bg-black/50">
-                <FileVideo className="size-3.5 text-white" />
-              </div>
-            </div>
           </div>
-        ) : (
-          <div className="flex size-full flex-col items-center justify-center gap-1.5">
-            <ImageIcon className="size-6 text-muted-foreground/40" />
-            <p className="line-clamp-2 px-2 text-center text-[9px] text-muted-foreground/60">
-              {asset.name}
-            </p>
+
+          {/* Desktop: right sidebar */}
+          <div className="hidden w-72 shrink-0 self-start rounded-xl border bg-card lg:flex lg:flex-col">
+            <AssetDetail
+              asset={selected}
+              onClose={() => setSelected(null)}
+              onDelete={handleDelete}
+              deleting={deleting}
+            />
           </div>
-        )}
-
-        {/* Selection checkmark */}
-        {isSelected && (
-          <div className="absolute inset-0 bg-primary/10">
-            <div className="absolute right-1.5 top-1.5 flex size-5 items-center justify-center rounded-full bg-primary">
-              <svg className="size-3 text-white" viewBox="0 0 12 12" fill="none">
-                <path
-                  d="M2 6l3 3 5-5"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
-          </div>
-        )}
-
-        {/* Delete button on hover */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation(); onDelete();
-          }}
-          disabled={isDeleting}
-          className="absolute right-1 top-1 flex size-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity disabled:opacity-40 group-hover:opacity-100"
-          title="Delete"
-        >
-          {isDeleting
-            ? <Loader2 className="size-3 animate-spin" />
-            : <Trash2 className="size-3" />}
-        </button>
-      </div>
-
-      {/* Filename label */}
-      <div className="border-t px-1.5 py-1">
-        <p className="truncate text-[10px] text-muted-foreground">{asset.name}</p>
-      </div>
-    </div>
-  );
-}
-
-// -----------------------------------------------------------
-// Sidebar detail row
-// -----------------------------------------------------------
-function SidebarRow({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <div>
-      <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </p>
-      <p className={`break-all text-xs ${mono ? 'font-mono' : ''}`}>{value}</p>
+        </>
+      )}
     </div>
   );
 }
