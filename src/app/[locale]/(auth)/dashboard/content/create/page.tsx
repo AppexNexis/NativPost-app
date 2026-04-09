@@ -14,15 +14,12 @@ import {
   RefreshCw,
   Sparkles,
   Video,
-  Zap,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-import {
-  PLATFORMS,
-} from '@/components/icons/PlatformIcons';
+import { PLATFORMS } from '@/components/icons/PlatformIcons';
 
 // -----------------------------------------------------------
 // TYPES
@@ -55,34 +52,33 @@ type Enrichment = {
   custom_mentions: string[];
 };
 
+// -----------------------------------------------------------
+// CONFIG
+// -----------------------------------------------------------
 const CONTENT_TYPES = [
-  { id: 'text_only', label: 'Text Post', description: 'Text-only post', icon: AlignLeft },
-  { id: 'single_image', label: 'Image Post', description: 'Single image with caption', icon: ImageIcon },
+  { id: 'text_only', label: 'Text', description: 'Text-only post', icon: AlignLeft },
+  { id: 'single_image', label: 'Image', description: 'Single image with caption', icon: ImageIcon },
   { id: 'carousel', label: 'Carousel', description: 'Multi-image carousel', icon: Layers },
-  { id: 'reel', label: 'Video Post', description: 'Reel, Short, or video', icon: Video },
+  { id: 'reel', label: 'Video', description: 'Reel, Short, or video', icon: Video },
 ];
 
+// Content modes — no per-mode colors, uniform styling
+// Selected state uses bg-foreground/text-background (same as view toggles elsewhere)
 const CONTENT_MODES = [
   {
     id: 'normal',
     label: 'Normal',
-    description: 'Balanced, everyday tone for general audiences',
-    color: 'border-zinc-300 bg-zinc-50 text-zinc-700',
-    activeColor: 'border-zinc-500 bg-zinc-100 text-zinc-900 ring-2 ring-zinc-300',
+    description: 'Balanced, on-brand tone',
   },
   {
     id: 'concise',
     label: 'Concise',
-    description: 'Stripped down to the most impactful form',
-    color: 'border-blue-200 bg-blue-50/50 text-blue-700',
-    activeColor: 'border-blue-500 bg-blue-50 text-blue-900 ring-2 ring-blue-300',
+    description: 'Stripped to the essentials',
   },
   {
     id: 'controversial',
     label: 'Controversial',
-    description: 'Takes a position, sparks debate, drives engagement',
-    color: 'border-orange-200 bg-orange-50/50 text-orange-700',
-    activeColor: 'border-orange-500 bg-orange-50 text-orange-900 ring-2 ring-orange-300',
+    description: 'Takes a position, sparks debate',
   },
 ];
 
@@ -97,7 +93,26 @@ const EMPTY_ENRICHMENT: Enrichment = {
 };
 
 // -----------------------------------------------------------
-// CREATE CONTENT PAGE
+// HELPERS
+// -----------------------------------------------------------
+function scoreLabel(score: number): { text: string; color: string } {
+  if (score >= 0.9) {
+    return { text: 'Excellent', color: 'bg-emerald-50 text-emerald-700' };
+  }
+  if (score >= 0.8) {
+    return { text: 'Great', color: 'bg-green-50 text-green-700' };
+  }
+  if (score >= 0.7) {
+    return { text: 'Good', color: 'bg-yellow-50 text-yellow-700' };
+  }
+  if (score >= 0.5) {
+    return { text: 'Needs work', color: 'bg-orange-50 text-orange-700' };
+  }
+  return { text: 'Poor', color: 'bg-red-50 text-red-700' };
+}
+
+// -----------------------------------------------------------
+// PAGE
 // -----------------------------------------------------------
 export default function ContentCreatePage() {
   const router = useRouter();
@@ -114,8 +129,6 @@ export default function ContentCreatePage() {
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isApproving, setIsApproving] = useState(false);
-
-  // v2: Content mode and enrichment
   const [contentMode, setContentMode] = useState('normal');
   const [showEnrichment, setShowEnrichment] = useState(false);
   const [enrichment, setEnrichment] = useState<Enrichment>(EMPTY_ENRICHMENT);
@@ -137,49 +150,28 @@ export default function ContentCreatePage() {
     load();
   }, []);
 
-  const connectedPlatformIds = connectedAccounts
-    .filter(a => a.isActive)
-    .map(a => a.platform);
+  const connectedPlatformIds = connectedAccounts.filter(a => a.isActive).map(a => a.platform);
 
   const togglePlatform = (id: string) => {
-    setSelectedPlatforms(prev =>
-      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id],
-    );
+    setSelectedPlatforms(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
   };
 
-  const selectContentType = (id: string) => {
-    setContentType(id);
-    setStep('configure');
-  };
-
-  // Enrichment helpers
-  const hasEnrichment = () => {
-    return (
-      enrichment.cta_url
-      || enrichment.contact_info
-      || enrichment.promo_code
-      || enrichment.event_details
-      || enrichment.reference_links.length > 0
-      || enrichment.custom_mentions.length > 0
-    );
-  };
+  const hasEnrichment = () => !!(
+    enrichment.cta_url || enrichment.contact_info || enrichment.promo_code
+    || enrichment.event_details || enrichment.reference_links.length > 0
+    || enrichment.custom_mentions.length > 0
+  );
 
   const addRefLink = () => {
     const url = refLinkInput.trim();
     if (url && !enrichment.reference_links.includes(url)) {
-      setEnrichment(prev => ({
-        ...prev,
-        reference_links: [...prev.reference_links, url],
-      }));
+      setEnrichment(prev => ({ ...prev, reference_links: [...prev.reference_links, url] }));
       setRefLinkInput('');
     }
   };
 
   const removeRefLink = (url: string) => {
-    setEnrichment(prev => ({
-      ...prev,
-      reference_links: prev.reference_links.filter(l => l !== url),
-    }));
+    setEnrichment(prev => ({ ...prev, reference_links: prev.reference_links.filter(l => l !== url) }));
   };
 
   const addMention = () => {
@@ -188,27 +180,19 @@ export default function ContentCreatePage() {
       handle = `@${handle}`;
     }
     if (handle && !enrichment.custom_mentions.includes(handle)) {
-      setEnrichment(prev => ({
-        ...prev,
-        custom_mentions: [...prev.custom_mentions, handle],
-      }));
+      setEnrichment(prev => ({ ...prev, custom_mentions: [...prev.custom_mentions, handle] }));
       setMentionInput('');
     }
   };
 
   const removeMention = (handle: string) => {
-    setEnrichment(prev => ({
-      ...prev,
-      custom_mentions: prev.custom_mentions.filter(m => m !== handle),
-    }));
+    setEnrichment(prev => ({ ...prev, custom_mentions: prev.custom_mentions.filter(m => m !== handle) }));
   };
 
   const handleGenerate = async () => {
     if (selectedPlatforms.length === 0) {
-      setError('Select at least one platform.');
-      return;
+      setError('Select at least one platform.'); return;
     }
-
     setIsGenerating(true);
     setError(null);
     setVariants([]);
@@ -222,8 +206,6 @@ export default function ContentCreatePage() {
         numVariants: 3,
         contentMode,
       };
-
-      // Only send enrichment if it has data
       if (hasEnrichment()) {
         payload.enrichment = enrichment;
       }
@@ -272,7 +254,6 @@ export default function ContentCreatePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'approved', isSelectedVariant: true }),
       });
-
       if (scheduledDate) {
         router.push(`/dashboard/content/${selectedVariant}?autoSchedule=${scheduledDate}`);
       } else {
@@ -284,31 +265,14 @@ export default function ContentCreatePage() {
     }
   };
 
-  // Quality score display helper
-  const scoreLabel = (score: number) => {
-    if (score >= 0.9) {
-      return { text: 'Excellent', color: 'bg-emerald-50 text-emerald-700' };
-    }
-    if (score >= 0.8) {
-      return { text: 'Great', color: 'bg-green-50 text-green-700' };
-    }
-    if (score >= 0.7) {
-      return { text: 'Good', color: 'bg-yellow-50 text-yellow-700' };
-    }
-    if (score >= 0.5) {
-      return { text: 'Needs work', color: 'bg-orange-50 text-orange-700' };
-    }
-    return { text: 'Poor', color: 'bg-red-50 text-red-700' };
-  };
-
   return (
     <>
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Create a new post</h1>
           {step !== 'type' && (
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-0.5 text-sm text-muted-foreground">
               {step === 'configure' ? 'Configure your post details' : 'Review generated variants'}
             </p>
           )}
@@ -317,10 +281,10 @@ export default function ContentCreatePage() {
           <button
             type="button"
             onClick={() => setStep(step === 'review' ? 'configure' : 'type')}
-            className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-muted"
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-muted"
           >
             <ArrowLeft className="size-4" />
-            Back
+            <span className="hidden sm:inline">Back</span>
           </button>
         )}
       </div>
@@ -328,7 +292,7 @@ export default function ContentCreatePage() {
       {/* Calendar context banner */}
       {scheduledDate && (
         <div className="mb-5 flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
-          <div className="size-1.5 rounded-full bg-violet-500" />
+          <div className="size-1.5 shrink-0 rounded-full bg-violet-500" />
           <p className="text-sm text-muted-foreground">
             This post will be scheduled for
             {' '}
@@ -345,36 +309,41 @@ export default function ContentCreatePage() {
         </div>
       )}
 
-      {/* STEP 1: Choose content type */}
+      {/* ── STEP 1: Choose content type ────────────────────── */}
       {step === 'type' && (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
             {CONTENT_TYPES.map((type) => {
               const Icon = type.icon;
               const supported = type.id === 'text_only'
                 ? ['facebook', 'twitter', 'linkedin']
                 : type.id === 'reel'
-                  ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin']
+                  ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube']
                   : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok'];
 
               return (
                 <button
                   key={type.id}
                   type="button"
-                  onClick={() => selectContentType(type.id)}
-                  className="group flex flex-col items-center rounded-xl border-2 border-dashed border-border/60 bg-card p-8 text-center transition-all hover:border-primary/40 hover:bg-primary/5"
+                  onClick={() => {
+                    setContentType(type.id); setStep('configure');
+                  }}
+                  className="group flex flex-col items-center rounded-xl border-2 border-dashed border-border/60 bg-card p-5 text-center transition-all hover:border-primary/40 hover:bg-primary/5 sm:p-8"
                 >
-                  <Icon className="mb-4 size-10 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" strokeWidth={1.2} />
+                  <Icon
+                    className="mb-3 size-8 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground sm:mb-4 sm:size-10"
+                    strokeWidth={1.2}
+                  />
                   <h3 className="text-sm font-semibold">{type.label}</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">{type.description}</p>
-                  <div className="mt-4 flex items-center gap-1.5">
+                  <p className="mt-0.5 text-xs text-muted-foreground">{type.description}</p>
+                  <div className="mt-3 flex items-center gap-1 sm:mt-4 sm:gap-1.5">
                     {supported.map((p) => {
                       const platform = PLATFORMS.find(pl => pl.id === p);
                       if (!platform) {
                         return null;
                       }
                       const PIcon = platform.icon;
-                      return <PIcon key={p} className="size-4 text-muted-foreground/50" />;
+                      return <PIcon key={p} className="size-3.5 text-muted-foreground/40 sm:size-4" />;
                     })}
                   </div>
                 </button>
@@ -383,13 +352,13 @@ export default function ContentCreatePage() {
           </div>
 
           {connectedAccounts.length === 0 && (
-            <div className="mt-6 flex items-center justify-between rounded-xl bg-muted/50 px-5 py-4">
+            <div className="mt-6 flex flex-col gap-3 rounded-xl bg-muted/50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-muted-foreground">
                 Connect your social media accounts to publish content.
               </p>
               <Link
                 href="/dashboard/connections"
-                className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-primary/90"
+                className="self-start rounded-lg bg-primary px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-primary/90 sm:self-auto"
               >
                 Connect accounts
               </Link>
@@ -398,9 +367,10 @@ export default function ContentCreatePage() {
         </>
       )}
 
-      {/* STEP 2: Configure post */}
+      {/* ── STEP 2: Configure ──────────────────────────────── */}
       {step === 'configure' && (
         <div className="mx-auto max-w-2xl space-y-6">
+          {/* Current type indicator */}
           <div className="flex items-center gap-2">
             <span className="rounded-lg bg-muted px-3 py-1.5 text-xs font-medium">
               {CONTENT_TYPES.find(t => t.id === contentType)?.label}
@@ -414,26 +384,28 @@ export default function ContentCreatePage() {
             </button>
           </div>
 
-          {/* Content Mode Selector */}
+          {/* Content mode — clean tab selector, consistent with other toggles in the app */}
           <div>
             <label className="mb-2 block text-sm font-medium">Content mode</label>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="flex rounded-lg border p-1">
               {CONTENT_MODES.map(mode => (
                 <button
                   key={mode.id}
                   type="button"
                   onClick={() => setContentMode(mode.id)}
-                  className={`rounded-lg border p-3 text-left transition-all ${
-                    contentMode === mode.id ? mode.activeColor : mode.color
+                  className={`flex-1 rounded-md px-3 py-2 text-left transition-colors ${
+                    contentMode === mode.id
+                      ? 'bg-foreground text-background'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    {mode.id === 'controversial' && <Zap className="size-3.5" />}
-                    <span className="text-sm font-semibold">{mode.label}</span>
-                  </div>
-                  <p className="mt-1 text-[11px] leading-snug opacity-70">
+                  <span className="block text-xs font-semibold">{mode.label}</span>
+                  <span className={`mt-0.5 block text-[10px] leading-tight ${
+                    contentMode === mode.id ? 'opacity-70' : 'opacity-60'
+                  }`}
+                  >
                     {mode.description}
-                  </p>
+                  </span>
                 </button>
               ))}
             </div>
@@ -457,10 +429,10 @@ export default function ContentCreatePage() {
             </p>
           </div>
 
-          {/* Platform Selection */}
+          {/* Platform selection */}
           <div>
             <label className="mb-2 block text-sm font-medium">Target platforms</label>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {PLATFORMS.map((platform) => {
                 const PIcon = platform.icon;
                 const isConnected = connectedPlatformIds.includes(platform.id);
@@ -476,13 +448,13 @@ export default function ContentCreatePage() {
                       isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted'
                     }`}
                   >
-                    <PIcon className={`size-5 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <PIcon className={`size-4 shrink-0 sm:size-5 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
                     <span className={`flex-1 ${isSelected ? 'font-medium' : ''}`}>{platform.name}</span>
                     {!isConnected && (
                       <span className="text-xs text-muted-foreground">Not connected</span>
                     )}
                     {isConnected && isSelected && (
-                      <Check className="size-4 text-primary" />
+                      <Check className="size-4 shrink-0 text-primary" />
                     )}
                   </button>
                 );
@@ -501,12 +473,12 @@ export default function ContentCreatePage() {
             )}
           </div>
 
-          {/* Post Enrichment Panel */}
-          <div className="rounded-xl border bg-card">
+          {/* Post enrichment */}
+          <div className="overflow-hidden rounded-xl border bg-card">
             <button
               type="button"
               onClick={() => setShowEnrichment(p => !p)}
-              className="flex w-full items-center justify-between px-4 py-3 text-left"
+              className="flex w-full items-center justify-between px-4 py-3.5 text-left"
             >
               <div className="flex items-center gap-2">
                 <Link2 className="size-4 text-muted-foreground" />
@@ -600,11 +572,7 @@ export default function ContentCreatePage() {
                       placeholder="https://..."
                       className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                     />
-                    <button
-                      type="button"
-                      onClick={addRefLink}
-                      className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
-                    >
+                    <button type="button" onClick={addRefLink} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">
                       Add
                     </button>
                   </div>
@@ -613,13 +581,7 @@ export default function ContentCreatePage() {
                       {enrichment.reference_links.map(link => (
                         <span key={link} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-[11px]">
                           {link.length > 35 ? `${link.slice(0, 35)}...` : link}
-                          <button
-                            type="button"
-                            onClick={() => removeRefLink(link)}
-                            className="ml-0.5 opacity-50 hover:opacity-100"
-                          >
-                            ×
-                          </button>
+                          <button type="button" onClick={() => removeRefLink(link)} className="ml-0.5 opacity-50 hover:opacity-100">×</button>
                         </span>
                       ))}
                     </div>
@@ -638,11 +600,7 @@ export default function ContentCreatePage() {
                       placeholder="@handle"
                       className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                     />
-                    <button
-                      type="button"
-                      onClick={addMention}
-                      className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
-                    >
+                    <button type="button" onClick={addMention} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">
                       Add
                     </button>
                   </div>
@@ -651,13 +609,7 @@ export default function ContentCreatePage() {
                       {enrichment.custom_mentions.map(handle => (
                         <span key={handle} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-[11px]">
                           {handle}
-                          <button
-                            type="button"
-                            onClick={() => removeMention(handle)}
-                            className="ml-0.5 opacity-50 hover:opacity-100"
-                          >
-                            ×
-                          </button>
+                          <button type="button" onClick={() => removeMention(handle)} className="ml-0.5 opacity-50 hover:opacity-100">×</button>
                         </span>
                       ))}
                     </div>
@@ -679,41 +631,34 @@ export default function ContentCreatePage() {
             disabled={isGenerating || selectedPlatforms.length === 0}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
-            {isGenerating
-              ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" />
-                    Generating
-                    {contentMode !== 'normal' ? ` (${contentMode} mode)` : ''}
-                    ...
-                  </>
-                )
-              : (
-                  <>
-                    <Sparkles className="size-4" />
-                    Generate content
-                  </>
-                )}
+            {isGenerating ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Generating
+                {contentMode !== 'normal' ? ` (${contentMode} mode)` : ''}
+                ...
+              </>
+            ) : (
+              <>
+                <Sparkles className="size-4" />
+                Generate content
+              </>
+            )}
           </button>
         </div>
       )}
 
-      {/* STEP 3: Review variants */}
+      {/* ── STEP 3: Review variants ─────────────────────────── */}
       {step === 'review' && (
         <div className="mx-auto max-w-3xl space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold">
                 {variants.length}
                 {' '}
                 variants generated
                 {contentMode !== 'normal' && (
-                  <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                    contentMode === 'concise'
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'bg-orange-50 text-orange-700'
-                  }`}
-                  >
+                  <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                     {contentMode}
                     {' '}
                     mode
@@ -727,7 +672,7 @@ export default function ContentCreatePage() {
               onClick={() => {
                 setStep('configure'); setVariants([]);
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
             >
               <RefreshCw className="size-3" />
               Regenerate
@@ -745,14 +690,14 @@ export default function ContentCreatePage() {
                   : 'hover:border-muted-foreground/20'
               }`}
             >
-              <div className="mb-3 flex items-center justify-between">
+              {/* Variant header */}
+              <div className="mb-3 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-semibold">
                     {variant.variantNumber}
                   </span>
                   <span className="text-xs text-muted-foreground">
                     Variant
-                    {' '}
                     {variant.variantNumber}
                   </span>
                 </div>
@@ -763,7 +708,6 @@ export default function ContentCreatePage() {
                       <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${sl.color}`}>
                         {Math.round(variant.antiSlopScore * 100)}
                         %
-                        {' '}
                         {sl.text}
                       </span>
                     );
@@ -781,8 +725,10 @@ export default function ContentCreatePage() {
                 </div>
               </div>
 
+              {/* Caption */}
               <p className="whitespace-pre-wrap text-sm leading-relaxed">{variant.caption}</p>
 
+              {/* Hashtags */}
               {variant.hashtags.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {variant.hashtags.map(tag => (
@@ -791,7 +737,7 @@ export default function ContentCreatePage() {
                 </div>
               )}
 
-              {/* Enrichment tracking */}
+              {/* Enrichment applied */}
               {variant.enrichmentApplied && variant.enrichmentApplied.length > 0 && (
                 <div className="mt-3 flex items-center gap-1.5 border-t pt-3">
                   <Link2 className="size-3 text-muted-foreground" />
@@ -806,32 +752,33 @@ export default function ContentCreatePage() {
               {/* Quality flags */}
               {variant.qualityFlags && variant.qualityFlags.length > 0 && (
                 <div className="mt-2 space-y-1 border-t pt-3">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-orange-500/70">
-                    Quality notes
-                  </span>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-orange-500/70">Quality notes</span>
                   {variant.qualityFlags.slice(0, 3).map((flag, i) => (
                     <p key={i} className="text-[11px] text-muted-foreground">{flag}</p>
                   ))}
                 </div>
               )}
 
-              {Object.keys(variant.platformSpecific).length > 0 && (
+              {/* Platform versions */}
+              {Object.keys(variant.platformSpecific).filter(k => !['sourceImages', 'videoDurationSeconds', 'title'].includes(k)).length > 0 && (
                 <div className="mt-4 space-y-2 border-t pt-3">
                   <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
                     Platform versions
                   </span>
-                  {Object.entries(variant.platformSpecific).map(([platform, text]) => {
-                    const PIcon = PLATFORMS.find(p => p.id === platform)?.icon;
-                    return (
-                      <div key={platform} className="rounded-lg bg-muted/40 p-3">
-                        <div className="mb-1 flex items-center gap-1.5">
-                          {PIcon && <PIcon className="size-3.5 text-muted-foreground" />}
-                          <span className="text-[11px] font-medium capitalize">{platform}</span>
+                  {Object.entries(variant.platformSpecific)
+                    .filter(([k]) => !['sourceImages', 'videoDurationSeconds', 'title'].includes(k))
+                    .map(([platform, text]) => {
+                      const PIcon = PLATFORMS.find(p => p.id === platform)?.icon;
+                      return (
+                        <div key={platform} className="rounded-lg bg-muted/40 p-3">
+                          <div className="mb-1 flex items-center gap-1.5">
+                            {PIcon && <PIcon className="size-3.5 text-muted-foreground" />}
+                            <span className="text-[11px] font-medium capitalize">{platform}</span>
+                          </div>
+                          <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">{text}</p>
                         </div>
-                        <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">{text}</p>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
               )}
             </button>
@@ -844,9 +791,7 @@ export default function ContentCreatePage() {
               disabled={isApproving}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
-              {isApproving
-                ? <Loader2 className="size-4 animate-spin" />
-                : <Check className="size-4" />}
+              {isApproving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
               {scheduledDate ? 'Approve and set schedule' : 'Approve selected variant'}
             </button>
           )}

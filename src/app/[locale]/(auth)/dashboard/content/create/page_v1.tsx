@@ -4,13 +4,17 @@ import {
   AlignLeft,
   ArrowLeft,
   Check,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Image as ImageIcon,
   Layers,
+  Link2,
   Loader2,
   RefreshCw,
   Sparkles,
   Video,
+  Zap,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -31,6 +35,7 @@ type Variant = {
   qualityFlags: string[];
   variantNumber: number;
   platformSpecific: Record<string, string>;
+  enrichmentApplied?: string[];
 };
 
 type ConnectedAccount = {
@@ -40,12 +45,56 @@ type ConnectedAccount = {
   isActive: boolean;
 };
 
+type Enrichment = {
+  cta_url: string;
+  cta_label: string;
+  reference_links: string[];
+  contact_info: string;
+  promo_code: string;
+  event_details: string;
+  custom_mentions: string[];
+};
+
 const CONTENT_TYPES = [
-  { id: 'text_only', label: 'Text Post', description: 'Text-only post for platforms that support it', icon: AlignLeft },
+  { id: 'text_only', label: 'Text Post', description: 'Text-only post', icon: AlignLeft },
   { id: 'single_image', label: 'Image Post', description: 'Single image with caption', icon: ImageIcon },
-  { id: 'carousel', label: 'Carousel', description: 'Multi-image carousel post', icon: Layers },
-  { id: 'reel', label: 'Video Post', description: 'Reel, Short, or video caption', icon: Video },
+  { id: 'carousel', label: 'Carousel', description: 'Multi-image carousel', icon: Layers },
+  { id: 'reel', label: 'Video Post', description: 'Reel, Short, or video', icon: Video },
 ];
+
+const CONTENT_MODES = [
+  {
+    id: 'normal',
+    label: 'Normal',
+    description: 'Balanced, everyday tone for general audiences',
+    color: 'border-zinc-300 bg-zinc-50 text-zinc-700',
+    activeColor: 'border-zinc-500 bg-zinc-100 text-zinc-900 ring-2 ring-zinc-300',
+  },
+  {
+    id: 'concise',
+    label: 'Concise',
+    description: 'Stripped down to the most impactful form',
+    color: 'border-blue-200 bg-blue-50/50 text-blue-700',
+    activeColor: 'border-blue-500 bg-blue-50 text-blue-900 ring-2 ring-blue-300',
+  },
+  {
+    id: 'controversial',
+    label: 'Controversial',
+    description: 'Takes a position, sparks debate, drives engagement',
+    color: 'border-orange-200 bg-orange-50/50 text-orange-700',
+    activeColor: 'border-orange-500 bg-orange-50 text-orange-900 ring-2 ring-orange-300',
+  },
+];
+
+const EMPTY_ENRICHMENT: Enrichment = {
+  cta_url: '',
+  cta_label: '',
+  reference_links: [],
+  contact_info: '',
+  promo_code: '',
+  event_details: '',
+  custom_mentions: [],
+};
 
 // -----------------------------------------------------------
 // CREATE CONTENT PAGE
@@ -53,8 +102,6 @@ const CONTENT_TYPES = [
 export default function ContentCreatePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-
-  // If the user arrived from the calendar, this will be set (e.g. "2026-03-29")
   const scheduledDate = searchParams.get('scheduledDate') || '';
 
   const [step, setStep] = useState<'type' | 'configure' | 'review'>('type');
@@ -67,6 +114,13 @@ export default function ContentCreatePage() {
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isApproving, setIsApproving] = useState(false);
+
+  // v2: Content mode and enrichment
+  const [contentMode, setContentMode] = useState('normal');
+  const [showEnrichment, setShowEnrichment] = useState(false);
+  const [enrichment, setEnrichment] = useState<Enrichment>(EMPTY_ENRICHMENT);
+  const [refLinkInput, setRefLinkInput] = useState('');
+  const [mentionInput, setMentionInput] = useState('');
 
   useEffect(() => {
     async function load() {
@@ -98,6 +152,57 @@ export default function ContentCreatePage() {
     setStep('configure');
   };
 
+  // Enrichment helpers
+  const hasEnrichment = () => {
+    return (
+      enrichment.cta_url
+      || enrichment.contact_info
+      || enrichment.promo_code
+      || enrichment.event_details
+      || enrichment.reference_links.length > 0
+      || enrichment.custom_mentions.length > 0
+    );
+  };
+
+  const addRefLink = () => {
+    const url = refLinkInput.trim();
+    if (url && !enrichment.reference_links.includes(url)) {
+      setEnrichment(prev => ({
+        ...prev,
+        reference_links: [...prev.reference_links, url],
+      }));
+      setRefLinkInput('');
+    }
+  };
+
+  const removeRefLink = (url: string) => {
+    setEnrichment(prev => ({
+      ...prev,
+      reference_links: prev.reference_links.filter(l => l !== url),
+    }));
+  };
+
+  const addMention = () => {
+    let handle = mentionInput.trim();
+    if (handle && !handle.startsWith('@')) {
+      handle = `@${handle}`;
+    }
+    if (handle && !enrichment.custom_mentions.includes(handle)) {
+      setEnrichment(prev => ({
+        ...prev,
+        custom_mentions: [...prev.custom_mentions, handle],
+      }));
+      setMentionInput('');
+    }
+  };
+
+  const removeMention = (handle: string) => {
+    setEnrichment(prev => ({
+      ...prev,
+      custom_mentions: prev.custom_mentions.filter(m => m !== handle),
+    }));
+  };
+
   const handleGenerate = async () => {
     if (selectedPlatforms.length === 0) {
       setError('Select at least one platform.');
@@ -110,15 +215,23 @@ export default function ContentCreatePage() {
     setSelectedVariant(null);
 
     try {
+      const payload: Record<string, unknown> = {
+        topic: topic || undefined,
+        contentType,
+        targetPlatforms: selectedPlatforms,
+        numVariants: 3,
+        contentMode,
+      };
+
+      // Only send enrichment if it has data
+      if (hasEnrichment()) {
+        payload.enrichment = enrichment;
+      }
+
       const res = await fetch('/api/content/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: topic || undefined,
-          contentType,
-          targetPlatforms: selectedPlatforms,
-          numVariants: 3,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -137,6 +250,7 @@ export default function ContentCreatePage() {
           qualityFlags: (v.qualityFlags as string[]) || [],
           variantNumber: v.variantNumber as number,
           platformSpecific: (v.platformSpecific as Record<string, string>) || {},
+          enrichmentApplied: (v.enrichmentApplied as string[]) || [],
         })),
       );
       setStep('review');
@@ -159,9 +273,6 @@ export default function ContentCreatePage() {
         body: JSON.stringify({ status: 'approved', isSelectedVariant: true }),
       });
 
-      // If we came from the calendar with a scheduled date, redirect to the
-      // content detail page with autoSchedule so the scheduler opens pre-filled.
-      // Otherwise go to the posts list as before.
       if (scheduledDate) {
         router.push(`/dashboard/content/${selectedVariant}?autoSchedule=${scheduledDate}`);
       } else {
@@ -171,6 +282,23 @@ export default function ContentCreatePage() {
       setError('Failed to approve.');
       setIsApproving(false);
     }
+  };
+
+  // Quality score display helper
+  const scoreLabel = (score: number) => {
+    if (score >= 0.9) {
+      return { text: 'Excellent', color: 'bg-emerald-50 text-emerald-700' };
+    }
+    if (score >= 0.8) {
+      return { text: 'Great', color: 'bg-green-50 text-green-700' };
+    }
+    if (score >= 0.7) {
+      return { text: 'Good', color: 'bg-yellow-50 text-yellow-700' };
+    }
+    if (score >= 0.5) {
+      return { text: 'Needs work', color: 'bg-orange-50 text-orange-700' };
+    }
+    return { text: 'Poor', color: 'bg-red-50 text-red-700' };
   };
 
   return (
@@ -197,7 +325,7 @@ export default function ContentCreatePage() {
         )}
       </div>
 
-      {/* Calendar context banner — shown when user came from the calendar */}
+      {/* Calendar context banner */}
       {scheduledDate && (
         <div className="mb-5 flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
           <div className="size-1.5 rounded-full bg-violet-500" />
@@ -212,7 +340,7 @@ export default function ContentCreatePage() {
                 year: 'numeric',
               })}
             </span>
-            . You will set the time after content is generated.
+            .
           </p>
         </div>
       )}
@@ -286,6 +414,32 @@ export default function ContentCreatePage() {
             </button>
           </div>
 
+          {/* Content Mode Selector */}
+          <div>
+            <label className="mb-2 block text-sm font-medium">Content mode</label>
+            <div className="grid grid-cols-3 gap-3">
+              {CONTENT_MODES.map(mode => (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => setContentMode(mode.id)}
+                  className={`rounded-lg border p-3 text-left transition-all ${
+                    contentMode === mode.id ? mode.activeColor : mode.color
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {mode.id === 'controversial' && <Zap className="size-3.5" />}
+                    <span className="text-sm font-semibold">{mode.label}</span>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-snug opacity-70">
+                    {mode.description}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Topic */}
           <div>
             <label className="mb-1.5 block text-sm font-medium">
               Topic
@@ -303,6 +457,7 @@ export default function ContentCreatePage() {
             </p>
           </div>
 
+          {/* Platform Selection */}
           <div>
             <label className="mb-2 block text-sm font-medium">Target platforms</label>
             <div className="space-y-2">
@@ -346,6 +501,172 @@ export default function ContentCreatePage() {
             )}
           </div>
 
+          {/* Post Enrichment Panel */}
+          <div className="rounded-xl border bg-card">
+            <button
+              type="button"
+              onClick={() => setShowEnrichment(p => !p)}
+              className="flex w-full items-center justify-between px-4 py-3 text-left"
+            >
+              <div className="flex items-center gap-2">
+                <Link2 className="size-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Post enrichment</span>
+                {hasEnrichment() && (
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                    Active
+                  </span>
+                )}
+              </div>
+              {showEnrichment
+                ? <ChevronUp className="size-4 text-muted-foreground" />
+                : <ChevronDown className="size-4 text-muted-foreground" />}
+            </button>
+
+            {showEnrichment && (
+              <div className="space-y-4 border-t p-4">
+                <p className="text-xs text-muted-foreground">
+                  Add links, promo codes, contact info, and other elements to weave into your post.
+                </p>
+
+                {/* CTA */}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">CTA URL</label>
+                    <input
+                      type="url"
+                      value={enrichment.cta_url}
+                      onChange={e => setEnrichment(prev => ({ ...prev, cta_url: e.target.value }))}
+                      placeholder="https://example.com/sale"
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">CTA label</label>
+                    <input
+                      type="text"
+                      value={enrichment.cta_label}
+                      onChange={e => setEnrichment(prev => ({ ...prev, cta_label: e.target.value }))}
+                      placeholder="Shop the collection"
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                  </div>
+                </div>
+
+                {/* Promo code */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Promo code</label>
+                  <input
+                    type="text"
+                    value={enrichment.promo_code}
+                    onChange={e => setEnrichment(prev => ({ ...prev, promo_code: e.target.value }))}
+                    placeholder="SAVE20"
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+
+                {/* Contact info */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Contact info</label>
+                  <input
+                    type="text"
+                    value={enrichment.contact_info}
+                    onChange={e => setEnrichment(prev => ({ ...prev, contact_info: e.target.value }))}
+                    placeholder="email@company.com or booking link"
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+
+                {/* Event details */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Event details</label>
+                  <input
+                    type="text"
+                    value={enrichment.event_details}
+                    onChange={e => setEnrichment(prev => ({ ...prev, event_details: e.target.value }))}
+                    placeholder="March 15, 2026 at 7pm — Eko Hotel, Lagos"
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+
+                {/* Reference links */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Reference links</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={refLinkInput}
+                      onChange={e => setRefLinkInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addRefLink())}
+                      placeholder="https://..."
+                      className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={addRefLink}
+                      className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {enrichment.reference_links.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {enrichment.reference_links.map(link => (
+                        <span key={link} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-[11px]">
+                          {link.length > 35 ? `${link.slice(0, 35)}...` : link}
+                          <button
+                            type="button"
+                            onClick={() => removeRefLink(link)}
+                            className="ml-0.5 opacity-50 hover:opacity-100"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Mentions */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Mentions</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={mentionInput}
+                      onChange={e => setMentionInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addMention())}
+                      placeholder="@handle"
+                      className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={addMention}
+                      className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {enrichment.custom_mentions.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {enrichment.custom_mentions.map(handle => (
+                        <span key={handle} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-[11px]">
+                          {handle}
+                          <button
+                            type="button"
+                            onClick={() => removeMention(handle)}
+                            className="ml-0.5 opacity-50 hover:opacity-100"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
@@ -362,7 +683,9 @@ export default function ContentCreatePage() {
               ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
-                    Generating variants...
+                    Generating
+                    {contentMode !== 'normal' ? ` (${contentMode} mode)` : ''}
+                    ...
                   </>
                 )
               : (
@@ -384,6 +707,18 @@ export default function ContentCreatePage() {
                 {variants.length}
                 {' '}
                 variants generated
+                {contentMode !== 'normal' && (
+                  <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                    contentMode === 'concise'
+                      ? 'bg-blue-50 text-blue-700'
+                      : 'bg-orange-50 text-orange-700'
+                  }`}
+                  >
+                    {contentMode}
+                    {' '}
+                    mode
+                  </span>
+                )}
               </h2>
               <p className="text-xs text-muted-foreground">Select the best one, then approve.</p>
             </div>
@@ -422,17 +757,17 @@ export default function ContentCreatePage() {
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  {variant.antiSlopScore !== null && (
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                      variant.antiSlopScore >= 0.8 ? 'bg-green-50 text-green-700'
-                        : variant.antiSlopScore >= 0.7 ? 'bg-yellow-50 text-yellow-700'
-                          : 'bg-red-50 text-red-700'
-                    }`}
-                    >
-                      {Math.round(variant.antiSlopScore * 100)}
-                      % quality
-                    </span>
-                  )}
+                  {variant.antiSlopScore !== null && (() => {
+                    const sl = scoreLabel(variant.antiSlopScore);
+                    return (
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${sl.color}`}>
+                        {Math.round(variant.antiSlopScore * 100)}
+                        %
+                        {' '}
+                        {sl.text}
+                      </span>
+                    );
+                  })()}
                   <button
                     type="button"
                     onClick={(e) => {
@@ -452,6 +787,30 @@ export default function ContentCreatePage() {
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {variant.hashtags.map(tag => (
                     <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{tag}</span>
+                  ))}
+                </div>
+              )}
+
+              {/* Enrichment tracking */}
+              {variant.enrichmentApplied && variant.enrichmentApplied.length > 0 && (
+                <div className="mt-3 flex items-center gap-1.5 border-t pt-3">
+                  <Link2 className="size-3 text-muted-foreground" />
+                  <span className="text-[11px] text-muted-foreground">
+                    Enrichment applied:
+                    {' '}
+                    {variant.enrichmentApplied.map(e => e.replace(/_/g, ' ')).join(', ')}
+                  </span>
+                </div>
+              )}
+
+              {/* Quality flags */}
+              {variant.qualityFlags && variant.qualityFlags.length > 0 && (
+                <div className="mt-2 space-y-1 border-t pt-3">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-orange-500/70">
+                    Quality notes
+                  </span>
+                  {variant.qualityFlags.slice(0, 3).map((flag, i) => (
+                    <p key={i} className="text-[11px] text-muted-foreground">{flag}</p>
                   ))}
                 </div>
               )}
