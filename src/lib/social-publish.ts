@@ -531,24 +531,45 @@ export async function publishToTikTok(
       ? videoUrl
       : `${videoUrl.endsWith('/') ? videoUrl : `${videoUrl}/`}video.mp4`;
 
-    // TikTok requires pull_by_url sources to come from a domain verified in the
-    // developer portal. Uploadcare's CDN cannot be verified (we don't control their DNS),
-    // so we proxy the video through our own verified app.nativpost.com domain.
+    // Proxy through our verified domain so TikTok accepts the pull_by_url request
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nativpost.com';
     const proxiedUrl = `${appUrl}/api/media/proxy?url=${encodeURIComponent(playableUrl)}`;
 
     const initRes = await fetch('https://open.tiktokapis.com/v2/post/publish/video/init/', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' },
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json; charset=UTF-8',
+      },
       body: JSON.stringify({
-        post_info: { title: caption.slice(0, 2200), privacy_level: 'PUBLIC_TO_EVERYONE', disable_duet: false, disable_comment: false, disable_stitch: false },
-        source_info: { source: 'PULL_FROM_URL', video_url: proxiedUrl },
+        post_info: {
+          title: caption.slice(0, 2200),
+          // IMPORTANT: Unaudited apps must use SELF_ONLY.
+          // TikTok rejects PUBLIC_TO_EVERYONE before audit approval.
+          // After audit is approved, change this to 'PUBLIC_TO_EVERYONE'.
+          privacy_level: 'SELF_ONLY',
+          disable_duet: false,
+          disable_comment: false,
+          disable_stitch: false,
+          // Required disclosure fields per TikTok Direct Post guidelines
+          brand_content_toggle: false,
+          brand_organic_toggle: false,
+        },
+        source_info: {
+          source: 'PULL_FROM_URL',
+          video_url: proxiedUrl,
+        },
       }),
     });
+
     const initData = await initRes.json();
 
     if (!initData.data?.publish_id) {
-      return { success: false, error: initData.error?.message || 'TikTok upload init failed' };
+      console.error('[TikTok] Init failed:', JSON.stringify(initData));
+      return {
+        success: false,
+        error: initData.error?.message || initData.error?.code || 'TikTok upload init failed',
+      };
     }
 
     return { success: true, platformPostId: initData.data.publish_id };
