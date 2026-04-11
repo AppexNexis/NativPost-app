@@ -526,6 +526,47 @@ export async function publishToTikTok(
   }
 
   try {
+    // Resolve the playable video URL — bare Uploadcare URLs need /video.mp4 appended
+    const playableUrl = /\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(videoUrl)
+      ? videoUrl
+      : `${videoUrl.endsWith('/') ? videoUrl : `${videoUrl}/`}video.mp4`;
+
+    // TikTok requires pull_by_url sources to come from a domain verified in the
+    // developer portal. Uploadcare's CDN cannot be verified (we don't control their DNS),
+    // so we proxy the video through our own verified app.nativpost.com domain.
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nativpost.com';
+    const proxiedUrl = `${appUrl}/api/media/proxy?url=${encodeURIComponent(playableUrl)}`;
+
+    const initRes = await fetch('https://open.tiktokapis.com/v2/post/publish/video/init/', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' },
+      body: JSON.stringify({
+        post_info: { title: caption.slice(0, 2200), privacy_level: 'PUBLIC_TO_EVERYONE', disable_duet: false, disable_comment: false, disable_stitch: false },
+        source_info: { source: 'PULL_FROM_URL', video_url: proxiedUrl },
+      }),
+    });
+    const initData = await initRes.json();
+
+    if (!initData.data?.publish_id) {
+      return { success: false, error: initData.error?.message || 'TikTok upload init failed' };
+    }
+
+    return { success: true, platformPostId: initData.data.publish_id };
+  } catch (err) {
+    return { success: false, error: `TikTok error: ${err}` };
+  }
+}
+
+export async function publishToTikTok_(
+  accessToken: string,
+  caption: string,
+  videoUrl?: string,
+): Promise<PublishResult> {
+  if (!videoUrl) {
+    return { success: false, error: 'TikTok requires a video. Create a video post first.' };
+  }
+
+  try {
     const initRes = await fetch('https://open.tiktokapis.com/v2/post/publish/video/init/', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' },
