@@ -19,14 +19,44 @@ const isProtectedRoute = createRouteMatcher([
   '/:locale/dashboard(.*)',
   '/onboarding(.*)',
   '/:locale/onboarding(.*)',
+]);
+
+const isApiRoute = createRouteMatcher([
   '/api(.*)',
-  '/:locale/api(.*)',
 ]);
 
 export default function middleware(
   request: NextRequest,
   event: NextFetchEvent,
 ) {
+  // API routes: protect with Clerk auth but DO NOT run intl middleware.
+  // The intl middleware rewrites /api/* to /(locale)/api/* which causes 404s.
+  if (isApiRoute(request)) {
+    return clerkMiddleware(async (auth, req) => {
+      const authObj = await auth();
+
+      // Allow unauthenticated access to webhooks
+      if (
+        req.nextUrl.pathname.startsWith('/api/billing/stripe-webhook')
+        || req.nextUrl.pathname.startsWith('/api/billing/paystack-webhook')
+        || req.nextUrl.pathname.startsWith('/api/cron/')
+      ) {
+        return NextResponse.next();
+      }
+
+      // All other API routes require auth
+      if (!authObj.userId) {
+        return NextResponse.json(
+          { error: 'Unauthorized' },
+          { status: 401 },
+        );
+      }
+
+      return NextResponse.next();
+    })(request, event);
+  }
+
+  // Dashboard & auth pages: protect with Clerk + run intl middleware
   if (
     request.nextUrl.pathname.includes('/sign-in')
     || request.nextUrl.pathname.includes('/sign-up')
@@ -40,7 +70,6 @@ export default function middleware(
         const signInUrl = new URL(`${locale}/sign-in`, req.url);
 
         await auth.protect({
-          // `unauthenticatedUrl` is needed to avoid error: "Unable to find `next-intl` locale because the middleware didn't run on this request"
           unauthenticatedUrl: signInUrl.toString(),
         });
       }
@@ -69,5 +98,5 @@ export default function middleware(
 }
 
 export const config = {
-  matcher: ['/((?!.+\\.[\\w]+$|_next|monitoring).*)', '/', '/(api|trpc)(.*)'], // Also exclude tunnelRoute used in Sentry from the matcher
+  matcher: ['/((?!.+\\.[\\w]+$|_next|monitoring).*)', '/', '/(api|trpc)(.*)'],
 };

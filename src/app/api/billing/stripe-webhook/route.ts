@@ -4,12 +4,11 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
-import { getPlanByStripePriceId, PLANS } from '@/lib/plans';
+import { getPlanByStripePriceId, PLAN_CONFIGS } from '@/lib/plans';
 import { db } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
-
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
 
 function getField(obj: object, key: string): unknown {
@@ -18,7 +17,8 @@ function getField(obj: object, key: string): unknown {
 
 // -----------------------------------------------------------
 // POST /api/billing/stripe-webhook
-// Handles Stripe subscription lifecycle events
+// Handles Stripe subscription lifecycle events.
+// No auth — protected by Stripe webhook signature.
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
   const body = await request.text();
@@ -30,7 +30,6 @@ export async function POST(request: NextRequest) {
   }
 
   let event: Stripe.Event;
-
   try {
     event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
   } catch (err) {
@@ -45,99 +44,166 @@ export async function POST(request: NextRequest) {
         const orgId = session.metadata?.orgId;
         const planId = session.metadata?.planId;
 
-        if (orgId && planId) {
-          const plan = PLANS[planId];
-          if (plan) {
-            await db
-              .update(organizationSchema)
-              .set({
-                plan: planId,
-                planStatus: 'active',
-                postsPerMonth: plan.postsPerMonth,
-                platformsLimit: plan.platformsLimit,
-                setupFeePaid: true,
-                stripeSubscriptionId: session.subscription as string,
-                stripeCustomerId: session.customer as string,
-                updatedAt: new Date(),
-              })
-              .where(eq(organizationSchema.id, orgId));
+        if (!orgId || !planId) {
+          break;
+        }
+
+        const plan = PLAN_CONFIGS[planId];
+        if (!plan) {
+          break;
+        }
+
+        // Get full subscription details to check trial status
+        const subscriptionId = typeof session.subscription === 'string'
+          ? session.subscription
+          : (session.subscription as Stripe.Subscription | null)?.id;
+
+        let subscriptionStatus = 'active';
+        let trialEnd: Date | null = null;
+        let periodEnd: number | null = null;
+
+        if (subscriptionId) {
+          const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+          subscriptionStatus = subscription.status;
+          periodEnd = getField(subscription, 'current_period_end') as number ?? null;
+          if (subscription.trial_end) {
+            trialEnd = new Date(subscription.trial_end * 1000);
           }
         }
+
+        await db
+          .update(organizationSchema)
+          .set({
+            plan: planId,
+            planStatus: subscriptionStatus === 'trialing' ? 'trialing' : 'active',
+            stripeCustomerId: typeof session.customer === 'string'
+              ? session.customer
+              : (session.customer as Stripe.Customer | null)?.id ?? null,
+            stripeSubscriptionId: subscriptionId ?? null,
+            stripeSubscriptionStatus: subscriptionStatus,
+            stripeSubscriptionPriceId: plan.stripePriceId[
+              process.env.BILLING_PLAN_ENV === 'prod' ? 'prod' : 'dev'
+            ] ?? null,
+            ...(periodEnd ? { stripeSubscriptionCurrentPeriodEnd: periodEnd } : {}),
+            postsPerMonth: plan.features.postsPerMonth === -1 ? 999999 : plan.features.postsPerMonth,
+            platformsLimit: plan.features.platformsLimit === -1 ? 99 : plan.features.platformsLimit,
+            setupFeePaid: true,
+            trialEndsAt: trialEnd,
+            updatedAt: new Date(),
+          })
+          .where(eq(organizationSchema.id, orgId));
+
+        console.log(`[Stripe Webhook] checkout.session.completed: org=${orgId} plan=${planId}`);
         break;
       }
 
       case 'customer.subscription.updated': {
         const subscription = event.data.object as Stripe.Subscription;
         const orgId = subscription.metadata?.orgId;
-
-        if (orgId) {
-          const priceId = subscription.items.data[0]?.price?.id;
-          const plan = priceId ? getPlanByStripePriceId(priceId) : null;
-
-          // Use type-safe access — newer Stripe versions restructured these fields
-          const periodEnd = getField(subscription, 'current_period_end')
-            ?? getField(subscription, 'billing_cycle_anchor')
-            ?? null;
-
-          await db
-            .update(organizationSchema)
-            .set({
-              planStatus: subscription.status === 'active'
-                ? 'active'
-                : subscription.status === 'trialing'
-                  ? 'trialing'
-                  : subscription.status === 'past_due' ? 'past_due' : 'cancelled',
-              stripeSubscriptionStatus: subscription.status,
-              stripeSubscriptionPriceId: priceId || null,
-              ...(typeof periodEnd === 'number'
-                ? { stripeSubscriptionCurrentPeriodEnd: periodEnd }
-                : {}),
-              ...(plan
-                ? {
-                    plan: plan.id,
-                    postsPerMonth: plan.postsPerMonth,
-                    platformsLimit: plan.platformsLimit,
-                  }
-                : {}),
-              updatedAt: new Date(),
-            })
-            .where(eq(organizationSchema.id, orgId));
+        if (!orgId) {
+          break;
         }
+
+        const priceId = subscription.items.data[0]?.price?.id;
+        const plan = priceId ? getPlanByStripePriceId(priceId) : null;
+        const periodEnd = getField(subscription, 'current_period_end') as number ?? null;
+
+        const planStatus = subscription.status === 'trialing' ? 'trialing'
+          : subscription.status === 'active' ? 'active'
+            : subscription.status === 'past_due' ? 'past_due'
+              : 'cancelled';
+
+        let trialEnd: Date | null = null;
+        if (subscription.status === 'trialing' && subscription.trial_end) {
+          trialEnd = new Date(subscription.trial_end * 1000);
+        }
+
+        await db
+          .update(organizationSchema)
+          .set({
+            planStatus,
+            stripeSubscriptionStatus: subscription.status,
+            stripeSubscriptionPriceId: priceId ?? null,
+            ...(periodEnd ? { stripeSubscriptionCurrentPeriodEnd: periodEnd } : {}),
+            ...(plan ? {
+              plan: plan.id,
+              postsPerMonth: plan.features.postsPerMonth === -1 ? 999999 : plan.features.postsPerMonth,
+              platformsLimit: plan.features.platformsLimit === -1 ? 99 : plan.features.platformsLimit,
+            } : {}),
+            trialEndsAt: trialEnd,
+            updatedAt: new Date(),
+          })
+          .where(eq(organizationSchema.id, orgId));
+
+        console.log(`[Stripe Webhook] subscription.updated: org=${orgId} status=${subscription.status}`);
         break;
       }
 
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription;
         const orgId = subscription.metadata?.orgId;
-
-        if (orgId) {
-          await db
-            .update(organizationSchema)
-            .set({
-              planStatus: 'cancelled',
-              stripeSubscriptionStatus: 'canceled',
-              plan: 'starter',
-              postsPerMonth: PLANS.starter!.postsPerMonth,
-              platformsLimit: PLANS.starter!.platformsLimit,
-              updatedAt: new Date(),
-            })
-            .where(eq(organizationSchema.id, orgId));
+        if (!orgId) {
+          break;
         }
+
+        const starterPlan = PLAN_CONFIGS.starter!;
+
+        await db
+          .update(organizationSchema)
+          .set({
+            planStatus: 'cancelled',
+            stripeSubscriptionStatus: 'canceled',
+            stripeSubscriptionId: null,
+            plan: 'starter',
+            postsPerMonth: starterPlan.features.postsPerMonth,
+            platformsLimit: starterPlan.features.platformsLimit,
+            updatedAt: new Date(),
+          })
+          .where(eq(organizationSchema.id, orgId));
+
+        console.log(`[Stripe Webhook] subscription.deleted: org=${orgId}`);
         break;
       }
 
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice;
-        const customerId = invoice.customer as string;
+        const customerId = typeof invoice.customer === 'string'
+          ? invoice.customer
+          : (invoice.customer as Stripe.Customer | null)?.id;
 
         if (customerId) {
           await db
             .update(organizationSchema)
-            .set({
-              planStatus: 'past_due',
-              updatedAt: new Date(),
-            })
+            .set({ planStatus: 'past_due', updatedAt: new Date() })
             .where(eq(organizationSchema.stripeCustomerId, customerId));
+
+          console.log(`[Stripe Webhook] payment_failed: customer=${customerId}`);
+        }
+        break;
+      }
+
+      case 'invoice.payment_succeeded': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = typeof invoice.customer === 'string'
+          ? invoice.customer
+          : (invoice.customer as Stripe.Customer | null)?.id;
+
+        if (customerId) {
+          // Restore active status if past_due was resolved
+          const [org] = await db
+            .select({ id: organizationSchema.id, planStatus: organizationSchema.planStatus })
+            .from(organizationSchema)
+            .where(eq(organizationSchema.stripeCustomerId, customerId))
+            .limit(1);
+
+          if (org?.planStatus === 'past_due') {
+            await db
+              .update(organizationSchema)
+              .set({ planStatus: 'active', updatedAt: new Date() })
+              .where(eq(organizationSchema.id, org.id));
+
+            console.log(`[Stripe Webhook] payment_succeeded: restored active for customer=${customerId}`);
+          }
         }
         break;
       }
@@ -148,7 +214,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ received: true });
   } catch (err) {
-    console.error('Webhook processing error:', err);
-    return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 });
+    console.error('[Stripe Webhook] Processing error:', err);
+    // Always return 200 to prevent Stripe retries — log and investigate separately
+    return NextResponse.json({ error: 'Processing failed', received: true });
   }
 }

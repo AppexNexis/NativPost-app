@@ -6,21 +6,15 @@ import { getAuthContext } from '@/lib/auth';
 import { db } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+  apiVersion: '2026-02-25.clover',
+});
+
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 // -----------------------------------------------------------
 // POST /api/billing/manage
-// Creates a Stripe Customer Portal session.
-//
-// The portal handles ALL subscription management:
-// - View/change plan
-// - Update payment method
-// - View billing history and invoices
-// - Cancel subscription
-//
-// Configure in Stripe Dashboard → Settings → Customer Portal:
-// Enable: Plan changes, payment method updates, invoice history, cancellation
+// Creates a Stripe Customer Portal session
 // -----------------------------------------------------------
 export async function POST() {
   const { error, orgId } = await getAuthContext();
@@ -49,7 +43,7 @@ export async function POST() {
 
     return NextResponse.json({ url: session.url });
   } catch (err) {
-    console.error('[Billing Portal] Error:', err);
+    console.error('Portal session error:', err);
     return NextResponse.json({ error: 'Failed to create portal session' }, { status: 500 });
   }
 }

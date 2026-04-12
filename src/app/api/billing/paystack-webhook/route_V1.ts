@@ -1,66 +1,57 @@
-import crypto from 'crypto';
-import { NextRequest, NextResponse } from 'next/server';
+import { eq } from 'drizzle-orm';
+import { NextResponse } from 'next/server';
+import Stripe from 'stripe';
 
-import { verifyPaystackTransaction } from '@/lib/paystack';
+import { getAuthContext } from '@/lib/auth';
+import { db } from '@/libs/DB';
+import { organizationSchema } from '@/models/Schema';
 
-const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY || '';
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 // -----------------------------------------------------------
-// POST /api/billing/paystack-webhook
-// Handles Paystack event notifications
+// POST /api/billing/manage
+// Creates a Stripe Customer Portal session
+//
+// The portal handles ALL subscription management:
+// - View/change plan
+// - Update payment method
+// - View billing info
+// - View invoice history
+// - Cancel subscription
+//
+// Configure the portal in Stripe Dashboard → Settings → Customer Portal
+// Enable: Plan changes, payment method updates, invoice history, cancellation
 // -----------------------------------------------------------
-export async function POST(request: NextRequest) {
-  const body = await request.text();
-  const signature = request.headers.get('x-paystack-signature');
-
-  // Verify webhook signature
-  const hash = crypto
-    .createHmac('sha512', PAYSTACK_SECRET)
-    .update(body)
-    .digest('hex');
-
-  if (hash !== signature) {
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
+export async function POST() {
+  const { error, orgId } = await getAuthContext();
+  if (error) {
+    return error;
   }
 
   try {
-    const event = JSON.parse(body);
+    const [org] = await db
+      .select()
+      .from(organizationSchema)
+      .where(eq(organizationSchema.id, orgId!))
+      .limit(1);
 
-    switch (event.event) {
-      case 'charge.success': {
-        const reference = event.data?.reference;
-        if (reference) {
-          await verifyPaystackTransaction(reference);
-        }
-        break;
-      }
-
-      case 'subscription.create':
-      case 'subscription.enable': {
-        // Subscription activated — already handled in verify
-        break;
-      }
-
-      case 'subscription.disable':
-      case 'subscription.expiring_cards': {
-        // TODO: Update org status, send notification email
-        console.log('Paystack subscription event:', event.event);
-        break;
-      }
-
-      case 'invoice.payment_failed': {
-        // TODO: Update org to past_due, send email
-        console.log('Paystack payment failed:', event.data?.reference);
-        break;
-      }
-
-      default:
-        break;
+    if (!org?.stripeCustomerId) {
+      return NextResponse.json(
+        { error: 'No billing account found. Subscribe to a plan first.' },
+        { status: 400 },
+      );
     }
 
-    return NextResponse.json({ received: true });
+    const session = await stripe.billingPortal.sessions.create({
+      customer: org.stripeCustomerId,
+      return_url: `${APP_URL}/dashboard/billing`,
+    });
+
+    return NextResponse.json({ url: session.url });
   } catch (err) {
-    console.error('Paystack webhook error:', err);
-    return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 });
+    console.error('Portal session error:', err);
+    return NextResponse.json({ error: 'Failed to create portal session' }, { status: 500 });
   }
 }
