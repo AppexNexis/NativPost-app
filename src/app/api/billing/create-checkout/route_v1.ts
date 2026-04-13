@@ -8,10 +8,9 @@ import { getStripePriceId, isPlanConfigured, PLAN_CONFIGS } from '@/lib/plans';
 import { db } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 
-// Do NOT hardcode apiVersion — use the account's default version.
-// Hardcoding a version newer than the account's setting causes permission
-// errors with restricted keys.
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: '2026-02-25.clover',
+});
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
@@ -23,7 +22,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 // Features:
 // - Promo code field shown automatically (allow_promotion_codes: true)
 // - Setup fee added as one-time line item if not already paid
-// - Trial applied for new subscribers only
+// - Trial applied for new subscribers
 // - Customer created/reused from org record
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
@@ -69,12 +68,13 @@ export async function POST(request: NextRequest) {
         .where(eq(organizationSchema.id, orgId!));
     }
 
-    // Build line items — subscription price always first
+    // Build line items
+    // Always include the subscription price
     const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
       { price: priceId, quantity: 1 },
     ];
 
-    // Add one-time setup fee only if not yet paid
+    // Add one-time setup fee if not yet paid
     const setupFeePaid = org?.setupFeePaid ?? false;
     if (plan.setupFeeUsd > 0 && !setupFeePaid) {
       lineItems.push({
@@ -82,8 +82,7 @@ export async function POST(request: NextRequest) {
           currency: 'usd',
           product_data: {
             name: `${plan.name} Plan — Brand Profile Setup`,
-            description:
-              'One-time onboarding fee. Includes your personalised Brand Profile workshop with the NativPost team.',
+            description: 'One-time onboarding fee. Includes your personalised Brand Profile workshop with the NativPost team.',
           },
           unit_amount: plan.setupFeeUsd * 100,
         },
@@ -91,41 +90,32 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Trial only for orgs that have never had a subscription
-    const isEligibleForTrial
-      = !org?.stripeSubscriptionId
+    // Determine trial: only offer trial if org is currently trialing or never subscribed
+    const isEligibleForTrial = !org?.stripeSubscriptionId
       && (org?.planStatus === 'trialing' || !org?.planStatus);
 
-    const sessionParams: Stripe.Checkout.SessionCreateParams = {
+    const session = await stripe.checkout.sessions.create({
       customer: customerId,
       mode: 'subscription',
       line_items: lineItems,
-      // Promo code field — shown automatically in Stripe Checkout UI.
-      // Create codes in Stripe Dashboard → Products → Coupons.
-      // Requires "Promotion Codes → Read" on the restricted key.
+      // Promo code field — shown automatically in Stripe Checkout UI
+      // Create codes in Stripe Dashboard → Products → Coupons
       allow_promotion_codes: true,
       subscription_data: {
+        // Only apply trial for new subscribers
         ...(isEligibleForTrial ? { trial_period_days: 7 } : {}),
         metadata: { orgId: orgId!, planId },
       },
+      // Billing address collection improves invoice quality
       billing_address_collection: 'auto',
       success_url: `${APP_URL}/dashboard/billing?success=true&plan=${planId}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${APP_URL}/dashboard/billing?cancelled=true`,
       metadata: { orgId: orgId!, planId },
-    };
-
-    const session = await stripe.checkout.sessions.create(sessionParams);
+    });
 
     return NextResponse.json({ url: session.url });
-  } catch (err: any) {
-    // Log the full Stripe error so it appears in Vercel function logs
-    console.error('[Stripe Checkout] Error type:', err?.type);
-    console.error('[Stripe Checkout] Error code:', err?.code);
-    console.error('[Stripe Checkout] Error message:', err?.message);
-    console.error('[Stripe Checkout] Raw error:', JSON.stringify(err, null, 2));
-    return NextResponse.json(
-      { error: 'Failed to create checkout session.' },
-      { status: 500 },
-    );
+  } catch (err) {
+    console.error('[Stripe Checkout] Error:', err);
+    return NextResponse.json({ error: 'Failed to create checkout session.' }, { status: 500 });
   }
 }
