@@ -61,8 +61,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       supportLevel: 'email',
       apiAccess: false,
     },
-    stripePriceId: { dev: 'price_STARTER_DEV_REPLACE', prod: 'price_STARTER_PROD_REPLACE' },
-    paystackPlanCode: { dev: 'PLN_starter_dev_REPLACE', prod: 'PLN_starter_prod_REPLACE' },
+    stripePriceId: { dev: 'price_STARTER_DEV_REPLACE', prod: 'price_1TLfHe8UA4orc9zNIcmWwP1d' },
+    paystackPlanCode: { dev: 'PLN_starter_dev_REPLACE', prod: 'PLN_4jzn7zd6blqssag' },
   },
 
   growth: {
@@ -90,8 +90,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       supportLevel: 'priority_email',
       apiAccess: false,
     },
-    stripePriceId: { dev: 'price_GROWTH_DEV_REPLACE', prod: 'price_GROWTH_PROD_REPLACE' },
-    paystackPlanCode: { dev: 'PLN_growth_dev_REPLACE', prod: 'PLN_growth_prod_REPLACE' },
+    stripePriceId: { dev: 'price_GROWTH_DEV_REPLACE', prod: 'price_1TLfIW8UA4orc9zN5SvYEWkD' },
+    paystackPlanCode: { dev: 'PLN_growth_dev_REPLACE', prod: 'PLN_u39i4zlh6416qbb' },
   },
 
   pro: {
@@ -119,8 +119,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       supportLevel: 'live_chat',
       apiAccess: false,
     },
-    stripePriceId: { dev: 'price_PRO_DEV_REPLACE', prod: 'price_PRO_PROD_REPLACE' },
-    paystackPlanCode: { dev: 'PLN_pro_dev_REPLACE', prod: 'PLN_pro_prod_REPLACE' },
+    stripePriceId: { dev: 'price_PRO_DEV_REPLACE', prod: 'price_1TLfJ08UA4orc9zNrNzFnRr7' },
+    paystackPlanCode: { dev: 'PLN_pro_dev_REPLACE', prod: 'PLN_o7ebuljkyw9iyaw' },
   },
 
   agency: {
@@ -148,8 +148,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       supportLevel: 'dedicated_slack',
       apiAccess: true,
     },
-    stripePriceId: { dev: 'price_AGENCY_DEV_REPLACE', prod: 'price_AGENCY_PROD_REPLACE' },
-    paystackPlanCode: { dev: 'PLN_agency_dev_REPLACE', prod: 'PLN_agency_prod_REPLACE' },
+    stripePriceId: { dev: 'price_AGENCY_DEV_REPLACE', prod: 'price_1TLfKa8UA4orc9zNw27oyVak' },
+    paystackPlanCode: { dev: 'PLN_agency_dev_REPLACE', prod: 'PLN_uevdm7btk36wdhg' },
   },
 
   enterprise: {
