@@ -1,9 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
-import {
-  type NextFetchEvent,
-  type NextRequest,
-  NextResponse,
-} from 'next/server';
+import type { NextFetchEvent, NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 import createMiddleware from 'next-intl/middleware';
 
 import { AllLocales, AppConfig } from './utils/AppConfig';
@@ -30,14 +27,20 @@ const isDashboardRoute = createRouteMatcher([
 
 const isApiRoute = createRouteMatcher(['/api(.*)']);
 
-export default function middleware(
-  request: NextRequest,
-  event: NextFetchEvent,
-) {
-  // ── API routes ────────────────────────────────────────────
+// Routes that NEVER require billing check
+const isSubscriptionExemptRoute = createRouteMatcher([
+  '/subscribe(.*)',
+  '/:locale/subscribe(.*)',
+  '/onboarding(.*)',
+  '/:locale/onboarding(.*)',
+  '/dashboard/billing(.*)',
+  '/:locale/dashboard/billing(.*)',
+]);
+
+export default function middleware(request: NextRequest, event: NextFetchEvent) {
+  // ───────────────────────── API ROUTES ─────────────────────────
   if (isApiRoute(request)) {
     return clerkMiddleware(async (auth, req) => {
-      // Public endpoints — no auth required
       if (
         req.nextUrl.pathname.startsWith('/api/billing/stripe-webhook')
         || req.nextUrl.pathname.startsWith('/api/billing/paystack-webhook')
@@ -55,35 +58,27 @@ export default function middleware(
     })(request, event);
   }
 
-  // ── Protected pages ───────────────────────────────────────
+  // ───────────────────────── PAGE ROUTES ─────────────────────────
   if (
     request.nextUrl.pathname.includes('/sign-in')
     || request.nextUrl.pathname.includes('/sign-up')
     || isProtectedRoute(request)
   ) {
     return clerkMiddleware(async (auth, req) => {
-      // Enforce Clerk auth on all protected routes
-      // if (isProtectedRoute(req)) {
-      //   // For dashboard routes, extract locale for sign-in redirect
-      //   const locale
-      //     = req.nextUrl.pathname.match(/(\/.*)\/dashboard/)?.at(1) ?? '';
-      //   const signInUrl = new URL(`${locale}/sign-in`, req.url);
-      //   await auth.protect({ unauthenticatedUrl: signInUrl.toString() });
-      // }
-
+      // Require auth for protected routes
       if (isProtectedRoute(req)) {
-        const localeMatch
-          = req.nextUrl.pathname.match(/^(\/[a-z]{2})\//);
+        const localeMatch = req.nextUrl.pathname.match(/^(\/[a-z]{2})\//);
         const locale = localeMatch?.[1] ?? '';
         const signInUrl = new URL(`${locale}/sign-in`, req.url);
-        await auth.protect({ unauthenticatedUrl: signInUrl.toString() });
+
+        await auth.protect({
+          unauthenticatedUrl: signInUrl.toString(),
+        });
       }
 
       const authObj = await auth();
 
-      // Dashboard only: if no org selected → redirect to org selection
-      // Subscribe page is exempt from this check — user may not have
-      // an org yet if they're coming straight from sign-up
+      // ───────── ORG CHECK ─────────
       if (
         authObj.userId
         && !authObj.orgId
@@ -95,6 +90,48 @@ export default function middleware(
         );
       }
 
+      // ───────── BILLING CHECK (RESTORED HERE - IMPORTANT) ─────────
+      if (
+        authObj.userId
+        && authObj.orgId
+        && isDashboardRoute(req)
+        && !isSubscriptionExemptRoute(req)
+      ) {
+        try {
+          const billingUrl = new URL('/api/billing/status', req.url);
+
+          const billingRes = await fetch(billingUrl.toString(), {
+            headers: {
+              cookie: req.headers.get('cookie') ?? '',
+            },
+          });
+
+          if (billingRes.ok) {
+            const billing = await billingRes.json();
+
+            const isActive = billing?.isActive;
+            const trialExpired = billing?.trialExpired;
+
+            if (!isActive || trialExpired) {
+              const locale
+                = req.nextUrl.pathname.match(/^(\/[a-z]{2})\//)?.[1] ?? '';
+
+              const redirectUrl = new URL(`${locale}/subscribe`, req.url);
+
+              redirectUrl.searchParams.set(
+                'redirect',
+                req.nextUrl.pathname,
+              );
+
+              return NextResponse.redirect(redirectUrl);
+            }
+          }
+        } catch (err) {
+          console.error('[Middleware] Billing check failed:', err);
+          // IMPORTANT: fail open so app never 500s
+        }
+      }
+
       return intlMiddleware(req);
     })(request, event);
   }
@@ -103,5 +140,5 @@ export default function middleware(
 }
 
 export const config = {
-  matcher: ['/((?!.+\\.[\\w]+$|_next|monitoring).*)', '/', '/(api|trpc)(.*)'],
+  matcher: ['/((?!.*\\.[\\w]+$|_next|monitoring).*)', '/', '/(api|trpc)(.*)'],
 };
