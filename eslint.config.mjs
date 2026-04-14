@@ -75,5 +75,6 @@ export default antfu({
     'jsx-a11y/label-has-associated-control': 'off',
     'regexp/no-unused-capturing-group': 'off',
     'ts/no-unused-expressions': 'off',
+    'simple-import-sort/imports': 'error',
   },
 });
