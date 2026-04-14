@@ -20,12 +20,12 @@ import { FREE_TRIAL_DAYS, VISIBLE_PLANS } from '@/lib/plans';
 // -----------------------------------------------------------
 type PaymentMethod = 'stripe' | 'paystack';
 
-type BillingStatus = {
-  isActive: boolean;
-  isTrialing: boolean;
-  trialExpired: boolean;
-  planStatus: string;
-};
+// type BillingStatus = {
+//   isActive: boolean;
+//   isTrialing: boolean;
+//   trialExpired: boolean;
+//   planStatus: string;
+// };
 
 // -----------------------------------------------------------
 // FEATURE ROWS — mirrors billing page exactly
@@ -99,26 +99,103 @@ function SubscribeContent() {
   const [showComparison, setShowComparison] = useState(false);
 
   // ── On mount: check if already subscribed → skip paywall ──
+  // useEffect(() => {
+  //   async function checkBilling() {
+  //     if (!organization) {
+  //       return;
+  //     }
+  //     try {
+  //       const res = await fetch('/api/billing/status');
+  //       if (res.ok) {
+  //         const billing: BillingStatus = await res.json();
+  //         if (billing.isActive && !billing.trialExpired) {
+  //           router.replace(redirectPath);
+  //           return;
+  //         }
+  //       }
+  //     } catch {
+  //       // If check fails, show the paywall — safe default
+  //     }
+  //     setBillingChecked(true);
+  //   }
+  //   checkBilling();
+  // }, [organization, redirectPath, router]);
+
+  //   useEffect(() => {
+  //   async function checkBilling() {
+  //     if (!organization) return;
+
+  //     try {
+  //       const res = await fetch('/api/billing/status', {
+  //         cache: 'no-store',
+  //       });
+
+  //       if (!res.ok) return;
+
+  //       const billing = await res.json();
+
+  //       if (billing.isActive && !billing.trialExpired) {
+  //         router.replace(redirectPath);
+  //       } else {
+  //         setBillingChecked(true);
+  //       }
+  //     } catch {
+  //       setBillingChecked(true);
+  //     }
+  //   }
+
+  //   checkBilling();
+  // }, [organization]);
+
   useEffect(() => {
+    let mounted = true;
+
     async function checkBilling() {
-      if (!organization) {
-        return;
-      }
       try {
-        const res = await fetch('/api/billing/status');
-        if (res.ok) {
-          const billing: BillingStatus = await res.json();
-          if (billing.isActive && !billing.trialExpired) {
-            router.replace(redirectPath);
-            return;
+        if (!organization) {
+          // IMPORTANT: still unblock UI
+          if (mounted) {
+            setBillingChecked(true);
           }
+          return;
+        }
+
+        const res = await fetch('/api/billing/status', {
+          cache: 'no-store',
+        });
+
+        if (!res.ok) {
+          if (mounted) {
+            setBillingChecked(true);
+          }
+          return;
+        }
+
+        const billing = await res.json();
+
+        const isActive = billing?.isActive;
+        const trialExpired = billing?.trialExpired;
+
+        if (isActive && !trialExpired) {
+          router.replace(redirectPath);
+          return;
+        }
+
+        if (mounted) {
+          setBillingChecked(true);
         }
       } catch {
-        // If check fails, show the paywall — safe default
+        if (mounted) {
+          setBillingChecked(true);
+        }
       }
-      setBillingChecked(true);
     }
+
     checkBilling();
+
+    return () => {
+      mounted = false;
+    };
   }, [organization, redirectPath, router]);
 
   const handleSubscribe = async (planId: string) => {
@@ -220,8 +297,7 @@ function SubscribeContent() {
             <button
               type="button"
               onClick={() => setPaymentMethod('stripe')}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                paymentMethod === 'stripe' ? 'bg-foreground text-background' : 'hover:bg-muted'
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentMethod === 'stripe' ? 'bg-foreground text-background' : 'hover:bg-muted'
               }`}
             >
               Card (Stripe)
@@ -229,8 +305,7 @@ function SubscribeContent() {
             <button
               type="button"
               onClick={() => setPaymentMethod('paystack')}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                paymentMethod === 'paystack' ? 'bg-foreground text-background' : 'hover:bg-muted'
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentMethod === 'paystack' ? 'bg-foreground text-background' : 'hover:bg-muted'
               }`}
             >
               Africa (Paystack)
@@ -291,10 +366,9 @@ function SubscribeContent() {
                 <div key={plan.id} className="col-span-12 sm:col-span-6 xl:col-span-3">
                   {/* Plan header */}
                   <div
-                    className={`relative overflow-hidden rounded-t-2xl px-5 py-6 ring-2 transition-all ${
-                      isSelected
-                        ? 'ring-primary'
-                        : 'ring-transparent'
+                    className={`relative overflow-hidden rounded-t-2xl px-5 py-6 ring-2 transition-all ${isSelected
+                      ? 'ring-primary'
+                      : 'ring-transparent'
                     } ${plan.popular ? 'bg-foreground text-background' : 'bg-muted/60'}`}
                   >
                     {plan.popular && (
@@ -328,14 +402,13 @@ function SubscribeContent() {
                       <button
                         type="button"
                         onClick={() => setSelectedPlan(plan.id)}
-                        className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-medium transition-colors ${
-                          isSelected
-                            ? plan.popular
-                              ? 'border-primary/60 bg-primary text-primary-foreground'
-                              : 'border-primary bg-primary/10 text-primary'
-                            : plan.popular
-                              ? 'border-background/20 bg-background/10 text-background hover:bg-background/20'
-                              : 'border-border bg-background text-foreground hover:bg-muted'
+                        className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-medium transition-colors ${isSelected
+                          ? plan.popular
+                            ? 'border-primary/60 bg-primary text-primary-foreground'
+                            : 'border-primary bg-primary/10 text-primary'
+                          : plan.popular
+                            ? 'border-background/20 bg-background/10 text-background hover:bg-background/20'
+                            : 'border-border bg-background text-foreground hover:bg-muted'
                         }`}
                       >
                         {isSelected && <Check className="size-3" />}
