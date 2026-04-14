@@ -46,7 +46,7 @@ const ICONS: Record<string, typeof Calendar> = {
   Image,
 };
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardClientLayout({ children }: { children: React.ReactNode }) {
   const { orgRole } = useAuth();
   const { organization } = useOrganization();
   const pathname = usePathname();
@@ -99,7 +99,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           />
         </div>
 
-        {/* Create post button (team only) */}
+        {/* Create post button */}
         {isTeam && (
           <div className="px-3 pt-3">
             <Link

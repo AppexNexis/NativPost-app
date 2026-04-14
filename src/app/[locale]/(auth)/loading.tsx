@@ -4,5 +4,5 @@ import { NativPostLoader } from '@/components/NativPostLoader';
 // This replaces the white screen that appears before redirect to dashboard.
 
 export default function AuthLoading() {
-  return <NativPostLoader message="Loading your workspace..." />;
+  return <NativPostLoader message="" />;
 }

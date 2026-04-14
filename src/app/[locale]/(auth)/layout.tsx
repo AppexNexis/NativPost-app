@@ -12,8 +12,13 @@ export default function AuthLayout(props: {
   let clerkLocale = enUS;
   let signInUrl = '/sign-in';
   let signUpUrl = '/sign-up';
-  let dashboardUrl = '/dashboard';
   let afterSignOutUrl = '/';
+
+  // After sign-in/up, always go to /subscribe first.
+  // The subscribe page will check billing status and either:
+  //   (a) redirect to /dashboard if already subscribed/trialing, or
+  //   (b) show the paywall so user can start their trial.
+  let postAuthUrl = '/subscribe';
 
   if (props.params.locale === 'fr') {
     clerkLocale = frFR;
@@ -22,7 +27,7 @@ export default function AuthLayout(props: {
   if (props.params.locale !== AppConfig.defaultLocale) {
     signInUrl = `/${props.params.locale}${signInUrl}`;
     signUpUrl = `/${props.params.locale}${signUpUrl}`;
-    dashboardUrl = `/${props.params.locale}${dashboardUrl}`;
+    postAuthUrl = `/${props.params.locale}${postAuthUrl}`;
     afterSignOutUrl = `/${props.params.locale}${afterSignOutUrl}`;
   }
 
@@ -31,8 +36,8 @@ export default function AuthLayout(props: {
       localization={clerkLocale}
       signInUrl={signInUrl}
       signUpUrl={signUpUrl}
-      signInFallbackRedirectUrl={dashboardUrl}
-      signUpFallbackRedirectUrl={dashboardUrl}
+      signInFallbackRedirectUrl={postAuthUrl}
+      signUpFallbackRedirectUrl={postAuthUrl}
       afterSignOutUrl={afterSignOutUrl}
       appearance={{
         variables: {
