@@ -1,3 +1,8 @@
+'use client';
+
+// Never statically prerender — Clerk hooks require request-time context
+// export const dynamic = 'force-dynamic';
+
 import { useOrganization, useUser } from '@clerk/nextjs';
 import {
   Check,
@@ -9,11 +14,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
 import { FREE_TRIAL_DAYS, VISIBLE_PLANS } from '@/lib/plans';
-
-'use client';
-
-// Never statically prerender — Clerk hooks require request-time context
-export const dynamic = 'force-dynamic';
 
 // -----------------------------------------------------------
 // TYPES
