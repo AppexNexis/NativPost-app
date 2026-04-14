@@ -6,6 +6,8 @@ import { getOrgBillingState } from '@/lib/billing';
 
 import DashboardLayout from './DashboardClientLayout';
 
+export const dynamic = 'force-dynamic';
+
 // -----------------------------------------------------------
 // This is the SERVER component entry point for the dashboard.
 // It runs on every dashboard page load and checks billing
