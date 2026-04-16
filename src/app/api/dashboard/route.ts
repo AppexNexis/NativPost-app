@@ -3,7 +3,8 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { contentItemSchema, publishingQueueSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
@@ -12,6 +13,7 @@ import { contentItemSchema, publishingQueueSchema } from '@/models/Schema';
 // Replaces three separate /api/content calls on the old page.
 // -----------------------------------------------------------
 export async function GET(_request: NextRequest) {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;

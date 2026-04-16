@@ -4,7 +4,8 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { exchangeCodeForTokens, type SocialPlatform } from '@/lib/social-oauth';
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { organizationSchema, socialAccountSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
@@ -12,6 +13,7 @@ import { organizationSchema, socialAccountSchema } from '@/models/Schema';
 // OAuth callback — exchanges code for tokens, saves to DB
 // -----------------------------------------------------------
 export async function GET(request: NextRequest) {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return NextResponse.redirect(

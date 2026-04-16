@@ -6,7 +6,8 @@ import { NextResponse } from 'next/server';
 import { getAuthContext } from '@/lib/auth';
 import { sendPublishedNotification } from '@/lib/email';
 import { publishToplatform } from '@/lib/social-publish';
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { contentItemSchema, publishingQueueSchema, socialAccountSchema } from '@/models/Schema';
 
 type RouteParams = {
@@ -18,7 +19,8 @@ type RouteParams = {
 // Publishes an approved content item to all target platforms
 // -----------------------------------------------------------
 export async function POST(request: NextRequest, { params }: RouteParams) {
-  // eslint-disable-next-line no-console
+  const db = await getDb();
+
   console.log({ request });
   const { error, orgId, userId } = await getAuthContext();
   if (error) {
@@ -139,7 +141,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         .map(r => r.platform)
         .join(', ');
 
-      // eslint-disable-next-line no-console
       console.log({ successPlatforms, caption: item.caption });
 
       try {

@@ -3,7 +3,8 @@ import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
 import { getAuthContext } from '@/lib/auth';
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
@@ -23,6 +24,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 // Enable: Plan changes, payment method updates, invoice history, cancellation
 // -----------------------------------------------------------
 export async function POST() {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;

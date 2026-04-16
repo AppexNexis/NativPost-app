@@ -3,7 +3,8 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { contentItemSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
@@ -12,6 +13,7 @@ import { contentItemSchema } from '@/models/Schema';
 // Query params: ?status=draft&limit=20&offset=0
 // -----------------------------------------------------------
 export async function GET(request: NextRequest) {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;
@@ -51,6 +53,7 @@ export async function GET(request: NextRequest) {
 // Create a new content item (manual or engine-generated)
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;

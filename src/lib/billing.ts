@@ -11,7 +11,8 @@
 
 import { and, count, eq, gte } from 'drizzle-orm';
 
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { contentItemSchema, organizationSchema } from '@/models/Schema';
 
 import { FREE_TRIAL_DAYS, getEffectivePlanFeatures, type PlanFeatures } from './plans';
@@ -47,6 +48,7 @@ export type LimitCheckResult =
 // GET ORG BILLING STATE
 // -----------------------------------------------------------
 export async function getOrgBillingState(orgId: string): Promise<OrgBillingState | null> {
+  const db = await getDb();
   const [org] = await db
     .select()
     .from(organizationSchema)
@@ -109,6 +111,7 @@ export async function hasActiveSubscription(orgId: string): Promise<boolean> {
 // Call before allowing content generation
 // -----------------------------------------------------------
 export async function checkPostLimit(orgId: string): Promise<LimitCheckResult> {
+  const db = await getDb();
   const billing = await getOrgBillingState(orgId);
   if (!billing) {
     return { allowed: false, reason: 'Organisation not found.', upgradeRequired: false };
@@ -214,6 +217,8 @@ export async function checkFeatureAccess(
 // GET USAGE STATS FOR BILLING PAGE
 // -----------------------------------------------------------
 export async function getOrgUsage(orgId: string) {
+  const db = await getDb();
+
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
@@ -239,6 +244,7 @@ export async function getOrgUsage(orgId: string) {
 // Called when a new org is created to set trial end date
 // -----------------------------------------------------------
 export async function initOrgTrial(orgId: string) {
+  const db = await getDb();
   const trialEndsAt = new Date();
   trialEndsAt.setDate(trialEndsAt.getDate() + FREE_TRIAL_DAYS);
 

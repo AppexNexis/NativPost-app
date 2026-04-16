@@ -3,7 +3,8 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { brandProfileSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
@@ -11,6 +12,7 @@ import { brandProfileSchema } from '@/models/Schema';
 // Returns the brand profile for the current org
 // -----------------------------------------------------------
 export async function GET() {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;
@@ -42,6 +44,7 @@ export async function GET() {
 // Creates or updates the brand profile for the current org
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;

@@ -3,7 +3,8 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { contentItemSchema, publishingQueueSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
@@ -13,6 +14,7 @@ import { contentItemSchema, publishingQueueSchema } from '@/models/Schema';
 // per-platform engagement data and post-level stats.
 // -----------------------------------------------------------
 export async function GET(_request: NextRequest) {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;

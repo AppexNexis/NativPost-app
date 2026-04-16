@@ -5,7 +5,8 @@ import Stripe from 'stripe';
 
 import { getAuthContext } from '@/lib/auth';
 import { getStripePriceId, isPlanConfigured, PLAN_CONFIGS } from '@/lib/plans';
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -26,6 +27,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 // - Customer created/reused from org record
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;

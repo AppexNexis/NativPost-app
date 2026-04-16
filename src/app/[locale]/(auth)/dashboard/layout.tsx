@@ -2,41 +2,58 @@ import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 
 import { getOrgBillingState } from '@/lib/billing';
+
 import DashboardLayout from './DashboardClientLayout';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardLayoutGate({
   children,
+  params,
 }: {
   children: React.ReactNode;
+  params: { locale: string };
 }) {
-  const { userId, orgId } = await auth();
+  // 1. Auth check
+  let userId: string | null = null;
+  let orgId: string | null = null;
+
+  try {
+    const authResult = await auth();
+    userId = authResult?.userId;
+    orgId = authResult?.orgId ?? null;
+  } catch (err) {
+    console.error('[Dashboard Gate] auth() failed:', err);
+    redirect(`/${params.locale}/sign-in`);
+  }
 
   if (!userId) {
-    redirect('/sign-in');
+    redirect(`/${params.locale}/sign-in`);
   }
 
   if (!orgId) {
-    redirect('/onboarding/organization-selection');
+    redirect(`/${params.locale}/onboarding/organization-selection`);
   }
 
-  let shouldBlock = false;
+  // 2. Billing check — ALWAYS fail open if we can't reach the DB
+  let isBlocked = false;
 
   try {
-    const billing = await getOrgBillingState(orgId);
-    // Only block if we got a definitive answer that billing is inactive
+    const billing = await getOrgBillingState(orgId!);
+
     if (billing !== null) {
-      shouldBlock = !billing.isActive || billing.trialExpired;
+      // Only block if we got a real answer from the DB
+      isBlocked = !billing.isActive || billing.trialExpired;
     }
-    // If billing is null (DB error etc.), fail open — let user in
+    // billing === null means DB returned nothing — fail open, let user in
+    // This prevents a DB hiccup from locking out paying customers
   } catch (err) {
-    console.error('[Dashboard Gate] billing fetch failed, failing open:', err);
-    // fail open — never block the user due to our own infra errors
+    console.error('[Dashboard Gate] billing check failed, failing open:', err);
+    isBlocked = false; // NEVER block on error
   }
 
-  if (shouldBlock) {
-    redirect(`/subscribe?redirect=/dashboard`);
+  if (isBlocked) {
+    redirect(`/${params.locale}/subscribe?redirect=/dashboard`);
   }
 
   return <DashboardLayout>{children}</DashboardLayout>;

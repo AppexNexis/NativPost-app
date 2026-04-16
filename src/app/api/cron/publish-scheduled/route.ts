@@ -3,7 +3,8 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { publishToplatform } from '@/lib/social-publish';
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import {
   contentItemSchema,
   publishingQueueSchema,
@@ -20,6 +21,7 @@ import {
 // IMPORTANT: This route publishes directly via DB — no Clerk session needed.
 // -----------------------------------------------------------
 export async function GET(request: NextRequest) {
+  const db = await getDb();
   const authHeader = request.headers.get('Authorization');
   const cronSecret = process.env.CRON_SECRET;
 

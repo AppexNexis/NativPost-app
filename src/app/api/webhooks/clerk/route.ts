@@ -4,7 +4,8 @@ import { NextResponse } from 'next/server';
 import { Webhook } from 'svix';
 
 // FIXED: was @/lib/db — correct path is @/libs/DB
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
@@ -40,6 +41,7 @@ type ClerkOrganizationEvent = {
 };
 
 export async function POST(request: Request) {
+  const db = await getDb();
   if (!WEBHOOK_SECRET) {
     console.error('CLERK_WEBHOOK_SECRET is not set');
     return NextResponse.json(

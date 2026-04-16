@@ -5,7 +5,8 @@ import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
 import { getPlanByStripePriceId, PLAN_CONFIGS } from '@/lib/plans';
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
@@ -21,6 +22,7 @@ function getField(obj: object, key: string): unknown {
 // No auth — protected by Stripe webhook signature.
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
+  const db = await getDb();
   const body = await request.text();
   const headersList = await headers();
   const signature = headersList.get('stripe-signature');

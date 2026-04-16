@@ -2,7 +2,8 @@ import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import {
   contentItemSchema,
   publishingQueueSchema,
@@ -29,6 +30,7 @@ import {
 // Protected by CRON_SECRET. No Clerk session required.
 // -----------------------------------------------------------
 export async function GET(request: NextRequest) {
+  const db = await getDb();
   const authHeader = request.headers.get('Authorization');
   const cronSecret = process.env.CRON_SECRET;
 

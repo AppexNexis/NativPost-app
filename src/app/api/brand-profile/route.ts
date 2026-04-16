@@ -3,13 +3,15 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { brandProfileSchema, organizationSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
 // GET /api/brand-profile
 // -----------------------------------------------------------
 export async function GET() {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;
@@ -44,6 +46,7 @@ export async function GET() {
 // idempotent — if the row already exists, this is a no-op.
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;

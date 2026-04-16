@@ -3,7 +3,8 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { socialAccountSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
@@ -11,6 +12,7 @@ import { socialAccountSchema } from '@/models/Schema';
 // List connected social accounts for the current org
 // -----------------------------------------------------------
 export async function GET() {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;
@@ -45,6 +47,7 @@ export async function GET() {
 // Register a new social account after OAuth callback
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;
@@ -90,6 +93,7 @@ export async function POST(request: NextRequest) {
 // Disconnect a social account
 // -----------------------------------------------------------
 export async function DELETE(request: NextRequest) {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;

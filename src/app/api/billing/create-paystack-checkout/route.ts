@@ -4,7 +4,8 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { getPaystackPlanCode, PLAN_CONFIGS } from '@/lib/plans';
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
@@ -26,6 +27,7 @@ const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY!;
 // - Copy plan code → paste in plans.ts paystackPlanCode.prod
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;

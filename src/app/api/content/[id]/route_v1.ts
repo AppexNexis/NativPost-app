@@ -3,7 +3,8 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { contentItemSchema } from '@/models/Schema';
 
 type RouteParams = {
@@ -14,6 +15,7 @@ type RouteParams = {
 // GET /api/content/[id]
 // -----------------------------------------------------------
 export async function GET(_request: NextRequest, { params }: RouteParams) {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;
@@ -49,6 +51,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 // Update caption, status, scheduledFor, graphicUrls, etc.
 // -----------------------------------------------------------
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;
@@ -159,6 +162,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/content/[id]
 // -----------------------------------------------------------
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;

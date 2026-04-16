@@ -2,7 +2,8 @@ import { and, eq, lte } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { contentItemSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
@@ -21,6 +22,7 @@ import { contentItemSchema } from '@/models/Schema';
 //     command: "curl -X GET https://app.nativpost.com/api/cron/publish-scheduled -H 'Authorization: Bearer $CRON_SECRET'"
 // -----------------------------------------------------------
 export async function GET(request: NextRequest) {
+  const db = await getDb();
   // Verify the cron secret so this endpoint can't be called publicly
   const authHeader = request.headers.get('Authorization');
   const cronSecret = process.env.CRON_SECRET;

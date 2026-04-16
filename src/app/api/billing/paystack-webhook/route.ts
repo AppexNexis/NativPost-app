@@ -5,7 +5,8 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getPlanByPaystackCode, PLAN_CONFIGS } from '@/lib/plans';
-import { db } from '@/libs/DB';
+// import { db } from '@/libs/DB';
+import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY!;
@@ -82,6 +83,7 @@ export async function POST(request: NextRequest) {
 }
 
 async function handlePaystackSuccess(data: Record<string, unknown>) {
+  const db = await getDb();
   const metadata = data.metadata as Record<string, unknown> | undefined;
   const orgId = metadata?.orgId as string | undefined;
   const planCode = (data.plan as Record<string, unknown>)?.plan_code as string | undefined;
@@ -122,6 +124,7 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
 }
 
 async function handlePaystackCancelled(data: Record<string, unknown>) {
+  const db = await getDb();
   const subscriptionCode = (data as Record<string, unknown>).subscription_code as string | undefined;
   if (!subscriptionCode) {
     return;
@@ -136,6 +139,7 @@ async function handlePaystackCancelled(data: Record<string, unknown>) {
 }
 
 async function handlePaystackPaymentFailed(data: Record<string, unknown>) {
+  const db = await getDb();
   const metadata = data.metadata as Record<string, unknown> | undefined;
   const orgId = metadata?.orgId as string | undefined;
   if (!orgId) {
