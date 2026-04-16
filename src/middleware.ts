@@ -27,21 +27,11 @@ const isDashboardRoute = createRouteMatcher([
 
 const isApiRoute = createRouteMatcher(['/api(.*)']);
 
-// routes that should NOT trigger billing redirect loop
-const isSubscriptionExemptRoute = createRouteMatcher([
-  '/subscribe(.*)',
-  '/:locale/subscribe(.*)',
-  '/onboarding(.*)',
-  '/:locale/onboarding(.*)',
-  '/dashboard/billing(.*)',
-  '/:locale/dashboard/billing(.*)',
-  '/api/billing(.*)', // IMPORTANT: prevent recursion issues
-]);
-
 export default function middleware(request: NextRequest, event: NextFetchEvent) {
-  // ───────────────────────── API ROUTES ─────────────────────────
+  // ── API routes ────────────────────────────────────────────
   if (isApiRoute(request)) {
     return clerkMiddleware(async (auth, req) => {
+      // Public endpoints — no auth required
       if (
         req.nextUrl.pathname.startsWith('/api/billing/stripe-webhook')
         || req.nextUrl.pathname.startsWith('/api/billing/paystack-webhook')
@@ -59,76 +49,56 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
     })(request, event);
   }
 
-  // ───────────────────────── PAGE ROUTES ─────────────────────────
-  return clerkMiddleware(async (auth, req) => {
-    const authObj = await auth();
-
-    const localeMatch = req.nextUrl.pathname.match(/^(\/[a-z]{2})\//);
-    const locale = localeMatch?.[1] ?? '';
-
-    // 1. AUTH GUARD
-    if (isProtectedRoute(req)) {
-      await auth.protect({
-        unauthenticatedUrl: new URL(`${locale}/sign-in`, req.url).toString(),
-      });
-    }
-
-    // 2. ORG GUARD
-    if (
-      authObj.userId
-      && !authObj.orgId
-      && isDashboardRoute(req)
-    ) {
-      return NextResponse.redirect(
-        new URL('/onboarding/organization-selection', req.url),
-      );
-    }
-
-    // 3. 🔥 STRONG BILLING ENFORCEMENT (CORE FIX)
-    if (
-      authObj.userId
-      && authObj.orgId
-      && req.nextUrl.pathname.startsWith('/dashboard')
-      && !isSubscriptionExemptRoute(req)
-    ) {
-      try {
-        const billingRes = await fetch(
-          new URL('/api/billing/status', req.url),
-          {
-            headers: {
-              cookie: req.headers.get('cookie') ?? '',
-            },
-          },
-        );
-
-        if (billingRes.ok) {
-          const billing = await billingRes.json();
-
-          const isActive = billing?.isActive;
-          const trialExpired = billing?.trialExpired;
-
-          // 🚨 HARD BLOCK
-          if (!isActive || trialExpired) {
-            const redirectUrl = new URL(`${locale}/subscribe`, req.url);
-
-            redirectUrl.searchParams.set(
-              'redirect',
-              req.nextUrl.pathname,
-            );
-
-            return NextResponse.redirect(redirectUrl);
-          }
-        }
-      } catch (err) {
-        // fail open (never break app)
-        console.error('[Middleware] Billing check failed:', err);
+  // ── Page routes ───────────────────────────────────────────
+  if (
+    request.nextUrl.pathname.includes('/sign-in')
+    || request.nextUrl.pathname.includes('/sign-up')
+    || isProtectedRoute(request)
+  ) {
+    return clerkMiddleware(async (auth, req) => {
+      // Enforce Clerk auth on protected routes
+      if (isProtectedRoute(req)) {
+        const localeMatch = req.nextUrl.pathname.match(/^(\/[a-z]{2})\//);
+        const locale = localeMatch?.[1] ?? '';
+        const signInUrl = new URL(`${locale}/sign-in`, req.url);
+        await auth.protect({ unauthenticatedUrl: signInUrl.toString() });
       }
-    }
 
-    return intlMiddleware(req);
-  })(request, event);
+      const authObj = await auth();
+
+      // Dashboard only: no org → org selection
+      // /subscribe is deliberately excluded so users coming straight
+      // from sign-up (before org creation) don't get stuck in a loop
+      if (
+        authObj.userId
+        && !authObj.orgId
+        && isDashboardRoute(req)
+        && !req.nextUrl.pathname.endsWith('/organization-selection')
+      ) {
+        return NextResponse.redirect(
+          new URL('/onboarding/organization-selection', req.url),
+        );
+      }
+
+      // ── NO BILLING CHECK HERE ─────────────────────────────
+      // Billing enforcement is handled entirely by the dashboard
+      // layout server component (DashboardLayoutGate) which does
+      // a direct DB call via getOrgBillingState(). This is more
+      // reliable than fetch() from Edge middleware because:
+      //   1. No cookie forwarding issues
+      //   2. No Edge runtime DB connection limitations
+      //   3. Errors are caught gracefully without blocking users
+      //
+      // Clerk's signInFallbackRedirectUrl / signUpFallbackRedirectUrl
+      // both point to /subscribe so new users always hit the paywall.
+
+      return intlMiddleware(req);
+    })(request, event);
+  }
+
+  return intlMiddleware(request);
 }
 
 export const config = {
-  matcher: ['/((?!.*\\.[\\w]+$|_next|monitoring).*)', '/', '/(api|trpc)(.*)'],
+  matcher: ['/((?!.+\\.[\\w]+$|_next|monitoring).*)', '/', '/(api|trpc)(.*)'],
 };
