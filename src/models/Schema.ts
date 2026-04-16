@@ -40,6 +40,7 @@ export const organizationSchema = pgTable(
     paystackCustomerCode: text('paystack_customer_code'),
     paystackSubscriptionCode: text('paystack_subscription_code'),
     paystackPlanCode: text('paystack_plan_code'),
+    paystackAuthorizationCode: text('paystack_authorization_code'),
     // Plan details
     plan: text('plan').default('starter').notNull(), // starter, growth, pro, agency, enterprise
     planStatus: text('plan_status').default('trialing').notNull(), // trialing, active, past_due, cancelled

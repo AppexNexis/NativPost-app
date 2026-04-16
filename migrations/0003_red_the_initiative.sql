@@ -1,0 +1,1 @@
+ALTER TABLE "organization" ADD COLUMN "paystack_authorization_code" text;

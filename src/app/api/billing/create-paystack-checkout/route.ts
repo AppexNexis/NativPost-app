@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     // Amount in kobo (Paystack uses smallest currency unit)
     // Paystack primarily serves NGN — $29 USD ≈ NGN pricing
     // Set actual NGN amounts in Paystack Dashboard plans
-    const amountKobo = plan.priceUsd * 100; // placeholder, actual set in plan
+    // const amountKobo = plan.priceUsd * 100; // placeholder, actual set in plan
 
     // Initialize Paystack transaction
     const paystackRes = await fetch('https://api.paystack.co/transaction/initialize', {
@@ -65,15 +65,28 @@ export async function POST(request: NextRequest) {
         'Authorization': `Bearer ${PAYSTACK_SECRET}`,
         'Content-Type': 'application/json',
       },
+      // body: JSON.stringify({
+      //   email,
+      //   amount: amountKobo,
+      //   plan: planCode,
+      //   callback_url: `${APP_URL}/api/billing/paystack-callback`,
+      //   metadata: {
+      //     orgId: orgId!,
+      //     planId,
+      //     setupFeeUsd: plan.setupFeeUsd,
+      //     custom_fields: [
+      //       { display_name: 'Plan', variable_name: 'plan', value: plan.name },
+      //       { display_name: 'Org ID', variable_name: 'org_id', value: orgId! },
+      //     ],
+      //   },
+      // }),
       body: JSON.stringify({
         email,
-        amount: amountKobo,
-        plan: planCode,
-        callback_url: `${APP_URL}/api/billing/paystack-callback`,
+        amount: 0,
+        callback_url: `${APP_URL}/dashboard/billing?paystack_success=true&plan=${planId}`,
         metadata: {
           orgId: orgId!,
           planId,
-          setupFeeUsd: plan.setupFeeUsd,
           custom_fields: [
             { display_name: 'Plan', variable_name: 'plan', value: plan.name },
             { display_name: 'Org ID', variable_name: 'org_id', value: orgId! },

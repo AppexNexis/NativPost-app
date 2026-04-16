@@ -22,6 +22,13 @@
       "when": 1775020136613,
       "tag": "0002_fat_starfox",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1776367214955,
+      "tag": "0003_red_the_initiative",
+      "breakpoints": true
     }
   ]
 }

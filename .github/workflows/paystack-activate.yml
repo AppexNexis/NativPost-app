@@ -1,0 +1,19 @@
+name: Activate Paystack Trials
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # Daily at 6am UTC
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Paystack activation endpoint
+        run: |
+          curl -X GET \
+            https://app.nativpost.com/api/cron/paystack-activate \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --fail \
+            --silent \
+            --show-error

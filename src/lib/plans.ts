@@ -62,7 +62,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       apiAccess: false,
     },
     stripePriceId: { dev: 'price_STARTER_DEV_REPLACE', prod: 'price_1TLfHe8UA4orc9zNIcmWwP1d' },
-    paystackPlanCode: { dev: 'PLN_starter_dev_REPLACE', prod: 'PLN_4jzn7zd6blqssag' },
+    paystackPlanCode: { dev: 'PLN_jjfdqyrgr1vbsvv', prod: 'PLN_4jzn7zd6blqssag' },
   },
 
   growth: {
@@ -91,7 +91,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       apiAccess: false,
     },
     stripePriceId: { dev: 'price_GROWTH_DEV_REPLACE', prod: 'price_1TLfIW8UA4orc9zN5SvYEWkD' },
-    paystackPlanCode: { dev: 'PLN_growth_dev_REPLACE', prod: 'PLN_u39i4zlh6416qbb' },
+    paystackPlanCode: { dev: 'PLN_8h1kodnrprlt3sp', prod: 'PLN_u39i4zlh6416qbb' },
   },
 
   pro: {
@@ -120,7 +120,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       apiAccess: false,
     },
     stripePriceId: { dev: 'price_PRO_DEV_REPLACE', prod: 'price_1TLfJ08UA4orc9zNrNzFnRr7' },
-    paystackPlanCode: { dev: 'PLN_pro_dev_REPLACE', prod: 'PLN_o7ebuljkyw9iyaw' },
+    paystackPlanCode: { dev: 'PLN_fdwtqby00izl4ro', prod: 'PLN_o7ebuljkyw9iyaw' },
   },
 
   agency: {
@@ -149,7 +149,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       apiAccess: true,
     },
     stripePriceId: { dev: 'price_AGENCY_DEV_REPLACE', prod: 'price_1TLfKa8UA4orc9zNw27oyVak' },
-    paystackPlanCode: { dev: 'PLN_agency_dev_REPLACE', prod: 'PLN_uevdm7btk36wdhg' },
+    paystackPlanCode: { dev: 'PLN_lu1zsbqua45q58b', prod: 'PLN_uevdm7btk36wdhg' },
   },
 
   enterprise: {

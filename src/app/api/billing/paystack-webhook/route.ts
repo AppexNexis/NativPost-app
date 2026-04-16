@@ -82,28 +82,110 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ received: true });
 }
 
+// async function handlePaystackSuccess_(data: Record<string, unknown>) {
+//   const db = await getDb();
+//   const metadata = data.metadata as Record<string, unknown> | undefined;
+//   const orgId = metadata?.orgId as string | undefined;
+//   const planCode = (data.plan as Record<string, unknown>)?.plan_code as string | undefined;
+
+//   if (!orgId) {
+//     console.error('[Paystack Webhook] Missing orgId in metadata');
+//     return;
+//   }
+
+//   const plan = planCode ? getPlanByPaystackCode(planCode) : null;
+//   const planId = plan?.id ?? 'starter';
+//   const resolvedPlan = PLAN_CONFIGS[planId];
+
+//   if (!resolvedPlan) {
+//     return;
+//   }
+
+//   const customerCode = (data.customer as Record<string, unknown>)?.customer_code as string | undefined;
+//   const subscriptionCode = (data.subscription as Record<string, unknown>)?.subscription_code as string | undefined
+//     || (data as Record<string, unknown>).subscription_code as string | undefined;
+
+//   await db
+//     .update(organizationSchema)
+//     .set({
+//       plan: planId,
+//       planStatus: 'active',
+//       paystackCustomerCode: customerCode ?? null,
+//       paystackSubscriptionCode: subscriptionCode ?? null,
+//       paystackPlanCode: planCode ?? null,
+//       postsPerMonth: resolvedPlan.features.postsPerMonth === -1 ? 999999 : resolvedPlan.features.postsPerMonth,
+//       platformsLimit: resolvedPlan.features.platformsLimit === -1 ? 99 : resolvedPlan.features.platformsLimit,
+//       setupFeePaid: true,
+//       updatedAt: new Date(),
+//     })
+//     .where(eq(organizationSchema.id, orgId));
+
+//   console.log(`[Paystack Webhook] Activated ${planId} for org ${orgId}`);
+// }
+
 async function handlePaystackSuccess(data: Record<string, unknown>) {
   const db = await getDb();
   const metadata = data.metadata as Record<string, unknown> | undefined;
-  const orgId = metadata?.orgId as string | undefined;
-  const planCode = (data.plan as Record<string, unknown>)?.plan_code as string | undefined;
+  let orgId = metadata?.orgId as string | undefined;
 
+  // Fallback: look up org by customer code if orgId missing in metadata
   if (!orgId) {
-    console.error('[Paystack Webhook] Missing orgId in metadata');
-    return;
+    const customerCode = (data.customer as Record<string, unknown>)?.customer_code as string | undefined;
+    if (customerCode) {
+      const [org] = await db
+        .select({ id: organizationSchema.id })
+        .from(organizationSchema)
+        .where(eq(organizationSchema.paystackCustomerCode, customerCode))
+        .limit(1);
+      orgId = org?.id;
+    }
   }
 
-  const plan = planCode ? getPlanByPaystackCode(planCode) : null;
-  const planId = plan?.id ?? 'starter';
-  const resolvedPlan = PLAN_CONFIGS[planId];
-
-  if (!resolvedPlan) {
+  if (!orgId) {
+    console.error('[Paystack Webhook] Could not resolve orgId', JSON.stringify(data));
     return;
   }
 
   const customerCode = (data.customer as Record<string, unknown>)?.customer_code as string | undefined;
+  const authorizationCode = (data.authorization as Record<string, unknown>)?.authorization_code as string | undefined;
+  const planCode = (data.plan as Record<string, unknown>)?.plan_code as string | undefined;
   const subscriptionCode = (data.subscription as Record<string, unknown>)?.subscription_code as string | undefined
     || (data as Record<string, unknown>).subscription_code as string | undefined;
+
+  // Retrieve the stored planId from the org record if not in this event
+  const [existingOrg] = await db
+    .select({ paystackPlanCode: organizationSchema.paystackPlanCode })
+    .from(organizationSchema)
+    .where(eq(organizationSchema.id, orgId))
+    .limit(1);
+
+  const resolvedPlanCode = planCode ?? existingOrg?.paystackPlanCode ?? null;
+  const plan = resolvedPlanCode ? getPlanByPaystackCode(resolvedPlanCode) : null;
+
+  // This is a card authorization (zero-amount) — store auth code and set trialing
+  const isAuthOnly = !planCode && !subscriptionCode;
+
+  if (isAuthOnly) {
+    await db
+      .update(organizationSchema)
+      .set({
+        paystackCustomerCode: customerCode ?? null,
+        paystackAuthorizationCode: authorizationCode ?? null,
+        planStatus: 'trialing',
+        trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        updatedAt: new Date(),
+      })
+      .where(eq(organizationSchema.id, orgId));
+    console.log(`[Paystack Webhook] Card authorized for org ${orgId}, trial started`);
+    return;
+  }
+
+  // This is a real subscription charge — activate the plan
+  const planId = plan?.id ?? 'starter';
+  const resolvedPlan = PLAN_CONFIGS[planId];
+  if (!resolvedPlan) {
+    return;
+  }
 
   await db
     .update(organizationSchema)
@@ -111,8 +193,9 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
       plan: planId,
       planStatus: 'active',
       paystackCustomerCode: customerCode ?? null,
+      paystackAuthorizationCode: authorizationCode ?? null,
       paystackSubscriptionCode: subscriptionCode ?? null,
-      paystackPlanCode: planCode ?? null,
+      paystackPlanCode: resolvedPlanCode,
       postsPerMonth: resolvedPlan.features.postsPerMonth === -1 ? 999999 : resolvedPlan.features.postsPerMonth,
       platformsLimit: resolvedPlan.features.platformsLimit === -1 ? 99 : resolvedPlan.features.platformsLimit,
       setupFeePaid: true,
