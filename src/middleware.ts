@@ -27,6 +27,17 @@ const isDashboardRoute = createRouteMatcher([
 
 const isApiRoute = createRouteMatcher(['/api(.*)']);
 
+// routes that should NOT trigger billing redirect loop
+const isSubscriptionExemptRoute = createRouteMatcher([
+  '/subscribe(.*)',
+  '/:locale/subscribe(.*)',
+  '/onboarding(.*)',
+  '/:locale/onboarding(.*)',
+  '/dashboard/billing(.*)',
+  '/:locale/dashboard/billing(.*)',
+  '/api/billing(.*)', // IMPORTANT: prevent recursion issues
+]);
+
 export default function middleware(request: NextRequest, event: NextFetchEvent) {
   // ───────────────────────── API ROUTES ─────────────────────────
   if (isApiRoute(request)) {
@@ -51,6 +62,7 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
   // ───────────────────────── PAGE ROUTES ─────────────────────────
   return clerkMiddleware(async (auth, req) => {
     const authObj = await auth();
+
     const localeMatch = req.nextUrl.pathname.match(/^(\/[a-z]{2})\//);
     const locale = localeMatch?.[1] ?? '';
 
@@ -62,13 +74,57 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
     }
 
     // 2. ORG GUARD
-    if (authObj.userId && !authObj.orgId && isDashboardRoute(req)) {
+    if (
+      authObj.userId
+      && !authObj.orgId
+      && isDashboardRoute(req)
+    ) {
       return NextResponse.redirect(
         new URL('/onboarding/organization-selection', req.url),
       );
     }
 
-    // ✅ NO billing check here — handled in DashboardLayoutGate
+    // 3. 🔥 STRONG BILLING ENFORCEMENT (CORE FIX)
+    if (
+      authObj.userId
+      && authObj.orgId
+      && req.nextUrl.pathname.startsWith('/dashboard')
+      && !isSubscriptionExemptRoute(req)
+    ) {
+      try {
+        const billingRes = await fetch(
+          new URL('/api/billing/status', req.url),
+          {
+            headers: {
+              cookie: req.headers.get('cookie') ?? '',
+            },
+          },
+        );
+
+        if (billingRes.ok) {
+          const billing = await billingRes.json();
+
+          const isActive = billing?.isActive;
+          const trialExpired = billing?.trialExpired;
+
+          // 🚨 HARD BLOCK
+          if (!isActive || trialExpired) {
+            const redirectUrl = new URL(`${locale}/subscribe`, req.url);
+
+            redirectUrl.searchParams.set(
+              'redirect',
+              req.nextUrl.pathname,
+            );
+
+            return NextResponse.redirect(redirectUrl);
+          }
+        }
+      } catch (err) {
+        // fail open (never break app)
+        console.error('[Middleware] Billing check failed:', err);
+      }
+    }
+
     return intlMiddleware(req);
   })(request, event);
 }
