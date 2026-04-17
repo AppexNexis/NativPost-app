@@ -21,8 +21,33 @@ export async function GET(_request: NextRequest) {
       getOrgUsage(orgId!),
     ]);
 
+    // -----------------------------------------------------------
+    // FALLBACK RESPONSE (prevents 404 + redirect loops)
+    // -----------------------------------------------------------
     if (!billing) {
-      return NextResponse.json({ error: 'Organisation not found' }, { status: 404 });
+      console.warn(`[Billing Status] Org ${orgId} missing — returning fallback state`);
+
+      return NextResponse.json({
+        plan: 'starter',
+        planStatus: 'inactive',
+        isActive: false,
+        isTrialing: false,
+        trialDaysLeft: 0,
+        trialExpired: false,
+        trialEndsAt: null,
+        setupFeePaid: false,
+        hasStripe: false,
+        hasPaystack: false,
+        features: {
+          postsPerMonth: 0,
+          platformsLimit: 0,
+        },
+        usage: {
+          postsThisMonth: 0,
+          postsLimit: 0,
+          platformsLimit: 0,
+        },
+      });
     }
 
     return NextResponse.json({
@@ -37,11 +62,6 @@ export async function GET(_request: NextRequest) {
       hasStripe: !!billing.stripeCustomerId,
       hasPaystack: !!billing.paystackCustomerCode,
       features: billing.features,
-      // usage: {
-      //   postsThisMonth: usage.postsThisMonth,
-      //   postsLimit: billing.features.postsPerMonth,
-      //   platformsLimit: billing.features.platformsLimit,
-      // },
       usage: {
         postsThisMonth: usage.postsThisMonth,
         postsLimit: billing.features?.postsPerMonth ?? billing.postsPerMonth ?? 0,
@@ -50,6 +70,10 @@ export async function GET(_request: NextRequest) {
     });
   } catch (err) {
     console.error('[Billing Status] Error:', err);
-    return NextResponse.json({ error: 'Failed to load billing status' }, { status: 500 });
+
+    return NextResponse.json(
+      { error: 'Failed to load billing status' },
+      { status: 500 },
+    );
   }
 }
