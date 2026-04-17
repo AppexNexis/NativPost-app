@@ -151,6 +151,7 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
   const planCode = (data.plan as Record<string, unknown>)?.plan_code as string | undefined;
   const subscriptionCode = (data.subscription as Record<string, unknown>)?.subscription_code as string | undefined
     || (data as Record<string, unknown>).subscription_code as string | undefined;
+  const reference = data.reference as string | undefined;
 
   // Retrieve the stored planId from the org record if not in this event
   const [existingOrg] = await db
@@ -162,10 +163,11 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
   const resolvedPlanCode = planCode ?? existingOrg?.paystackPlanCode ?? null;
   const plan = resolvedPlanCode ? getPlanByPaystackCode(resolvedPlanCode) : null;
 
-  // This is a card authorization (zero-amount) — store auth code and set trialing
+  // This is a card tokenization charge (₦50) — store auth code, start trial, refund
   const isAuthOnly = !planCode && !subscriptionCode;
 
   if (isAuthOnly) {
+    // 1. Store auth code and start trial
     await db
       .update(organizationSchema)
       .set({
@@ -176,14 +178,48 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
         updatedAt: new Date(),
       })
       .where(eq(organizationSchema.id, orgId));
+
     console.log(`[Paystack Webhook] Card authorized for org ${orgId}, trial started`);
+
+    // 2. Refund the ₦50 tokenization charge
+    if (reference) {
+      try {
+        const refundRes = await fetch('https://api.paystack.co/refund', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${PAYSTACK_SECRET}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            transaction: reference,
+            amount: 5000, // refund exactly ₦50 in kobo
+          }),
+        });
+
+        const refundData = await refundRes.json();
+
+        if (refundData.status) {
+          console.log(`[Paystack Webhook] Refund successful for org ${orgId}, ref ${reference}`);
+        } else {
+          console.error(`[Paystack Webhook] Refund failed for org ${orgId}:`, refundData.message);
+        }
+      } catch (err) {
+        // Non-fatal — trial is already active, log and move on
+        console.error(`[Paystack Webhook] Refund request error for org ${orgId}:`, err);
+      }
+    } else {
+      console.warn(`[Paystack Webhook] No reference found to refund for org ${orgId}`);
+    }
+
     return;
   }
 
   // This is a real subscription charge — activate the plan
   const planId = plan?.id ?? 'starter';
   const resolvedPlan = PLAN_CONFIGS[planId];
+
   if (!resolvedPlan) {
+    console.error(`[Paystack Webhook] Could not resolve plan for planId ${planId}, org ${orgId}`);
     return;
   }
 
