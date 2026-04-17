@@ -83,7 +83,8 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         email,
         amount: 5000, // ₦50 in kobo — minimum tokenization charge, will be refunded
-        callback_url: `${APP_URL}/dashboard/billing?paystack_success=true&plan=${planId}`,
+        // callback_url: `${APP_URL}/dashboard/billing?paystack_success=true&plan=${planId}`,
+        callback_url: `${APP_URL}/subscribe?paystack_success=true&plan=${planId}&redirect=/dashboard`,
         channels: ['card'], // card only — we need an authorization_code for later
         metadata: {
           orgId: orgId!,

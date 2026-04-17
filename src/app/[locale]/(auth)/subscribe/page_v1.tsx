@@ -1,5 +1,8 @@
 'use client';
 
+// Never statically prerender — Clerk hooks require request-time context
+// export const dynamic = 'force-dynamic';
+
 import { useOrganization, useUser } from '@clerk/nextjs';
 import {
   Check,
@@ -8,12 +11,25 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 
 import { FREE_TRIAL_DAYS, VISIBLE_PLANS } from '@/lib/plans';
 
+// -----------------------------------------------------------
+// TYPES
+// -----------------------------------------------------------
 type PaymentMethod = 'stripe' | 'paystack';
 
+// type BillingStatus = {
+//   isActive: boolean;
+//   isTrialing: boolean;
+//   trialExpired: boolean;
+//   planStatus: string;
+// };
+
+// -----------------------------------------------------------
+// FEATURE ROWS — mirrors billing page exactly
+// -----------------------------------------------------------
 const FEATURE_ROWS = [
   {
     label: 'Posts per month',
@@ -75,84 +91,79 @@ function SubscribeContent() {
   const searchParams = useSearchParams();
   const redirectPath = searchParams.get('redirect') || '/dashboard';
 
-  // Payment callback params
-  const paystackSuccess = searchParams.get('paystack_success');
-  const paystackReference = searchParams.get('reference') || searchParams.get('trxref');
-  const returnedPlan = searchParams.get('plan');
-
   const [billingChecked, setBillingChecked] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<string>('growth');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('stripe');
   const [isLoading, setIsLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isPolling, setIsPolling] = useState(false);
-  const [pollAttempts, setPollAttempts] = useState(0);
-  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showComparison, setShowComparison] = useState(false);
 
-  const MAX_POLL_ATTEMPTS = 10; // 10 × 2s = 20s max wait
-  const POLL_INTERVAL_MS = 2000;
+  // ── On mount: check if already subscribed → skip paywall ──
+  // useEffect(() => {
+  //   async function checkBilling() {
+  //     if (!organization) {
+  //       return;
+  //     }
+  //     try {
+  //       const res = await fetch('/api/billing/status');
+  //       if (res.ok) {
+  //         const billing: BillingStatus = await res.json();
+  //         if (billing.isActive && !billing.trialExpired) {
+  //           router.replace(redirectPath);
+  //           return;
+  //         }
+  //       }
+  //     } catch {
+  //       // If check fails, show the paywall — safe default
+  //     }
+  //     setBillingChecked(true);
+  //   }
+  //   checkBilling();
+  // }, [organization, redirectPath, router]);
 
-  // -----------------------------------------------------------
-  // Poll billing status until trial is active, then redirect
-  // -----------------------------------------------------------
-  const pollBillingStatus = useCallback(async (attempt: number) => {
-    if (attempt >= MAX_POLL_ATTEMPTS) {
-      // Webhook took too long — redirect anyway, dashboard gate
-      // will re-check and the webhook will likely have fired by then
-      console.warn('[Subscribe] Polling timed out, redirecting optimistically');
-      router.replace(`${redirectPath}?paystack_success=true&plan=${returnedPlan ?? ''}`);
-      return;
-    }
+  //   useEffect(() => {
+  //   async function checkBilling() {
+  //     if (!organization) return;
 
-    try {
-      const res = await fetch('/api/billing/status', { cache: 'no-store' });
-      if (res.ok) {
-        const billing = await res.json();
-        const isActive = billing?.isActive;
-        const isTrialing = billing?.isTrialing;
-        const trialExpired = billing?.trialExpired;
+  //     try {
+  //       const res = await fetch('/api/billing/status', {
+  //         cache: 'no-store',
+  //       });
 
-        if ((isActive || isTrialing) && !trialExpired) {
-          // Webhook has fired and DB is updated — redirect to dashboard
-          router.replace(`${redirectPath}?paystack_success=true&plan=${returnedPlan ?? ''}`);
-          return;
-        }
-      }
-    } catch {
-      // Network error — keep polling
-    }
+  //       if (!res.ok) return;
 
-    setPollAttempts(attempt + 1);
-    pollTimer.current = setTimeout(() => pollBillingStatus(attempt + 1), POLL_INTERVAL_MS);
-  }, [redirectPath, returnedPlan, router]);
+  //       const billing = await res.json();
 
-  // -----------------------------------------------------------
-  // On mount: handle paystack callback OR check existing billing
-  // -----------------------------------------------------------
+  //       if (billing.isActive && !billing.trialExpired) {
+  //         router.replace(redirectPath);
+  //       } else {
+  //         setBillingChecked(true);
+  //       }
+  //     } catch {
+  //       setBillingChecked(true);
+  //     }
+  //   }
+
+  //   checkBilling();
+  // }, [organization]);
+
   useEffect(() => {
     let mounted = true;
 
-    async function init() {
-      // CASE 1: Returning from Paystack payment
-      if (paystackSuccess && paystackReference) {
-        if (mounted) {
-          setIsPolling(true);
-          setBillingChecked(true); // show polling UI, not the pricing grid
-        }
-        pollBillingStatus(0);
-        return;
-      }
-
-      // CASE 2: Normal visit — check if already subscribed
+    async function checkBilling() {
       try {
         if (!organization) {
+          // IMPORTANT: still unblock UI
           if (mounted) {
             setBillingChecked(true);
           }
           return;
         }
 
-        const res = await fetch('/api/billing/status', { cache: 'no-store' });
+        const res = await fetch('/api/billing/status', {
+          cache: 'no-store',
+        });
+
         if (!res.ok) {
           if (mounted) {
             setBillingChecked(true);
@@ -161,11 +172,11 @@ function SubscribeContent() {
         }
 
         const billing = await res.json();
+
         const isActive = billing?.isActive;
-        const isTrialing = billing?.isTrialing;
         const trialExpired = billing?.trialExpired;
 
-        if ((isActive || isTrialing) && !trialExpired) {
+        if (isActive && !trialExpired) {
           router.replace(redirectPath);
           return;
         }
@@ -180,15 +191,12 @@ function SubscribeContent() {
       }
     }
 
-    init();
+    checkBilling();
 
     return () => {
       mounted = false;
-      if (pollTimer.current) {
-        clearTimeout(pollTimer.current);
-      }
     };
-  }, [organization, paystackSuccess, paystackReference, redirectPath, router, pollBillingStatus]);
+  }, [organization, redirectPath, router]);
 
   const handleSubscribe = async (planId: string) => {
     setIsLoading(planId);
@@ -231,29 +239,7 @@ function SubscribeContent() {
     }
   };
 
-  // -----------------------------------------------------------
-  // POLLING STATE — shown after Paystack redirect
-  // -----------------------------------------------------------
-  if (isPolling) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4">
-        <Loader2 className="size-8 animate-spin text-primary" />
-        <p className="text-sm font-medium">Confirming your payment...</p>
-        <p className="text-xs text-muted-foreground">
-          This usually takes a few seconds. Please don't close this page.
-        </p>
-        {pollAttempts > 5 && (
-          <p className="text-xs text-muted-foreground">
-            Taking longer than expected. Still checking...
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  // -----------------------------------------------------------
-  // LOADING STATE — initial billing check
-  // -----------------------------------------------------------
+  // Show spinner while checking billing / waiting for org
   if (!billingChecked) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -262,9 +248,6 @@ function SubscribeContent() {
     );
   }
 
-  // -----------------------------------------------------------
-  // PRICING GRID
-  // -----------------------------------------------------------
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -283,6 +266,8 @@ function SubscribeContent() {
       </div>
 
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
+
+        {/* Headline */}
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
             Start your
@@ -295,6 +280,7 @@ function SubscribeContent() {
           </p>
         </div>
 
+        {/* Trial badge */}
         <div className="mb-8 flex justify-center">
           <div className="flex items-center gap-2 rounded-full border bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
             <Check className="size-4" />
@@ -304,20 +290,23 @@ function SubscribeContent() {
           </div>
         </div>
 
+        {/* Payment method toggle */}
         <div className="mb-6 flex flex-wrap items-center justify-center gap-3">
           <span className="text-sm font-medium">Pay with:</span>
           <div className="flex rounded-lg border p-1">
             <button
               type="button"
               onClick={() => setPaymentMethod('stripe')}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentMethod === 'stripe' ? 'bg-foreground text-background' : 'hover:bg-muted'}`}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentMethod === 'stripe' ? 'bg-foreground text-background' : 'hover:bg-muted'
+              }`}
             >
               Card (Stripe)
             </button>
             <button
               type="button"
               onClick={() => setPaymentMethod('paystack')}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentMethod === 'paystack' ? 'bg-foreground text-background' : 'hover:bg-muted'}`}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentMethod === 'paystack' ? 'bg-foreground text-background' : 'hover:bg-muted'
+              }`}
             >
               Africa (Paystack)
             </button>
@@ -327,12 +316,14 @@ function SubscribeContent() {
           )}
         </div>
 
+        {/* Error */}
         {error && (
           <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </div>
         )}
 
+        {/* Pricing grid — same structure as billing page */}
         <div className="rounded-2xl border bg-card p-5 sm:p-6 lg:p-8">
           <div className="mb-8 text-center">
             <span className="mb-3 inline-block rounded-full bg-[#cdf5f8] px-4 py-1.5 text-xs font-normal text-foreground">
@@ -348,7 +339,10 @@ function SubscribeContent() {
           </div>
 
           <div className="grid grid-cols-12 gap-3 lg:gap-5">
+
+            {/* Feature label column — only on xl */}
             <div className="col-span-12 hidden xl:col-span-3 xl:block">
+              {/* Spacer aligns with plan header */}
               <div className="h-[220px]" />
               <div>
                 <h3 className="mb-2 text-sm font-semibold">What&apos;s included</h3>
@@ -363,14 +357,18 @@ function SubscribeContent() {
               </div>
             </div>
 
+            {/* Plan columns */}
             {VISIBLE_PLANS.map((plan) => {
               const isSelected = selectedPlan === plan.id;
               const isPlanLoading = isLoading === plan.id;
 
               return (
                 <div key={plan.id} className="col-span-12 sm:col-span-6 xl:col-span-3">
+                  {/* Plan header */}
                   <div
-                    className={`relative overflow-hidden rounded-t-2xl px-5 py-6 ring-2 transition-all ${isSelected ? 'ring-primary' : 'ring-transparent'
+                    className={`relative overflow-hidden rounded-t-2xl px-5 py-6 ring-2 transition-all ${isSelected
+                      ? 'ring-primary'
+                      : 'ring-transparent'
                     } ${plan.popular ? 'bg-foreground text-background' : 'bg-muted/60'}`}
                   >
                     {plan.popular && (
@@ -398,7 +396,9 @@ function SubscribeContent() {
                       </p>
                     </div>
 
+                    {/* Select + Start Trial CTA */}
                     <div className="relative z-10 mt-4 space-y-2">
+                      {/* Plan selector */}
                       <button
                         type="button"
                         onClick={() => setSelectedPlan(plan.id)}
@@ -415,6 +415,7 @@ function SubscribeContent() {
                         {isSelected ? 'Selected' : 'Select plan'}
                       </button>
 
+                      {/* Start trial CTA — only on selected plan */}
                       {isSelected && (
                         <button
                           type="button"
@@ -431,6 +432,7 @@ function SubscribeContent() {
                     </div>
                   </div>
 
+                  {/* Feature rows */}
                   <div className="rounded-b-2xl border border-t-0 bg-background">
                     {FEATURE_ROWS.map((row) => {
                       const value = row.render(plan);
@@ -459,6 +461,20 @@ function SubscribeContent() {
             })}
           </div>
 
+          {/* Feature comparison toggle */}
+          <div className="mt-6 text-center">
+            <button
+              type="button"
+              onClick={() => setShowComparison(p => !p)}
+              className="text-xs text-muted-foreground underline hover:text-foreground"
+            >
+              {showComparison ? 'Hide' : 'Show'}
+              {' '}
+              full feature comparison
+            </button>
+          </div>
+
+          {/* Enterprise CTA */}
           <div className="mt-8 text-center">
             <p className="text-sm text-muted-foreground">
               Need
@@ -471,7 +487,6 @@ function SubscribeContent() {
               {' '}
               with custom pricing?
               {' '}
-
               <a
                 href="https://nativpost.com/contact-us"
                 target="_blank"
@@ -485,6 +500,7 @@ function SubscribeContent() {
           </div>
         </div>
 
+        {/* Trust signals */}
         <div className="mt-6 flex flex-wrap justify-center gap-6">
           {['No setup hassle', 'Cancel anytime', 'Secure payment'].map(item => (
             <div key={item} className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -503,6 +519,9 @@ function SubscribeContent() {
   );
 }
 
+// -----------------------------------------------------------
+// PAGE
+// -----------------------------------------------------------
 export default function SubscribePage() {
   return (
     <Suspense
