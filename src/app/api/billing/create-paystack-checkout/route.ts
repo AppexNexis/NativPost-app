@@ -110,7 +110,13 @@ export async function POST(request: NextRequest) {
     // Store customer email reference
     await db
       .update(organizationSchema)
-      .set({ paystackCustomerCode: email }) // will be updated to proper code from webhook
+      // .set({ paystackCustomerCode: email }) // will be updated to proper code from webhook
+      .set({
+        paystackCustomerCode: email,
+        paystackPlanCode: planCode ?? null, // store intended plan code
+        plan: planId, // store intended plan id
+        updatedAt: new Date(),
+      })
       .where(eq(organizationSchema.id, orgId!));
 
     return NextResponse.json({ url: paystackData.data.authorization_url });

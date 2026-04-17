@@ -28,15 +28,15 @@ const isDashboardRoute = createRouteMatcher([
 const isApiRoute = createRouteMatcher(['/api(.*)']);
 
 // routes that should NOT trigger billing redirect loop
-const isSubscriptionExemptRoute = createRouteMatcher([
-  '/subscribe(.*)',
-  '/:locale/subscribe(.*)',
-  '/onboarding(.*)',
-  '/:locale/onboarding(.*)',
-  '/dashboard/billing(.*)',
-  '/:locale/dashboard/billing(.*)',
-  '/api/billing(.*)', // IMPORTANT: prevent recursion issues
-]);
+// const isSubscriptionExemptRoute = createRouteMatcher([
+//   '/subscribe(.*)',
+//   '/:locale/subscribe(.*)',
+//   '/onboarding(.*)',
+//   '/:locale/onboarding(.*)',
+//   '/dashboard/billing(.*)',
+//   '/:locale/dashboard/billing(.*)',
+//   '/api/billing(.*)', // IMPORTANT: prevent recursion issues
+// ]);
 
 export default function middleware(request: NextRequest, event: NextFetchEvent) {
   // ───────────────────────── API ROUTES ─────────────────────────
@@ -85,45 +85,45 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
     }
 
     // 3. 🔥 STRONG BILLING ENFORCEMENT (CORE FIX)
-    if (
-      authObj.userId
-      && authObj.orgId
-      && req.nextUrl.pathname.startsWith('/dashboard')
-      && !isSubscriptionExemptRoute(req)
-    ) {
-      try {
-        const billingRes = await fetch(
-          new URL('/api/billing/status', req.url),
-          {
-            headers: {
-              cookie: req.headers.get('cookie') ?? '',
-            },
-          },
-        );
+    // if (
+    //   authObj.userId
+    //   && authObj.orgId
+    //   && req.nextUrl.pathname.startsWith('/dashboard')
+    //   && !isSubscriptionExemptRoute(req)
+    // ) {
+    //   try {
+    //     const billingRes = await fetch(
+    //       new URL('/api/billing/status', req.url),
+    //       {
+    //         headers: {
+    //           cookie: req.headers.get('cookie') ?? '',
+    //         },
+    //       },
+    //     );
 
-        if (billingRes.ok) {
-          const billing = await billingRes.json();
+    //     if (billingRes.ok) {
+    //       const billing = await billingRes.json();
 
-          const isActive = billing?.isActive;
-          const trialExpired = billing?.trialExpired;
+    //       const isActive = billing?.isActive;
+    //       const trialExpired = billing?.trialExpired;
 
-          // 🚨 HARD BLOCK
-          if (!isActive || trialExpired) {
-            const redirectUrl = new URL(`${locale}/subscribe`, req.url);
+    //       // 🚨 HARD BLOCK
+    //       if (!isActive || trialExpired) {
+    //         const redirectUrl = new URL(`${locale}/subscribe`, req.url);
 
-            redirectUrl.searchParams.set(
-              'redirect',
-              req.nextUrl.pathname,
-            );
+    //         redirectUrl.searchParams.set(
+    //           'redirect',
+    //           req.nextUrl.pathname,
+    //         );
 
-            return NextResponse.redirect(redirectUrl);
-          }
-        }
-      } catch (err) {
-        // fail open (never break app)
-        console.error('[Middleware] Billing check failed:', err);
-      }
-    }
+    //         return NextResponse.redirect(redirectUrl);
+    //       }
+    //     }
+    //   } catch (err) {
+    //     // fail open (never break app)
+    //     console.error('[Middleware] Billing check failed:', err);
+    //   }
+    // }
 
     return intlMiddleware(req);
   })(request, event);

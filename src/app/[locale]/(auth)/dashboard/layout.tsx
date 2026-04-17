@@ -32,10 +32,15 @@ export default async function DashboardLayoutGate({
   }
 
   const isActive = billing?.isActive;
+  const isTrialing = billing?.isTrialing;
   const trialExpired = billing?.trialExpired;
 
-  // 🔒 HARD BLOCK
-  if (!isActive || trialExpired) {
+  // Allow through if active OR trialing (trial not yet expired)
+  // This prevents the redirect loop when Paystack webhook hasn't fired yet
+  // but the user has already been sent back to the dashboard
+  const canAccess = isActive || (isTrialing && !trialExpired);
+
+  if (!canAccess) {
     redirect(`/subscribe?redirect=/dashboard`);
   }
 

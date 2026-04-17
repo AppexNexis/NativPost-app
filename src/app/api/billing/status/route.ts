@@ -37,10 +37,15 @@ export async function GET(_request: NextRequest) {
       hasStripe: !!billing.stripeCustomerId,
       hasPaystack: !!billing.paystackCustomerCode,
       features: billing.features,
+      // usage: {
+      //   postsThisMonth: usage.postsThisMonth,
+      //   postsLimit: billing.features.postsPerMonth,
+      //   platformsLimit: billing.features.platformsLimit,
+      // },
       usage: {
         postsThisMonth: usage.postsThisMonth,
-        postsLimit: billing.features.postsPerMonth,
-        platformsLimit: billing.features.platformsLimit,
+        postsLimit: billing.features?.postsPerMonth ?? billing.postsPerMonth ?? 0,
+        platformsLimit: billing.features?.platformsLimit ?? billing.platformsLimit ?? 0,
       },
     });
   } catch (err) {

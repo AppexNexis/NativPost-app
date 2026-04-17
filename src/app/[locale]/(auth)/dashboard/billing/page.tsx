@@ -246,8 +246,11 @@ function BillingContent() {
                 {' '}
                 <span className="capitalize text-emerald-600">
                   {billing?.planStatus === 'trialing'
-                    ? `Free trial (${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} left)`
+                    ? `Free trial (${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} left) — ${VISIBLE_PLANS.find(p => p.id === billing?.plan)?.name ?? 'Growth'} plan`
                     : VISIBLE_PLANS.find(p => p.id === billing?.plan)?.name ?? 'Starter'}
+                  {/* {billing?.planStatus === 'trialing'
+                    ? `Free trial (${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} left)`
+                    : VISIBLE_PLANS.find(p => p.id === billing?.plan)?.name ?? 'Starter'} */}
                 </span>
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
@@ -302,8 +305,7 @@ function BillingContent() {
           <button
             type="button"
             onClick={() => setPaymentMethod('stripe')}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-              paymentMethod === 'stripe' ? 'bg-foreground text-background' : 'hover:bg-muted'
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentMethod === 'stripe' ? 'bg-foreground text-background' : 'hover:bg-muted'
             }`}
           >
             Card (Stripe)
@@ -311,8 +313,7 @@ function BillingContent() {
           <button
             type="button"
             onClick={() => setPaymentMethod('paystack')}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-              paymentMethod === 'paystack' ? 'bg-foreground text-background' : 'hover:bg-muted'
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentMethod === 'paystack' ? 'bg-foreground text-background' : 'hover:bg-muted'
             }`}
           >
             Africa (Paystack)
@@ -371,8 +372,7 @@ function BillingContent() {
             return (
               <div key={plan.id} className="col-span-12 sm:col-span-6 xl:col-span-3">
                 {/* Plan header */}
-                <div className={`relative overflow-hidden rounded-t-2xl px-5 py-6 ${
-                  plan.popular ? 'bg-foreground text-background' : 'bg-muted/60'
+                <div className={`relative overflow-hidden rounded-t-2xl px-5 py-6 ${plan.popular ? 'bg-foreground text-background' : 'bg-muted/60'
                 }`}
                 >
                   {plan.popular && (
@@ -405,12 +405,11 @@ function BillingContent() {
                     type="button"
                     onClick={() => handleCheckout(plan.id)}
                     disabled={isCurrent || !!checkoutLoading}
-                    className={`relative z-10 mt-5 flex w-full items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors disabled:opacity-60 ${
-                      isCurrent
-                        ? 'border bg-background/10 text-muted-foreground'
-                        : plan.popular
-                          ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                          : 'border bg-background text-foreground hover:bg-muted'
+                    className={`relative z-10 mt-5 flex w-full items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors disabled:opacity-60 ${isCurrent
+                      ? 'border bg-background/10 text-muted-foreground'
+                      : plan.popular
+                        ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                        : 'border bg-background text-foreground hover:bg-muted'
                     }`}
                   >
                     {isLoading && <Loader2 className="size-3.5 animate-spin" />}
