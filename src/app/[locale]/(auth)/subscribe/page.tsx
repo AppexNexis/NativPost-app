@@ -95,36 +95,78 @@ function SubscribeContent() {
   // -----------------------------------------------------------
   // Poll billing status until trial is active, then redirect
   // -----------------------------------------------------------
+  // const pollBillingStatus_ = useCallback(async (attempt: number) => {
+  //   if (attempt >= MAX_POLL_ATTEMPTS) {
+  //     // Webhook took too long — redirect anyway, dashboard gate
+  //     // will re-check and the webhook will likely have fired by then
+  //     console.warn('[Subscribe] Polling timed out, redirecting optimistically');
+  //     router.replace(`${redirectPath}?paystack_success=true&plan=${returnedPlan ?? ''}`);
+  //     return;
+  //   }
+
+  //   try {
+  //     const res = await fetch('/api/billing/status', { cache: 'no-store' });
+  //     if (res.ok) {
+  //       const billing = await res.json();
+  //       const isActive = billing?.isActive;
+  //       const isTrialing = billing?.isTrialing;
+  //       const trialExpired = billing?.trialExpired;
+
+  //       if ((isActive || isTrialing) && !trialExpired) {
+  //         // Webhook has fired and DB is updated — redirect to dashboard
+  //         router.replace(`${redirectPath}?paystack_success=true&plan=${returnedPlan ?? ''}`);
+  //         return;
+  //       }
+  //     }
+  //   } catch {
+  //     // Network error — keep polling
+  //   }
+
+  //   setPollAttempts(attempt + 1);
+  //   pollTimer.current = setTimeout(() => pollBillingStatus(attempt + 1), POLL_INTERVAL_MS);
+  // }, [redirectPath, returnedPlan, router]);
+
   const pollBillingStatus = useCallback(async (attempt: number) => {
     if (attempt >= MAX_POLL_ATTEMPTS) {
-      // Webhook took too long — redirect anyway, dashboard gate
-      // will re-check and the webhook will likely have fired by then
       console.warn('[Subscribe] Polling timed out, redirecting optimistically');
-      router.replace(`${redirectPath}?paystack_success=true&plan=${returnedPlan ?? ''}`);
+      router.replace(redirectPath);
       return;
     }
 
     try {
+    // First attempt: try to verify directly via our new verify endpoint
+      if (attempt === 0 && paystackReference) {
+        const verifyRes = await fetch('/api/billing/paystack-verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reference: paystackReference, planId: returnedPlan }),
+        });
+
+        if (verifyRes.ok) {
+          const verifyData = await verifyRes.json();
+          if (verifyData.success) {
+            router.replace(redirectPath);
+            return;
+          }
+        }
+      }
+
+      // Subsequent attempts: poll billing status (webhook may have fired)
       const res = await fetch('/api/billing/status', { cache: 'no-store' });
       if (res.ok) {
         const billing = await res.json();
-        const isActive = billing?.isActive;
-        const isTrialing = billing?.isTrialing;
-        const trialExpired = billing?.trialExpired;
-
-        if ((isActive || isTrialing) && !trialExpired) {
-          // Webhook has fired and DB is updated — redirect to dashboard
-          router.replace(`${redirectPath}?paystack_success=true&plan=${returnedPlan ?? ''}`);
+        if ((billing?.isActive || billing?.isTrialing) && !billing?.trialExpired) {
+          router.replace(redirectPath);
           return;
         }
       }
     } catch {
-      // Network error — keep polling
+    // keep polling
     }
 
     setPollAttempts(attempt + 1);
     pollTimer.current = setTimeout(() => pollBillingStatus(attempt + 1), POLL_INTERVAL_MS);
-  }, [redirectPath, returnedPlan, router]);
+  }, [redirectPath, returnedPlan, router, paystackReference]);
 
   // -----------------------------------------------------------
   // On mount: handle paystack callback OR check existing billing
