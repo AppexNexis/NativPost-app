@@ -47,6 +47,56 @@ export type LimitCheckResult =
 // -----------------------------------------------------------
 // GET ORG BILLING STATE
 // -----------------------------------------------------------
+// export async function getOrgBillingState(orgId: string): Promise<OrgBillingState | null> {
+//   const db = await getDb();
+//   const [org] = await db
+//     .select()
+//     .from(organizationSchema)
+//     .where(eq(organizationSchema.id, orgId))
+//     .limit(1);
+
+//   if (!org) {
+//     return null;
+//   }
+
+//   const isTrialing = org.planStatus === 'trialing';
+//   const isActive = org.planStatus === 'active';
+//   const trialEndsAt = org.trialEndsAt;
+
+//   let trialDaysLeft = 0;
+//   let trialExpired = false;
+
+//   if (isTrialing && trialEndsAt) {
+//     const msLeft = new Date(trialEndsAt).getTime() - Date.now();
+//     trialDaysLeft = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
+//     trialExpired = msLeft <= 0;
+//   }
+
+//   const features = getEffectivePlanFeatures(org.plan, org.planStatus);
+
+//   return {
+//     orgId,
+//     plan: org.plan,
+//     planStatus: org.planStatus,
+//     postsPerMonth: org.postsPerMonth,
+//     platformsLimit: org.platformsLimit,
+//     setupFeePaid: org.setupFeePaid,
+//     trialEndsAt: org.trialEndsAt ?? null,
+//     stripeCustomerId: org.stripeCustomerId ?? null,
+//     stripeSubscriptionId: org.stripeSubscriptionId ?? null,
+//     paystackCustomerCode: org.paystackCustomerCode ?? null,
+//     paystackSubscriptionCode: org.paystackSubscriptionCode ?? null,
+//     isActive: isActive || (isTrialing && !trialExpired),
+//     isTrialing,
+//     trialDaysLeft,
+//     trialExpired,
+//     features,
+//   };
+// }
+
+// -----------------------------------------------------------
+// GET ORG BILLING STATE
+// -----------------------------------------------------------
 export async function getOrgBillingState(orgId: string): Promise<OrgBillingState | null> {
   const db = await getDb();
 

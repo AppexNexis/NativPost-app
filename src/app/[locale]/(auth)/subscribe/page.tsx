@@ -1,6 +1,6 @@
 'use client';
 
-import { useOrganization, useUser } from '@clerk/nextjs';
+import { useOrganization, UserButton, useUser } from '@clerk/nextjs';
 import {
   Check,
   ChevronRight,
@@ -11,6 +11,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
 import { FREE_TRIAL_DAYS, VISIBLE_PLANS } from '@/lib/plans';
+import { Logo } from '@/templates/Logo';
 
 type PaymentMethod = 'stripe' | 'paystack';
 
@@ -400,17 +401,26 @@ function SubscribeContent() {
       {/* ── Top nav ── */}
       <div className="sticky top-0 z-20 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-2.5">
-            <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-foreground text-[11px] font-bold text-background">
-              N
-            </div>
-            <span className="text-sm font-semibold">NativPost</span>
+          {/* Logo */}
+          <Logo />
+
+          {/* Right side: org name + user button */}
+          <div className="flex items-center gap-3">
+            {organization && (
+              <span className="max-w-[120px] truncate text-xs text-muted-foreground sm:max-w-[220px]">
+                {organization.name}
+              </span>
+            )}
+            <UserButton
+              userProfileMode="navigation"
+              userProfileUrl="/dashboard/user-profile"
+              appearance={{
+                elements: {
+                  rootBox: 'px-1 py-1',
+                },
+              }}
+            />
           </div>
-          {organization && (
-            <span className="max-w-[160px] truncate text-xs text-muted-foreground sm:max-w-none">
-              {organization.name}
-            </span>
-          )}
         </div>
       </div>
 
