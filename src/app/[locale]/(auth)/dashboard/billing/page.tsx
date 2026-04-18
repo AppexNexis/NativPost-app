@@ -371,9 +371,10 @@ function BillingContent() {
               <strong className="font-semibold">Trial note:</strong>
               {' '}
               During your
-              {FREE_TRIAL_DAYS}
-              -day trial, access is limited to Starter plan features (15 posts, 3 platforms) regardless of your selected plan. Your full
-              {currentPlan?.name}
+              {` ${FREE_TRIAL_DAYS}-day trial, `}
+              {' '}
+              access is limited to Starter plan features (15 posts, 3 platforms) regardless of your selected plan. Your full
+              {` ${currentPlan?.name}`}
               {' '}
               limits unlock the moment you subscribe.
             </p>
@@ -469,12 +470,11 @@ function BillingContent() {
             return (
               <div
                 key={plan.id}
-                className={`relative flex flex-col rounded-2xl border transition-shadow ${
-                  plan.popular
-                    ? 'border-foreground shadow-lg'
-                    : isTrialingOnThis
-                      ? 'border-blue-300 shadow-md dark:border-blue-700'
-                      : 'border-border hover:shadow-md'
+                className={`relative flex flex-col rounded-2xl border transition-shadow ${plan.popular
+                  ? 'border-foreground shadow-lg'
+                  : isTrialingOnThis
+                    ? 'border-blue-300 shadow-md dark:border-blue-700'
+                    : 'border-border hover:shadow-md'
                 }`}
               >
                 {/* Top label chips */}
@@ -552,12 +552,11 @@ function BillingContent() {
                     type="button"
                     onClick={() => handleCheckout(plan.id)}
                     disabled={isCurrent || !!checkoutLoading}
-                    className={`flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all disabled:opacity-60 ${
-                      isCurrent
-                        ? 'cursor-default bg-muted text-muted-foreground'
-                        : plan.popular
-                          ? 'bg-foreground text-background hover:opacity-90 active:scale-[0.98]'
-                          : 'border bg-background text-foreground hover:bg-muted active:scale-[0.98]'
+                    className={`flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all disabled:opacity-60 ${isCurrent
+                      ? 'cursor-default bg-muted text-muted-foreground'
+                      : plan.popular
+                        ? 'bg-foreground text-background hover:opacity-90 active:scale-[0.98]'
+                        : 'border bg-background text-foreground hover:bg-muted active:scale-[0.98]'
                     }`}
                   >
                     {isLoadingThis && <Loader2 className="size-3.5 animate-spin" />}
