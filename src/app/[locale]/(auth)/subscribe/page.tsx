@@ -7,11 +7,12 @@ import {
   ExternalLink,
   Loader2,
 } from 'lucide-react';
+import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
 import { FREE_TRIAL_DAYS, VISIBLE_PLANS } from '@/lib/plans';
-import { Logo } from '@/templates/Logo';
+// import { Logo } from '@/templates/Logo';
 
 type PaymentMethod = 'stripe' | 'paystack';
 
@@ -90,10 +91,9 @@ function MobilePlanCard({
 
   return (
     <div
-      className={`overflow-hidden rounded-2xl border-2 transition-all duration-200 ${
-        isSelected
-          ? 'border-foreground shadow-lg'
-          : 'border-border hover:border-foreground/30'
+      className={`overflow-hidden rounded-2xl border-2 transition-all duration-200 ${isSelected
+        ? 'border-foreground shadow-lg'
+        : 'border-border hover:border-foreground/30'
       }`}
     >
       {/* Card header */}
@@ -129,14 +129,13 @@ function MobilePlanCard({
           <button
             type="button"
             onClick={onSelect}
-            className={`shrink-0 rounded-xl px-4 py-2 text-xs font-semibold transition-all ${
-              isSelected
-                ? plan.popular
-                  ? 'bg-background text-foreground'
-                  : 'bg-foreground text-background'
-                : plan.popular
-                  ? 'border border-background/30 bg-background/10 text-background hover:bg-background/20'
-                  : 'border border-border bg-background text-foreground hover:bg-muted'
+            className={`shrink-0 rounded-xl px-4 py-2 text-xs font-semibold transition-all ${isSelected
+              ? plan.popular
+                ? 'bg-background text-foreground'
+                : 'bg-foreground text-background'
+              : plan.popular
+                ? 'border border-background/30 bg-background/10 text-background hover:bg-background/20'
+                : 'border border-border bg-background text-foreground hover:bg-muted'
             }`}
           >
             {isSelected ? (
@@ -156,10 +155,9 @@ function MobilePlanCard({
             type="button"
             onClick={onSubscribe}
             disabled={!!isLoading}
-            className={`mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-3 text-sm font-semibold transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-60 ${
-              plan.popular
-                ? 'bg-background text-foreground'
-                : 'bg-foreground text-background'
+            className={`mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-3 text-sm font-semibold transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-60 ${plan.popular
+              ? 'bg-background text-foreground'
+              : 'bg-foreground text-background'
             }`}
           >
             {isPlanLoading
@@ -402,7 +400,12 @@ function SubscribeContent() {
       <div className="sticky top-0 z-20 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 sm:px-6">
           {/* Logo */}
-          <Logo />
+          <Image
+            src="/assets/images/shared/main-logo.svg"
+            alt="Main Logo"
+            width={100}
+            height={100}
+          />
 
           {/* Right side: org name + user button */}
           <div className="flex items-center gap-3">
@@ -535,10 +538,9 @@ function SubscribeContent() {
                 <div key={plan.id} className="col-span-3">
                   {/* Plan header card */}
                   <div
-                    className={`relative overflow-hidden rounded-t-2xl p-5 transition-all ${
-                      plan.popular
-                        ? 'bg-foreground text-background'
-                        : 'bg-muted/40'
+                    className={`relative overflow-hidden rounded-t-2xl p-5 transition-all ${plan.popular
+                      ? 'bg-foreground text-background'
+                      : 'bg-muted/40'
                     } ${isSelected ? 'ring-2 ring-foreground ring-offset-0' : ''}`}
                   >
                     {plan.popular && (
@@ -572,14 +574,13 @@ function SubscribeContent() {
                         <button
                           type="button"
                           onClick={() => setSelectedPlan(plan.id)}
-                          className={`flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-all active:scale-[0.98] ${
-                            isSelected
-                              ? plan.popular
-                                ? 'bg-background text-foreground'
-                                : 'bg-foreground text-background'
-                              : plan.popular
-                                ? 'border border-background/30 bg-background/10 text-background hover:bg-background/20'
-                                : 'border border-border bg-background text-foreground hover:bg-muted'
+                          className={`flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-all active:scale-[0.98] ${isSelected
+                            ? plan.popular
+                              ? 'bg-background text-foreground'
+                              : 'bg-foreground text-background'
+                            : plan.popular
+                              ? 'border border-background/30 bg-background/10 text-background hover:bg-background/20'
+                              : 'border border-border bg-background text-foreground hover:bg-muted'
                           }`}
                         >
                           {isSelected && <Check className="size-3" />}
@@ -591,10 +592,9 @@ function SubscribeContent() {
                             type="button"
                             onClick={() => handleSubscribe(plan.id)}
                             disabled={!!isLoading}
-                            className={`flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-60 ${
-                              plan.popular
-                                ? 'bg-background text-foreground'
-                                : 'bg-foreground text-background'
+                            className={`flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-60 ${plan.popular
+                              ? 'bg-background text-foreground'
+                              : 'bg-foreground text-background'
                             }`}
                           >
                             {isPlanLoading
