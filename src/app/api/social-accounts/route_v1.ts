@@ -1,9 +1,8 @@
-import { and, count, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { getOrgBillingState } from '@/lib/billing';
 // import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import { publishingQueueSchema, socialAccountSchema } from '@/models/Schema';
@@ -56,33 +55,6 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-
-    // --- Platform limit enforcement ---
-    const billing = await getOrgBillingState(orgId!);
-    if (!billing || !billing.isActive) {
-      return NextResponse.json(
-        { error: 'Your subscription has expired. Please subscribe to connect social accounts.' },
-        { status: 403 },
-      );
-    }
-
-    const { platformsLimit } = billing.features;
-    if (platformsLimit !== -1) {
-      const [currentCount] = await db
-        .select({ count: count() })
-        .from(socialAccountSchema)
-        .where(and(eq(socialAccountSchema.orgId, orgId!), eq(socialAccountSchema.isActive, true)));
-
-      const connectedCount = currentCount?.count ?? 0;
-      if (connectedCount >= platformsLimit) {
-        return NextResponse.json(
-          {
-            error: `Your plan supports up to ${platformsLimit} connected platform${platformsLimit === 1 ? '' : 's'}. Disconnect an existing account or upgrade to connect more.`,
-          },
-          { status: 403 },
-        );
-      }
-    }
 
     const [created] = await db
       .insert(socialAccountSchema)

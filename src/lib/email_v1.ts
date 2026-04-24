@@ -6,7 +6,6 @@
  *
  * Emails:
  * - sendPublishedNotification  — post went live
- * - sendScheduledNotification  — post was scheduled
  * - sendApprovalNotification   — content waiting for review
  * - sendWelcomeEmail           — new user onboarding
  */
@@ -16,7 +15,6 @@ import { Resend } from 'resend';
 
 import ApprovalEmail from '@/emails/ApprovalEmail';
 import PublishedEmail from '@/emails/PublishedEmail';
-import ScheduledEmail from '@/emails/ScheduledEmail';
 import WelcomeEmail from '@/emails/WelcomeEmail';
 
 const resend = new Resend(process.env.RESEND_API_KEY || '');
@@ -58,55 +56,6 @@ export async function sendPublishedNotification(
     return true;
   } catch (err) {
     console.error('[Email] sendPublishedNotification failed:', err);
-    return false;
-  }
-}
-
-// -----------------------------------------------------------
-// Post scheduled notification
-// -----------------------------------------------------------
-export async function sendScheduledNotification(
-  to: string,
-  brandName: string,
-  platforms: string,
-  caption: string,
-  scheduledFor: Date,
-): Promise<boolean> {
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('[Email] RESEND_API_KEY not set — skipping scheduled notification');
-    return false;
-  }
-
-  try {
-    const scheduledForStr = scheduledFor.toLocaleString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      timeZoneName: 'short',
-    });
-
-    const html = await render(
-      ScheduledEmail({ brandName, platforms, caption, scheduledFor: scheduledForStr, appUrl: APP_URL }),
-    );
-
-    const { error } = await resend.emails.send({
-      from: FROM_EMAIL,
-      to,
-      subject: `Post scheduled for ${platforms} — ${brandName}`,
-      html,
-    });
-
-    if (error) {
-      console.error('[Email] sendScheduledNotification error:', error);
-      return false;
-    }
-
-    return true;
-  } catch (err) {
-    console.error('[Email] sendScheduledNotification failed:', err);
     return false;
   }
 }

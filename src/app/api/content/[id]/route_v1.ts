@@ -1,10 +1,8 @@
-import { clerkClient } from '@clerk/nextjs/server';
 import { and, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { sendScheduledNotification } from '@/lib/email';
 // import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import { contentItemSchema } from '@/models/Schema';
@@ -58,7 +56,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 // -----------------------------------------------------------
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
-  const { error, orgId, userId } = await getAuthContext();
+  const { error, orgId } = await getAuthContext();
   if (error) {
     return error;
   }
@@ -161,32 +159,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (!updated) {
       return NextResponse.json({ error: 'Content item not found' }, { status: 404 });
-    }
-
-    // If the post was just scheduled, send a notification email (non-blocking)
-    if (body.status === 'scheduled' && body.scheduledFor) {
-      try {
-        const clerk = await clerkClient();
-        const [user, org] = await Promise.all([
-          clerk.users.getUser(userId!),
-          clerk.organizations.getOrganization({ organizationId: orgId! }),
-        ]);
-        const userEmail = user.emailAddresses[0]?.emailAddress;
-        const orgName = org.name || orgId!;
-        const platforms = (updated.targetPlatforms as string[]).join(', ');
-
-        if (userEmail && updated.scheduledFor) {
-          sendScheduledNotification(
-            userEmail,
-            orgName,
-            platforms,
-            updated.caption,
-            updated.scheduledFor,
-          ).catch(err => console.error('[Email] sendScheduledNotification failed:', err));
-        }
-      } catch (emailErr) {
-        console.error('[Email] Failed to send schedule notification:', emailErr);
-      }
     }
 
     return NextResponse.json({ item: updated }, { status: 200 });

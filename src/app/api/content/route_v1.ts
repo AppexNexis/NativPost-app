@@ -1,10 +1,8 @@
-import { clerkClient } from '@clerk/nextjs/server';
 import { and, desc, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { sendApprovalNotification } from '@/lib/email';
 // import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import { contentItemSchema } from '@/models/Schema';
@@ -56,7 +54,7 @@ export async function GET(request: NextRequest) {
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
   const db = await getDb();
-  const { error, orgId, userId } = await getAuthContext();
+  const { error, orgId } = await getAuthContext();
   if (error) {
     return error;
   }
@@ -86,23 +84,6 @@ export async function POST(request: NextRequest) {
         qualityFlags: Array.isArray(body.qualityFlags) ? body.qualityFlags : [],
       })
       .returning();
-
-    // Send approval notification (non-blocking — never delays the response)
-    try {
-      const clerk = await clerkClient();
-      const [user, org] = await Promise.all([
-        clerk.users.getUser(userId!),
-        clerk.organizations.getOrganization({ organizationId: orgId! }),
-      ]);
-      const userEmail = user.emailAddresses[0]?.emailAddress;
-      const orgName = org.name || orgId!;
-      if (userEmail) {
-        sendApprovalNotification(userEmail, orgName, 1)
-          .catch(err => console.error('[Email] sendApprovalNotification failed:', err));
-      }
-    } catch (emailErr) {
-      console.error('[Email] Failed to send creation notification:', emailErr);
-    }
 
     return NextResponse.json({ item: created }, { status: 201 });
   } catch (err) {

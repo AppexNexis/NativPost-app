@@ -2,7 +2,6 @@ import { and, eq, lte } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-import { sendPublishedNotification } from '@/lib/email';
 import { publishToplatform } from '@/lib/social-publish';
 // import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
@@ -11,56 +10,6 @@ import {
   publishingQueueSchema,
   socialAccountSchema,
 } from '@/models/Schema';
-
-const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY || '';
-
-/**
- * Fetch the admin email for an org via the Clerk Backend API.
- * Used in cron context where there is no active Clerk session.
- */
-async function getOrgAdminEmail(orgId: string): Promise<string | null> {
-  if (!CLERK_SECRET_KEY) {
-    return null;
-  }
-  try {
-    const res = await fetch(
-      `https://api.clerk.com/v1/organizations/${orgId}/memberships?limit=10`,
-      {
-        headers: {
-          'Authorization': `Bearer ${CLERK_SECRET_KEY}`,
-          'Content-Type': 'application/json',
-        },
-      },
-    );
-    if (!res.ok) {
-      return null;
-    }
-    const data = await res.json();
-    const memberships: any[] = data.data ?? data ?? [];
-    // Prefer org:admin role; fall back to first member
-    const admin = memberships.find(m => m.role === 'org:admin') ?? memberships[0];
-    if (!admin?.public_user_data?.user_id) {
-      return null;
-    }
-
-    const userRes = await fetch(
-      `https://api.clerk.com/v1/users/${admin.public_user_data.user_id}`,
-      {
-        headers: { Authorization: `Bearer ${CLERK_SECRET_KEY}` },
-      },
-    );
-    if (!userRes.ok) {
-      return null;
-    }
-    const user = await userRes.json();
-    const primaryEmail = user.email_addresses?.find(
-      (e: any) => e.id === user.primary_email_address_id,
-    )?.email_address;
-    return primaryEmail ?? null;
-  } catch {
-    return null;
-  }
-}
 
 // -----------------------------------------------------------
 // GET /api/cron/publish-scheduled
@@ -200,27 +149,6 @@ export async function GET(request: NextRequest) {
             updatedAt: new Date(),
           })
           .where(eq(contentItemSchema.id, item.id));
-
-        // 6. Send published email notification (non-blocking)
-        if (someSucceeded) {
-          const successPlatforms = platformResults
-            .filter(r => r.success)
-            .map(r => r.platform)
-            .join(', ');
-
-          getOrgAdminEmail(item.orgId)
-            .then((email) => {
-              if (email) {
-                return sendPublishedNotification(
-                  email,
-                  item.orgId, // brand name fallback — org name not available in cron context
-                  successPlatforms,
-                  item.caption,
-                );
-              }
-            })
-            .catch(err => console.error(`[Cron] Email notification failed for post ${item.id}:`, err));
-        }
 
         results.push({
           id: item.id,

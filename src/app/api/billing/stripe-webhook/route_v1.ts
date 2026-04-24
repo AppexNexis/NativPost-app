@@ -210,21 +210,6 @@ export async function POST(request: NextRequest) {
         break;
       }
 
-      // Handle trial-to-active conversion — Stripe fires this when trial ends
-      // and billing begins. We update DB to reflect the now-active status.
-      case 'customer.subscription.trial_will_end': {
-        const subscription = event.data.object as Stripe.Subscription;
-        const orgId = subscription.metadata?.orgId;
-        if (!orgId) {
-          break;
-        }
-
-        console.log(`[Stripe Webhook] trial_will_end: org=${orgId} trial ends at ${subscription.trial_end}`);
-        // No DB change needed here — just log. The status update happens on
-        // customer.subscription.updated when the trial actually ends.
-        break;
-      }
-
       default:
         break;
     }

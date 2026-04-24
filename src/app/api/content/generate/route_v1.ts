@@ -3,7 +3,6 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { checkFeatureAccess, checkPlatformLimit, checkPostLimit, hasActiveSubscription } from '@/lib/billing';
 import { TITLE_PLATFORMS } from '@/lib/title-platforms';
 // import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
@@ -32,54 +31,6 @@ export async function POST(request: NextRequest) {
       contentMode,
       enrichment,
     } = body;
-
-    // --- Subscription enforcement ---
-    const active = await hasActiveSubscription(orgId!);
-    if (!active) {
-      return NextResponse.json(
-        { error: 'Your subscription has expired. Please subscribe to continue generating content.' },
-        { status: 403 },
-      );
-    }
-
-    // --- Post quota enforcement (counts per published platform delivery) ---
-    const postLimit = await checkPostLimit(orgId!);
-    if (!postLimit.allowed) {
-      return NextResponse.json({ error: postLimit.reason }, { status: 403 });
-    }
-
-    // --- Platform count enforcement ---
-    const platforms: string[] = Array.isArray(targetPlatforms) ? targetPlatforms : ['instagram', 'linkedin'];
-    const platformLimit = await checkPlatformLimit(orgId!, platforms);
-    if (!platformLimit.allowed) {
-      return NextResponse.json({ error: platformLimit.reason }, { status: 403 });
-    }
-
-    // --- Content-type feature enforcement ---
-    if (contentType === 'carousel' || contentType === 'carousel_image') {
-      const carouselCheck = await checkFeatureAccess(orgId!, 'carouselPosts');
-      if (!carouselCheck.allowed) {
-        return NextResponse.json({ error: carouselCheck.reason }, { status: 403 });
-      }
-    }
-    if (contentType === 'reel' || contentType === 'video') {
-      const videoCheck = await checkFeatureAccess(orgId!, 'videoGeneration');
-      if (!videoCheck.allowed) {
-        return NextResponse.json({ error: videoCheck.reason }, { status: 403 });
-      }
-    }
-    if (contentMode && contentMode !== 'normal') {
-      const modeCheck = await checkFeatureAccess(orgId!, 'contentModes');
-      if (!modeCheck.allowed) {
-        return NextResponse.json({ error: modeCheck.reason }, { status: 403 });
-      }
-    }
-    if (enrichment && Object.keys(enrichment).length > 0) {
-      const enrichmentCheck = await checkFeatureAccess(orgId!, 'postEnrichment');
-      if (!enrichmentCheck.allowed) {
-        return NextResponse.json({ error: enrichmentCheck.reason }, { status: 403 });
-      }
-    }
 
     // 1. Fetch the org's brand profile
     const [profile] = await db
@@ -138,7 +89,7 @@ export async function POST(request: NextRequest) {
           },
           topic: topic || null,
           content_type: contentType || 'single_image',
-          target_platforms: platforms,
+          target_platforms: targetPlatforms || ['instagram', 'linkedin'],
           num_variants: numVariants || 3,
           content_mode: contentMode || 'normal',
           enrichment: enrichment || null,
@@ -173,6 +124,7 @@ export async function POST(request: NextRequest) {
     const variantGroupId = crypto.randomUUID();
     const savedItems = [];
 
+    const platforms: string[] = targetPlatforms || ['instagram', 'linkedin'];
     const needsTitle = platforms.some(p => TITLE_PLATFORMS.includes(p as any));
 
     for (const variant of variants) {
