@@ -923,94 +923,44 @@ export async function publishToPinterest(
   videoUrl?: string,
 ): Promise<PublishResult> {
   try {
-    // Pinterest does not support text-only pins — an image or video is required
-    if (imageUrls.length === 0 && !videoUrl) {
-      return {
-        success: false,
-        error: 'Pinterest requires an image or video. Text-only posts cannot be published to Pinterest.',
-      };
-    }
-
-    // Fetch user boards — use larger page_size to ensure we get at least one
-    const boardsRes = await fetch('https://api.pinterest.com/v5/boards?page_size=25&privacy=PUBLIC', {
+    const boardsRes = await fetch('https://api.pinterest.com/v5/boards?page_size=1', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-
-    if (!boardsRes.ok) {
-      const errText = await boardsRes.text();
-      console.error('[Pinterest] Boards fetch failed:', boardsRes.status, errText);
-      return { success: false, error: `Pinterest API error (${boardsRes.status}). Check your connection.` };
-    }
-
     const boardsData = await boardsRes.json();
-    console.log('[Pinterest] Boards response:', JSON.stringify(boardsData).slice(0, 300));
-
-    // Try items array (v5 API format)
-    const boards = boardsData.items ?? boardsData.data ?? [];
-    const boardId = boards[0]?.id;
+    const boardId = boardsData.items?.[0]?.id;
 
     if (!boardId) {
-      // Try fetching without privacy filter as fallback
-      const fallbackRes = await fetch('https://api.pinterest.com/v5/boards?page_size=25', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      const fallbackData = await fallbackRes.json();
-      const fallbackBoards = fallbackData.items ?? fallbackData.data ?? [];
-      const fallbackBoardId = fallbackBoards[0]?.id;
-
-      if (!fallbackBoardId) {
-        return {
-          success: false,
-          error: 'No Pinterest boards found. Please create a board on Pinterest first, then try again.',
-        };
-      }
-
-      // Use fallback board
-      return publishPinToBoard(accessToken, fallbackBoardId, caption, imageUrls, videoUrl);
+      return { success: false, error: 'No Pinterest boards found. Create a board first.' };
     }
 
-    return publishPinToBoard(accessToken, boardId, caption, imageUrls, videoUrl);
+    const pinBody: Record<string, unknown> = {
+      title: caption.slice(0, 100),
+      description: caption,
+      board_id: boardId,
+    };
+
+    if (imageUrls.length > 0) {
+      pinBody.media_source = { source_type: 'image_url', url: imageUrls[0] };
+    } else if (videoUrl) {
+      pinBody.media_source = { source_type: 'image_url', url: videoUrl };
+    } else {
+      return { success: false, error: 'Pinterest requires at least one image.' };
+    }
+
+    const pinRes = await fetch('https://api.pinterest.com/v5/pins', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(pinBody),
+    });
+    const pinData = await pinRes.json();
+
+    if (pinData.id) {
+      return { success: true, platformPostId: pinData.id };
+    }
+    return { success: false, error: pinData.message || pinData.code || 'Pinterest pin creation failed' };
   } catch (err) {
-    console.error('[Pinterest] Publish error:', err);
     return { success: false, error: `Pinterest error: ${err}` };
   }
-}
-
-async function publishPinToBoard(
-  accessToken: string,
-  boardId: string,
-  caption: string,
-  imageUrls: string[],
-  videoUrl?: string,
-): Promise<PublishResult> {
-  const pinBody: Record<string, unknown> = {
-    title: caption.slice(0, 100),
-    description: caption,
-    board_id: boardId,
-  };
-
-  if (imageUrls.length > 0) {
-    pinBody.media_source = { source_type: 'image_url', url: imageUrls[0] };
-  } else if (videoUrl) {
-    pinBody.media_source = { source_type: 'image_url', url: videoUrl };
-  }
-
-  const pinRes = await fetch('https://api.pinterest.com/v5/pins', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(pinBody),
-  });
-  const pinData = await pinRes.json();
-
-  console.log('[Pinterest] Create pin response:', JSON.stringify(pinData).slice(0, 300));
-
-  if (pinData.id) {
-    return { success: true, platformPostId: pinData.id };
-  }
-  return {
-    success: false,
-    error: pinData.message || pinData.code?.toString() || 'Pinterest pin creation failed',
-  };
 }
 
 // ============================================================
