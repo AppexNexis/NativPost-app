@@ -93,8 +93,17 @@ export async function POST(request: NextRequest) {
     // attached instead — Paystack handles charging and subscription creation.
 
     // Redirect to Paystack checkout with plan attached.
-    // When plan= is passed to initialize, Paystack charges the plan amount
-    // immediately and creates the recurring subscription automatically.
+    // Per Paystack docs: passing plan= overrides amount, but amount is still
+    // required by the API (must be a positive integer). We pass the plan amount.
+    // Metadata must be a stringified JSON string, not a raw object.
+    const planAmounts: Record<string, number> = {
+      starter: 2900000, // NGN 29,000 in kobo
+      growth: 5900000, // NGN 59,000 in kobo
+      pro: 11900000, // NGN 119,000 in kobo
+      agency: 22400000, // NGN 224,000 in kobo
+    };
+    const amount = planAmounts[planId] ?? 10000; // fallback to NGN 100 minimum
+
     const paystackRes = await fetch('https://api.paystack.co/transaction/initialize', {
       method: 'POST',
       headers: {
@@ -103,10 +112,11 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         email,
-        plan: planCode, // this is what makes it charge AND create subscription
+        amount, // required — plan param overrides this, but field must be present
+        plan: planCode,
         callback_url: `${APP_URL}/dashboard/billing?paystack_success=true&plan=${planId}`,
         channels: ['card'],
-        metadata: {
+        metadata: JSON.stringify({ // must be stringified per Paystack docs
           orgId: orgId!,
           planId,
           type: 'subscription',
@@ -114,16 +124,18 @@ export async function POST(request: NextRequest) {
             { display_name: 'Plan', variable_name: 'plan', value: plan.name },
             { display_name: 'Org ID', variable_name: 'org_id', value: orgId! },
           ],
-        },
+        }),
       }),
     });
 
     const paystackData = await paystackRes.json();
 
+    console.log('[Paystack Subscription] Full response:', JSON.stringify(paystackData));
+
     if (!paystackData.status || !paystackData.data?.authorization_url) {
-      console.error('[Paystack Subscription] Initialize failed:', paystackData);
+      console.error('[Paystack Subscription] Initialize failed:', JSON.stringify(paystackData));
       return NextResponse.json(
-        { error: paystackData.message || 'Failed to initialize payment.' },
+        { error: paystackData.message || 'Failed to initialize payment.', debug: paystackData },
         { status: 500 },
       );
     }
