@@ -45,8 +45,42 @@ export async function POST(request: NextRequest) {
         const session = event.data.object as Stripe.Checkout.Session;
         const orgId = session.metadata?.orgId;
         const planId = session.metadata?.planId;
+        const sessionType = session.metadata?.type;
 
-        if (!orgId || !planId) {
+        if (!orgId) {
+          break;
+        }
+
+        // ── Setup fee payment (one-time, mode: 'payment') ──
+        // Mark setupFeePaid and start the trial. The subscription
+        // will be created later when the user subscribes from billing.
+        if (sessionType === 'setup_fee') {
+          const trialEndsAt = new Date();
+          trialEndsAt.setDate(trialEndsAt.getDate() + 7);
+
+          await db
+            .update(organizationSchema)
+            .set({
+              setupFeePaid: true,
+              plan: planId ?? 'starter',
+              planStatus: 'trialing',
+              trialEndsAt,
+              stripeCustomerId: typeof session.customer === 'string'
+                ? session.customer
+                : (session.customer as Stripe.Customer | null)?.id ?? null,
+              // Trial limits
+              postsPerMonth: 3,
+              platformsLimit: 2,
+              updatedAt: new Date(),
+            })
+            .where(eq(organizationSchema.id, orgId));
+
+          console.log(`[Stripe Webhook] setup_fee paid: org=${orgId} plan=${planId}`);
+          break;
+        }
+
+        // ── Subscription checkout completed ──
+        if (!planId) {
           break;
         }
 

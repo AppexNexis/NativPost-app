@@ -151,7 +151,7 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
   const planCode = (data.plan as Record<string, unknown>)?.plan_code as string | undefined;
   const subscriptionCode = (data.subscription as Record<string, unknown>)?.subscription_code as string | undefined
     || (data as Record<string, unknown>).subscription_code as string | undefined;
-  // reference removed — no longer needed (no refund flow)
+  const reference = data.reference as string | undefined;
 
   // Retrieve the stored planId from the org record if not in this event
   const [existingOrg] = await db
@@ -163,31 +163,54 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
   const resolvedPlanCode = planCode ?? existingOrg?.paystackPlanCode ?? null;
   const plan = resolvedPlanCode ? getPlanByPaystackCode(resolvedPlanCode) : null;
 
-  // This is a setup fee payment (₦7,500) — mark paid and start trial
-  // Detect by metadata type OR by absence of planCode/subscriptionCode
-  const metadataType = metadata?.type as string | undefined;
-  const isSetupFee = metadataType === 'setup_fee' || (!planCode && !subscriptionCode);
+  // This is a card tokenization charge (₦50) — store auth code, start trial, refund
+  const isAuthOnly = !planCode && !subscriptionCode;
 
-  if (isSetupFee) {
-    const metaPlanId = metadata?.planId as string | undefined;
-    const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
+  if (isAuthOnly) {
+    // 1. Store auth code and start trial
     await db
       .update(organizationSchema)
       .set({
         paystackCustomerCode: customerCode ?? null,
         paystackAuthorizationCode: authorizationCode ?? null,
-        setupFeePaid: true,
-        plan: metaPlanId ?? 'starter',
         planStatus: 'trialing',
-        trialEndsAt,
-        postsPerMonth: 3,
-        platformsLimit: 2,
+        trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         updatedAt: new Date(),
       })
       .where(eq(organizationSchema.id, orgId));
 
-    console.log(`[Paystack Webhook] Setup fee paid for org ${orgId}, trial started`);
+    console.log(`[Paystack Webhook] Card authorized for org ${orgId}, trial started`);
+
+    // 2. Refund the ₦50 tokenization charge
+    if (reference) {
+      try {
+        const refundRes = await fetch('https://api.paystack.co/refund', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${PAYSTACK_SECRET}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            transaction: reference,
+            amount: 5000, // refund exactly ₦50 in kobo
+          }),
+        });
+
+        const refundData = await refundRes.json();
+
+        if (refundData.status) {
+          console.log(`[Paystack Webhook] Refund successful for org ${orgId}, ref ${reference}`);
+        } else {
+          console.error(`[Paystack Webhook] Refund failed for org ${orgId}:`, refundData.message);
+        }
+      } catch (err) {
+        // Non-fatal — trial is already active, log and move on
+        console.error(`[Paystack Webhook] Refund request error for org ${orgId}:`, err);
+      }
+    } else {
+      console.warn(`[Paystack Webhook] No reference found to refund for org ${orgId}`);
+    }
+
     return;
   }
 

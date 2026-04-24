@@ -185,34 +185,6 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
 export const FREE_TRIAL_DAYS = 7;
 export const SETUP_FEE_USD = 5; // flat across all plans
 
-// -----------------------------------------------------------
-// TRIAL RESTRICTIONS
-// During the 7-day trial, regardless of selected plan,
-// users get these locked-down limits:
-//   - 3 posts total (not per month — for the whole trial)
-//   - 1 platform max per post
-//   - 2 social accounts connectable
-//   - text posts ONLY (no image, carousel, video)
-// -----------------------------------------------------------
-export const TRIAL_FEATURES: PlanFeatures = {
-  postsPerMonth: 3, // 3 posts for entire trial
-  platformsLimit: 2, // can connect 2 platforms
-  brandProfilesLimit: 1,
-  teamMembersLimit: 1,
-  textPosts: true,
-  imagePosts: false, // trial: text only
-  carouselPosts: false,
-  videoPosts: false,
-  videoGeneration: false,
-  contentModes: false,
-  postEnrichment: false,
-  humanReview: false,
-  analyticsSync: false,
-  analyticsHistory: 7,
-  supportLevel: 'email',
-  apiAccess: false,
-};
-
 function getEnv(): 'dev' | 'prod' {
   return process.env.BILLING_PLAN_ENV === 'prod' ? 'prod' : 'dev';
 }
@@ -249,7 +221,7 @@ export function getPlanByPaystackCode(planCode: string): PlanConfig | null {
 
 export function getEffectivePlanFeatures(planId: string, planStatus: string): PlanFeatures {
   if (planStatus === 'trialing') {
-    return TRIAL_FEATURES;
+    return PLAN_CONFIGS.starter!.features;
   }
   return PLAN_CONFIGS[planId]?.features ?? PLAN_CONFIGS.starter!.features;
 }

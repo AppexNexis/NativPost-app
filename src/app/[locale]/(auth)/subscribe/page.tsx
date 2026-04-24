@@ -163,7 +163,7 @@ function MobilePlanCard({
             {isPlanLoading
               ? <Loader2 className="size-4 animate-spin" />
               : <ChevronRight className="size-4" />}
-            {isPlanLoading ? 'Redirecting...' : `Start ${trialDays}-day free trial`}
+            {isPlanLoading ? 'Redirecting...' : `Pay $5 & Start ${trialDays}-day Trial`}
           </button>
         )}
       </div>
@@ -281,41 +281,20 @@ function SubscribeContent() {
     let mounted = true;
 
     async function init() {
+      // Handle Paystack return with reference — poll until confirmed
       if (paystackSuccess && paystackReference) {
         if (mounted) {
-          setIsPolling(true); setBillingChecked(true);
+          setIsPolling(true);
+          setBillingChecked(true);
         }
         pollBillingStatus(0);
         return;
       }
 
-      try {
-        if (!organization) {
-          if (mounted) {
-            setBillingChecked(true);
-          } return;
-        }
-
-        const res = await fetch('/api/billing/status', { cache: 'no-store' });
-        if (!res.ok) {
-          if (mounted) {
-            setBillingChecked(true);
-          } return;
-        }
-
-        const billing = await res.json();
-        if ((billing?.isActive || billing?.isTrialing) && !billing?.trialExpired) {
-          router.replace(redirectPath);
-          return;
-        }
-
-        if (mounted) {
-          setBillingChecked(true);
-        }
-      } catch {
-        if (mounted) {
-          setBillingChecked(true);
-        }
+      // No special return params — just mark as checked and show the page.
+      // Billing gate is handled server-side in page.tsx before this renders.
+      if (mounted) {
+        setBillingChecked(true);
       }
     }
 
@@ -336,7 +315,8 @@ function SubscribeContent() {
         const res = await fetch('/api/billing/create-checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planId }),
+          // setupFeeOnly: charge only the $5 setup fee, no subscription yet
+          body: JSON.stringify({ planId, setupFeeOnly: true }),
         });
         const data = await res.json();
         if (data.url) {
@@ -441,13 +421,16 @@ function SubscribeContent() {
             -day free trial
           </h1>
           <p className="mt-3 text-sm text-muted-foreground sm:text-base">
-            $0.00 due today. Cancel anytime before the trial ends and you won't be charged.
+            Pay a one-time $5 setup fee today. Your
+            {' '}
+            {FREE_TRIAL_DAYS}
+            -day trial starts immediately. Cancel before it ends and you won't be charged for a subscription.
           </p>
         </div>
 
         {/* ── Trust strip ── */}
         <div className="mb-8 flex flex-wrap justify-center gap-6">
-          {['No setup hassle', `${FREE_TRIAL_DAYS} days free`, 'Cancel anytime', 'Secure payment'].map(item => (
+          {['$5 setup fee', `${FREE_TRIAL_DAYS} days free`, 'Cancel anytime', 'Secure payment'].map(item => (
             <div key={item} className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <div className="flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
                 <Check className="size-2.5 text-emerald-600" />
@@ -600,7 +583,7 @@ function SubscribeContent() {
                             {isPlanLoading
                               ? <Loader2 className="size-3.5 animate-spin" />
                               : <ChevronRight className="size-3.5" />}
-                            {isPlanLoading ? 'Redirecting...' : `Start ${FREE_TRIAL_DAYS}-day trial`}
+                            {isPlanLoading ? 'Redirecting...' : `Pay $5 & Start ${FREE_TRIAL_DAYS}-day Trial`}
                           </button>
                         )}
                       </div>
@@ -659,7 +642,7 @@ function SubscribeContent() {
   );
 }
 
-export default function SubscribePage() {
+export default function SubscribeClient() {
   return (
     <Suspense
       fallback={(

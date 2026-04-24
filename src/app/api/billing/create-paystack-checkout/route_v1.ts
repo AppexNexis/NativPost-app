@@ -82,13 +82,14 @@ export async function POST(request: NextRequest) {
       // }),
       body: JSON.stringify({
         email,
-        amount: 750000, // ₦7,500 in kobo = setup fee
-        callback_url: `${APP_URL}/subscribe?setup=success&paystack=true&plan=${planId}`,
-        channels: ['card'],
+        amount: 5000, // ₦50 in kobo — minimum tokenization charge, will be refunded
+        // callback_url: `${APP_URL}/dashboard/billing?paystack_success=true&plan=${planId}`,
+        callback_url: `${APP_URL}/subscribe?paystack_success=true&plan=${planId}&redirect=/dashboard`,
+        channels: ['card'], // card only — we need an authorization_code for later
         metadata: {
           orgId: orgId!,
           planId,
-          type: 'setup_fee',
+          tokenize_only: true, // custom flag so our webhook knows to refund this
           custom_fields: [
             { display_name: 'Plan', variable_name: 'plan', value: plan.name },
             { display_name: 'Org ID', variable_name: 'org_id', value: orgId! },
