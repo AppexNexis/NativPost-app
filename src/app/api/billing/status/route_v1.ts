@@ -64,13 +64,8 @@ export async function GET(_request: NextRequest) {
       features: billing.features,
       usage: {
         postsThisMonth: usage.postsThisMonth,
-        // Normalize -1 (unlimited) to sentinel values for UI display
-        postsLimit: billing.features?.postsPerMonth === -1
-          ? 999999
-          : (billing.features?.postsPerMonth ?? billing.postsPerMonth ?? 0),
-        platformsLimit: billing.features?.platformsLimit === -1
-          ? 99
-          : (billing.features?.platformsLimit ?? billing.platformsLimit ?? 0),
+        postsLimit: billing.features?.postsPerMonth ?? billing.postsPerMonth ?? 0,
+        platformsLimit: billing.features?.platformsLimit ?? billing.platformsLimit ?? 0,
       },
     });
   } catch (err) {
