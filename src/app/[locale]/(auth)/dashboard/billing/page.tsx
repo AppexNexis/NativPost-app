@@ -188,10 +188,7 @@ function BillingContent() {
           body: JSON.stringify({ planId, email }),
         });
         const data = await res.json();
-        if (data.success) {
-          // Direct charge succeeded — reload billing page to reflect new plan
-          window.location.reload();
-        } else if (data.url) {
+        if (data.url) {
           window.location.href = data.url;
         } else {
           setError(data.error || 'Failed to start payment.');

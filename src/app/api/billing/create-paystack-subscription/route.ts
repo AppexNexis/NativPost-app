@@ -86,124 +86,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const authCode = org?.paystackAuthorizationCode;
-    // Valid auth code looks like AUTH_xxxxxxxx (not an email or placeholder)
-    const hasValidAuthCode = authCode
-      && authCode.startsWith('AUTH_')
-      && authCode.length > 10;
+    // NOTE: charge_authorization cannot be used here because Paystack's
+    // maximum charge per transaction is NGN 100,000 (10,000,000 kobo).
+    // NativPost plans (Growth NGN 59,000, Pro NGN 119,000, Agency NGN 224,000)
+    // exceed or approach this limit. We use transaction/initialize with plan
+    // attached instead — Paystack handles charging and subscription creation.
 
-    // Store intended plan before any redirect
-    await db
-      .update(organizationSchema)
-      .set({ paystackPlanCode: planCode, plan: planId, updatedAt: new Date() })
-      .where(eq(organizationSchema.id, orgId!));
-
-    if (hasValidAuthCode) {
-      // -----------------------------------------------------------
-      // PATH 1: Charge stored card immediately via charge_authorization
-      // This charges the plan amount right now AND Paystack will
-      // auto-create the recurring subscription after successful charge.
-      // The webhook (charge.success + subscription.create) will then
-      // activate the plan in our DB.
-      // -----------------------------------------------------------
-      const planAmountByCode: Record<string, number> = {
-        starter: 2900000, // NGN 29,000 in kobo
-        growth: 5900000, // NGN 59,000 in kobo
-        pro: 11900000, // NGN 119,000 in kobo
-        agency: 22400000, // NGN 224,000 in kobo
-      };
-
-      const amount = planAmountByCode[planId];
-      if (!amount) {
-        return NextResponse.json({ error: 'Plan amount not configured.' }, { status: 400 });
-      }
-
-      const chargeRes = await fetch('https://api.paystack.co/transaction/charge_authorization', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${PAYSTACK_SECRET}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email,
-          amount,
-          authorization_code: authCode,
-          // NOTE: 'plan' param is NOT supported on charge_authorization.
-          // We create the subscription separately after charge succeeds.
-          metadata: {
-            orgId: orgId!,
-            planId,
-            type: 'subscription',
-            custom_fields: [
-              { display_name: 'Plan', variable_name: 'plan', value: plan.name },
-              { display_name: 'Org ID', variable_name: 'org_id', value: orgId! },
-            ],
-          },
-        }),
-      });
-
-      const chargeData = await chargeRes.json();
-
-      if (chargeData.status && chargeData.data?.status === 'success') {
-        // Charge succeeded — now create the recurring subscription separately
-        let subscriptionCode: string | null = null;
-
-        try {
-          const subRes = await fetch('https://api.paystack.co/subscription', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${PAYSTACK_SECRET}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              customer: org?.paystackCustomerCode ?? email,
-              plan: planCode,
-              authorization: authCode,
-              // Start next billing cycle from today + 1 month (already charged today)
-              start_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-            }),
-          });
-          const subData = await subRes.json();
-          if (subData.status) {
-            subscriptionCode = subData.data?.subscription_code ?? null;
-          } else {
-            console.warn('[Paystack Subscription] Subscription creation failed after charge:', subData.message);
-          }
-        } catch (subErr) {
-          console.warn('[Paystack Subscription] Failed to create subscription after charge:', subErr);
-        }
-
-        // Activate plan immediately — charge already went through
-        await db
-          .update(organizationSchema)
-          .set({
-            plan: planId,
-            planStatus: 'active',
-            paystackPlanCode: planCode,
-            paystackSubscriptionCode: subscriptionCode,
-            postsPerMonth: plan.features.postsPerMonth === -1 ? 999999 : plan.features.postsPerMonth,
-            platformsLimit: plan.features.platformsLimit === -1 ? 99 : plan.features.platformsLimit,
-            updatedAt: new Date(),
-          })
-          .where(eq(organizationSchema.id, orgId!));
-
-        return NextResponse.json({ success: true, charged: true });
-      }
-
-      if (chargeData.data?.status === 'send_otp' || chargeData.data?.status === 'send_pin') {
-        // Card requires OTP/PIN — fall through to redirect flow
-        console.log('[Paystack Subscription] Card requires OTP, falling back to redirect');
-      } else {
-        console.warn('[Paystack Subscription] charge_authorization failed:', chargeData.message, chargeData.data?.status);
-      }
-    }
-
-    // -----------------------------------------------------------
-    // PATH 2: Redirect to Paystack checkout
-    // Used when: no stored auth code, or charge requires OTP/PIN.
-    // Attaching plan= to the transaction means Paystack charges
-    // immediately and creates the subscription automatically.
-    // -----------------------------------------------------------
+    // Redirect to Paystack checkout with plan attached.
+    // When plan= is passed to initialize, Paystack charges the plan amount
+    // immediately and creates the recurring subscription automatically.
     const paystackRes = await fetch('https://api.paystack.co/transaction/initialize', {
       method: 'POST',
       headers: {
