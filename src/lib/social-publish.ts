@@ -921,9 +921,11 @@ export async function publishToPinterest(
   caption: string,
   imageUrls: string[] = [],
   videoUrl?: string,
+  refreshToken?: string,
+  onTokenRefresh?: (newAccessToken: string, newRefreshToken: string) => Promise<void>,
 ): Promise<PublishResult> {
   try {
-    // Pinterest does not support text-only pins — an image or video is required
+    // Pinterest does not support text-only pins
     if (imageUrls.length === 0 && !videoUrl) {
       return {
         success: false,
@@ -931,48 +933,93 @@ export async function publishToPinterest(
       };
     }
 
-    // Fetch user boards — use larger page_size to ensure we get at least one
-    const boardsRes = await fetch('https://api.pinterest.com/v5/boards?page_size=25&privacy=PUBLIC', {
-      headers: { Authorization: `Bearer ${accessToken}` },
+    let token = accessToken;
+
+    // Step 1: Fetch boards — if 401, refresh token and retry once
+    let boardsRes = await fetch('https://api.pinterest.com/v5/boards?page_size=25', {
+      headers: { Authorization: `Bearer ${token}` },
     });
+
+    // Handle expired token
+    if (boardsRes.status === 401 && refreshToken) {
+      console.log('[Pinterest] Token expired, refreshing...');
+      const refreshed = await refreshPinterestToken(refreshToken);
+      if (refreshed) {
+        token = refreshed.accessToken;
+        if (onTokenRefresh) {
+          await onTokenRefresh(refreshed.accessToken, refreshed.refreshToken);
+        }
+        // Retry with new token
+        boardsRes = await fetch('https://api.pinterest.com/v5/boards?page_size=25', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
+    }
 
     if (!boardsRes.ok) {
       const errText = await boardsRes.text();
       console.error('[Pinterest] Boards fetch failed:', boardsRes.status, errText);
-      return { success: false, error: `Pinterest API error (${boardsRes.status}). Check your connection.` };
+      if (boardsRes.status === 401) {
+        return { success: false, error: 'Pinterest session expired. Please reconnect your Pinterest account in Connections.' };
+      }
+      return { success: false, error: `Pinterest API error (${boardsRes.status}). Please try again.` };
     }
 
     const boardsData = await boardsRes.json();
-    console.log('[Pinterest] Boards response:', JSON.stringify(boardsData).slice(0, 300));
+    console.log('[Pinterest] Boards response:', JSON.stringify(boardsData).slice(0, 400));
 
-    // Try items array (v5 API format)
     const boards = boardsData.items ?? boardsData.data ?? [];
     const boardId = boards[0]?.id;
 
     if (!boardId) {
-      // Try fetching without privacy filter as fallback
-      const fallbackRes = await fetch('https://api.pinterest.com/v5/boards?page_size=25', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      const fallbackData = await fallbackRes.json();
-      const fallbackBoards = fallbackData.items ?? fallbackData.data ?? [];
-      const fallbackBoardId = fallbackBoards[0]?.id;
-
-      if (!fallbackBoardId) {
-        return {
-          success: false,
-          error: 'No Pinterest boards found. Please create a board on Pinterest first, then try again.',
-        };
-      }
-
-      // Use fallback board
-      return publishPinToBoard(accessToken, fallbackBoardId, caption, imageUrls, videoUrl);
+      return {
+        success: false,
+        error: 'No Pinterest boards found. Please create a board on Pinterest first, then try again.',
+      };
     }
 
-    return publishPinToBoard(accessToken, boardId, caption, imageUrls, videoUrl);
+    return publishPinToBoard(token, boardId, caption, imageUrls, videoUrl);
   } catch (err) {
     console.error('[Pinterest] Publish error:', err);
     return { success: false, error: `Pinterest error: ${err}` };
+  }
+}
+
+async function refreshPinterestToken(
+  refreshToken: string,
+): Promise<{ accessToken: string; refreshToken: string } | null> {
+  const clientId = process.env.PINTEREST_CLIENT_ID;
+  const clientSecret = process.env.PINTEREST_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    return null;
+  }
+
+  try {
+    const res = await fetch('https://api.pinterest.com/v5/oauth/token', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+      }).toString(),
+    });
+
+    if (!res.ok) {
+      console.error('[Pinterest] Token refresh failed:', res.status, await res.text());
+      return null;
+    }
+
+    const data = await res.json();
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || refreshToken,
+    };
+  } catch (err) {
+    console.error('[Pinterest] Token refresh error:', err);
+    return null;
   }
 }
 
@@ -1064,7 +1111,14 @@ export async function publishToplatform(
       return publishToThreads(accessToken, platformUserId, caption, imageUrls, verticalVideo);
 
     case 'pinterest':
-      return publishToPinterest(accessToken, caption, imageUrls, squareVideo ?? verticalVideo);
+      return publishToPinterest(
+        accessToken,
+        caption,
+        imageUrls,
+        squareVideo ?? verticalVideo,
+        refreshToken,
+        onTokenRefresh,
+      );
 
     default:
       return { success: false, error: `Unsupported platform: ${platform}` };
