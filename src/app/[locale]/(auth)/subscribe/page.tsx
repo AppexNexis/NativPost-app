@@ -77,7 +77,6 @@ function MobilePlanCard({
   isLoading,
   onSelect,
   onSubscribe,
-  trialDays,
 }: {
   plan: typeof VISIBLE_PLANS[0];
   isSelected: boolean;
@@ -85,7 +84,6 @@ function MobilePlanCard({
   isLoading: string | null;
   onSelect: () => void;
   onSubscribe: () => void;
-  trialDays: number;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -163,7 +161,7 @@ function MobilePlanCard({
             {isPlanLoading
               ? <Loader2 className="size-4 animate-spin" />
               : <ChevronRight className="size-4" />}
-            {isPlanLoading ? 'Redirecting...' : `Pay $5 & Start ${trialDays}-day Trial`}
+            {isPlanLoading ? 'Redirecting...' : 'Start free trial'}
           </button>
         )}
       </div>
@@ -484,7 +482,6 @@ function SubscribeContent() {
               isLoading={isLoading}
               onSelect={() => setSelectedPlan(plan.id)}
               onSubscribe={() => handleSubscribe(plan.id)}
-              trialDays={FREE_TRIAL_DAYS}
             />
           ))}
         </div>
@@ -583,7 +580,7 @@ function SubscribeContent() {
                             {isPlanLoading
                               ? <Loader2 className="size-3.5 animate-spin" />
                               : <ChevronRight className="size-3.5" />}
-                            {isPlanLoading ? 'Redirecting...' : `Pay $5 & Start ${FREE_TRIAL_DAYS}-day Trial`}
+                            {isPlanLoading ? 'Redirecting...' : 'Start free trial'}
                           </button>
                         )}
                       </div>
