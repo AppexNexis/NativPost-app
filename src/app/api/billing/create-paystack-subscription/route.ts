@@ -128,7 +128,8 @@ export async function POST(request: NextRequest) {
           email,
           amount,
           authorization_code: authCode,
-          plan: planCode, // attaching plan creates recurring subscription
+          // NOTE: 'plan' param is NOT supported on charge_authorization.
+          // We create the subscription separately after charge succeeds.
           metadata: {
             orgId: orgId!,
             planId,
@@ -144,15 +145,42 @@ export async function POST(request: NextRequest) {
       const chargeData = await chargeRes.json();
 
       if (chargeData.status && chargeData.data?.status === 'success') {
-        // Charge succeeded — webhook will also fire but we activate now
-        // so the user sees the change immediately
+        // Charge succeeded — now create the recurring subscription separately
+        let subscriptionCode: string | null = null;
+
+        try {
+          const subRes = await fetch('https://api.paystack.co/subscription', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${PAYSTACK_SECRET}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              customer: org?.paystackCustomerCode ?? email,
+              plan: planCode,
+              authorization: authCode,
+              // Start next billing cycle from today + 1 month (already charged today)
+              start_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            }),
+          });
+          const subData = await subRes.json();
+          if (subData.status) {
+            subscriptionCode = subData.data?.subscription_code ?? null;
+          } else {
+            console.warn('[Paystack Subscription] Subscription creation failed after charge:', subData.message);
+          }
+        } catch (subErr) {
+          console.warn('[Paystack Subscription] Failed to create subscription after charge:', subErr);
+        }
+
+        // Activate plan immediately — charge already went through
         await db
           .update(organizationSchema)
           .set({
             plan: planId,
             planStatus: 'active',
             paystackPlanCode: planCode,
-            paystackSubscriptionCode: chargeData.data?.plan_object?.subscriptions?.[0]?.subscription_code ?? null,
+            paystackSubscriptionCode: subscriptionCode,
             postsPerMonth: plan.features.postsPerMonth === -1 ? 999999 : plan.features.postsPerMonth,
             platformsLimit: plan.features.platformsLimit === -1 ? 99 : plan.features.platformsLimit,
             updatedAt: new Date(),
