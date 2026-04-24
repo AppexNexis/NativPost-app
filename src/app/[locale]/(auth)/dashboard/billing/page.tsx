@@ -182,13 +182,16 @@ function BillingContent() {
         if (!email) {
           setError('Could not find your email. Please use card payment.'); return;
         }
-        const res = await fetch('/api/billing/create-paystack-checkout', {
+        const res = await fetch('/api/billing/create-paystack-subscription', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ planId, email }),
         });
         const data = await res.json();
-        if (data.url) {
+        if (data.success) {
+          // Direct charge succeeded — reload billing page to reflect new plan
+          window.location.reload();
+        } else if (data.url) {
           window.location.href = data.url;
         } else {
           setError(data.error || 'Failed to start payment.');

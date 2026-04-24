@@ -56,7 +56,8 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Content-type feature enforcement ---
-    // image posts (single_image) require imagePosts feature
+    // text_only is always allowed — it's the baseline for all plans including trial
+    // image, carousel, video require specific feature flags
     if (contentType === 'single_image' || contentType === 'image') {
       const imageCheck = await checkFeatureAccess(orgId!, 'imagePosts');
       if (!imageCheck.allowed) {
@@ -75,13 +76,15 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: videoCheck.reason }, { status: 403 });
       }
     }
-    if (contentMode && contentMode !== 'normal') {
+    // contentModes (Concise/Controversial) only checked for non-text-only posts
+    // text_only posts can use any mode — the restriction is on image/media generation
+    if (contentMode && contentMode !== 'normal' && contentType !== 'text_only') {
       const modeCheck = await checkFeatureAccess(orgId!, 'contentModes');
       if (!modeCheck.allowed) {
         return NextResponse.json({ error: modeCheck.reason }, { status: 403 });
       }
     }
-    if (enrichment && Object.keys(enrichment).length > 0) {
+    if (enrichment && Object.keys(enrichment).filter(k => enrichment[k as keyof typeof enrichment]).length > 0) {
       const enrichmentCheck = await checkFeatureAccess(orgId!, 'postEnrichment');
       if (!enrichmentCheck.allowed) {
         return NextResponse.json({ error: enrichmentCheck.reason }, { status: 403 });
@@ -144,7 +147,7 @@ export async function POST(request: NextRequest) {
             growth_stage: (profile as any).growthStage || 'early',
           },
           topic: topic || null,
-          content_type: contentType || 'single_image',
+          content_type: contentType || 'text_only',
           target_platforms: platforms,
           num_variants: numVariants || 3,
           content_mode: contentMode || 'normal',
@@ -200,7 +203,7 @@ export async function POST(request: NextRequest) {
           brandProfileId: profile.id,
           caption: variant.caption,
           hashtags: variant.hashtags || [],
-          contentType: contentType || 'single_image',
+          contentType: contentType || 'text_only',
           topic: topic || null,
           graphicUrls: variant.graphic_urls || [],
           variantGroupId,

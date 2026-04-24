@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { checkFeatureAccess, checkPlatformLimit, checkPostLimit, hasActiveSubscription } from '@/lib/billing';
+import { checkFeatureAccess, checkPlatformsPerPost, checkPostLimit, hasActiveSubscription } from '@/lib/billing';
 import { TITLE_PLATFORMS } from '@/lib/title-platforms';
 // import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
@@ -48,14 +48,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: postLimit.reason }, { status: 403 });
     }
 
-    // --- Platform count enforcement ---
+    // --- Platform count enforcement (per-post, not connections) ---
     const platforms: string[] = Array.isArray(targetPlatforms) ? targetPlatforms : ['instagram', 'linkedin'];
-    const platformLimit = await checkPlatformLimit(orgId!, platforms);
+    const platformLimit = await checkPlatformsPerPost(orgId!, platforms);
     if (!platformLimit.allowed) {
       return NextResponse.json({ error: platformLimit.reason }, { status: 403 });
     }
 
     // --- Content-type feature enforcement ---
+    // image posts (single_image) require imagePosts feature
+    if (contentType === 'single_image' || contentType === 'image') {
+      const imageCheck = await checkFeatureAccess(orgId!, 'imagePosts');
+      if (!imageCheck.allowed) {
+        return NextResponse.json({ error: imageCheck.reason }, { status: 403 });
+      }
+    }
     if (contentType === 'carousel' || contentType === 'carousel_image') {
       const carouselCheck = await checkFeatureAccess(orgId!, 'carouselPosts');
       if (!carouselCheck.allowed) {
