@@ -281,41 +281,20 @@ function SubscribeContent() {
     let mounted = true;
 
     async function init() {
+      // Handle Paystack return with reference — poll until confirmed
       if (paystackSuccess && paystackReference) {
         if (mounted) {
-          setIsPolling(true); setBillingChecked(true);
+          setIsPolling(true);
+          setBillingChecked(true);
         }
         pollBillingStatus(0);
         return;
       }
 
-      try {
-        if (!organization) {
-          if (mounted) {
-            setBillingChecked(true);
-          } return;
-        }
-
-        const res = await fetch('/api/billing/status', { cache: 'no-store' });
-        if (!res.ok) {
-          if (mounted) {
-            setBillingChecked(true);
-          } return;
-        }
-
-        const billing = await res.json();
-        if ((billing?.isActive || billing?.isTrialing) && !billing?.trialExpired) {
-          router.replace(redirectPath);
-          return;
-        }
-
-        if (mounted) {
-          setBillingChecked(true);
-        }
-      } catch {
-        if (mounted) {
-          setBillingChecked(true);
-        }
+      // No special return params — just mark as checked and show the page.
+      // Billing gate is handled server-side in page.tsx before this renders.
+      if (mounted) {
+        setBillingChecked(true);
       }
     }
 
@@ -659,7 +638,7 @@ function SubscribeContent() {
   );
 }
 
-export default function SubscribePage() {
+export default function SubscribeClient() {
   return (
     <Suspense
       fallback={(

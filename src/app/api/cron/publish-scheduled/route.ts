@@ -210,14 +210,15 @@ export async function GET(request: NextRequest) {
 
           getOrgAdminEmail(item.orgId)
             .then((email) => {
-              if (email) {
-                return sendPublishedNotification(
-                  email,
-                  item.orgId, // brand name fallback — org name not available in cron context
-                  successPlatforms,
-                  item.caption,
-                );
+              if (!email) {
+                return;
               }
+              return sendPublishedNotification(
+                email,
+                item.orgId,
+                successPlatforms,
+                item.caption,
+              );
             })
             .catch(err => console.error(`[Cron] Email notification failed for post ${item.id}:`, err));
         }
