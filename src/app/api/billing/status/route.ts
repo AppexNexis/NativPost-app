@@ -61,6 +61,7 @@ export async function GET(_request: NextRequest) {
       setupFeePaid: billing.setupFeePaid,
       hasStripe: !!billing.stripeCustomerId,
       hasPaystack: !!billing.paystackCustomerCode,
+      hasPaystackSub: !!billing.paystackSubscriptionCode,
       features: billing.features,
       usage: {
         postsThisMonth: usage.postsThisMonth,

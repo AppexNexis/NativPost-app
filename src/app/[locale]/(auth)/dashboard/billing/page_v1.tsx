@@ -182,7 +182,7 @@ function BillingContent() {
         if (!email) {
           setError('Could not find your email. Please use card payment.'); return;
         }
-        const res = await fetch('/api/billing/create-paystack-checkout', {
+        const res = await fetch('/api/billing/create-paystack-subscription', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ planId, email }),

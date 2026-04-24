@@ -5,6 +5,8 @@ import {
   AlertCircle,
   Check,
   ChevronRight,
+  CreditCard,
+  // Download,
   ExternalLink,
   Loader2,
   X,
@@ -15,6 +17,244 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 
 import { PageHeader } from '@/features/dashboard/PageHeader';
 import { FREE_TRIAL_DAYS, SETUP_FEE_USD, VISIBLE_PLANS } from '@/lib/plans';
+
+// -----------------------------------------------------------
+// TYPES
+// -----------------------------------------------------------
+type PaystackInvoice = {
+  id: number;
+  reference: string;
+  amount: number;
+  status: string;
+  paid_at: string;
+  channel: string;
+};
+
+type PaystackSubscription = {
+  status: string;
+  next_payment_date: string;
+  amount: number;
+  plan: { name: string; interval: string };
+  authorization: { last4: string; brand: string; exp_month: string; exp_year: string };
+};
+
+// -----------------------------------------------------------
+// PAYSTACK MANAGEMENT MODAL
+// -----------------------------------------------------------
+function PaystackPortal({
+  onClose,
+  onCancelled,
+}: {
+  onClose: () => void;
+  onCancelled: () => void;
+}) {
+  const [data, setData] = useState<{ subscription: PaystackSubscription | null; invoices: PaystackInvoice[] } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [cancelling, setCancelling] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/billing/paystack-manage')
+      .then(r => r.json())
+      .then(setData)
+      .catch(() => setData({ subscription: null, invoices: [] }))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleCancel = async () => {
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      const res = await fetch('/api/billing/paystack-manage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        onCancelled();
+        onClose();
+      } else {
+        setCancelError(result.error || 'Failed to cancel. Please try again.');
+      }
+    } catch {
+      setCancelError('Network error. Please try again.');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const sub = data?.subscription;
+  const invoices = data?.invoices ?? [];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-lg overflow-hidden rounded-2xl border bg-background shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b px-6 py-4">
+          <div className="flex items-center gap-2">
+            <CreditCard className="size-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold">Manage Subscription</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1 transition-colors hover:bg-muted"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="max-h-[75vh] space-y-6 overflow-y-auto p-6">
+          {loading
+            ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                </div>
+              )
+            : (
+                <>
+                  {/* Subscription details */}
+                  {sub
+                    ? (
+                        <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-semibold">{sub.plan?.name}</p>
+                            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${sub.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground'}`}>
+                              {sub.status}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div>
+                              <p className="text-muted-foreground">Amount</p>
+                              <p className="mt-0.5 font-medium">
+                                NGN
+                                {' '}
+                                {((sub.amount ?? 0) / 100).toLocaleString()}
+                                /
+                                {sub.plan?.interval}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Next charge</p>
+                              <p className="mt-0.5 font-medium">
+                                {sub.next_payment_date
+                                  ? new Date(sub.next_payment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                  : '—'}
+                              </p>
+                            </div>
+                            {sub.authorization && (
+                              <div className="col-span-2">
+                                <p className="text-muted-foreground">Card</p>
+                                <p className="mt-0.5 font-medium capitalize">
+                                  {sub.authorization.brand}
+                                  {' '}
+                                  ••••
+                                  {' '}
+                                  {sub.authorization.last4}
+                                  {' '}
+                                  · expires
+                                  {' '}
+                                  {sub.authorization.exp_month}
+                                  /
+                                  {sub.authorization.exp_year}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    : (
+                        <p className="py-4 text-center text-sm text-muted-foreground">
+                          No active subscription details found.
+                        </p>
+                      )}
+
+                  {/* Transaction history */}
+                  {invoices.length > 0 && (
+                    <div>
+                      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Recent Transactions
+                      </p>
+                      <div className="divide-y overflow-hidden rounded-xl border">
+                        {invoices.map(inv => (
+                          <div key={inv.id} className="flex items-center justify-between px-4 py-3">
+                            <div>
+                              <p className="text-xs font-medium">
+                                NGN
+                                {' '}
+                                {((inv.amount ?? 0) / 100).toLocaleString()}
+                              </p>
+                              <p className="mt-0.5 text-[10px] text-muted-foreground">
+                                {inv.paid_at ? new Date(inv.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                                {' · '}
+                                {inv.channel}
+                              </p>
+                            </div>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${inv.status === 'success' ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground'}`}>
+                              {inv.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-[11px] text-muted-foreground">
+                        Full receipts are sent to your email after each payment.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Cancel subscription */}
+                  {sub && sub.status === 'active' && (
+                    <div className="border-t pt-4">
+                      {!confirmCancel
+                        ? (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmCancel(true)}
+                              className="text-xs text-red-500 underline underline-offset-2 hover:text-red-600"
+                            >
+                              Cancel subscription
+                            </button>
+                          )
+                        : (
+                            <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+                              <p className="text-sm font-medium text-red-700 dark:text-red-400">Cancel subscription?</p>
+                              <p className="text-xs text-red-600 dark:text-red-500">
+                                Your subscription will remain active until the end of the current billing period. You won't be charged again.
+                              </p>
+                              {cancelError && (
+                                <p className="text-xs text-red-600">{cancelError}</p>
+                              )}
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={handleCancel}
+                                  disabled={cancelling}
+                                  className="flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-60"
+                                >
+                                  {cancelling && <Loader2 className="size-3 animate-spin" />}
+                                  Yes, cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmCancel(false)}
+                                  className="rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+                                >
+                                  Keep subscription
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                    </div>
+                  )}
+                </>
+              )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // -----------------------------------------------------------
 // TYPES
@@ -30,6 +270,7 @@ type BillingStatus = {
   setupFeePaid: boolean;
   hasStripe: boolean;
   hasPaystack: boolean;
+  hasPaystackSub: boolean;
   features: Record<string, unknown>;
   usage: {
     postsThisMonth: number;
@@ -139,6 +380,7 @@ function BillingContent() {
   const [portalLoading, setPortalLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'paystack'>('stripe');
   const [error, setError] = useState<string | null>(null);
+  const [showPaystackPortal, setShowPaystackPortal] = useState(false);
 
   const success = searchParams.get('success') || searchParams.get('paystack_success');
   const cancelled = searchParams.get('cancelled');
@@ -295,10 +537,16 @@ function BillingContent() {
                   : `${billing?.usage.postsLimit === 999999 ? 'Unlimited' : billing?.usage.postsLimit} posts/mo · ${billing?.usage.platformsLimit === 99 ? 'All' : billing?.usage.platformsLimit} platforms`}
               </p>
             </div>
-            {billing?.planStatus === 'active' && billing.hasStripe && (
+            {billing?.planStatus === 'active' && (billing.hasStripe || billing.hasPaystackSub) && (
               <button
                 type="button"
-                onClick={handleManage}
+                onClick={() => {
+                  if (billing.hasPaystackSub) {
+                    setShowPaystackPortal(true);
+                  } else {
+                    handleManage();
+                  }
+                }}
                 disabled={portalLoading}
                 className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-60"
               >
@@ -588,7 +836,7 @@ function BillingContent() {
       <div>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold">Payment History</h2>
-          {billing?.hasStripe && billing.planStatus === 'active' && (
+          {billing?.hasStripe && billing.planStatus === 'active' && !billing.hasPaystackSub && (
             <button
               type="button"
               onClick={handleManage}
@@ -597,6 +845,16 @@ function BillingContent() {
             >
               {portalLoading ? <Loader2 className="size-3 animate-spin" /> : <ExternalLink className="size-3" />}
               View invoices
+            </button>
+          )}
+          {billing?.hasPaystackSub && billing.planStatus === 'active' && (
+            <button
+              type="button"
+              onClick={() => setShowPaystackPortal(true)}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-primary underline underline-offset-2 hover:opacity-70"
+            >
+              <ExternalLink className="size-3" />
+              View transactions
             </button>
           )}
         </div>
@@ -637,6 +895,17 @@ function BillingContent() {
           )}
         </p>
       </div>
+
+      {/* Paystack Management Portal Modal */}
+      {showPaystackPortal && (
+        <PaystackPortal
+          onClose={() => setShowPaystackPortal(false)}
+          onCancelled={() => {
+            setShowPaystackPortal(false);
+            loadBilling();
+          }}
+        />
+      )}
     </div>
   );
 }
