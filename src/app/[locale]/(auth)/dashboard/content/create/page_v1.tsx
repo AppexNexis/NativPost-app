@@ -10,13 +10,14 @@ import {
   Image as ImageIcon,
   Layers,
   Link2,
+  Loader2,
   RefreshCw,
   Sparkles,
   Video,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { PLATFORMS } from '@/components/icons/PlatformIcons';
 
@@ -51,13 +52,6 @@ type Enrichment = {
   custom_mentions: string[];
 };
 
-// Generation progress state
-type GenerationProgress = {
-  completed: number;
-  total: number;
-  percent: number;
-};
-
 // -----------------------------------------------------------
 // CONFIG
 // -----------------------------------------------------------
@@ -68,10 +62,24 @@ const CONTENT_TYPES = [
   { id: 'reel', label: 'Video', description: 'Reel, Short, or video', icon: Video },
 ];
 
+// Content modes — no per-mode colors, uniform styling
+// Selected state uses bg-foreground/text-background (same as view toggles elsewhere)
 const CONTENT_MODES = [
-  { id: 'normal', label: 'Normal', description: 'Balanced, on-brand tone' },
-  { id: 'concise', label: 'Concise', description: 'Stripped to the essentials' },
-  { id: 'controversial', label: 'Controversial', description: 'Takes a position, sparks debate' },
+  {
+    id: 'normal',
+    label: 'Normal',
+    description: 'Balanced, on-brand tone',
+  },
+  {
+    id: 'concise',
+    label: 'Concise',
+    description: 'Stripped to the essentials',
+  },
+  {
+    id: 'controversial',
+    label: 'Controversial',
+    description: 'Takes a position, sparks debate',
+  },
 ];
 
 const EMPTY_ENRICHMENT: Enrichment = {
@@ -83,17 +91,6 @@ const EMPTY_ENRICHMENT: Enrichment = {
   event_details: '',
   custom_mentions: [],
 };
-
-// Progress messages shown at different % thresholds — makes the wait feel active
-const PROGRESS_MESSAGES = [
-  { at: 0, message: 'Reading your Brand Profile...' },
-  { at: 10, message: 'Crafting your first variant...' },
-  { at: 30, message: 'Running quality checks...' },
-  { at: 45, message: 'Working on variant 2...' },
-  { at: 65, message: 'Refining the writing...' },
-  { at: 80, message: 'Finishing variant 3...' },
-  { at: 95, message: 'Almost there...' },
-];
 
 // -----------------------------------------------------------
 // HELPERS
@@ -114,16 +111,6 @@ function scoreLabel(score: number): { text: string; color: string } {
   return { text: 'Poor', color: 'bg-red-50 text-red-700' };
 }
 
-function getProgressMessage(percent: number): string {
-  let msg = PROGRESS_MESSAGES[0]!.message;
-  for (const entry of PROGRESS_MESSAGES) {
-    if (percent >= entry.at) {
-      msg = entry.message;
-    }
-  }
-  return msg;
-}
-
 // -----------------------------------------------------------
 // PAGE
 // -----------------------------------------------------------
@@ -138,7 +125,6 @@ export default function ContentCreatePage() {
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [progress, setProgress] = useState<GenerationProgress>({ completed: 0, total: 3, percent: 0 });
   const [variants, setVariants] = useState<Variant[]>([]);
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -148,11 +134,6 @@ export default function ContentCreatePage() {
   const [enrichment, setEnrichment] = useState<Enrichment>(EMPTY_ENRICHMENT);
   const [refLinkInput, setRefLinkInput] = useState('');
   const [mentionInput, setMentionInput] = useState('');
-
-  // Track animated progress value separately for smooth CSS transitions
-  const [displayPercent, setDisplayPercent] = useState(0);
-  const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const streamAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -169,31 +150,10 @@ export default function ContentCreatePage() {
     load();
   }, []);
 
-  // Cleanup stream on unmount
-  useEffect(() => {
-    return () => {
-      streamAbortRef.current?.abort();
-      if (progressTimerRef.current) {
-        clearTimeout(progressTimerRef.current);
-      }
-    };
-  }, []);
-
-  // Smooth progress animation — never goes backwards, always catches up to real value
-  useEffect(() => {
-    if (displayPercent < progress.percent) {
-      progressTimerRef.current = setTimeout(() => {
-        setDisplayPercent(prev => Math.min(prev + 1, progress.percent));
-      }, 18);
-    }
-  }, [displayPercent, progress.percent]);
-
   const connectedPlatformIds = connectedAccounts.filter(a => a.isActive).map(a => a.platform);
 
   const togglePlatform = (id: string) => {
-    setSelectedPlatforms(prev =>
-      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id],
-    );
+    setSelectedPlatforms(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
   };
 
   const hasEnrichment = () => !!(
@@ -229,128 +189,56 @@ export default function ContentCreatePage() {
     setEnrichment(prev => ({ ...prev, custom_mentions: prev.custom_mentions.filter(m => m !== handle) }));
   };
 
-  // -----------------------------------------------------------
-  // Generate — SSE streaming with live progress + progressive variant rendering
-  // -----------------------------------------------------------
   const handleGenerate = async () => {
     if (selectedPlatforms.length === 0) {
-      setError('Select at least one platform.');
-      return;
+      setError('Select at least one platform.'); return;
     }
-
-    // Abort any existing stream
-    streamAbortRef.current?.abort();
-    streamAbortRef.current = new AbortController();
-
     setIsGenerating(true);
     setError(null);
     setVariants([]);
     setSelectedVariant(null);
-    setProgress({ completed: 0, total: 3, percent: 0 });
-    setDisplayPercent(0);
-
-    const numVariants = 3;
-
-    const payload: Record<string, unknown> = {
-      topic: topic || undefined,
-      contentType,
-      targetPlatforms: selectedPlatforms,
-      numVariants,
-      contentMode,
-    };
-    if (hasEnrichment()) {
-      payload.enrichment = enrichment;
-    }
 
     try {
-      // Use the SSE streaming GET endpoint — pass payload as a URL param
-      const streamUrl = `/api/content/generate?body=${encodeURIComponent(JSON.stringify(payload))}`;
+      const payload: Record<string, unknown> = {
+        topic: topic || undefined,
+        contentType,
+        targetPlatforms: selectedPlatforms,
+        numVariants: 3,
+        contentMode,
+      };
+      if (hasEnrichment()) {
+        payload.enrichment = enrichment;
+      }
 
-      const res = await fetch(streamUrl, {
-        signal: streamAbortRef.current.signal,
-        headers: { Accept: 'text/event-stream' },
+      const res = await fetch('/api/content/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
 
-      if (!res.ok || !res.body) {
-        const data = await res.json().catch(() => ({}));
-        setError((data as any).error || 'Generation failed. Please try again.');
-        setIsGenerating(false);
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || 'Generation failed. Please try again.');
         return;
       }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let receivedVariants: Variant[] = [];
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) {
-            continue;
-          }
-          let event: any;
-          try {
-            event = JSON.parse(line.slice(6));
-          } catch {
-            continue;
-          }
-
-          if (event.type === 'progress') {
-            setProgress({
-              completed: event.completed ?? 0,
-              total: event.total ?? numVariants,
-              percent: event.percent ?? 0,
-            });
-          } else if (event.type === 'variant') {
-            // Map DB row → Variant shape the UI expects
-            const v = event.variant;
-            const mapped: Variant = {
-              id: v.id as string,
-              caption: v.caption as string,
-              hashtags: (v.hashtags as string[]) || [],
-              antiSlopScore: v.antiSlopScore as number | null,
-              qualityFlags: (v.qualityFlags as string[]) || [],
-              variantNumber: v.variantNumber as number,
-              platformSpecific: (v.platformSpecific as Record<string, string>) || {},
-              enrichmentApplied: (v.enrichmentApplied as string[]) || [],
-            };
-            receivedVariants = [...receivedVariants, mapped];
-            // Render variant immediately — don't wait for all 3
-            setVariants([...receivedVariants]);
-            // Switch to review step as soon as the first variant arrives
-            if (receivedVariants.length === 1) {
-              setStep('review');
-            }
-          } else if (event.type === 'done') {
-            setProgress({ completed: event.total ?? numVariants, total: numVariants, percent: 100 });
-            setDisplayPercent(100);
-            setIsGenerating(false);
-          } else if (event.type === 'error') {
-            setError(event.detail || 'Generation failed. Please try again.');
-            setIsGenerating(false);
-          }
-        }
-      }
-
-      // Stream ended without a done event — mark complete if we got something
-      if (receivedVariants.length > 0) {
-        setIsGenerating(false);
-      }
-    } catch (err: any) {
-      if (err?.name === 'AbortError') {
-        // User navigated away — not an error
-        return;
-      }
+      const data = await res.json();
+      setVariants(
+        data.variants.map((v: Record<string, unknown>) => ({
+          id: v.id as string,
+          caption: v.caption as string,
+          hashtags: (v.hashtags as string[]) || [],
+          antiSlopScore: v.antiSlopScore as number | null,
+          qualityFlags: (v.qualityFlags as string[]) || [],
+          variantNumber: v.variantNumber as number,
+          platformSpecific: (v.platformSpecific as Record<string, string>) || {},
+          enrichmentApplied: (v.enrichmentApplied as string[]) || [],
+        })),
+      );
+      setStep('review');
+    } catch {
       setError('Network error. Please check your connection.');
+    } finally {
       setIsGenerating(false);
     }
   };
@@ -377,9 +265,6 @@ export default function ContentCreatePage() {
     }
   };
 
-  // -----------------------------------------------------------
-  // RENDER
-  // -----------------------------------------------------------
   return (
     <>
       {/* Header */}
@@ -392,7 +277,7 @@ export default function ContentCreatePage() {
             </p>
           )}
         </div>
-        {step !== 'type' && !isGenerating && (
+        {step !== 'type' && (
           <button
             type="button"
             onClick={() => setStep(step === 'review' ? 'configure' : 'type')}
@@ -499,7 +384,7 @@ export default function ContentCreatePage() {
             </button>
           </div>
 
-          {/* Content mode */}
+          {/* Content mode — clean tab selector, consistent with other toggles in the app */}
           <div>
             <label className="mb-2 block text-sm font-medium">Content mode</label>
             <div className="flex rounded-lg border p-1">
@@ -615,6 +500,7 @@ export default function ContentCreatePage() {
                   Add links, promo codes, contact info, and other elements to weave into your post.
                 </p>
 
+                {/* CTA */}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-muted-foreground">CTA URL</label>
@@ -638,6 +524,7 @@ export default function ContentCreatePage() {
                   </div>
                 </div>
 
+                {/* Promo code */}
                 <div>
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">Promo code</label>
                   <input
@@ -649,6 +536,7 @@ export default function ContentCreatePage() {
                   />
                 </div>
 
+                {/* Contact info */}
                 <div>
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">Contact info</label>
                   <input
@@ -660,6 +548,7 @@ export default function ContentCreatePage() {
                   />
                 </div>
 
+                {/* Event details */}
                 <div>
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">Event details</label>
                   <input
@@ -671,6 +560,7 @@ export default function ContentCreatePage() {
                   />
                 </div>
 
+                {/* Reference links */}
                 <div>
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">Reference links</label>
                   <div className="flex gap-2">
@@ -698,6 +588,7 @@ export default function ContentCreatePage() {
                   )}
                 </div>
 
+                {/* Mentions */}
                 <div>
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">Mentions</label>
                   <div className="flex gap-2">
@@ -734,97 +625,60 @@ export default function ContentCreatePage() {
             </div>
           )}
 
-          {/* Generate button */}
           <button
             type="button"
             onClick={handleGenerate}
             disabled={isGenerating || selectedPlatforms.length === 0}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
-            <Sparkles className="size-4" />
-            Generate content
+            {isGenerating ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Generating
+                {contentMode !== 'normal' ? ` (${contentMode} mode)` : ''}
+                ...
+              </>
+            ) : (
+              <>
+                <Sparkles className="size-4" />
+                Generate content
+              </>
+            )}
           </button>
-        </div>
-      )}
-
-      {/* ── GENERATING STATE — progress UI shown over review step ── */}
-      {isGenerating && (
-        <div className="mx-auto mt-4 max-w-2xl">
-          <div className="rounded-xl border bg-card p-6">
-            {/* Percentage counter */}
-            <div className="mb-4 flex items-end justify-between">
-              <p className="text-sm font-medium text-foreground">
-                {getProgressMessage(displayPercent)}
-              </p>
-              <span className="text-2xl font-bold tabular-nums text-primary">
-                {displayPercent}
-                <span className="text-base font-medium">%</span>
-              </span>
-            </div>
-
-            {/* Progress bar */}
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
-                style={{ width: `${displayPercent}%` }}
-              />
-            </div>
-
-            {/* Variant counter */}
-            <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-              <span>
-                {progress.completed > 0
-                  ? `${progress.completed} of ${progress.total} variants ready`
-                  : 'Generating variants...'}
-              </span>
-              {variants.length > 0 && (
-                <span className="text-primary">
-                  {variants.length > 1 ? `${variants.length} variants below` : '1 variant below — more coming'}
-                </span>
-              )}
-            </div>
-          </div>
         </div>
       )}
 
       {/* ── STEP 3: Review variants ─────────────────────────── */}
       {step === 'review' && (
         <div className="mx-auto max-w-3xl space-y-4">
-          {/* Only show the header row when generation is done */}
-          {!isGenerating && (
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-semibold">
-                  {variants.length}
-                  {' '}
-                  variant
-                  {variants.length !== 1 ? 's' : ''}
-                  {' '}
-                  generated
-                  {contentMode !== 'normal' && (
-                    <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                      {contentMode}
-                      {' '}
-                      mode
-                    </span>
-                  )}
-                </h2>
-                <p className="text-xs text-muted-foreground">Select the best one, then approve.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setStep('configure'); setVariants([]);
-                }}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
-              >
-                <RefreshCw className="size-3" />
-                Regenerate
-              </button>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">
+                {variants.length}
+                {' '}
+                variants generated
+                {contentMode !== 'normal' && (
+                  <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                    {contentMode}
+                    {' '}
+                    mode
+                  </span>
+                )}
+              </h2>
+              <p className="text-xs text-muted-foreground">Select the best one, then approve.</p>
             </div>
-          )}
+            <button
+              type="button"
+              onClick={() => {
+                setStep('configure'); setVariants([]);
+              }}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
+            >
+              <RefreshCw className="size-3" />
+              Regenerate
+            </button>
+          </div>
 
-          {/* Variants — render as they stream in */}
           {variants.map(variant => (
             <button
               key={variant.id}
@@ -844,18 +698,16 @@ export default function ContentCreatePage() {
                   </span>
                   <span className="text-xs text-muted-foreground">
                     Variant
-                    {' '}
                     {variant.variantNumber}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   {variant.antiSlopScore !== null && (() => {
-                    const sl = scoreLabel(variant.antiSlopScore!);
+                    const sl = scoreLabel(variant.antiSlopScore);
                     return (
                       <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${sl.color}`}>
-                        {Math.round(variant.antiSlopScore! * 100)}
+                        {Math.round(variant.antiSlopScore * 100)}
                         %
-                        {' '}
                         {sl.text}
                       </span>
                     );
@@ -932,37 +784,14 @@ export default function ContentCreatePage() {
             </button>
           ))}
 
-          {/* Skeleton placeholder while streaming remaining variants */}
-          {isGenerating && variants.length < 3 && (
-            Array.from({ length: 3 - variants.length }).map((_, i) => (
-              <div
-                key={`skeleton-${i}`}
-                className="w-full animate-pulse rounded-xl border bg-card p-5"
-              >
-                <div className="mb-3 flex items-center gap-2">
-                  <div className="size-6 rounded-full bg-muted" />
-                  <div className="h-3 w-16 rounded bg-muted" />
-                </div>
-                <div className="space-y-2">
-                  <div className="h-3 w-full rounded bg-muted" />
-                  <div className="h-3 w-5/6 rounded bg-muted" />
-                  <div className="h-3 w-4/6 rounded bg-muted" />
-                </div>
-              </div>
-            ))
-          )}
-
-          {/* Approve button — only shown when done and a variant is selected */}
-          {!isGenerating && selectedVariant && (
+          {selectedVariant && (
             <button
               type="button"
               onClick={handleApprove}
               disabled={isApproving}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
-              {isApproving
-                ? <div className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                : <Check className="size-4" />}
+              {isApproving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
               {scheduledDate ? 'Approve and set schedule' : 'Approve selected variant'}
             </button>
           )}
