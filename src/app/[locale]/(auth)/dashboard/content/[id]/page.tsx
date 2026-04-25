@@ -83,7 +83,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 
 const TITLE_PLATFORMS = new Set(['youtube', 'pinterest']);
 const PLATFORM_SPECIFIC_SYSTEM_KEYS = ['sourceImages', 'videoDurationSeconds', 'title'];
-const MEDIA_CONTENT_TYPES = ['single_image', 'carousel', 'reel'];
+const MEDIA_CONTENT_TYPES = ['single_image', 'carousel', 'reel', 'ugc_ad', 'data_story'];
 
 // -----------------------------------------------------------
 // HELPERS
@@ -154,6 +154,15 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [scheduleTime, setScheduleTime] = useState('');
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [videoGenError, setVideoGenError] = useState<string | null>(null);
+  const [isGeneratingUGC, setIsGeneratingUGC] = useState(false);
+  const [ugcError, setUgcError] = useState<string | null>(null);
+  const [isGeneratingDataStory, setIsGeneratingDataStory] = useState(false);
+  const [dataStoryError, setDataStoryError] = useState<string | null>(null);
+  // Data story stats editor
+  const [statLabel, setStatLabel] = useState('');
+  const [statValue, setStatValue] = useState('');
+  const [statUnit, setStatUnit] = useState('');
+  const [statPrefix, setStatPrefix] = useState('');
   const [copyDone, setCopyDone] = useState(false);
   const [showQualityFlags, setShowQualityFlags] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -346,6 +355,103 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     }
   };
 
+  const generateUGCAd = async () => {
+    if (!item) {
+      return;
+    }
+    setIsGeneratingUGC(true);
+    setUgcError(null);
+    try {
+      const res = await fetch(`/api/content/${item.id}/generate-ugc-ad`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json();
+        setUgcError(data.error || 'UGC ad generation failed. Please try again.');
+        return;
+      }
+      const data = await res.json();
+      setItem(prev => prev ? {
+        ...prev,
+        graphicUrls: [data.vertical].filter(Boolean),
+        platformSpecific: { ...prev.platformSpecific, videoDurationSeconds: data.durationSeconds },
+      } : prev);
+    } catch (err) {
+      console.error('[UGCAd] error:', err);
+      setUgcError('Network error. Please try again.');
+    } finally {
+      setIsGeneratingUGC(false);
+    }
+  };
+
+  const generateDataStory = async () => {
+    if (!item) {
+      return;
+    }
+    setIsGeneratingDataStory(true);
+    setDataStoryError(null);
+    try {
+      const res = await fetch(`/api/content/${item.id}/generate-data-story`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json();
+        setDataStoryError(data.error || 'Data story generation failed. Please try again.');
+        return;
+      }
+      const data = await res.json();
+      setItem(prev => prev ? {
+        ...prev,
+        graphicUrls: [data.vertical, data.square, data.landscape].filter(Boolean) as string[],
+        platformSpecific: { ...prev.platformSpecific, videoDurationSeconds: data.durationSeconds },
+      } : prev);
+    } catch (err) {
+      console.error('[DataStory] error:', err);
+      setDataStoryError('Network error. Please try again.');
+    } finally {
+      setIsGeneratingDataStory(false);
+    }
+  };
+
+  const addStatToItem = async () => {
+    if (!item || !statLabel || !statValue) {
+      return;
+    }
+    const newStat = {
+      label: statLabel,
+      value: Number(statValue),
+      ...(statUnit ? { unit: statUnit } : {}),
+      ...(statPrefix ? { prefix: statPrefix } : {}),
+    };
+    const ps = (item.platformSpecific as Record<string, unknown>) || {};
+    const existing = (ps.data_story_stats as object[]) || [];
+    const updated = [...existing, newStat];
+    await fetch(`/api/content/${item.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platformSpecific: { data_story_stats: updated } }),
+    });
+    setItem(prev => prev ? {
+      ...prev,
+      platformSpecific: { ...prev.platformSpecific, data_story_stats: updated },
+    } : prev);
+    setStatLabel(''); setStatValue(''); setStatUnit(''); setStatPrefix('');
+  };
+
+  const removeStatFromItem = async (index: number) => {
+    if (!item) {
+      return;
+    }
+    const ps = (item.platformSpecific as Record<string, unknown>) || {};
+    const existing = (ps.data_story_stats as object[]) || [];
+    const updated = existing.filter((_, i) => i !== index);
+    await fetch(`/api/content/${item.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platformSpecific: { data_story_stats: updated } }),
+    });
+    setItem(prev => prev ? {
+      ...prev,
+      platformSpecific: { ...prev.platformSpecific, data_story_stats: updated },
+    } : prev);
+  };
+
   const deleteItem = async () => {
     if (!item) {
       return;
@@ -387,6 +493,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const modeConfig = MODE_CONFIG[item.contentMode || 'normal'] ?? { label: 'Normal', color: 'bg-zinc-100 text-zinc-600' };
   const needsMedia = MEDIA_CONTENT_TYPES.includes(item.contentType);
   const isReel = item.contentType === 'reel';
+  const isUGCAd = item.contentType === 'ugc_ad';
+  const isDataStory = item.contentType === 'data_story';
   const isCarousel = item.contentType === 'carousel';
   const isSingleImage = item.contentType === 'single_image';
   const hasMedia = item.graphicUrls && item.graphicUrls.length > 0;
@@ -1006,6 +1114,157 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           )}
 
           {/* Image / Carousel */}
+          {/* ── UGC Ad video generation ── */}
+          {isUGCAd && (
+            <div className="rounded-xl border bg-card p-4 sm:p-5">
+              <div className="mb-4 flex items-center gap-2 border-b pb-4">
+                <Video className="size-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">UGC Ad video</h3>
+              </div>
+              <p className="mb-4 text-xs text-muted-foreground">
+                Generates a 10s vertical video: hook → problem → solution → CTA. Add up to 4 images as section backgrounds (optional).
+              </p>
+              {item.graphicUrls && item.graphicUrls.length > 0 && (
+                <div className="mb-4">
+                  {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                  <video
+                    src={toVideoSrc(item.graphicUrls[0]!)}
+                    controls
+                    playsInline
+                    className="w-full max-w-[240px] rounded-lg"
+                  />
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={generateUGCAd}
+                disabled={isGeneratingUGC}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+              >
+                {isGeneratingUGC
+                  ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        {' '}
+                        Generating UGC Ad...
+                      </>
+                    )
+                  : (
+                      <>
+                        <Sparkles className="size-4" />
+                        {' '}
+                        Generate UGC Ad
+                      </>
+                    )}
+              </button>
+              {ugcError && <p className="mt-2 text-xs text-red-500">{ugcError}</p>}
+            </div>
+          )}
+
+          {/* ── Data Story video generation ── */}
+          {isDataStory && (
+            <div className="rounded-xl border bg-card p-4 sm:p-5">
+              <div className="mb-4 flex items-center gap-2 border-b pb-4">
+                <Video className="size-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Data Story video</h3>
+              </div>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Add stats below, then generate an animated video where each number counts up to its value.
+              </p>
+
+              {/* Stats list */}
+              {((item.platformSpecific as Record<string, unknown>)?.data_story_stats as Array<{ label: string; value: number; unit?: string; prefix?: string }> | undefined)?.map((stat, i) => (
+                <div key={i} className="mb-2 flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-sm">
+                  <span className="font-medium">
+                    {stat.prefix || ''}
+                    {stat.value.toLocaleString()}
+                    {stat.unit || ''}
+                  </span>
+                  <span className="ml-2 flex-1 text-muted-foreground">{stat.label}</span>
+                  <button type="button" onClick={() => removeStatFromItem(i)} className="ml-2 text-xs opacity-40 hover:opacity-100">×</button>
+                </div>
+              ))}
+
+              {/* Add stat form */}
+              <div className="mt-3 space-y-2 rounded-lg border p-3">
+                <p className="text-xs font-medium text-muted-foreground">Add a stat</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={statLabel}
+                    onChange={e => setStatLabel(e.target.value)}
+                    placeholder="Label (e.g. Happy customers)"
+                    className="col-span-2 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    value={statPrefix}
+                    onChange={e => setStatPrefix(e.target.value)}
+                    placeholder='Prefix (e.g. "$")'
+                    className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+                  />
+                  <input
+                    type="number"
+                    value={statValue}
+                    onChange={e => setStatValue(e.target.value)}
+                    placeholder="Value (e.g. 10000)"
+                    className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    value={statUnit}
+                    onChange={e => setStatUnit(e.target.value)}
+                    placeholder='Unit (e.g. "%" or "K")'
+                    className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={addStatToItem}
+                    disabled={!statLabel || !statValue}
+                    className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    Add stat
+                  </button>
+                </div>
+              </div>
+
+              {item.graphicUrls && item.graphicUrls.length > 0 && (
+                <div className="mt-4 flex gap-2 overflow-x-auto">
+                  {item.graphicUrls.filter(isVideoFileUrl).map((url, i) => {
+                    return (
+                      /* eslint-disable-next-line jsx-a11y/media-has-caption */
+                      <video key={i} src={toVideoSrc(url)} controls playsInline className="h-32 rounded-lg" />
+                    );
+                  })}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={generateDataStory}
+                disabled={isGeneratingDataStory || !((item.platformSpecific as Record<string, unknown>)?.data_story_stats as unknown[] | undefined)?.length}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+              >
+                {isGeneratingDataStory
+                  ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        {' '}
+                        Generating Data Story...
+                      </>
+                    )
+                  : (
+                      <>
+                        <Sparkles className="size-4" />
+                        {' '}
+                        Generate Data Story
+                      </>
+                    )}
+              </button>
+              {dataStoryError && <p className="mt-2 text-xs text-red-500">{dataStoryError}</p>}
+            </div>
+          )}
+
           {(isSingleImage || isCarousel) && (
             <div className="rounded-xl border bg-card p-4 sm:p-5">
               <div className="mb-4 flex items-center gap-2 border-b pb-4">

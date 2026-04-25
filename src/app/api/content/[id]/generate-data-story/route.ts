@@ -1,3 +1,18 @@
+/**
+ * POST /api/content/[id]/generate-data-story
+ *
+ * Calls the video renderer's /render/data-story endpoint.
+ *
+ * Stats are stored in item.platformSpecific.data_story_stats as an array:
+ *   [{ label: "Happy customers", value: 10000, unit: "", prefix: "" }]
+ *
+ * The headline comes from item.platformSpecific.data_story_headline.
+ * Falls back to item.topic if not set.
+ *
+ * Renders vertical (9:16), square (1:1), and landscape (16:9) by default.
+ * All three URLs are stored in item.graphicUrls[].
+ */
+
 import { eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -11,7 +26,14 @@ const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-export async function POST(_request: NextRequest, { params }: RouteParams) {
+type StatItem = {
+  label: string;
+  value: number;
+  unit?: string;
+  prefix?: string;
+};
+
+export async function POST(request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
@@ -20,8 +42,11 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
   const { id } = await params;
 
-  console.log('[Video] VIDEO_RENDERER_URL:', VIDEO_RENDERER_URL);
-  console.log('[Video] ENGINE_API_KEY set:', !!ENGINE_API_KEY);
+  // Allow formats to be overridden by caller
+  const body = await request.json().catch(() => ({})) as {
+    formats?: string[];
+  };
+  const formats = body.formats || ['vertical', 'square', 'landscape'];
 
   try {
     const [item] = await db
@@ -34,53 +59,56 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Content item not found' }, { status: 404 });
     }
 
-    if (item.contentType !== 'reel') {
+    if (item.contentType !== 'data_story') {
       return NextResponse.json(
-        { error: 'Video generation only available for reel content type' },
+        { error: 'Data story generation only available for data_story content type' },
         { status: 400 },
       );
     }
 
-    const imageUrls = (item.graphicUrls as string[]) || [];
-    if (imageUrls.length === 0) {
+    const ps = (item.platformSpecific as Record<string, unknown>) || {};
+    const stats = ps.data_story_stats as StatItem[] | undefined;
+
+    if (!stats || stats.length === 0) {
       return NextResponse.json(
-        { error: 'Add at least one image before generating a video' },
+        { error: 'No stats found. Add at least one stat in the data story fields before generating.' },
         { status: 400 },
       );
     }
 
-    // Fetch brand profile — now includes logoUrl
+    const headline = (ps.data_story_headline as string) || item.topic || undefined;
+
     const [profile] = await db
       .select({
         brandName: brandProfileSchema.brandName,
         primaryColor: brandProfileSchema.primaryColor,
         secondaryColor: brandProfileSchema.secondaryColor,
-        logoUrl: brandProfileSchema.logoUrl, // Fix: was missing before
+        logoUrl: brandProfileSchema.logoUrl,
       })
       .from(brandProfileSchema)
       .where(eq(brandProfileSchema.orgId, orgId!))
       .limit(1);
 
     const payload = {
-      images: imageUrls,
+      stats,
+      headline,
       caption: item.caption,
       brandPrimary: profile?.primaryColor || '#864FFE',
       brandSecondary: profile?.secondaryColor || '#1A1A1C',
       brandName: profile?.brandName || 'NativPost',
-      logoUrl: profile?.logoUrl || undefined, // Fix: pass real logo URL to renderer
+      formats,
+      ...(profile?.logoUrl ? { logoUrl: profile.logoUrl } : {}),
     };
 
-    console.log('[Video] Calling renderer at:', `${VIDEO_RENDERER_URL}/render`);
-    console.log('[Video] Payload images count:', imageUrls.length);
-    console.log('[Video] Logo URL set:', !!payload.logoUrl);
+    console.log('[DataStory] Calling renderer for item:', id);
+    console.log('[DataStory] Stats count:', stats.length, '| Formats:', formats);
 
-    // 180s timeout — generous for large slideshows
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180_000);
 
     let renderRes: Response;
     try {
-      renderRes = await fetch(`${VIDEO_RENDERER_URL}/render`, {
+      renderRes = await fetch(`${VIDEO_RENDERER_URL}/render/data-story`, {
         method: 'POST',
         signal: controller.signal,
         headers: {
@@ -92,10 +120,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     } catch (fetchErr: unknown) {
       clearTimeout(timeoutId);
       const isAbort = fetchErr instanceof Error && fetchErr.name === 'AbortError';
-      console.error('[Video] Fetch error:', fetchErr);
       if (isAbort) {
         return NextResponse.json(
-          { error: 'Video renderer timed out after 3 minutes. Try again.' },
+          { error: 'Video renderer timed out. Please try again.' },
           { status: 503 },
         );
       }
@@ -109,9 +136,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
     if (!renderRes.ok) {
       const errText = await renderRes.text();
-      console.error('[Video] Renderer returned error:', renderRes.status, errText);
+      console.error('[DataStory] Renderer error:', renderRes.status, errText);
       return NextResponse.json(
-        { error: 'Video generation failed.', detail: errText, rendererStatus: renderRes.status },
+        { error: 'Data story generation failed.', detail: errText },
         { status: 502 },
       );
     }
@@ -119,26 +146,24 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     const renderData = await renderRes.json() as {
       vertical?: string;
       square?: string;
+      landscape?: string;
       durationSeconds?: number;
-      imageCount?: number;
-      renderSeconds?: number;
+      statCount?: number;
     };
 
-    console.log('[Video] Render success:', renderData.vertical, renderData.square);
-    console.log(`[Video] Render time: ${renderData.renderSeconds}s | Images: ${renderData.imageCount}`);
+    // Collect all returned video URLs
+    const videoUrls = [
+      renderData.vertical,
+      renderData.square,
+      renderData.landscape,
+    ].filter((u): u is string => typeof u === 'string' && u.length > 0);
 
-    const vertical = renderData.vertical;
-    const square = renderData.square;
-
-    if (!vertical || !square) {
-      console.error('[Video] Renderer returned undefined URLs:', renderData);
+    if (videoUrls.length === 0) {
       return NextResponse.json(
-        { error: 'Video generation failed — renderer returned empty URLs. Please try again.' },
+        { error: 'Renderer returned no video URLs. Please try again.' },
         { status: 502 },
       );
     }
-
-    const videoUrls = [vertical, square];
 
     await db
       .update(contentItemSchema)
@@ -146,8 +171,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
         graphicUrls: videoUrls,
         platformSpecific: {
           ...(item.platformSpecific as object),
-          sourceImages: imageUrls,
           videoDurationSeconds: renderData.durationSeconds ?? 0,
+          dataStoryStatCount: renderData.statCount ?? stats.length,
+          dataStoryFormats: formats,
         },
         updatedAt: new Date(),
       })
@@ -155,16 +181,16 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({
       success: true,
-      vertical,
-      square,
+      vertical: renderData.vertical,
+      square: renderData.square,
+      landscape: renderData.landscape,
       durationSeconds: renderData.durationSeconds ?? 0,
-      imageCount: renderData.imageCount ?? imageUrls.length,
-      renderSeconds: renderData.renderSeconds ?? 0,
+      statCount: renderData.statCount ?? stats.length,
     });
   } catch (err) {
-    console.error('[Video] generate-video failed:', err);
+    console.error('[DataStory] generate-data-story failed:', err);
     return NextResponse.json(
-      { error: `Video generation failed: ${String(err)}` },
+      { error: `Data story generation failed: ${String(err)}` },
       { status: 500 },
     );
   }
