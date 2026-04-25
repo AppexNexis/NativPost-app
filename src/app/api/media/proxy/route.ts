@@ -17,6 +17,7 @@ import { NextResponse } from 'next/server';
 // Only allow proxying from our Uploadcare CDN
 const ALLOWED_CDN_HOSTS = [
   '32v3ws8ss0.ucarecd.net',
+  '9c0v643oty.ucarecd.net',
   'ucarecdn.com',
 ];
 

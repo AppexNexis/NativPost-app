@@ -35,6 +35,10 @@ export default withSentryConfig(
           },
           {
             protocol: 'https',
+            hostname: '9c0v643oty.ucarecd.net',
+          },
+          {
+            protocol: 'https',
             hostname: 'ucarecdn.com',
           },
           {

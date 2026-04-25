@@ -9,7 +9,8 @@ import { contentItemSchema } from '@/models/Schema';
 
 const UC_PUB_KEY = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY || '';
 const UC_SECRET_KEY = process.env.UPLOADCARE_SECRET_KEY || '';
-const UC_CDN_BASE = 'https://32v3ws8ss0.ucarecd.net';
+const UC_CDN_BASE = 'https://9c0v643oty.ucarecd.net';
+// const UC_CDN_BASE = 'https://32v3ws8ss0.ucarecd.net';
 const UC_API = 'https://api.uploadcare.com';
 
 export type MediaAsset = {
