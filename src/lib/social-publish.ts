@@ -680,13 +680,22 @@ export async function publishToTikTok(
       ? videoUrl
       : `${videoUrl.endsWith('/') ? videoUrl : `${videoUrl}/`}video.mp4`;
 
-    // Step 3: Pick privacy level — unaudited apps are restricted to SELF_ONLY.
+    // Step 3: Proxy through app.nativpost.com — TikTok PULL_FROM_URL requires the
+    // video URL to belong to a domain verified in TikTok's developer portal.
+    // Uploadcare's CDN (ucarecdn.com) is not our domain and cannot be verified.
+    // nativpost.com IS verified, and as a verified base domain it covers all
+    // subdomains including app.nativpost.com per TikTok's ownership rules.
+    // The proxy route streams the file directly without any redirect (required).
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nativpost.com';
+    const tiktokVideoUrl = `${appUrl}/api/media/proxy?url=${encodeURIComponent(playableUrl)}`;
+
+    // Step 4: Pick privacy level — unaudited apps are restricted to SELF_ONLY.
     // After audit approval, PUBLIC_TO_EVERYONE will appear in privacy_level_options.
     const privacyLevel = creatorInfo.privacyLevelOptions.includes('SELF_ONLY')
       ? 'SELF_ONLY'
       : (creatorInfo.privacyLevelOptions[0] ?? 'SELF_ONLY');
 
-    // Step 4: Initiate the Direct Post upload.
+    // Step 5: Initiate the Direct Post upload.
     // All fields below are required by TikTok's integration guidelines.
     const initRes = await fetch('https://open.tiktokapis.com/v2/post/publish/video/init/', {
       method: 'POST',
@@ -705,9 +714,8 @@ export async function publishToTikTok(
           brand_organic_toggle: false,
         },
         source_info: {
-          // PULL_FROM_URL: Uploadcare CDN URLs are publicly accessible — no proxy needed.
           source: 'PULL_FROM_URL',
-          video_url: playableUrl,
+          video_url: tiktokVideoUrl,
         },
       }),
     });

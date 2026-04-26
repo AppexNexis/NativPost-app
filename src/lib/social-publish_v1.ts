@@ -517,8 +517,55 @@ async function refreshTwitterToken(refreshToken: string): Promise<{ accessToken:
 // ============================================================
 
 /**
+ * Refresh a TikTok access token using the stored refresh token.
+ * TikTok access tokens expire after 24 hours (unaudited) or up to
+ * 30 days (audited apps). Refresh tokens are valid for 365 days.
+ */
+async function refreshTikTokToken(
+  refreshToken: string,
+): Promise<{ accessToken: string; refreshToken: string } | null> {
+  const clientKey = process.env.TIKTOK_CLIENT_KEY;
+  const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
+  if (!clientKey || !clientSecret) {
+    console.error('[TikTok] Missing TIKTOK_CLIENT_KEY or TIKTOK_CLIENT_SECRET for token refresh');
+    return null;
+  }
+
+  try {
+    const res = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_key: clientKey,
+        client_secret: clientSecret,
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.access_token) {
+      console.error('[TikTok] Token refresh failed:', JSON.stringify(data));
+      return null;
+    }
+
+    console.log('[TikTok] Token refreshed successfully');
+    return {
+      accessToken: data.access_token,
+      // TikTok may rotate the refresh token — keep the old one if absent
+      refreshToken: data.refresh_token || refreshToken,
+    };
+  } catch (err) {
+    console.error('[TikTok] Token refresh error:', err);
+    return null;
+  }
+}
+
+/**
  * Fetch TikTok creator info — required by Direct Post API guidelines before
- * every publish attempt. Returns null on failure.
+ * every publish attempt. Returns null on failure, or 'auth_error' string
+ * when the token is expired so the caller can attempt a refresh.
  */
 async function getTikTokCreatorInfo(accessToken: string): Promise<{
   creatorAvatarUrl: string;
@@ -528,7 +575,7 @@ async function getTikTokCreatorInfo(accessToken: string): Promise<{
   duetDisabled: boolean;
   stitchDisabled: boolean;
   maxVideoPostDurationSec: number;
-} | null> {
+} | 'auth_error' | null> {
   try {
     const res = await fetch('https://open.tiktokapis.com/v2/post/publish/creator_info/query/', {
       method: 'POST',
@@ -538,11 +585,27 @@ async function getTikTokCreatorInfo(accessToken: string): Promise<{
       },
       body: JSON.stringify({}),
     });
+
+    // 401 = token expired — signal the caller to attempt refresh
+    if (res.status === 401) {
+      console.log('[TikTok] creator_info returned 401 — token expired');
+      return 'auth_error';
+    }
+
     const data = await res.json();
+
+    // TikTok sometimes returns 200 with an auth error in the body
+    const errCode = data.error?.code || '';
+    if (errCode === 'access_token_invalid' || errCode === 'ok' === false) {
+      console.log('[TikTok] creator_info auth error in body:', errCode);
+      return 'auth_error';
+    }
+
     if (!data.data) {
       console.error('[TikTok] creator_info failed:', JSON.stringify(data));
       return null;
     }
+
     return {
       creatorAvatarUrl: data.data.creator_avatar_url || '',
       creatorNickname: data.data.creator_nickname || '',
@@ -562,21 +625,55 @@ export async function publishToTikTok(
   accessToken: string,
   caption: string,
   videoUrl?: string,
+  refreshToken?: string,
+  onTokenRefresh?: (newAccessToken: string, newRefreshToken: string) => Promise<void>,
 ): Promise<PublishResult> {
   if (!videoUrl) {
     return { success: false, error: 'TikTok requires a video. Create a video post first.' };
   }
 
   try {
-    // Step 1: Fetch creator info — required by TikTok Direct Post API guidelines
-    // before every publish attempt to check posting eligibility and privacy options.
-    const creatorInfo = await getTikTokCreatorInfo(accessToken);
-    if (!creatorInfo) {
+    // Step 1: Fetch creator info — required before every publish attempt.
+    // If the token is expired and we have a refresh token, refresh and retry once.
+    let token = accessToken;
+    let creatorInfoResult = await getTikTokCreatorInfo(token);
+
+    if (creatorInfoResult === 'auth_error') {
+      if (!refreshToken) {
+        return {
+          success: false,
+          error: 'TikTok session expired. Please reconnect your TikTok account in Connections.',
+        };
+      }
+
+      console.log('[TikTok] Access token expired, refreshing...');
+      const refreshed = await refreshTikTokToken(refreshToken);
+
+      if (!refreshed) {
+        return {
+          success: false,
+          error: 'TikTok session expired and could not be refreshed. Please reconnect your TikTok account in Connections.',
+        };
+      }
+
+      // Persist the new tokens in the database
+      if (onTokenRefresh) {
+        await onTokenRefresh(refreshed.accessToken, refreshed.refreshToken);
+      }
+
+      token = refreshed.accessToken;
+      console.log('[TikTok] Token refreshed, retrying creator_info...');
+      creatorInfoResult = await getTikTokCreatorInfo(token);
+    }
+
+    if (!creatorInfoResult || creatorInfoResult === 'auth_error') {
       return {
         success: false,
-        error: 'Could not fetch TikTok creator info. Please reconnect your TikTok account.',
+        error: 'Could not verify TikTok account. Please reconnect your TikTok account in Connections.',
       };
     }
+
+    const creatorInfo = creatorInfoResult;
 
     // Step 2: Resolve playable video URL (Uploadcare CDN URLs need /video.mp4 suffix)
     const playableUrl = /\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(videoUrl)
@@ -584,41 +681,31 @@ export async function publishToTikTok(
       : `${videoUrl.endsWith('/') ? videoUrl : `${videoUrl}/`}video.mp4`;
 
     // Step 3: Pick privacy level — unaudited apps are restricted to SELF_ONLY.
-    // Use SELF_ONLY if available, otherwise take the first option from creator_info.
-    // After audit approval, SELF_ONLY restriction is lifted and PUBLIC_TO_EVERYONE
-    // will appear in privacy_level_options.
+    // After audit approval, PUBLIC_TO_EVERYONE will appear in privacy_level_options.
     const privacyLevel = creatorInfo.privacyLevelOptions.includes('SELF_ONLY')
       ? 'SELF_ONLY'
       : (creatorInfo.privacyLevelOptions[0] ?? 'SELF_ONLY');
 
     // Step 4: Initiate the Direct Post upload.
-    // All fields below are required by TikTok's integration guidelines:
-    // - title: post caption (up to 2200 chars)
-    // - privacy_level: must come from creator_info.privacy_level_options
-    // - disable_comment/duet/stitch: must respect creator's app settings
-    // - brand_content_toggle / brand_organic_toggle: required disclosure fields
+    // All fields below are required by TikTok's integration guidelines.
     const initRes = await fetch('https://open.tiktokapis.com/v2/post/publish/video/init/', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${accessToken}`,
+        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json; charset=UTF-8',
       },
       body: JSON.stringify({
         post_info: {
           title: caption.slice(0, 2200),
           privacy_level: privacyLevel,
-          // Respect the creator's in-app interaction settings
           disable_comment: creatorInfo.commentDisabled,
           disable_duet: creatorInfo.duetDisabled,
           disable_stitch: creatorInfo.stitchDisabled,
-          // Required commercial content disclosure fields (off by default per guidelines)
           brand_content_toggle: false,
           brand_organic_toggle: false,
         },
         source_info: {
-          // PULL_FROM_URL: TikTok fetches the video from our CDN URL directly.
-          // The URL must be publicly accessible (Uploadcare CDN URLs are public).
-          // Do NOT use FILE_UPLOAD when the video is already on a CDN server.
+          // PULL_FROM_URL: Uploadcare CDN URLs are publicly accessible — no proxy needed.
           source: 'PULL_FROM_URL',
           video_url: playableUrl,
         },
@@ -632,7 +719,6 @@ export async function publishToTikTok(
       const errCode = initData.error?.code || '';
       const errMsg = initData.error?.message || '';
 
-      // Surface actionable errors
       if (errCode === 'spam_risk_too_many_posts' || errMsg.includes('cap')) {
         return { success: false, error: 'TikTok posting limit reached for today. Please try again tomorrow.' };
       }
@@ -1146,7 +1232,7 @@ export async function publishToplatform(
       return publishToTwitter(accessToken, caption, imageUrls, verticalVideo, refreshToken, onTokenRefresh);
 
     case 'tiktok':
-      return publishToTikTok(accessToken, caption, verticalVideo);
+      return publishToTikTok(accessToken, caption, verticalVideo, refreshToken, onTokenRefresh);
 
     case 'youtube':
       return publishToYouTube(
