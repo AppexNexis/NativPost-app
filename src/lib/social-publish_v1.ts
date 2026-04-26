@@ -516,6 +516,48 @@ async function refreshTwitterToken(refreshToken: string): Promise<{ accessToken:
 // TIKTOK
 // ============================================================
 
+/**
+ * Fetch TikTok creator info — required by Direct Post API guidelines before
+ * every publish attempt. Returns null on failure.
+ */
+async function getTikTokCreatorInfo(accessToken: string): Promise<{
+  creatorAvatarUrl: string;
+  creatorNickname: string;
+  privacyLevelOptions: string[];
+  commentDisabled: boolean;
+  duetDisabled: boolean;
+  stitchDisabled: boolean;
+  maxVideoPostDurationSec: number;
+} | null> {
+  try {
+    const res = await fetch('https://open.tiktokapis.com/v2/post/publish/creator_info/query/', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json; charset=UTF-8',
+      },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (!data.data) {
+      console.error('[TikTok] creator_info failed:', JSON.stringify(data));
+      return null;
+    }
+    return {
+      creatorAvatarUrl: data.data.creator_avatar_url || '',
+      creatorNickname: data.data.creator_nickname || '',
+      privacyLevelOptions: data.data.privacy_level_options || ['SELF_ONLY'],
+      commentDisabled: data.data.comment_disabled || false,
+      duetDisabled: data.data.duet_disabled || false,
+      stitchDisabled: data.data.stitch_disabled || false,
+      maxVideoPostDurationSec: data.data.max_video_post_duration_sec || 300,
+    };
+  } catch (err) {
+    console.error('[TikTok] creator_info error:', err);
+    return null;
+  }
+}
+
 export async function publishToTikTok(
   accessToken: string,
   caption: string,
@@ -526,15 +568,35 @@ export async function publishToTikTok(
   }
 
   try {
-    // Resolve the playable video URL — bare Uploadcare URLs need /video.mp4 appended
+    // Step 1: Fetch creator info — required by TikTok Direct Post API guidelines
+    // before every publish attempt to check posting eligibility and privacy options.
+    const creatorInfo = await getTikTokCreatorInfo(accessToken);
+    if (!creatorInfo) {
+      return {
+        success: false,
+        error: 'Could not fetch TikTok creator info. Please reconnect your TikTok account.',
+      };
+    }
+
+    // Step 2: Resolve playable video URL (Uploadcare CDN URLs need /video.mp4 suffix)
     const playableUrl = /\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(videoUrl)
       ? videoUrl
       : `${videoUrl.endsWith('/') ? videoUrl : `${videoUrl}/`}video.mp4`;
 
-    // Proxy through our verified domain so TikTok accepts the pull_by_url request
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nativpost.com';
-    const proxiedUrl = `${appUrl}/api/media/proxy?url=${encodeURIComponent(playableUrl)}`;
+    // Step 3: Pick privacy level — unaudited apps are restricted to SELF_ONLY.
+    // Use SELF_ONLY if available, otherwise take the first option from creator_info.
+    // After audit approval, SELF_ONLY restriction is lifted and PUBLIC_TO_EVERYONE
+    // will appear in privacy_level_options.
+    const privacyLevel = creatorInfo.privacyLevelOptions.includes('SELF_ONLY')
+      ? 'SELF_ONLY'
+      : (creatorInfo.privacyLevelOptions[0] ?? 'SELF_ONLY');
 
+    // Step 4: Initiate the Direct Post upload.
+    // All fields below are required by TikTok's integration guidelines:
+    // - title: post caption (up to 2200 chars)
+    // - privacy_level: must come from creator_info.privacy_level_options
+    // - disable_comment/duet/stitch: must respect creator's app settings
+    // - brand_content_toggle / brand_organic_toggle: required disclosure fields
     const initRes = await fetch('https://open.tiktokapis.com/v2/post/publish/video/init/', {
       method: 'POST',
       headers: {
@@ -544,20 +606,21 @@ export async function publishToTikTok(
       body: JSON.stringify({
         post_info: {
           title: caption.slice(0, 2200),
-          // IMPORTANT: Unaudited apps must use SELF_ONLY.
-          // TikTok rejects PUBLIC_TO_EVERYONE before audit approval.
-          // After audit is approved, change this to 'PUBLIC_TO_EVERYONE'.
-          privacy_level: 'SELF_ONLY',
-          disable_duet: false,
-          disable_comment: false,
-          disable_stitch: false,
-          // Required disclosure fields per TikTok Direct Post guidelines
+          privacy_level: privacyLevel,
+          // Respect the creator's in-app interaction settings
+          disable_comment: creatorInfo.commentDisabled,
+          disable_duet: creatorInfo.duetDisabled,
+          disable_stitch: creatorInfo.stitchDisabled,
+          // Required commercial content disclosure fields (off by default per guidelines)
           brand_content_toggle: false,
           brand_organic_toggle: false,
         },
         source_info: {
+          // PULL_FROM_URL: TikTok fetches the video from our CDN URL directly.
+          // The URL must be publicly accessible (Uploadcare CDN URLs are public).
+          // Do NOT use FILE_UPLOAD when the video is already on a CDN server.
           source: 'PULL_FROM_URL',
-          video_url: proxiedUrl,
+          video_url: playableUrl,
         },
       }),
     });
@@ -566,40 +629,26 @@ export async function publishToTikTok(
 
     if (!initData.data?.publish_id) {
       console.error('[TikTok] Init failed:', JSON.stringify(initData));
+      const errCode = initData.error?.code || '';
+      const errMsg = initData.error?.message || '';
+
+      // Surface actionable errors
+      if (errCode === 'spam_risk_too_many_posts' || errMsg.includes('cap')) {
+        return { success: false, error: 'TikTok posting limit reached for today. Please try again tomorrow.' };
+      }
+      if (errCode === 'access_token_invalid' || initRes.status === 401) {
+        return { success: false, error: 'TikTok session expired. Please reconnect your TikTok account in Connections.' };
+      }
+
       return {
         success: false,
-        error: initData.error?.message || initData.error?.code || 'TikTok upload init failed',
+        error: errMsg || errCode || 'TikTok upload failed. Please try again.',
       };
     }
 
-    return { success: true, platformPostId: initData.data.publish_id };
-  } catch (err) {
-    return { success: false, error: `TikTok error: ${err}` };
-  }
-}
-
-export async function publishToTikTok_(
-  accessToken: string,
-  caption: string,
-  videoUrl?: string,
-): Promise<PublishResult> {
-  if (!videoUrl) {
-    return { success: false, error: 'TikTok requires a video. Create a video post first.' };
-  }
-
-  try {
-    const initRes = await fetch('https://open.tiktokapis.com/v2/post/publish/video/init/', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json; charset=UTF-8' },
-      body: JSON.stringify({
-        post_info: { title: caption.slice(0, 2200), privacy_level: 'PUBLIC_TO_EVERYONE', disable_duet: false, disable_comment: false, disable_stitch: false },
-        source_info: { source: 'PULL_FROM_URL', video_url: videoUrl },
-      }),
-    });
-    const initData = await initRes.json();
-
-    if (!initData.data?.publish_id) {
-      return { success: false, error: initData.error?.message || 'TikTok upload init failed' };
+    console.log(`[TikTok] Published (privacy: ${privacyLevel}), publish_id: ${initData.data.publish_id}`);
+    if (privacyLevel === 'SELF_ONLY') {
+      console.log('[TikTok] Post is private (SELF_ONLY) — app not yet audited. User can change visibility on TikTok manually.');
     }
 
     return { success: true, platformPostId: initData.data.publish_id };
@@ -1074,7 +1123,8 @@ export async function publishToplatform(
   onTokenRefresh?: (newAccessToken: string, newRefreshToken: string) => Promise<void>,
   contentType?: string,
 ): Promise<PublishResult> {
-  const isVideo = contentType === 'reel';
+  // ugc_ad and data_story also produce video content stored in graphicUrls
+  const isVideo = contentType === 'reel' || contentType === 'ugc_ad' || contentType === 'data_story';
   const verticalVideo = isVideo ? graphicUrls[0] : undefined;
   const squareVideo = isVideo ? (graphicUrls[1] || graphicUrls[0]) : undefined;
   const imageUrls = isVideo ? [] : graphicUrls;
