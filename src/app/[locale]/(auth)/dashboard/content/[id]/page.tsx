@@ -1883,112 +1883,114 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         </div>
 
         {/* ── Sidebar — hidden on mobile, visible lg+ ────────── */}
-        <div className="hidden space-y-4 lg:block">
+        <div className="hidden lg:block">
+          <div className="sticky top-6 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 6rem)', scrollbarWidth: 'none' }}>
 
-          {/* Actions */}
-          <ActionsPanel />
+            {/* Actions */}
+            <ActionsPanel />
 
-          {/* Quality Score */}
-          {item.antiSlopScore !== null && (
-            <div className="rounded-xl border bg-card p-5">
-              <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
-              <div className="mb-3 flex items-center gap-3">
-                <div className="relative size-12">
-                  <svg className="size-12 -rotate-90" viewBox="0 0 36 36">
-                    <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
-                    <path
-                      d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeDasharray={`${item.antiSlopScore * 100}, 100`}
-                      className={item.antiSlopScore >= 0.8 ? 'text-emerald-500' : item.antiSlopScore >= 0.7 ? 'text-yellow-500' : item.antiSlopScore >= 0.5 ? 'text-orange-500' : 'text-red-500'}
-                    />
-                  </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">
-                    {Math.round(item.antiSlopScore * 100)}
-                  </span>
+            {/* Quality Score */}
+            {item.antiSlopScore !== null && (
+              <div className="rounded-xl border bg-card p-5">
+                <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
+                <div className="mb-3 flex items-center gap-3">
+                  <div className="relative size-12">
+                    <svg className="size-12 -rotate-90" viewBox="0 0 36 36">
+                      <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
+                      <path
+                        d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeDasharray={`${item.antiSlopScore * 100}, 100`}
+                        className={item.antiSlopScore >= 0.8 ? 'text-emerald-500' : item.antiSlopScore >= 0.7 ? 'text-yellow-500' : item.antiSlopScore >= 0.5 ? 'text-orange-500' : 'text-red-500'}
+                      />
+                    </svg>
+                    <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">
+                      {Math.round(item.antiSlopScore * 100)}
+                    </span>
+                  </div>
+                  <div>
+                    <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>
+                      {scoreLabel(item.antiSlopScore).text}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">Quality score</p>
+                  </div>
                 </div>
-                <div>
-                  <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>
-                    {scoreLabel(item.antiSlopScore).text}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">Quality score</p>
-                </div>
+                {item.qualityFlags.length > 0 && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setShowQualityFlags(p => !p)}
+                      className="mb-2 text-xs text-muted-foreground underline hover:text-foreground"
+                    >
+                      {showQualityFlags ? 'Hide' : 'Show'}
+                      {' '}
+                      {item.qualityFlags.length}
+                      {' '}
+                      quality
+                      {' '}
+                      {item.qualityFlags.length === 1 ? 'note' : 'notes'}
+                    </button>
+                    {showQualityFlags && (
+                      <div className="space-y-1.5">
+                        {item.qualityFlags.map((flag, i) => (
+                          <p key={i} className="text-[11px] leading-snug text-muted-foreground">{flag}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              {item.qualityFlags.length > 0 && (
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setShowQualityFlags(p => !p)}
-                    className="mb-2 text-xs text-muted-foreground underline hover:text-foreground"
+            )}
+
+            {/* Details */}
+            <div className="rounded-xl border bg-card p-5">
+              <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Details</h3>
+              <div className="space-y-3">
+                <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
+                <DetailRow label="Topic" value={item.topic || 'Auto-selected'} />
+                {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
+                <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
+                {isReel && (item.platformSpecific?.videoDurationSeconds as number) > 0 && (
+                  <DetailRow label="Video duration" value={`${item.platformSpecific.videoDurationSeconds}s`} />
+                )}
+                <DetailRow label="Created" value={new Date(item.createdAt).toLocaleString()} />
+                {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
+                {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
+              </div>
+              {item.scheduledFor && (
+                <div className="mt-4 border-t pt-3">
+                  <Link
+                    href={`/dashboard/calendar?selected=${item.scheduledFor.split('T')[0]}`}
+                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
                   >
-                    {showQualityFlags ? 'Hide' : 'Show'}
-                    {' '}
-                    {item.qualityFlags.length}
-                    {' '}
-                    quality
-                    {' '}
-                    {item.qualityFlags.length === 1 ? 'note' : 'notes'}
-                  </button>
-                  {showQualityFlags && (
-                    <div className="space-y-1.5">
-                      {item.qualityFlags.map((flag, i) => (
-                        <p key={i} className="text-[11px] leading-snug text-muted-foreground">{flag}</p>
-                      ))}
-                    </div>
-                  )}
+                    <Calendar className="size-3.5" />
+                    View on calendar
+                    <ChevronRight className="size-3" />
+                  </Link>
                 </div>
               )}
             </div>
-          )}
 
-          {/* Details */}
-          <div className="rounded-xl border bg-card p-5">
-            <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Details</h3>
-            <div className="space-y-3">
-              <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
-              <DetailRow label="Topic" value={item.topic || 'Auto-selected'} />
-              {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
-              <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
-              {isReel && (item.platformSpecific?.videoDurationSeconds as number) > 0 && (
-                <DetailRow label="Video duration" value={`${item.platformSpecific.videoDurationSeconds}s`} />
-              )}
-              <DetailRow label="Created" value={new Date(item.createdAt).toLocaleString()} />
-              {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
-              {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
-            </div>
-            {item.scheduledFor && (
-              <div className="mt-4 border-t pt-3">
-                <Link
-                  href={`/dashboard/calendar?selected=${item.scheduledFor.split('T')[0]}`}
-                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                >
-                  <Calendar className="size-3.5" />
-                  View on calendar
-                  <ChevronRight className="size-3" />
-                </Link>
+            {/* Engagement */}
+            {item.status === 'published' && (
+              <div className="rounded-xl border bg-card p-5">
+                <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Engagement</h3>
+                {Object.keys(item.engagementData || {}).length > 0 ? (
+                  <div className="space-y-3">
+                    {Object.entries(item.engagementData).map(([key, val]) => (
+                      <DetailRow key={key} label={key} value={String(val)} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Engagement data will appear here once the post has been live for a few hours.
+                  </p>
+                )}
               </div>
             )}
           </div>
-
-          {/* Engagement */}
-          {item.status === 'published' && (
-            <div className="rounded-xl border bg-card p-5">
-              <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Engagement</h3>
-              {Object.keys(item.engagementData || {}).length > 0 ? (
-                <div className="space-y-3">
-                  {Object.entries(item.engagementData).map(([key, val]) => (
-                    <DetailRow key={key} label={key} value={String(val)} />
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Engagement data will appear here once the post has been live for a few hours.
-                </p>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
