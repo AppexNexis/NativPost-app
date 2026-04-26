@@ -593,7 +593,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const uploadedSlideImages = isReel && !hasGeneratedVideo && !hasUploadedVideo ? item.graphicUrls : [];
   const hasVideo = isReel && (hasGeneratedVideo || hasUploadedVideo);
   const hasImages = (isSingleImage || isCarousel) && hasMedia;
-  const canPublish = item.status === 'approved' && (!needsMedia || hasVideo || hasImages);
+  // UGC Ad and Data Story store generated videos in graphicUrls — enable publish once any media exists
+  const hasUGCOrDataStoryVideo = (isUGCAd || isDataStory) && hasMedia;
+  const canPublish = item.status === 'approved' && (!needsMedia || hasVideo || hasImages || hasUGCOrDataStoryVideo);
   const platformsWithTitle = (item.targetPlatforms || []).filter(p => TITLE_PLATFORMS.has(p));
   const showTitleField = platformsWithTitle.length > 0;
   const currentTitle = (item.platformSpecific?.title as string) || '';

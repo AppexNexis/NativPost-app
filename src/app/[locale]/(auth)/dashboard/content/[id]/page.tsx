@@ -160,6 +160,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [isGeneratingDataStory, setIsGeneratingDataStory] = useState(false);
   const [dataStoryError, setDataStoryError] = useState<string | null>(null);
   // Image engine state
+  const [imageMode, setImageMode] = useState<'template' | 'ai-scene'>('ai-scene');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [imageGenError, setImageGenError] = useState<string | null>(null);
   const [imageTemplate, setImageTemplate] = useState<'quote-card' | 'announcement-card' | 'stat-card'>('quote-card');
@@ -168,6 +169,11 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [imageStatValue, setImageStatValue] = useState('');
   const [imageStatLabel, setImageStatLabel] = useState('');
   const [imageEyebrow, setImageEyebrow] = useState('');
+  // AI Scene state
+  const [sceneStyle, setSceneStyle] = useState<'professional' | 'minimal' | 'vibrant' | 'elegant' | 'bold' | 'cinematic'>('professional');
+  const [sceneOverlay, setSceneOverlay] = useState<'standard' | 'minimal' | 'none'>('standard');
+  const [scenePromptOverride, setScenePromptOverride] = useState('');
+  const [sceneResult, setSceneResult] = useState<{ promptUsed?: string; modelUsed?: string; fallback?: boolean } | null>(null);
   // Carousel engine state
   const [isGeneratingCarousel, setIsGeneratingCarousel] = useState(false);
   const [carouselError, setCarouselError] = useState<string | null>(null);
@@ -504,6 +510,43 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       }
     } catch (err) {
       console.error('[Image] generate error:', err);
+      setImageGenError('Network error. Please try again.');
+    } finally {
+      setIsGeneratingImage(false);
+    }
+  };
+
+  const generateScene = async () => {
+    if (!item) {
+      return;
+    }
+    setIsGeneratingImage(true);
+    setImageGenError(null);
+    setSceneResult(null);
+    try {
+      const res = await fetch(`/api/content/${item.id}/generate-scene`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          formats: imageFormats,
+          imageStyle: sceneStyle,
+          modelTier: 'pro',
+          overlayStyle: sceneOverlay,
+          ...(scenePromptOverride.trim() ? { scenePrompt: scenePromptOverride.trim() } : {}),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSceneResult({ promptUsed: data.promptUsed, modelUsed: data.modelUsed, fallback: data.fallback });
+        const refreshRes = await fetch(`/api/content/${item.id}`);
+        if (refreshRes.ok) {
+          setItem((await refreshRes.json()).item);
+        }
+      } else {
+        setImageGenError(data.error || 'Scene generation failed. Please try again.');
+      }
+    } catch (err) {
+      console.error('[Scene] generate error:', err);
       setImageGenError('Network error. Please try again.');
     } finally {
       setIsGeneratingImage(false);
@@ -1391,126 +1434,250 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               <div className="mb-5 rounded-lg border bg-muted/30 p-4">
                 <div className="mb-3 flex items-center gap-2">
                   <Sparkles className="size-4 text-primary" />
-                  <p className="text-xs font-semibold">Generate branded image</p>
+                  <p className="text-xs font-semibold">Generate image</p>
                 </div>
 
-                {/* Template selector */}
-                <div className="mb-3">
-                  <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Template</p>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {(['quote-card', 'announcement-card', 'stat-card'] as const).map(t => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setImageTemplate(t)}
-                        className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium transition-colors ${imageTemplate === t ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
-                      >
-                        {t === 'quote-card' ? 'Quote' : t === 'announcement-card' ? 'Announcement' : 'Stat'}
-                      </button>
-                    ))}
-                  </div>
+                {/* Mode toggle */}
+                <div className="mb-4 grid grid-cols-2 gap-1.5 rounded-lg bg-muted p-1">
+                  {(['ai-scene', 'template'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => {
+                        setImageMode(mode); setImageGenError(null); setSceneResult(null);
+                      }}
+                      className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${imageMode === mode ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                    >
+                      {mode === 'ai-scene' ? 'AI Scene' : 'Branded Template'}
+                    </button>
+                  ))}
                 </div>
 
-                {/* Style selector */}
-                <div className="mb-3">
-                  <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Style</p>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {(['dark', 'light', 'brand'] as const).map(s => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => setImageStyle(s)}
-                        className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium capitalize transition-colors ${imageStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                {imageMode === 'ai-scene' && (
+                  <div>
+                    {/* Visual style */}
+                    <div className="mb-3">
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Visual style</p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {(['professional', 'minimal', 'vibrant', 'elegant', 'bold', 'cinematic'] as const).map(s => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => setSceneStyle(s)}
+                            className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium capitalize transition-colors ${sceneStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-                {/* Formats */}
-                <div className="mb-3">
-                  <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Formats</p>
-                  <div className="flex gap-2">
-                    {(['square', 'vertical'] as const).map(f => (
-                      <button
-                        key={f}
-                        type="button"
-                        onClick={() => setImageFormats(prev =>
-                          prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f],
+                    {/* Brand overlay */}
+                    <div className="mb-3">
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Brand overlay</p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {([['standard', 'Logo + name'], ['minimal', 'Logo only'], ['none', 'None']] as const).map(([val, label]) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setSceneOverlay(val)}
+                            className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium transition-colors ${sceneOverlay === val ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Formats */}
+                    <div className="mb-3">
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Formats</p>
+                      <div className="flex gap-2">
+                        {(['square', 'vertical'] as const).map(f => (
+                          <button
+                            key={f}
+                            type="button"
+                            onClick={() => setImageFormats(prev =>
+                              prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f],
+                            )}
+                            className={`rounded-lg border px-3 py-1.5 text-[11px] font-medium capitalize transition-colors ${imageFormats.includes(f) ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
+                          >
+                            {f === 'square' ? '1:1 Square' : '9:16 Vertical'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Optional prompt override */}
+                    <div className="mb-4">
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Scene description (optional)</p>
+                      <input
+                        type="text"
+                        value={scenePromptOverride}
+                        onChange={e => setScenePromptOverride(e.target.value)}
+                        placeholder="Leave blank to auto-generate from your post..."
+                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+
+                    {/* Scene result info */}
+                    {sceneResult && (
+                      <div className="mb-3 rounded-lg bg-muted/50 p-3">
+                        {sceneResult.fallback && (
+                          <p className="mb-1 text-[11px] font-medium text-amber-600">Template fallback used. Top up fal.ai credits to enable AI scene generation.</p>
                         )}
-                        className={`rounded-lg border px-3 py-1.5 text-[11px] font-medium capitalize transition-colors ${imageFormats.includes(f) ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
-                      >
-                        {f === 'square' ? '1:1 Square' : '9:16 Vertical'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                        {sceneResult.modelUsed && !sceneResult.fallback && (
+                          <p className="mb-1 text-[11px] font-medium text-green-600">
+                            Generated with FLUX
+                            {sceneResult.modelUsed}
+                          </p>
+                        )}
+                        {sceneResult.promptUsed && (
+                          <p className="line-clamp-2 text-[11px] text-muted-foreground">{sceneResult.promptUsed}</p>
+                        )}
+                      </div>
+                    )}
 
-                {/* Optional eyebrow */}
-                <div className="mb-3">
-                  <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Eyebrow label (optional)</p>
-                  <input
-                    type="text"
-                    value={imageEyebrow}
-                    onChange={e => setImageEyebrow(e.target.value.toUpperCase().slice(0, 20))}
-                    placeholder="e.g. THIS WEEK · MILESTONE"
-                    className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:border-primary focus:outline-none"
-                  />
-                </div>
-
-                {/* Stat-card specific fields */}
-                {imageTemplate === 'stat-card' && (
-                  <div className="mb-3 grid grid-cols-2 gap-2">
-                    <div>
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Stat value *</p>
-                      <input
-                        type="text"
-                        value={imageStatValue}
-                        onChange={e => setImageStatValue(e.target.value)}
-                        placeholder="e.g. 47% or 10K+"
-                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:border-primary focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Stat label *</p>
-                      <input
-                        type="text"
-                        value={imageStatLabel}
-                        onChange={e => setImageStatLabel(e.target.value)}
-                        placeholder="e.g. customer growth"
-                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:border-primary focus:outline-none"
-                      />
-                    </div>
+                    <button
+                      type="button"
+                      onClick={generateScene}
+                      disabled={isGeneratingImage || imageFormats.length === 0}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+                    >
+                      {isGeneratingImage
+                        ? (
+                            <>
+                              <Loader2 className="size-4 animate-spin" />
+                              {' '}
+                              Generating...
+                            </>
+                          )
+                        : (
+                            <>
+                              <Sparkles className="size-4" />
+                              {hasMedia ? 'Regenerate scene' : 'Generate scene'}
+                            </>
+                          )}
+                    </button>
                   </div>
                 )}
 
-                <button
-                  type="button"
-                  onClick={generateImage}
-                  disabled={isGeneratingImage || imageFormats.length === 0}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                >
-                  {isGeneratingImage
-                    ? (
-                        <>
-                          <Loader2 className="size-4 animate-spin" />
-                          Generating image (~3s)...
-                        </>
-                      )
-                    : (
-                        <>
-                          <Sparkles className="size-4" />
-                          {hasMedia ? 'Regenerate image' : 'Generate image'}
-                        </>
-                      )}
-                </button>
+                {imageMode === 'template' && (
+                  <div>
+                    {/* Template selector */}
+                    <div className="mb-3">
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Template</p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {(['quote-card', 'announcement-card', 'stat-card'] as const).map(t => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setImageTemplate(t)}
+                            className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium transition-colors ${imageTemplate === t ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
+                          >
+                            {t === 'quote-card' ? 'Quote' : t === 'announcement-card' ? 'Announcement' : 'Stat'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Style selector */}
+                    <div className="mb-3">
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Style</p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {(['dark', 'light', 'brand'] as const).map(s => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => setImageStyle(s)}
+                            className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium capitalize transition-colors ${imageStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Formats */}
+                    <div className="mb-3">
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Formats</p>
+                      <div className="flex gap-2">
+                        {(['square', 'vertical'] as const).map(f => (
+                          <button
+                            key={f}
+                            type="button"
+                            onClick={() => setImageFormats(prev =>
+                              prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f],
+                            )}
+                            className={`rounded-lg border px-3 py-1.5 text-[11px] font-medium capitalize transition-colors ${imageFormats.includes(f) ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
+                          >
+                            {f === 'square' ? '1:1 Square' : '9:16 Vertical'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Stat card fields */}
+                    {imageTemplate === 'stat-card' && (
+                      <div className="mb-3 space-y-2">
+                        <input
+                          type="text"
+                          value={imageStatValue}
+                          onChange={e => setImageStatValue(e.target.value)}
+                          placeholder="Stat value, e.g. 47%"
+                          className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                        <input
+                          type="text"
+                          value={imageStatLabel}
+                          onChange={e => setImageStatLabel(e.target.value)}
+                          placeholder="Stat label, e.g. improvement in engagement"
+                          className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                      </div>
+                    )}
+
+                    {/* Optional eyebrow */}
+                    <div className="mb-4">
+                      <input
+                        type="text"
+                        value={imageEyebrow}
+                        onChange={e => setImageEyebrow(e.target.value)}
+                        placeholder="Eyebrow label (optional) e.g. THIS WEEK"
+                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={generateImage}
+                      disabled={isGeneratingImage || imageFormats.length === 0}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+                    >
+                      {isGeneratingImage
+                        ? (
+                            <>
+                              <Loader2 className="size-4 animate-spin" />
+                              {' '}
+                              Generating...
+                            </>
+                          )
+                        : (
+                            <>
+                              <Sparkles className="size-4" />
+                              {hasMedia ? 'Regenerate image' : 'Generate image'}
+                            </>
+                          )}
+                    </button>
+                  </div>
+                )}
+
                 {imageGenError && <p className="mt-2 text-xs text-red-500">{imageGenError}</p>}
               </div>
 
               {/* Manual upload fallback */}
               <div>
-                <p className="mb-3 text-xs font-medium text-muted-foreground">Or upload your own image</p>
+                <p className="mb-3 text-xs font-medium text-muted-foreground">Upload your own</p>
                 <MediaUploader
                   contentItemId={item.id}
                   existingUrls={item.graphicUrls || []}
