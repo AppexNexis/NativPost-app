@@ -76,5 +76,6 @@ export default antfu({
     'regexp/no-unused-capturing-group': 'off',
     'ts/no-unused-expressions': 'off',
     'simple-import-sort/imports': 'error',
+    'react/no-nested-components': 'off',
   },
 });

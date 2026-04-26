@@ -17,6 +17,7 @@ import {
   Video,
   X,
 } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -82,7 +83,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 };
 
 const TITLE_PLATFORMS = new Set(['youtube', 'pinterest']);
-const PLATFORM_SPECIFIC_SYSTEM_KEYS = ['sourceImages', 'videoDurationSeconds', 'title'];
+const PLATFORM_SPECIFIC_SYSTEM_KEYS = ['sourceImages', 'videoDurationSeconds', 'title', 'imageTemplate', 'imageStyle', 'carouselAspectRatio', 'carouselStyle', 'carouselSlideCount'];
 const MEDIA_CONTENT_TYPES = ['single_image', 'carousel', 'reel', 'ugc_ad', 'data_story'];
 
 // -----------------------------------------------------------
@@ -158,6 +159,20 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [ugcError, setUgcError] = useState<string | null>(null);
   const [isGeneratingDataStory, setIsGeneratingDataStory] = useState(false);
   const [dataStoryError, setDataStoryError] = useState<string | null>(null);
+  // Image engine state
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [imageGenError, setImageGenError] = useState<string | null>(null);
+  const [imageTemplate, setImageTemplate] = useState<'quote-card' | 'announcement-card' | 'stat-card'>('quote-card');
+  const [imageStyle, setImageStyle] = useState<'dark' | 'light' | 'brand'>('dark');
+  const [imageFormats, setImageFormats] = useState<string[]>(['square', 'vertical']);
+  const [imageStatValue, setImageStatValue] = useState('');
+  const [imageStatLabel, setImageStatLabel] = useState('');
+  const [imageEyebrow, setImageEyebrow] = useState('');
+  // Carousel engine state
+  const [isGeneratingCarousel, setIsGeneratingCarousel] = useState(false);
+  const [carouselError, setCarouselError] = useState<string | null>(null);
+  const [carouselStyle, setCarouselStyle] = useState<'dark' | 'light' | 'brand'>('dark');
+  const [carouselAspectRatio, setCarouselAspectRatio] = useState<'1:1' | '9:16'>('1:1');
   // Data story stats editor
   const [statLabel, setStatLabel] = useState('');
   const [statValue, setStatValue] = useState('');
@@ -452,6 +467,78 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     } : prev);
   };
 
+  const generateImage = async () => {
+    if (!item) {
+      return;
+    }
+    setIsGeneratingImage(true);
+    setImageGenError(null);
+    try {
+      const body: Record<string, unknown> = {
+        template: imageTemplate,
+        style: imageStyle,
+        formats: imageFormats,
+        eyebrow: imageEyebrow || undefined,
+      };
+      if (imageTemplate === 'stat-card') {
+        if (!imageStatValue || !imageStatLabel) {
+          setImageGenError('Stat value and label are required for stat card.');
+          return;
+        }
+        body.statValue = imageStatValue;
+        body.statLabel = imageStatLabel;
+      }
+      const res = await fetch(`/api/content/${item.id}/generate-image`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const refreshRes = await fetch(`/api/content/${item.id}`);
+        if (refreshRes.ok) {
+          setItem((await refreshRes.json()).item);
+        }
+      } else {
+        setImageGenError(data.error || 'Image generation failed. Please try again.');
+      }
+    } catch (err) {
+      console.error('[Image] generate error:', err);
+      setImageGenError('Network error. Please try again.');
+    } finally {
+      setIsGeneratingImage(false);
+    }
+  };
+
+  const generateCarousel = async () => {
+    if (!item) {
+      return;
+    }
+    setIsGeneratingCarousel(true);
+    setCarouselError(null);
+    try {
+      const res = await fetch(`/api/content/${item.id}/generate-carousel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ style: carouselStyle, aspectRatio: carouselAspectRatio }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const refreshRes = await fetch(`/api/content/${item.id}`);
+        if (refreshRes.ok) {
+          setItem((await refreshRes.json()).item);
+        }
+      } else {
+        setCarouselError(data.error || 'Carousel generation failed. Please try again.');
+      }
+    } catch (err) {
+      console.error('[Carousel] generate error:', err);
+      setCarouselError('Network error. Please try again.');
+    } finally {
+      setIsGeneratingCarousel(false);
+    }
+  };
+
   const deleteItem = async () => {
     if (!item) {
       return;
@@ -538,6 +625,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   // ACTIONS PANEL — rendered both in sidebar (desktop) and
   // as a sticky bottom bar on mobile
   // -----------------------------------------------------------
+  // // eslint-disable-next-line react/no-unstable-nested-components
   const ActionsPanel = ({ compact = false }: { compact?: boolean }) => (
     <div className={`space-y-2.5 ${compact ? '' : 'rounded-xl border bg-card p-5'}`}>
       {!compact && <h3 className="mb-3 text-sm font-semibold">Actions</h3>}
@@ -1265,24 +1353,290 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             </div>
           )}
 
-          {(isSingleImage || isCarousel) && (
+          {/* ── Single Image generation ── */}
+          {isSingleImage && (
             <div className="rounded-xl border bg-card p-4 sm:p-5">
               <div className="mb-4 flex items-center gap-2 border-b pb-4">
-                {isCarousel ? <Layers className="size-4 text-muted-foreground" /> : <ImageIcon className="size-4 text-muted-foreground" />}
-                <h3 className="text-sm font-semibold">{isCarousel ? 'Carousel images' : 'Post image'}</h3>
+                <ImageIcon className="size-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Post image</h3>
                 {needsMedia && !hasMedia && (
                   <span className="ml-auto rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
                     Required to publish
                   </span>
                 )}
               </div>
-              <MediaUploader
-                contentItemId={item.id}
-                existingUrls={item.graphicUrls || []}
-                onUpdate={urls => setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev)}
-                mediaType="image"
-                maxFiles={isSingleImage ? 1 : undefined}
-              />
+
+              {/* Generated image preview */}
+              {hasMedia && (
+                <div className="mb-5">
+                  <p className="mb-3 text-xs font-medium text-muted-foreground">Generated images</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {item.graphicUrls.map((url, i) => (
+                      <div key={i} className="overflow-hidden rounded-lg border">
+                        <div className="border-b px-3 py-2">
+                          <p className="text-[11px] font-medium text-muted-foreground">
+                            {i === 0 ? '1:1 — Square (Instagram, LinkedIn)' : '9:16 — Vertical (Stories, Reels)'}
+                          </p>
+                        </div>
+                        <Image src={url} alt={`Generated graphic ${i + 1}`} width={540} height={540} className="w-full object-cover" unoptimized />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* AI Image Generator */}
+              <div className="mb-5 rounded-lg border bg-muted/30 p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <Sparkles className="size-4 text-primary" />
+                  <p className="text-xs font-semibold">Generate branded image</p>
+                </div>
+
+                {/* Template selector */}
+                <div className="mb-3">
+                  <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Template</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(['quote-card', 'announcement-card', 'stat-card'] as const).map(t => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setImageTemplate(t)}
+                        className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium transition-colors ${imageTemplate === t ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
+                      >
+                        {t === 'quote-card' ? 'Quote' : t === 'announcement-card' ? 'Announcement' : 'Stat'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Style selector */}
+                <div className="mb-3">
+                  <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Style</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(['dark', 'light', 'brand'] as const).map(s => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setImageStyle(s)}
+                        className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium capitalize transition-colors ${imageStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Formats */}
+                <div className="mb-3">
+                  <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Formats</p>
+                  <div className="flex gap-2">
+                    {(['square', 'vertical'] as const).map(f => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => setImageFormats(prev =>
+                          prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f],
+                        )}
+                        className={`rounded-lg border px-3 py-1.5 text-[11px] font-medium capitalize transition-colors ${imageFormats.includes(f) ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
+                      >
+                        {f === 'square' ? '1:1 Square' : '9:16 Vertical'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Optional eyebrow */}
+                <div className="mb-3">
+                  <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Eyebrow label (optional)</p>
+                  <input
+                    type="text"
+                    value={imageEyebrow}
+                    onChange={e => setImageEyebrow(e.target.value.toUpperCase().slice(0, 20))}
+                    placeholder="e.g. THIS WEEK · MILESTONE"
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+                  />
+                </div>
+
+                {/* Stat-card specific fields */}
+                {imageTemplate === 'stat-card' && (
+                  <div className="mb-3 grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Stat value *</p>
+                      <input
+                        type="text"
+                        value={imageStatValue}
+                        onChange={e => setImageStatValue(e.target.value)}
+                        placeholder="e.g. 47% or 10K+"
+                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Stat label *</p>
+                      <input
+                        type="text"
+                        value={imageStatLabel}
+                        onChange={e => setImageStatLabel(e.target.value)}
+                        placeholder="e.g. customer growth"
+                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={generateImage}
+                  disabled={isGeneratingImage || imageFormats.length === 0}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                >
+                  {isGeneratingImage
+                    ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin" />
+                          Generating image (~3s)...
+                        </>
+                      )
+                    : (
+                        <>
+                          <Sparkles className="size-4" />
+                          {hasMedia ? 'Regenerate image' : 'Generate image'}
+                        </>
+                      )}
+                </button>
+                {imageGenError && <p className="mt-2 text-xs text-red-500">{imageGenError}</p>}
+              </div>
+
+              {/* Manual upload fallback */}
+              <div>
+                <p className="mb-3 text-xs font-medium text-muted-foreground">Or upload your own image</p>
+                <MediaUploader
+                  contentItemId={item.id}
+                  existingUrls={item.graphicUrls || []}
+                  onUpdate={urls => setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev)}
+                  mediaType="image"
+                  maxFiles={1}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ── Carousel generation ── */}
+          {isCarousel && (
+            <div className="rounded-xl border bg-card p-4 sm:p-5">
+              <div className="mb-4 flex items-center gap-2 border-b pb-4">
+                <Layers className="size-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Carousel slides</h3>
+                {needsMedia && !hasMedia && (
+                  <span className="ml-auto rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                    Required to publish
+                  </span>
+                )}
+              </div>
+
+              {/* Generated slides preview */}
+              {hasMedia && (
+                <div className="mb-5">
+                  <p className="mb-3 text-xs font-medium text-muted-foreground">
+                    {item.graphicUrls.length}
+                    {' '}
+                    slide
+                    {item.graphicUrls.length !== 1 ? 's' : ''}
+                    {' '}
+                    generated
+                  </p>
+                  <div className="flex gap-3 overflow-x-auto pb-2">
+                    {item.graphicUrls.map((url, i) => (
+                      <div key={i} className="shrink-0 overflow-hidden rounded-lg border" style={{ width: 120 }}>
+                        <div className="border-b px-2 py-1">
+                          <p className="text-[10px] text-muted-foreground">
+                            Slide
+                            {i + 1}
+                          </p>
+                        </div>
+                        <Image src={url} alt={`Carousel slide ${i + 1}`} width={120} height={120} className="w-full object-cover" unoptimized />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Carousel generator */}
+              <div className="mb-5 rounded-lg border bg-muted/30 p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <Sparkles className="size-4 text-primary" />
+                  <p className="text-xs font-semibold">Generate carousel from caption</p>
+                </div>
+                <p className="mb-4 text-[11px] text-muted-foreground">
+                  Each paragraph in your caption becomes a slide. The first becomes the cover, the last gets a CTA slide appended automatically.
+                </p>
+
+                {/* Style */}
+                <div className="mb-3">
+                  <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Style</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(['dark', 'light', 'brand'] as const).map(s => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setCarouselStyle(s)}
+                        className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium capitalize transition-colors ${carouselStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Aspect ratio */}
+                <div className="mb-4">
+                  <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Format</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(['1:1', '9:16'] as const).map(ar => (
+                      <button
+                        key={ar}
+                        type="button"
+                        onClick={() => setCarouselAspectRatio(ar)}
+                        className={`rounded-lg border px-3 py-2 text-[11px] font-medium transition-colors ${carouselAspectRatio === ar ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
+                      >
+                        {ar === '1:1' ? '1:1 — LinkedIn, Facebook' : '9:16 — Instagram, TikTok'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={generateCarousel}
+                  disabled={isGeneratingCarousel}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                >
+                  {isGeneratingCarousel
+                    ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin" />
+                          Generating slides (~5–10s)...
+                        </>
+                      )
+                    : (
+                        <>
+                          <Sparkles className="size-4" />
+                          {hasMedia ? 'Regenerate carousel' : 'Generate carousel'}
+                        </>
+                      )}
+                </button>
+                {carouselError && <p className="mt-2 text-xs text-red-500">{carouselError}</p>}
+              </div>
+
+              {/* Manual upload fallback */}
+              <div>
+                <p className="mb-3 text-xs font-medium text-muted-foreground">Or upload slides manually</p>
+                <MediaUploader
+                  contentItemId={item.id}
+                  existingUrls={item.graphicUrls || []}
+                  onUpdate={urls => setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev)}
+                  mediaType="image"
+                />
+              </div>
             </div>
           )}
 
