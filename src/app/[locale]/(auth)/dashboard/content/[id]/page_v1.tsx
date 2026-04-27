@@ -355,7 +355,15 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     setIsGeneratingVideo(true);
     setVideoGenError(null);
     try {
-      const res = await fetch(`/api/content/${item.id}/generate-video`, { method: 'POST' });
+      const res = await fetch(`/api/content/${item.id}/generate-video`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          // Auto-fetch Unsplash photos when no images uploaded.
+          // Re-derive here to avoid using uploadedSlideImages before its definition.
+          photoTier: (item.graphicUrls || []).length === 0 ? 'unsplash' : 'none',
+        }),
+      });
       const data = await res.json();
       if (res.ok && data.success && data.vertical && data.square) {
         const refreshRes = await fetch(`/api/content/${item.id}`);
@@ -383,7 +391,11 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     setIsGeneratingUGC(true);
     setUgcError(null);
     try {
-      const res = await fetch(`/api/content/${item.id}/generate-ugc-ad`, { method: 'POST' });
+      const res = await fetch(`/api/content/${item.id}/generate-ugc-ad`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photoTier: 'unsplash' }),
+      });
       if (!res.ok) {
         const data = await res.json();
         setUgcError(data.error || 'UGC ad generation failed. Please try again.');
@@ -393,7 +405,12 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       setItem(prev => prev ? {
         ...prev,
         graphicUrls: [data.vertical].filter(Boolean),
-        platformSpecific: { ...prev.platformSpecific, videoDurationSeconds: data.durationSeconds },
+        platformSpecific: {
+          ...prev.platformSpecific,
+          videoDurationSeconds: data.durationSeconds,
+          photoTier: data.photoTier,
+          unsplashCredits: data.credits,
+        },
       } : prev);
     } catch (err) {
       console.error('[UGCAd] error:', err);
@@ -1131,26 +1148,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
 
               {!hasUploadedVideo && !hasGeneratedVideo && (
                 <div className="mb-5">
-                  <div className="mb-3 flex items-center gap-2">
-                    <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">1</span>
-                    <p className="text-xs font-medium text-muted-foreground">Upload 3–5 images for the slideshow</p>
-                  </div>
-                  <MediaUploader
-                    contentItemId={item.id}
-                    existingUrls={uploadedSlideImages}
-                    onUpdate={urls => setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev)}
-                    mediaType="image"
-                    maxFiles={5}
-                  />
-                </div>
-              )}
-
-              {!hasUploadedVideo && !hasGeneratedVideo && uploadedSlideImages.length > 0 && (
-                <div className="border-t pt-5">
-                  <div className="mb-3 flex items-center gap-2">
-                    <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">2</span>
-                    <p className="text-xs font-medium text-muted-foreground">Generate branded video</p>
-                  </div>
                   <button
                     type="button"
                     onClick={generateVideo}
@@ -1172,9 +1169,23 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                         )}
                   </button>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Renders two versions: 9:16 for Reels/TikTok and 1:1 for LinkedIn/Facebook. Takes about 30–60 seconds.
+                    Renders 9:16 for Reels/TikTok and 1:1 for LinkedIn. Photos sourced automatically. Takes 30–60 seconds.
                   </p>
                   {videoGenError && <p className="mt-2 text-xs text-red-500">{videoGenError}</p>}
+
+                  {uploadedSlideImages.length > 0 && (
+                    <div className="mt-4">
+                      <p className="mb-2 text-xs font-medium text-muted-foreground">Or use your uploaded images</p>
+                      <div className="flex gap-2 overflow-x-auto pb-1">
+                        {uploadedSlideImages.slice(0, 5).map((url, i) => (
+                          <div key={i} className="size-14 shrink-0 overflow-hidden rounded-md border">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={url} alt="" className="size-full object-cover" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1214,6 +1225,29 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     Regenerate video
                   </button>
                   {videoGenError && <p className="mt-1 text-xs text-red-500">{videoGenError}</p>}
+                  {/* Unsplash attribution — required by Unsplash API guidelines */}
+                  {(() => {
+                    const credits = (item.platformSpecific?.unsplashCredits as string[]) || [];
+                    const tier = item.platformSpecific?.photoTier as string;
+                    if (tier !== 'unsplash' || credits.length === 0) {
+                      return null;
+                    }
+                    return (
+                      <p className="mt-3 text-[11px] text-muted-foreground">
+                        {'Photos by '}
+                        {credits.slice(0, 3).join(', ')}
+                        {' on '}
+                        <a
+                          href="https://unsplash.com/?utm_source=nativpost&utm_medium=referral"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline hover:text-foreground"
+                        >
+                          Unsplash
+                        </a>
+                      </p>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -1291,6 +1325,28 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     )}
               </button>
               {ugcError && <p className="mt-2 text-xs text-red-500">{ugcError}</p>}
+              {(() => {
+                const credits = (item.platformSpecific?.unsplashCredits as string[]) || [];
+                const tier = item.platformSpecific?.photoTier as string;
+                if (tier !== 'unsplash' || credits.length === 0) {
+                  return null;
+                }
+                return (
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    {'Photos by '}
+                    {credits.slice(0, 4).join(', ')}
+                    {' on '}
+                    <a
+                      href="https://unsplash.com/?utm_source=nativpost&utm_medium=referral"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline hover:text-foreground"
+                    >
+                      Unsplash
+                    </a>
+                  </p>
+                );
+              })()}
             </div>
           )}
 

@@ -155,6 +155,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [scheduleTime, setScheduleTime] = useState('');
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [videoGenError, setVideoGenError] = useState<string | null>(null);
+  const [videoPhotoTier, setVideoPhotoTier] = useState<'unsplash' | 'flux'>('unsplash');
   const [isGeneratingUGC, setIsGeneratingUGC] = useState(false);
   const [ugcError, setUgcError] = useState<string | null>(null);
   const [isGeneratingDataStory, setIsGeneratingDataStory] = useState(false);
@@ -359,9 +360,10 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // Auto-fetch Unsplash photos when no images uploaded.
           // Re-derive here to avoid using uploadedSlideImages before its definition.
-          photoTier: (item.graphicUrls || []).length === 0 ? 'unsplash' : 'none',
+          photoTier: videoPhotoTier === 'flux'
+            ? 'flux'
+            : (item.graphicUrls || []).length === 0 ? 'unsplash' : 'none',
         }),
       });
       const data = await res.json();
@@ -1148,6 +1150,29 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
 
               {!hasUploadedVideo && !hasGeneratedVideo && (
                 <div className="mb-5">
+                  {/* Photo source selector */}
+                  <div className="mb-4">
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">Photo source</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setVideoPhotoTier('unsplash')}
+                        className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${videoPhotoTier === 'unsplash' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
+                      >
+                        <p className={`text-xs font-semibold ${videoPhotoTier === 'unsplash' ? 'text-primary' : ''}`}>Unsplash</p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">Free editorial photos</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVideoPhotoTier('flux')}
+                        className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${videoPhotoTier === 'flux' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
+                      >
+                        <p className={`text-xs font-semibold ${videoPhotoTier === 'flux' ? 'text-primary' : ''}`}>AI Scene</p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">FLUX Pro — brand-aligned</p>
+                      </button>
+                    </div>
+                  </div>
+
                   <button
                     type="button"
                     onClick={generateVideo}
@@ -1169,7 +1194,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                         )}
                   </button>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Renders 9:16 for Reels/TikTok and 1:1 for LinkedIn. Photos sourced automatically. Takes 30–60 seconds.
+                    Renders 9:16 for Reels/TikTok and 1:1 for LinkedIn. Takes 30–60 seconds.
                   </p>
                   {videoGenError && <p className="mt-2 text-xs text-red-500">{videoGenError}</p>}
 
