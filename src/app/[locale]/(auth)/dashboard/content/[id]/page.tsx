@@ -351,9 +351,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   };
 
   const generateVideo = async () => {
-    if (!item) {
-      return;
-    }
+    if (!item) return;
     setIsGeneratingVideo(true);
     setVideoGenError(null);
     try {
@@ -372,9 +370,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         const refreshRes = await fetch(`/api/content/${item.id}`);
         if (refreshRes.ok) {
           const refreshData = await refreshRes.json();
-          if (refreshData?.item?.id) {
-            setItem(refreshData.item);
-          }
+          if (refreshData?.item?.id) setItem(refreshData.item);
         }
       } else {
         setVideoGenError(data.error || 'Video generation failed. Please try again.');
@@ -388,9 +384,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   };
 
   const generateUGCAd = async () => {
-    if (!item) {
-      return;
-    }
+    if (!item) return;
     setIsGeneratingUGC(true);
     setUgcError(null);
     try {
@@ -537,9 +531,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   };
 
   const generateScene = async () => {
-    if (!item) {
-      return;
-    }
+    if (!item) return;
     setIsGeneratingImage(true);
     setImageGenError(null);
     setSceneResult(null);
@@ -1181,18 +1173,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
                   >
                     {isGeneratingVideo
-                      ? (
-                          <>
-                            <Loader2 className="size-4 animate-spin" />
-                            Generating video (~30–60s)...
-                          </>
-                        )
-                      : (
-                          <>
-                            <Sparkles className="size-4" />
-                            Generate branded video
-                          </>
-                        )}
+                      ? (<><Loader2 className="size-4 animate-spin" />Generating video (~30–60s)...</>)
+                      : (<><Sparkles className="size-4" />Generate branded video</>)}
                   </button>
                   <p className="mt-2 text-xs text-muted-foreground">
                     Renders 9:16 for Reels/TikTok and 1:1 for LinkedIn. Takes 30–60 seconds.
@@ -1255,9 +1237,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   {(() => {
                     const credits = (item.platformSpecific?.unsplashCredits as string[]) || [];
                     const tier = item.platformSpecific?.photoTier as string;
-                    if (tier !== 'unsplash' || credits.length === 0) {
-                      return null;
-                    }
+                    if (tier !== 'unsplash' || credits.length === 0) return null;
                     return (
                       <p className="mt-3 text-[11px] text-muted-foreground">
                         {'Photos by '}
@@ -1333,8 +1313,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <div className="grid grid-cols-3 gap-2">
                   {([
                     { tier: 'unsplash', label: 'Unsplash', sub: 'Free editorial photos' },
-                    { tier: 'flux', label: 'AI Scene', sub: 'FLUX Pro per section' },
-                    { tier: 'seedance', label: 'AI Video', sub: 'Live clips per section' },
+                    { tier: 'flux',     label: 'AI Scene',  sub: 'FLUX Pro per section' },
+                    { tier: 'seedance', label: 'AI Video',  sub: 'Live clips per section' },
                   ] as const).map(({ tier, label, sub }) => (
                     <button
                       key={tier}
@@ -1366,18 +1346,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
               >
                 {isGeneratingUGC
-                  ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" />
-                        Generating UGC Ad...
-                      </>
-                    )
-                  : (
-                      <>
-                        <Sparkles className="size-4" />
-                        Generate UGC Ad
-                      </>
-                    )}
+                  ? (<><Loader2 className="size-4 animate-spin" />Generating UGC Ad...</>)
+                  : (<><Sparkles className="size-4" />Generate UGC Ad</>)}
               </button>
               {ugcError && <p className="mt-2 text-xs text-red-500">{ugcError}</p>}
               {(() => {
@@ -1391,9 +1361,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     </p>
                   );
                 }
-                if (tier !== 'unsplash' || credits.length === 0) {
-                  return null;
-                }
+                if (tier !== 'unsplash' || credits.length === 0) return null;
                 return (
                   <p className="mt-2 text-[11px] text-muted-foreground">
                     {'Photos by '}
@@ -1562,9 +1530,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     <button
                       key={mode}
                       type="button"
-                      onClick={() => {
-                        setImageMode(mode); setImageGenError(null); setSceneResult(null);
-                      }}
+                      onClick={() => { setImageMode(mode); setImageGenError(null); setSceneResult(null); }}
                       className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${imageMode === mode ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                     >
                       {mode === 'ai-scene' ? 'AI Scene' : 'Branded Template'}
@@ -1643,16 +1609,13 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     {sceneResult && (
                       <div className="mb-3 rounded-lg bg-muted/50 p-3">
                         {sceneResult.fallback && (
-                          <p className="mb-1 text-[11px] font-medium text-amber-600">Template fallback used. Top up fal.ai credits to enable AI scene generation.</p>
+                          <p className="mb-1 text-[11px] text-amber-600 font-medium">Template fallback used. Top up fal.ai credits to enable AI scene generation.</p>
                         )}
                         {sceneResult.modelUsed && !sceneResult.fallback && (
-                          <p className="mb-1 text-[11px] font-medium text-green-600">
-                            Generated with FLUX
-                            {sceneResult.modelUsed}
-                          </p>
+                          <p className="mb-1 text-[11px] text-green-600 font-medium">Generated with FLUX {sceneResult.modelUsed}</p>
                         )}
                         {sceneResult.promptUsed && (
-                          <p className="line-clamp-2 text-[11px] text-muted-foreground">{sceneResult.promptUsed}</p>
+                          <p className="text-[11px] text-muted-foreground line-clamp-2">{sceneResult.promptUsed}</p>
                         )}
                       </div>
                     )}
@@ -1664,19 +1627,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                       className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
                     >
                       {isGeneratingImage
-                        ? (
-                            <>
-                              <Loader2 className="size-4 animate-spin" />
-                              {' '}
-                              Generating...
-                            </>
-                          )
-                        : (
-                            <>
-                              <Sparkles className="size-4" />
-                              {hasMedia ? 'Regenerate scene' : 'Generate scene'}
-                            </>
-                          )}
+                        ? (<><Loader2 className="size-4 animate-spin" /> Generating...</>)
+                        : (<><Sparkles className="size-4" />{hasMedia ? 'Regenerate scene' : 'Generate scene'}</>)}
                     </button>
                   </div>
                 )}
@@ -1774,19 +1726,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                       className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
                     >
                       {isGeneratingImage
-                        ? (
-                            <>
-                              <Loader2 className="size-4 animate-spin" />
-                              {' '}
-                              Generating...
-                            </>
-                          )
-                        : (
-                            <>
-                              <Sparkles className="size-4" />
-                              {hasMedia ? 'Regenerate image' : 'Generate image'}
-                            </>
-                          )}
+                        ? (<><Loader2 className="size-4 animate-spin" /> Generating...</>)
+                        : (<><Sparkles className="size-4" />{hasMedia ? 'Regenerate image' : 'Generate image'}</>)}
                     </button>
                   </div>
                 )}
@@ -2005,110 +1946,110 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         <div className="hidden lg:block">
           <div className="sticky top-6 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 6rem)', scrollbarWidth: 'none' }}>
 
-            {/* Actions */}
-            <ActionsPanel />
+          {/* Actions */}
+          <ActionsPanel />
 
-            {/* Quality Score */}
-            {item.antiSlopScore !== null && (
-              <div className="rounded-xl border bg-card p-5">
-                <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
-                <div className="mb-3 flex items-center gap-3">
-                  <div className="relative size-12">
-                    <svg className="size-12 -rotate-90" viewBox="0 0 36 36">
-                      <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
-                      <path
-                        d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        strokeDasharray={`${item.antiSlopScore * 100}, 100`}
-                        className={item.antiSlopScore >= 0.8 ? 'text-emerald-500' : item.antiSlopScore >= 0.7 ? 'text-yellow-500' : item.antiSlopScore >= 0.5 ? 'text-orange-500' : 'text-red-500'}
-                      />
-                    </svg>
-                    <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">
-                      {Math.round(item.antiSlopScore * 100)}
-                    </span>
-                  </div>
-                  <div>
-                    <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>
-                      {scoreLabel(item.antiSlopScore).text}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">Quality score</p>
-                  </div>
-                </div>
-                {item.qualityFlags.length > 0 && (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => setShowQualityFlags(p => !p)}
-                      className="mb-2 text-xs text-muted-foreground underline hover:text-foreground"
-                    >
-                      {showQualityFlags ? 'Hide' : 'Show'}
-                      {' '}
-                      {item.qualityFlags.length}
-                      {' '}
-                      quality
-                      {' '}
-                      {item.qualityFlags.length === 1 ? 'note' : 'notes'}
-                    </button>
-                    {showQualityFlags && (
-                      <div className="space-y-1.5">
-                        {item.qualityFlags.map((flag, i) => (
-                          <p key={i} className="text-[11px] leading-snug text-muted-foreground">{flag}</p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Details */}
+          {/* Quality Score */}
+          {item.antiSlopScore !== null && (
             <div className="rounded-xl border bg-card p-5">
-              <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Details</h3>
-              <div className="space-y-3">
-                <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
-                <DetailRow label="Topic" value={item.topic || 'Auto-selected'} />
-                {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
-                <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
-                {isReel && (item.platformSpecific?.videoDurationSeconds as number) > 0 && (
-                  <DetailRow label="Video duration" value={`${item.platformSpecific.videoDurationSeconds}s`} />
-                )}
-                <DetailRow label="Created" value={new Date(item.createdAt).toLocaleString()} />
-                {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
-                {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
+              <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
+              <div className="mb-3 flex items-center gap-3">
+                <div className="relative size-12">
+                  <svg className="size-12 -rotate-90" viewBox="0 0 36 36">
+                    <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
+                    <path
+                      d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeDasharray={`${item.antiSlopScore * 100}, 100`}
+                      className={item.antiSlopScore >= 0.8 ? 'text-emerald-500' : item.antiSlopScore >= 0.7 ? 'text-yellow-500' : item.antiSlopScore >= 0.5 ? 'text-orange-500' : 'text-red-500'}
+                    />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">
+                    {Math.round(item.antiSlopScore * 100)}
+                  </span>
+                </div>
+                <div>
+                  <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>
+                    {scoreLabel(item.antiSlopScore).text}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">Quality score</p>
+                </div>
               </div>
-              {item.scheduledFor && (
-                <div className="mt-4 border-t pt-3">
-                  <Link
-                    href={`/dashboard/calendar?selected=${item.scheduledFor.split('T')[0]}`}
-                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+              {item.qualityFlags.length > 0 && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowQualityFlags(p => !p)}
+                    className="mb-2 text-xs text-muted-foreground underline hover:text-foreground"
                   >
-                    <Calendar className="size-3.5" />
-                    View on calendar
-                    <ChevronRight className="size-3" />
-                  </Link>
+                    {showQualityFlags ? 'Hide' : 'Show'}
+                    {' '}
+                    {item.qualityFlags.length}
+                    {' '}
+                    quality
+                    {' '}
+                    {item.qualityFlags.length === 1 ? 'note' : 'notes'}
+                  </button>
+                  {showQualityFlags && (
+                    <div className="space-y-1.5">
+                      {item.qualityFlags.map((flag, i) => (
+                        <p key={i} className="text-[11px] leading-snug text-muted-foreground">{flag}</p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
+          )}
 
-            {/* Engagement */}
-            {item.status === 'published' && (
-              <div className="rounded-xl border bg-card p-5">
-                <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Engagement</h3>
-                {Object.keys(item.engagementData || {}).length > 0 ? (
-                  <div className="space-y-3">
-                    {Object.entries(item.engagementData).map(([key, val]) => (
-                      <DetailRow key={key} label={key} value={String(val)} />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Engagement data will appear here once the post has been live for a few hours.
-                  </p>
-                )}
+          {/* Details */}
+          <div className="rounded-xl border bg-card p-5">
+            <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Details</h3>
+            <div className="space-y-3">
+              <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
+              <DetailRow label="Topic" value={item.topic || 'Auto-selected'} />
+              {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
+              <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
+              {isReel && (item.platformSpecific?.videoDurationSeconds as number) > 0 && (
+                <DetailRow label="Video duration" value={`${item.platformSpecific.videoDurationSeconds}s`} />
+              )}
+              <DetailRow label="Created" value={new Date(item.createdAt).toLocaleString()} />
+              {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
+              {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
+            </div>
+            {item.scheduledFor && (
+              <div className="mt-4 border-t pt-3">
+                <Link
+                  href={`/dashboard/calendar?selected=${item.scheduledFor.split('T')[0]}`}
+                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <Calendar className="size-3.5" />
+                  View on calendar
+                  <ChevronRight className="size-3" />
+                </Link>
               </div>
             )}
+          </div>
+
+          {/* Engagement */}
+          {item.status === 'published' && (
+            <div className="rounded-xl border bg-card p-5">
+              <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Engagement</h3>
+              {Object.keys(item.engagementData || {}).length > 0 ? (
+                <div className="space-y-3">
+                  {Object.entries(item.engagementData).map(([key, val]) => (
+                    <DetailRow key={key} label={key} value={String(val)} />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Engagement data will appear here once the post has been live for a few hours.
+                </p>
+              )}
+            </div>
+          )}
           </div>
         </div>
       </div>
