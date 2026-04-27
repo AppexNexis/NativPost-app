@@ -158,6 +158,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [videoPhotoTier, setVideoPhotoTier] = useState<'unsplash' | 'flux'>('unsplash');
   const [isGeneratingUGC, setIsGeneratingUGC] = useState(false);
   const [ugcError, setUgcError] = useState<string | null>(null);
+  const [ugcPhotoTier, setUgcPhotoTier] = useState<'unsplash' | 'flux' | 'seedance'>('unsplash');
   const [isGeneratingDataStory, setIsGeneratingDataStory] = useState(false);
   const [dataStoryError, setDataStoryError] = useState<string | null>(null);
   // Image engine state
@@ -396,7 +397,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       const res = await fetch(`/api/content/${item.id}/generate-ugc-ad`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ photoTier: 'unsplash' }),
+        body: JSON.stringify({ photoTier: ugcPhotoTier }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -1313,9 +1314,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <Video className="size-4 text-muted-foreground" />
                 <h3 className="text-sm font-semibold">UGC Ad video</h3>
               </div>
-              <p className="mb-4 text-xs text-muted-foreground">
-                Generates a 10s vertical video: hook → problem → solution → CTA. Add up to 4 images as section backgrounds (optional).
-              </p>
+
               {item.graphicUrls && item.graphicUrls.length > 0 && (
                 <div className="mb-4">
                   {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
@@ -1327,6 +1326,39 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   />
                 </div>
               )}
+
+              {/* Visual source selector */}
+              <div className="mb-4">
+                <p className="mb-2 text-xs font-medium text-muted-foreground">Visual source</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { tier: 'unsplash', label: 'Unsplash', sub: 'Free editorial photos' },
+                    { tier: 'flux', label: 'AI Scene', sub: 'FLUX Pro per section' },
+                    { tier: 'seedance', label: 'AI Video', sub: 'Live clips per section' },
+                  ] as const).map(({ tier, label, sub }) => (
+                    <button
+                      key={tier}
+                      type="button"
+                      onClick={() => setUgcPhotoTier(tier)}
+                      className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${ugcPhotoTier === tier ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
+                    >
+                      <p className={`text-xs font-semibold ${ugcPhotoTier === tier ? 'text-primary' : ''}`}>{label}</p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">{sub}</p>
+                    </button>
+                  ))}
+                </div>
+                {ugcPhotoTier === 'seedance' && (
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    Generates a 5s video clip per section using Seedance 2.0. Requires fal.ai credits (~$0.40/ad). Falls back to Unsplash if unavailable.
+                  </p>
+                )}
+                {ugcPhotoTier === 'flux' && (
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    Generates an AI photo scene per section using FLUX Pro. Requires fal.ai credits (~$0.20/ad). Falls back to Unsplash if unavailable.
+                  </p>
+                )}
+              </div>
+
               <button
                 type="button"
                 onClick={generateUGCAd}
@@ -1337,14 +1369,12 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   ? (
                       <>
                         <Loader2 className="size-4 animate-spin" />
-                        {' '}
                         Generating UGC Ad...
                       </>
                     )
                   : (
                       <>
                         <Sparkles className="size-4" />
-                        {' '}
                         Generate UGC Ad
                       </>
                     )}
@@ -1353,6 +1383,14 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               {(() => {
                 const credits = (item.platformSpecific?.unsplashCredits as string[]) || [];
                 const tier = item.platformSpecific?.photoTier as string;
+                const usedSeedance = tier === 'seedance';
+                if (usedSeedance) {
+                  return (
+                    <p className="mt-2 text-[11px] text-muted-foreground">
+                      Generated with Seedance 2.0 video clips per section.
+                    </p>
+                  );
+                }
                 if (tier !== 'unsplash' || credits.length === 0) {
                   return null;
                 }
