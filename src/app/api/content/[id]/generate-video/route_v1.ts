@@ -3,7 +3,6 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-// import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import { brandProfileSchema, contentItemSchema } from '@/models/Schema';
 
@@ -50,11 +49,13 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Fetch brand profile — now includes logoUrl
     const [profile] = await db
       .select({
         brandName: brandProfileSchema.brandName,
         primaryColor: brandProfileSchema.primaryColor,
         secondaryColor: brandProfileSchema.secondaryColor,
+        logoUrl: brandProfileSchema.logoUrl, // Fix: was missing before
       })
       .from(brandProfileSchema)
       .where(eq(brandProfileSchema.orgId, orgId!))
@@ -66,12 +67,14 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       brandPrimary: profile?.primaryColor || '#864FFE',
       brandSecondary: profile?.secondaryColor || '#1A1A1C',
       brandName: profile?.brandName || 'NativPost',
+      logoUrl: profile?.logoUrl || undefined, // Fix: pass real logo URL to renderer
     };
 
     console.log('[Video] Calling renderer at:', `${VIDEO_RENDERER_URL}/render`);
     console.log('[Video] Payload images count:', imageUrls.length);
+    console.log('[Video] Logo URL set:', !!payload.logoUrl);
 
-    // 180s timeout
+    // 180s timeout — generous for large slideshows
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180_000);
 
@@ -117,11 +120,13 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       vertical?: string;
       square?: string;
       durationSeconds?: number;
+      imageCount?: number;
+      renderSeconds?: number;
     };
 
     console.log('[Video] Render success:', renderData.vertical, renderData.square);
+    console.log(`[Video] Render time: ${renderData.renderSeconds}s | Images: ${renderData.imageCount}`);
 
-    // Guard against undefined URLs — never store them
     const vertical = renderData.vertical;
     const square = renderData.square;
 
@@ -153,6 +158,8 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       vertical,
       square,
       durationSeconds: renderData.durationSeconds ?? 0,
+      imageCount: renderData.imageCount ?? imageUrls.length,
+      renderSeconds: renderData.renderSeconds ?? 0,
     });
   } catch (err) {
     console.error('[Video] generate-video failed:', err);

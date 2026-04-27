@@ -67,7 +67,10 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       brandPrimary: profile?.primaryColor || '#864FFE',
       brandSecondary: profile?.secondaryColor || '#1A1A1C',
       brandName: profile?.brandName || 'NativPost',
-      logoUrl: profile?.logoUrl || undefined, // Fix: pass real logo URL to renderer
+      logoUrl: profile?.logoUrl || undefined,
+      // Photo tier: use Unsplash when no images pre-attached (reel type usually has images)
+      photoTier: imageUrls.length === 0 ? 'unsplash' : 'none',
+      industry: (profile as any)?.industry || undefined,
     };
 
     console.log('[Video] Calling renderer at:', `${VIDEO_RENDERER_URL}/render`);
@@ -122,6 +125,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       durationSeconds?: number;
       imageCount?: number;
       renderSeconds?: number;
+      photoTier?: string;
+      photoCount?: number;
+      credits?: string[];
     };
 
     console.log('[Video] Render success:', renderData.vertical, renderData.square);
@@ -148,6 +154,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
           ...(item.platformSpecific as object),
           sourceImages: imageUrls,
           videoDurationSeconds: renderData.durationSeconds ?? 0,
+          // Unsplash attribution — store for display in dashboard
+          photoTier: renderData.photoTier ?? 'none',
+          unsplashCredits: renderData.credits ?? [],
         },
         updatedAt: new Date(),
       })
@@ -160,6 +169,8 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       durationSeconds: renderData.durationSeconds ?? 0,
       imageCount: renderData.imageCount ?? imageUrls.length,
       renderSeconds: renderData.renderSeconds ?? 0,
+      photoTier: renderData.photoTier ?? 'none',
+      credits: renderData.credits ?? [],
     });
   } catch (err) {
     console.error('[Video] generate-video failed:', err);

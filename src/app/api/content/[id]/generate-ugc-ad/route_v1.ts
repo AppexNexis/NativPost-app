@@ -125,9 +125,6 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       brandSecondary: profile?.secondaryColor || '#1A1A1C',
       brandName: profile?.brandName || 'NativPost',
       ...(profile?.logoUrl ? { logoUrl: profile.logoUrl } : {}),
-      // Auto-fetch per-section photos when none pre-provided
-      photoTier: imageUrls.length < 4 ? 'unsplash' : 'none',
-      industry: (profile as any)?.industry || undefined,
     };
 
     console.log('[UGCAd] Calling renderer for item:', id);
@@ -176,8 +173,6 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     const renderData = await renderRes.json() as {
       vertical?: string;
       durationSeconds?: number;
-      photoTier?: string;
-      credits?: string[];
     };
 
     const vertical = renderData.vertical;
@@ -188,6 +183,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Save vertical URL into graphicUrls
     await db
       .update(contentItemSchema)
       .set({
@@ -199,8 +195,6 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
           ugcProblem: problem,
           ugcSolution: solution,
           ugcCta: cta,
-          photoTier: renderData.photoTier ?? 'none',
-          unsplashCredits: renderData.credits ?? [],
         },
         updatedAt: new Date(),
       })
@@ -210,8 +204,6 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       success: true,
       vertical,
       durationSeconds: renderData.durationSeconds ?? 10,
-      photoTier: renderData.photoTier ?? 'none',
-      credits: renderData.credits ?? [],
     });
   } catch (err) {
     console.error('[UGCAd] generate-ugc-ad failed:', err);
