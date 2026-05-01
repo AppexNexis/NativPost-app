@@ -83,7 +83,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 };
 
 const TITLE_PLATFORMS = new Set(['youtube', 'pinterest']);
-const PLATFORM_SPECIFIC_SYSTEM_KEYS = ['sourceImages', 'videoDurationSeconds', 'title', 'imageTemplate', 'imageStyle', 'carouselAspectRatio', 'carouselStyle', 'carouselSlideCount'];
+const PLATFORM_SPECIFIC_SYSTEM_KEYS = ['sourceImages', 'videoDurationSeconds', 'title', 'imageTemplate', 'imageStyle', 'carouselAspectRatio', 'carouselStyle', 'carouselSlideCount', 'photoTier', 'sceneModelUsed', 'promptUsed', 'isFallback', 'ugcHook', 'ugcProblem', 'ugcSolution', 'ugcCta', 'DataStoryFormats', 'Data_story_stats', 'DataStoryStatCount', 'captionOriginal'];
 const MEDIA_CONTENT_TYPES = ['single_image', 'carousel', 'reel', 'ugc_ad', 'data_story'];
 
 // -----------------------------------------------------------
@@ -1253,25 +1253,41 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   {videoGenError && <p className="mt-1 text-xs text-red-500">{videoGenError}</p>}
                   {/* Unsplash attribution — required by Unsplash API guidelines */}
                   {(() => {
-                    const credits = (item.platformSpecific?.unsplashCredits as string[]) || [];
+                    const rawCredits = (item.platformSpecific?.unsplashCredits as Array<string | { name: string; link: string }>) || [];
                     const tier = item.platformSpecific?.photoTier as string;
-                    if (tier !== 'unsplash' || credits.length === 0) {
+                    if (tier !== 'unsplash' || rawCredits.length === 0) {
                       return null;
                     }
+                    const credits = rawCredits.map(c =>
+                      typeof c === 'string'
+                        ? { name: c, link: `https://unsplash.com/?utm_source=nativpost&utm_medium=referral` }
+                        : c,
+                    );
                     return (
-                      <p className="mt-3 text-[11px] text-muted-foreground">
-                        {'Photos by '}
-                        {credits.slice(0, 3).join(', ')}
-                        {' on '}
-                        <a
-                          href="https://unsplash.com/?utm_source=nativpost&utm_medium=referral"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="underline hover:text-foreground"
-                        >
-                          Unsplash
-                        </a>
-                      </p>
+                      <div className="mt-3 rounded-lg border bg-muted/30 px-3 py-2.5">
+                        <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Credits</p>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1">
+                          {credits.map((c, i) => (
+                            <a
+                              key={i}
+                              href={c.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[11px] text-foreground underline hover:text-primary"
+                            >
+                              {c.name}
+                            </a>
+                          ))}
+                          <a
+                            href="https://unsplash.com/?utm_source=nativpost&utm_medium=referral"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] text-muted-foreground underline hover:text-foreground"
+                          >
+                            via Unsplash
+                          </a>
+                        </div>
+                      </div>
                     );
                   })()}
                 </div>
@@ -1381,7 +1397,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               </button>
               {ugcError && <p className="mt-2 text-xs text-red-500">{ugcError}</p>}
               {(() => {
-                const credits = (item.platformSpecific?.unsplashCredits as string[]) || [];
+                const rawCredits = (item.platformSpecific?.unsplashCredits as Array<string | { name: string; link: string }>) || [];
                 const tier = item.platformSpecific?.photoTier as string;
                 const usedSeedance = tier === 'seedance';
                 if (usedSeedance) {
@@ -1391,23 +1407,39 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     </p>
                   );
                 }
-                if (tier !== 'unsplash' || credits.length === 0) {
+                if (tier !== 'unsplash' || rawCredits.length === 0) {
                   return null;
                 }
+                const credits = rawCredits.map(c =>
+                  typeof c === 'string'
+                    ? { name: c, link: `https://unsplash.com/?utm_source=nativpost&utm_medium=referral` }
+                    : c,
+                );
                 return (
-                  <p className="mt-2 text-[11px] text-muted-foreground">
-                    {'Photos by '}
-                    {credits.slice(0, 4).join(', ')}
-                    {' on '}
-                    <a
-                      href="https://unsplash.com/?utm_source=nativpost&utm_medium=referral"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline hover:text-foreground"
-                    >
-                      Unsplash
-                    </a>
-                  </p>
+                  <div className="mt-3 rounded-lg border bg-muted/30 px-3 py-2.5">
+                    <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Credits</p>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      {credits.map((c, i) => (
+                        <a
+                          key={i}
+                          href={c.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[11px] text-foreground underline hover:text-primary"
+                        >
+                          {c.name}
+                        </a>
+                      ))}
+                      <a
+                        href="https://unsplash.com/?utm_source=nativpost&utm_medium=referral"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-muted-foreground underline hover:text-foreground"
+                      >
+                        via Unsplash
+                      </a>
+                    </div>
+                  </div>
                 );
               })()}
             </div>

@@ -177,7 +177,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       vertical?: string;
       durationSeconds?: number;
       photoTier?: string;
-      credits?: string[];
+      credits?: Array<{ name: string; link: string }>;
     };
 
     const vertical = renderData.vertical;

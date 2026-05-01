@@ -128,7 +128,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       renderSeconds?: number;
       photoTier?: string;
       photoCount?: number;
-      credits?: string[];
+      credits?: Array<{ name: string; link: string }>;
     };
 
     console.log('[Video] Render success:', renderData.vertical, renderData.square);
@@ -155,7 +155,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           ...(item.platformSpecific as object),
           sourceImages: imageUrls,
           videoDurationSeconds: renderData.durationSeconds ?? 0,
-          // Unsplash attribution — store for display in dashboard
           photoTier: renderData.photoTier ?? 'none',
           unsplashCredits: renderData.credits ?? [],
         },
