@@ -83,7 +83,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 };
 
 const TITLE_PLATFORMS = new Set(['youtube', 'pinterest']);
-const PLATFORM_SPECIFIC_SYSTEM_KEYS = ['sourceImages', 'videoDurationSeconds', 'title', 'imageTemplate', 'imageStyle', 'carouselAspectRatio', 'carouselStyle', 'carouselSlideCount', 'photoTier', 'sceneModelUsed', 'promptUsed', 'isFallback', 'ugcHook', 'ugcProblem', 'ugcSolution', 'ugcCta', 'DataStoryFormats', 'Data_story_stats', 'DataStoryStatCount', 'captionOriginal'];
+const PLATFORM_SPECIFIC_SYSTEM_KEYS = ['sourceImages', 'videoDurationSeconds', 'title', 'imageTemplate', 'imageStyle', 'carouselAspectRatio', 'carouselStyle', 'carouselSlideCount', 'photoTier', 'sceneModelUsed', 'promptUsed', 'isFallback', 'ugcHook', 'ugcProblem', 'ugcSolution', 'ugcCta', 'DataStoryFormats', 'Data_story_stats', 'DataStoryStatCount', 'captionOriginal', 'videoGenerated', 'unsplashCredits'];
 const MEDIA_CONTENT_TYPES = ['single_image', 'carousel', 'reel', 'ugc_ad', 'data_story'];
 
 // -----------------------------------------------------------
@@ -649,7 +649,13 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const isSingleImage = item.contentType === 'single_image';
   const hasMedia = item.graphicUrls && item.graphicUrls.length > 0;
   const sourceImages = (item.platformSpecific?.sourceImages as string[]) || [];
-  const hasGeneratedVideo = isReel && sourceImages.length > 0 && hasMedia;
+  const hasGeneratedVideo = isReel && hasMedia && (
+    sourceImages.length > 0
+    || item.platformSpecific?.videoGenerated === true
+    || (item.platformSpecific?.photoTier as string) === 'unsplash'
+    || (item.platformSpecific?.photoTier as string) === 'flux'
+    || item.graphicUrls.some(url => isVideoFileUrl(url))
+  );
   const hasVideoExtension = isReel && hasMedia && item.graphicUrls.some(url => isVideoFileUrl(url));
   const isLikelyLegacyVideo = isReel && !hasGeneratedVideo && item.graphicUrls.length === 1 && !isVideoFileUrl(item.graphicUrls[0]!);
   const hasUploadedVideo = !hasGeneratedVideo && (hasVideoExtension || isLikelyLegacyVideo);

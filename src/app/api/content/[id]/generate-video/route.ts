@@ -157,6 +157,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           videoDurationSeconds: renderData.durationSeconds ?? 0,
           photoTier: renderData.photoTier ?? 'none',
           unsplashCredits: renderData.credits ?? [],
+          // Mark as generated so hasGeneratedVideo stays true even with empty sourceImages
+          videoGenerated: true,
         },
         updatedAt: new Date(),
       })
