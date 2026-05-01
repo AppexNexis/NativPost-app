@@ -842,7 +842,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   );
 
   return (
-    <div className="flex flex-col">
+    <>
       <PageHeader
         title="Content detail"
         actions={(
@@ -2166,6 +2166,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }
