@@ -128,7 +128,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       renderSeconds?: number;
       photoTier?: string;
       photoCount?: number;
-      credits?: string[];
+      credits?: Array<{ name: string; link: string }>;
     };
 
     console.log('[Video] Render success:', renderData.vertical, renderData.square);
@@ -147,10 +147,25 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const videoUrls = [vertical, square];
 
+    // Build Unsplash attribution string for caption append
+    // Required by Unsplash API guidelines when photos are posted to social platforms
+    const unsplashCredits = renderData.credits ?? [];
+    const isUnsplash = (renderData.photoTier ?? 'none') === 'unsplash';
+    let captionWithAttribution = item.caption;
+    if (isUnsplash && unsplashCredits.length > 0) {
+      const names = (unsplashCredits as Array<{ name: string; link: string }>)
+        .slice(0, 3)
+        .map(c => c.name)
+        .join(', ');
+      captionWithAttribution = `${item.caption}\n\n📷 Photo by ${names} on Unsplash (unsplash.com)`;
+    }
+
     await db
       .update(contentItemSchema)
       .set({
         graphicUrls: videoUrls,
+        // Store attribution-appended caption so it publishes with credit
+        caption: captionWithAttribution,
         platformSpecific: {
           ...(item.platformSpecific as object),
           sourceImages: imageUrls,
@@ -158,6 +173,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           // Unsplash attribution — store for display in dashboard
           photoTier: renderData.photoTier ?? 'none',
           unsplashCredits: renderData.credits ?? [],
+          // Keep original caption so user can see what was appended
+          captionOriginal: item.caption,
         },
         updatedAt: new Date(),
       })

@@ -177,7 +177,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       vertical?: string;
       durationSeconds?: number;
       photoTier?: string;
-      credits?: string[];
+      credits?: Array<{ name: string; link: string }>;
     };
 
     const vertical = renderData.vertical;
@@ -188,10 +188,23 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Build Unsplash attribution for caption — required by Unsplash API guidelines
+    const unsplashCredits = renderData.credits ?? [];
+    const isUnsplash = (renderData.photoTier ?? 'none') === 'unsplash';
+    let captionWithAttribution = item.caption;
+    if (isUnsplash && unsplashCredits.length > 0) {
+      const names = (unsplashCredits as Array<{ name: string; link: string }>)
+        .slice(0, 3)
+        .map(c => c.name)
+        .join(', ');
+      captionWithAttribution = `${item.caption}\n\n📷 Photo by ${names} on Unsplash (unsplash.com)`;
+    }
+
     await db
       .update(contentItemSchema)
       .set({
         graphicUrls: [vertical],
+        caption: captionWithAttribution,
         platformSpecific: {
           ...(item.platformSpecific as object),
           videoDurationSeconds: renderData.durationSeconds ?? 10,
@@ -201,6 +214,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
           ugcCta: cta,
           photoTier: renderData.photoTier ?? 'none',
           unsplashCredits: renderData.credits ?? [],
+          captionOriginal: item.caption,
         },
         updatedAt: new Date(),
       })

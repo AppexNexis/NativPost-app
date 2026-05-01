@@ -11,7 +11,7 @@ const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-export async function POST(_request: NextRequest, { params }: RouteParams) {
+export async function POST(request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
@@ -42,24 +42,25 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     }
 
     const imageUrls = (item.graphicUrls as string[]) || [];
-    if (imageUrls.length === 0) {
-      return NextResponse.json(
-        { error: 'Add at least one image before generating a video' },
-        { status: 400 },
-      );
-    }
 
-    // Fetch brand profile — now includes logoUrl
+    // Fetch brand profile
     const [profile] = await db
       .select({
         brandName: brandProfileSchema.brandName,
         primaryColor: brandProfileSchema.primaryColor,
         secondaryColor: brandProfileSchema.secondaryColor,
-        logoUrl: brandProfileSchema.logoUrl, // Fix: was missing before
+        logoUrl: brandProfileSchema.logoUrl,
+        industry: brandProfileSchema.industry,
       })
       .from(brandProfileSchema)
       .where(eq(brandProfileSchema.orgId, orgId!))
       .limit(1);
+
+    // Parse photoTier from request body (dashboard sends this)
+    let requestBody: { photoTier?: string } = {};
+    try {
+      requestBody = await request.json();
+    } catch { /* no body */ }
 
     const payload = {
       images: imageUrls,
@@ -67,7 +68,10 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       brandPrimary: profile?.primaryColor || '#864FFE',
       brandSecondary: profile?.secondaryColor || '#1A1A1C',
       brandName: profile?.brandName || 'NativPost',
-      logoUrl: profile?.logoUrl || undefined, // Fix: pass real logo URL to renderer
+      logoUrl: profile?.logoUrl || undefined,
+      // Use Unsplash when no images provided — auto-fetches studio photos
+      photoTier: requestBody.photoTier || (imageUrls.length === 0 ? 'unsplash' : 'none'),
+      industry: profile?.industry || undefined,
     };
 
     console.log('[Video] Calling renderer at:', `${VIDEO_RENDERER_URL}/render`);
@@ -122,6 +126,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       durationSeconds?: number;
       imageCount?: number;
       renderSeconds?: number;
+      photoTier?: string;
+      photoCount?: number;
+      credits?: string[];
     };
 
     console.log('[Video] Render success:', renderData.vertical, renderData.square);
@@ -148,6 +155,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
           ...(item.platformSpecific as object),
           sourceImages: imageUrls,
           videoDurationSeconds: renderData.durationSeconds ?? 0,
+          // Unsplash attribution — store for display in dashboard
+          photoTier: renderData.photoTier ?? 'none',
+          unsplashCredits: renderData.credits ?? [],
         },
         updatedAt: new Date(),
       })
@@ -160,6 +170,8 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       durationSeconds: renderData.durationSeconds ?? 0,
       imageCount: renderData.imageCount ?? imageUrls.length,
       renderSeconds: renderData.renderSeconds ?? 0,
+      photoTier: renderData.photoTier ?? 'none',
+      credits: renderData.credits ?? [],
     });
   } catch (err) {
     console.error('[Video] generate-video failed:', err);
