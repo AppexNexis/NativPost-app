@@ -842,7 +842,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   );
 
   return (
-    <>
+    <div className="flex flex-col">
       <PageHeader
         title="Content detail"
         actions={(
@@ -1982,7 +1982,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
 
         {/* ── Sidebar — hidden on mobile, visible lg+ ────────── */}
         <div className="hidden lg:block">
-          <div className="sticky top-6 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 6rem)', scrollbarWidth: 'none' }}>
+          <div className="sticky top-6 space-y-4" style={{ maxHeight: 'calc(100vh - 6rem)' }}>
 
           {/* Actions */}
           <ActionsPanel />
@@ -2166,6 +2166,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 }
