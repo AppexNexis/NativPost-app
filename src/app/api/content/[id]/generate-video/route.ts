@@ -46,11 +46,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Fetch brand profile
     const [profile] = await db
       .select({
-        brandName: brandProfileSchema.brandName,
-        primaryColor: brandProfileSchema.primaryColor,
+        brandName:      brandProfileSchema.brandName,
+        primaryColor:   brandProfileSchema.primaryColor,
         secondaryColor: brandProfileSchema.secondaryColor,
-        logoUrl: brandProfileSchema.logoUrl,
-        industry: brandProfileSchema.industry,
+        logoUrl:        brandProfileSchema.logoUrl,
+        industry:       brandProfileSchema.industry,
       })
       .from(brandProfileSchema)
       .where(eq(brandProfileSchema.orgId, orgId!))
@@ -58,20 +58,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Parse photoTier from request body (dashboard sends this)
     let requestBody: { photoTier?: string } = {};
-    try {
-      requestBody = await request.json();
-    } catch { /* no body */ }
+    try { requestBody = await request.json(); } catch { /* no body */ }
 
     const payload = {
       images: imageUrls,
       caption: item.caption,
-      brandPrimary: profile?.primaryColor || '#864FFE',
+      brandPrimary:   profile?.primaryColor   || '#864FFE',
       brandSecondary: profile?.secondaryColor || '#1A1A1C',
-      brandName: profile?.brandName || 'NativPost',
-      logoUrl: profile?.logoUrl || undefined,
+      brandName:      profile?.brandName      || 'NativPost',
+      logoUrl:        profile?.logoUrl        || undefined,
       // Use Unsplash when no images provided — auto-fetches studio photos
       photoTier: requestBody.photoTier || (imageUrls.length === 0 ? 'unsplash' : 'none'),
-      industry: profile?.industry || undefined,
+      industry:  profile?.industry || undefined,
     };
 
     console.log('[Video] Calling renderer at:', `${VIDEO_RENDERER_URL}/render`);
