@@ -1,6 +1,9 @@
 /**
  * NativPost Plan Configuration
  * Single source of truth for all plan tiers, limits, features, and pricing.
+ *
+ * v2: monthlyPlanTopics added — how many topic suggestions per month
+ *     (0 = Monthly Plan not available on this tier)
  */
 
 export type PlanFeatures = {
@@ -20,6 +23,8 @@ export type PlanFeatures = {
   analyticsHistory: number; // days, -1 = unlimited
   supportLevel: 'email' | 'priority_email' | 'live_chat' | 'dedicated_slack';
   apiAccess: boolean;
+  monthlyPlanTopics: number; // 0 = not available, >0 = topics per month
+  monthlyPlanRegenerations: number; // how many regenerations per month allowed
 };
 
 export type PlanConfig = {
@@ -60,6 +65,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       analyticsHistory: 30,
       supportLevel: 'email',
       apiAccess: false,
+      monthlyPlanTopics: 15,
+      monthlyPlanRegenerations: 2,
     },
     stripePriceId: { dev: 'price_STARTER_DEV_REPLACE', prod: 'price_1TLfHe8UA4orc9zNIcmWwP1d' },
     paystackPlanCode: { dev: 'PLN_jjfdqyrgr1vbsvv', prod: 'PLN_4jzn7zd6blqssag' },
@@ -89,6 +96,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       analyticsHistory: 90,
       supportLevel: 'priority_email',
       apiAccess: false,
+      monthlyPlanTopics: 20,
+      monthlyPlanRegenerations: 3,
     },
     stripePriceId: { dev: 'price_GROWTH_DEV_REPLACE', prod: 'price_1TLfIW8UA4orc9zN5SvYEWkD' },
     paystackPlanCode: { dev: 'PLN_8h1kodnrprlt3sp', prod: 'PLN_u39i4zlh6416qbb' },
@@ -118,6 +127,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       analyticsHistory: 365,
       supportLevel: 'live_chat',
       apiAccess: false,
+      monthlyPlanTopics: 25,
+      monthlyPlanRegenerations: 3,
     },
     stripePriceId: { dev: 'price_PRO_DEV_REPLACE', prod: 'price_1TLfJ08UA4orc9zNrNzFnRr7' },
     paystackPlanCode: { dev: 'PLN_fdwtqby00izl4ro', prod: 'PLN_o7ebuljkyw9iyaw' },
@@ -147,6 +158,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       analyticsHistory: -1,
       supportLevel: 'dedicated_slack',
       apiAccess: true,
+      monthlyPlanTopics: 30,
+      monthlyPlanRegenerations: -1, // unlimited
     },
     stripePriceId: { dev: 'price_AGENCY_DEV_REPLACE', prod: 'price_1TLfKa8UA4orc9zNw27oyVak' },
     paystackPlanCode: { dev: 'PLN_lu1zsbqua45q58b', prod: 'PLN_uevdm7btk36wdhg' },
@@ -176,6 +189,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       analyticsHistory: -1,
       supportLevel: 'dedicated_slack',
       apiAccess: true,
+      monthlyPlanTopics: -1,
+      monthlyPlanRegenerations: -1,
     },
     stripePriceId: { dev: '', prod: '' },
     paystackPlanCode: { dev: '', prod: '' },
@@ -193,6 +208,7 @@ export const SETUP_FEE_USD = 5; // flat across all plans
 //   - 1 platform max per post
 //   - 2 social accounts connectable
 //   - text posts ONLY (no image, carousel, video)
+//   - Monthly Plan: not available (0 topics)
 // -----------------------------------------------------------
 export const TRIAL_FEATURES: PlanFeatures = {
   postsPerMonth: 3, // 3 posts for entire trial
@@ -211,6 +227,8 @@ export const TRIAL_FEATURES: PlanFeatures = {
   analyticsHistory: 7,
   supportLevel: 'email',
   apiAccess: false,
+  monthlyPlanTopics: 0, // not available during trial
+  monthlyPlanRegenerations: 0,
 };
 
 function getEnv(): 'dev' | 'prod' {
@@ -267,3 +285,36 @@ export function formatLimit(value: number, singular: string, plural?: string): s
 }
 
 export const VISIBLE_PLANS = Object.values(PLAN_CONFIGS).filter(p => !p.hidden);
+
+// -----------------------------------------------------------
+// MONTHLY PLAN HELPERS
+// -----------------------------------------------------------
+
+/** Returns allowed content types for a given set of plan features. */
+export function getAllowedContentTypes(features: PlanFeatures): string[] {
+  const types: string[] = [];
+  if (features.textPosts) {
+    types.push('text_only');
+  }
+  if (features.imagePosts) {
+    types.push('single_image');
+  }
+  if (features.carouselPosts) {
+    types.push('carousel');
+  }
+  if (features.videoPosts) {
+    types.push('reel');
+  }
+  return types;
+}
+
+/** Returns true if the org can regenerate their plan this month. */
+export function canRegeneratePlan(
+  features: PlanFeatures,
+  currentCount: number,
+): boolean {
+  if (features.monthlyPlanRegenerations === -1) {
+    return true; // unlimited
+  }
+  return currentCount < features.monthlyPlanRegenerations;
+}
