@@ -136,9 +136,17 @@ export default function ContentCreatePage() {
   const searchParams = useSearchParams();
   const scheduledDate = searchParams.get('scheduledDate') || '';
 
-  const [step, setStep] = useState<'type' | 'configure' | 'review'>('type');
-  const [contentType, setContentType] = useState('');
-  const [topic, setTopic] = useState('');
+  // Monthly Plan prefill — passed from the calendar day panel's "Create this post" CTA.
+  // When both are present we skip step 1 (type picker) and land directly on configure.
+  const prefillTopic = searchParams.get('topic') || '';
+  const prefillContentType = searchParams.get('contentType') || '';
+  const fromMonthlyPlan = !!(prefillTopic && prefillContentType);
+
+  const [step, setStep] = useState<'type' | 'configure' | 'review'>(
+    fromMonthlyPlan ? 'configure' : 'type',
+  );
+  const [contentType, setContentType] = useState(prefillContentType);
+  const [topic, setTopic] = useState(prefillTopic);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -408,6 +416,18 @@ export default function ContentCreatePage() {
         )}
       </div>
 
+      {/* Monthly Plan context banner */}
+      {fromMonthlyPlan && step !== 'review' && (
+        <div className="mb-4 flex items-center gap-3 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3">
+          <Sparkles className="size-3.5 shrink-0 text-violet-600" />
+          <p className="text-sm text-muted-foreground">
+            From your{' '}
+            <span className="font-medium text-violet-700">Monthly Plan</span>
+            {' — '}topic pre-filled. Edit it freely before generating.
+          </p>
+        </div>
+      )}
+
       {/* Calendar context banner */}
       {scheduledDate && (
         <div className="mb-5 flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
@@ -498,13 +518,16 @@ export default function ContentCreatePage() {
             <span className="rounded-lg bg-muted px-3 py-1.5 text-xs font-medium">
               {CONTENT_TYPES.find(t => t.id === contentType)?.label}
             </span>
-            <button
-              type="button"
-              onClick={() => setStep('type')}
-              className="text-xs text-muted-foreground underline hover:text-foreground"
-            >
-              Change
-            </button>
+            {/* Only show Change if not locked to a plan-prefilled type */}
+            {!fromMonthlyPlan && (
+              <button
+                type="button"
+                onClick={() => setStep('type')}
+                className="text-xs text-muted-foreground underline hover:text-foreground"
+              >
+                Change
+              </button>
+            )}
           </div>
 
           {/* Content mode */}

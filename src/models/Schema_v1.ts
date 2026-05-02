@@ -12,16 +12,13 @@ import {
 } from 'drizzle-orm/pg-core';
 
 // ============================================================
-// NATIVPOST DATABASE SCHEMA v3
+// NATIVPOST DATABASE SCHEMA v2
 // Using Drizzle ORM with Supabase PostgreSQL
 // Run: npm run db:generate → npm run db:migrate
 //
 // v2 additions:
 // - brandProfileSchema: growthStage
 // - contentItemSchema: contentMode, enrichmentData, enrichmentApplied
-//
-// v3 additions:
-// - contentPlanSchema: monthly AI-generated content plan per org
 // ============================================================
 
 // -----------------------------------------------------------
@@ -210,48 +207,6 @@ export const contentCalendarSchema = pgTable('content_calendar', {
   isPublished: boolean('is_published').default(false),
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
 });
-
-// -----------------------------------------------------------
-// CONTENT PLAN (v3 — Monthly Plan feature)
-//
-// One row per org per month. Stores the full generated topic list as JSONB.
-// Each topic in the array has the shape:
-//   {
-//     topic: string,
-//     category: string,           // educational | social_proof | behind_the_scenes | promotional | engagement | trending
-//     content_type: string,       // text_only | single_image | carousel | reel | ugc_ad | data_story
-//     suggested_date: string,     // YYYY-MM-DD
-//     rationale: string,
-//     position: number,           // 1-based ordering within the plan
-//     dismissed: boolean          // user-dismissed topics are hidden but not deleted
-//   }
-//
-// Only one active plan per org per month — enforced by the unique index.
-// Regeneration replaces the topics array in-place and increments
-// regeneration_count. The row is never deleted on regenerate, only updated.
-// -----------------------------------------------------------
-export const contentPlanSchema = pgTable(
-  'content_plan',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    orgId: text('org_id')
-      .references(() => organizationSchema.id, { onDelete: 'cascade' })
-      .notNull(),
-    month: text('month').notNull(), // YYYY-MM
-    topics: jsonb('topics').default([]).notNull(), // PlanTopic[]
-    regenerationCount: integer('regeneration_count').default(0).notNull(),
-    generatedAt: timestamp('generated_at', { mode: 'date' }).defaultNow().notNull(),
-    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
-  },
-  (table) => ({
-    // Enforces one plan per org per month — upsert logic in the API route
-    // relies on this index for onConflictDoUpdate targeting.
-    orgMonthIdx: uniqueIndex('content_plan_org_month_idx').on(
-      table.orgId,
-      table.month,
-    ),
-  }),
-);
 
 // -----------------------------------------------------------
 // PUBLISHING QUEUE

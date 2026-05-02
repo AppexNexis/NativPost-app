@@ -3,6 +3,7 @@
 import {
   AlignLeft,
   ArrowLeft,
+  BarChart2,
   Check,
   ChevronDown,
   ChevronUp,
@@ -10,6 +11,7 @@ import {
   Image as ImageIcon,
   Layers,
   Link2,
+  Megaphone,
   RefreshCw,
   Sparkles,
   Video,
@@ -66,6 +68,8 @@ const CONTENT_TYPES = [
   { id: 'single_image', label: 'Image', description: 'Single image with caption', icon: ImageIcon },
   { id: 'carousel', label: 'Carousel', description: 'Multi-image carousel', icon: Layers },
   { id: 'reel', label: 'Video', description: 'Reel, Short, or video', icon: Video },
+  { id: 'ugc_ad', label: 'UGC Ad', description: 'Hook, problem, solution, CTA', icon: Megaphone },
+  { id: 'data_story', label: 'Data Story', description: 'Animated stats & numbers', icon: BarChart2 },
 ];
 
 const CONTENT_MODES = [
@@ -434,7 +438,11 @@ export default function ContentCreatePage() {
                 ? ['facebook', 'twitter', 'linkedin']
                 : type.id === 'reel'
                   ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube']
-                  : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok'];
+                  : type.id === 'ugc_ad'
+                    ? ['instagram', 'tiktok']
+                    : type.id === 'data_story'
+                      ? ['linkedin', 'instagram', 'youtube']
+                      : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok'];
 
               return (
                 <button

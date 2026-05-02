@@ -29,6 +29,13 @@
       "when": 1776367214955,
       "tag": "0003_red_the_initiative",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777704638780,
+      "tag": "0004_deep_vargas",
+      "breakpoints": true
     }
   ]
 }
