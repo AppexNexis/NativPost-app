@@ -212,11 +212,21 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': ENGINE_API_KEY,
+        'Authorization': `Bearer ${ENGINE_API_KEY}`,
       },
       body: JSON.stringify(enginePayload),
       signal: AbortSignal.timeout(60_000), // 60s timeout for plan generation
     });
+
+    // const engineRes = await fetch(`${ENGINE_URL}/api/plan/generate`, {
+    //   method: 'POST',
+    //   headers: {
+    //     'Content-Type': 'application/json',
+    //     'X-API-Key': ENGINE_API_KEY,
+    //   },
+    //   body: JSON.stringify(enginePayload),
+    //   signal: AbortSignal.timeout(60_000), // 60s timeout for plan generation
+    // });
 
     if (!engineRes.ok) {
       const engineErr = await engineRes.json().catch(() => ({}));
