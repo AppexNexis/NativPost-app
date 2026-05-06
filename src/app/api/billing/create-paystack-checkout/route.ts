@@ -29,6 +29,8 @@ const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY!;
 export async function POST(request: NextRequest) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
+  const affonsoReferral = request.cookies.get('affonso_referral')?.value ?? null;
+
   if (error) {
     return error;
   }
@@ -89,6 +91,7 @@ export async function POST(request: NextRequest) {
           orgId: orgId!,
           planId,
           type: 'setup_fee',
+           affonso_referral: affonsoReferral ?? '', // track referral for setup fee
           custom_fields: [
             { display_name: 'Plan', variable_name: 'plan', value: plan.name },
             { display_name: 'Org ID', variable_name: 'org_id', value: orgId! },

@@ -58,12 +58,12 @@ const FEATURE_ROWS = [
   {
     label: 'Support',
     render: (plan: typeof VISIBLE_PLANS[0]) =>
-      ({
-        email: 'Email',
-        priority_email: 'Priority email',
-        live_chat: 'Live chat',
-        dedicated_slack: 'Dedicated Slack',
-      }[plan.features.supportLevel] || 'Email'),
+    ({
+      email: 'Email',
+      priority_email: 'Priority email',
+      live_chat: 'Live chat',
+      dedicated_slack: 'Dedicated Slack',
+    }[plan.features.supportLevel] || 'Email'),
   },
 ];
 
@@ -92,7 +92,7 @@ function MobilePlanCard({
       className={`overflow-hidden rounded-2xl border-2 transition-all duration-200 ${isSelected
         ? 'border-foreground shadow-lg'
         : 'border-border hover:border-foreground/30'
-      }`}
+        }`}
     >
       {/* Card header */}
       <div className={`p-5 ${plan.popular ? 'bg-foreground text-background' : 'bg-muted/40'}`}>
@@ -134,7 +134,7 @@ function MobilePlanCard({
               : plan.popular
                 ? 'border border-background/30 bg-background/10 text-background hover:bg-background/20'
                 : 'border border-border bg-background text-foreground hover:bg-muted'
-            }`}
+              }`}
           >
             {isSelected ? (
               <span className="flex items-center gap-1">
@@ -156,7 +156,7 @@ function MobilePlanCard({
             className={`mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-3 text-sm font-semibold transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-60 ${plan.popular
               ? 'bg-background text-foreground'
               : 'bg-foreground text-background'
-            }`}
+              }`}
           >
             {isPlanLoading
               ? <Loader2 className="size-4 animate-spin" />
@@ -317,6 +317,17 @@ function SubscribeContent() {
       }
     };
   }, [paystackSuccess, paystackReference, redirectPath, router, pollBillingStatus]);
+
+  // Affonso signup tracking
+  useEffect(() => {
+    const email = user?.primaryEmailAddress?.emailAddress;
+    if (email && typeof window !== 'undefined' && (window as any).Affonso) {
+      (window as any).Affonso.signup({
+        email,
+        externalUserId: user.id,
+      });
+    }
+  }, [user]);
 
   const handleSubscribe = async (planId: string) => {
     setIsLoading(planId);
@@ -534,7 +545,7 @@ function SubscribeContent() {
                     className={`relative overflow-hidden rounded-t-2xl p-5 transition-all ${plan.popular
                       ? 'bg-foreground text-background'
                       : 'bg-muted/40'
-                    } ${isSelected ? 'ring-2 ring-foreground ring-offset-0' : ''}`}
+                      } ${isSelected ? 'ring-2 ring-foreground ring-offset-0' : ''}`}
                   >
                     {plan.popular && (
                       <div className="absolute -right-10 -top-10 size-32 rounded-full bg-white/10 blur-2xl" />
@@ -574,7 +585,7 @@ function SubscribeContent() {
                             : plan.popular
                               ? 'border border-background/30 bg-background/10 text-background hover:bg-background/20'
                               : 'border border-border bg-background text-foreground hover:bg-muted'
-                          }`}
+                            }`}
                         >
                           {isSelected && <Check className="size-3" />}
                           {isSelected ? 'Selected' : 'Select plan'}
@@ -588,7 +599,7 @@ function SubscribeContent() {
                             className={`flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-60 ${plan.popular
                               ? 'bg-background text-foreground'
                               : 'bg-foreground text-background'
-                            }`}
+                              }`}
                           >
                             {isPlanLoading
                               ? <Loader2 className="size-3.5 animate-spin" />
@@ -612,10 +623,10 @@ function SubscribeContent() {
                           {typeof value === 'boolean'
                             ? value
                               ? (
-                                  <div className="flex size-5 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
-                                    <Check className="size-3 text-emerald-600 dark:text-emerald-400" />
-                                  </div>
-                                )
+                                <div className="flex size-5 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+                                  <Check className="size-3 text-emerald-600 dark:text-emerald-400" />
+                                </div>
+                              )
                               : <span className="text-base text-muted-foreground/25">—</span>
                             : <span className="text-sm font-medium text-foreground">{value}</span>}
                         </div>

@@ -82,47 +82,6 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ received: true });
 }
 
-// async function handlePaystackSuccess_(data: Record<string, unknown>) {
-//   const db = await getDb();
-//   const metadata = data.metadata as Record<string, unknown> | undefined;
-//   const orgId = metadata?.orgId as string | undefined;
-//   const planCode = (data.plan as Record<string, unknown>)?.plan_code as string | undefined;
-
-//   if (!orgId) {
-//     console.error('[Paystack Webhook] Missing orgId in metadata');
-//     return;
-//   }
-
-//   const plan = planCode ? getPlanByPaystackCode(planCode) : null;
-//   const planId = plan?.id ?? 'starter';
-//   const resolvedPlan = PLAN_CONFIGS[planId];
-
-//   if (!resolvedPlan) {
-//     return;
-//   }
-
-//   const customerCode = (data.customer as Record<string, unknown>)?.customer_code as string | undefined;
-//   const subscriptionCode = (data.subscription as Record<string, unknown>)?.subscription_code as string | undefined
-//     || (data as Record<string, unknown>).subscription_code as string | undefined;
-
-//   await db
-//     .update(organizationSchema)
-//     .set({
-//       plan: planId,
-//       planStatus: 'active',
-//       paystackCustomerCode: customerCode ?? null,
-//       paystackSubscriptionCode: subscriptionCode ?? null,
-//       paystackPlanCode: planCode ?? null,
-//       postsPerMonth: resolvedPlan.features.postsPerMonth === -1 ? 999999 : resolvedPlan.features.postsPerMonth,
-//       platformsLimit: resolvedPlan.features.platformsLimit === -1 ? 99 : resolvedPlan.features.platformsLimit,
-//       setupFeePaid: true,
-//       updatedAt: new Date(),
-//     })
-//     .where(eq(organizationSchema.id, orgId));
-
-//   console.log(`[Paystack Webhook] Activated ${planId} for org ${orgId}`);
-// }
-
 async function handlePaystackSuccess(data: Record<string, unknown>) {
   const db = await getDb();
   const metadata = data.metadata as Record<string, unknown> | undefined;
@@ -151,7 +110,6 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
   const planCode = (data.plan as Record<string, unknown>)?.plan_code as string | undefined;
   const subscriptionCode = (data.subscription as Record<string, unknown>)?.subscription_code as string | undefined
     || (data as Record<string, unknown>).subscription_code as string | undefined;
-  // reference removed — no longer needed (no refund flow)
 
   // Retrieve the stored planId from the org record if not in this event
   const [existingOrg] = await db
@@ -188,6 +146,31 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
       .where(eq(organizationSchema.id, orgId));
 
     console.log(`[Paystack Webhook] Setup fee paid for org ${orgId}, trial started`);
+
+    // ── Affonso: update referral to trialing (no commission yet) ──
+    const affonsoReferral = metadata?.affonso_referral as string | undefined;
+    const AFFONSO_API_KEY = process.env.AFFONSO_API_KEY;
+
+    if (affonsoReferral && AFFONSO_API_KEY) {
+      try {
+        await fetch(`https://api.affonso.io/v1/referrals/${affonsoReferral}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${AFFONSO_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email: (data.customer as Record<string, unknown>)?.email ?? '',
+            customer_id: orgId,
+            status: 'trialing',
+          }),
+        });
+        console.log(`[Affonso] Referral updated to trialing: ${affonsoReferral}`);
+      } catch (affonsoErr) {
+        console.error('[Affonso] Trialing update failed (non-fatal):', affonsoErr);
+      }
+    }
+
     return;
   }
 
@@ -217,6 +200,59 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
     .where(eq(organizationSchema.id, orgId));
 
   console.log(`[Paystack Webhook] Activated ${planId} for org ${orgId}`);
+
+  // ── Affonso: create commission on first subscription only ──
+  // Recurring charges from paystack-activate cron use type: 'trial_activation'
+  // and never include affonso_referral in metadata, so they are automatically
+  // skipped — no extra guard needed.
+  const affonsoReferral = metadata?.affonso_referral as string | undefined;
+  const AFFONSO_API_KEY = process.env.AFFONSO_API_KEY;
+
+  if (affonsoReferral && AFFONSO_API_KEY) {
+    try {
+      const saleAmountKobo = data.amount as number ?? 0;
+      const saleAmount = saleAmountKobo / 100; // kobo to NGN
+      const commissionAmount = saleAmount * 0.30; // 30% commission
+
+      // Update referral status to customer
+      await fetch(`https://api.affonso.io/v1/referrals/${affonsoReferral}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${AFFONSO_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: (data.customer as Record<string, unknown>)?.email ?? '',
+          customer_id: orgId,
+          status: 'customer',
+        }),
+      });
+
+      // Create the commission — one time only
+      const commissionRes = await fetch('https://api.affonso.io/v1/commissions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${AFFONSO_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          referral_id: affonsoReferral,
+          sale_amount: saleAmount,
+          commission_amount: commissionAmount,
+          sale_amount_currency: 'NGN',
+          commission_currency: 'NGN',
+          payment_intent_id: data.reference as string, // prevents duplicate commissions
+          is_subscription: false, // one-time commission, not recurring
+          sales_status: 'complete',
+        }),
+      });
+
+      const commissionData = await commissionRes.json();
+      console.log(`[Affonso] Commission created:`, JSON.stringify(commissionData));
+    } catch (affonsoErr) {
+      console.error('[Affonso] Commission creation failed (non-fatal):', affonsoErr);
+    }
+  }
 }
 
 async function handlePaystackCancelled(data: Record<string, unknown>) {
