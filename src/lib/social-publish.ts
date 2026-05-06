@@ -30,6 +30,17 @@ async function fetchMediaBuffer(
   }
 }
 
+// Add this helper at the top of social-publish.ts
+function toPublicImageUrl(url: string): string {
+  // Uploadcare URLs: append image transformation to ensure proper content-type
+  // ucarecdn.com/UUID/ → ucarecdn.com/UUID/-/format/jpeg/
+  if (url.includes('ucarecdn.com')) {
+    const base = url.endsWith('/') ? url : `${url}/`;
+    return `${base}-/format/jpeg/-/quality/smart/`;
+  }
+  return url;
+}
+
 // ============================================================
 // FACEBOOK
 // ============================================================
@@ -69,10 +80,14 @@ export async function publishToFacebook(
     }
 
     if (imageUrls.length === 1) {
+      const imageUrl = imageUrls[0];
+      if (!imageUrl) {
+        return { success: false, error: 'Facebook: image URL is missing' };
+      }
       const res = await fetch(`https://graph.facebook.com/v21.0/${pageId}/photos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: imageUrls[0], caption, access_token: accessToken }),
+        body: JSON.stringify({ url: toPublicImageUrl(imageUrl), caption, access_token: accessToken }),
       });
       const data = await res.json();
       if (data.id) {
@@ -83,14 +98,18 @@ export async function publishToFacebook(
 
     const photoIds: string[] = [];
     for (const url of imageUrls) {
+      const transformedUrl = toPublicImageUrl(url);
       const res = await fetch(`https://graph.facebook.com/v21.0/${pageId}/photos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, published: false, access_token: accessToken }),
+        body: JSON.stringify({ url: transformedUrl, published: false, access_token: accessToken }),
       });
       const data = await res.json();
+      console.log(`[Facebook] Photo upload for ${transformedUrl}:`, JSON.stringify(data));
       if (data.id) {
         photoIds.push(data.id);
+      } else {
+        console.error(`[Facebook] Failed to upload photo: ${data.error?.message}`);
       }
     }
 
@@ -178,10 +197,14 @@ export async function publishToInstagram(
     }
 
     if (imageUrls.length === 1) {
+      const imageUrl = imageUrls[0];
+      if (!imageUrl) {
+        return { success: false, error: 'Instagram: image URL is missing' };
+      }
       const containerRes = await fetch(`https://graph.facebook.com/v21.0/${igUserId}/media`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_url: imageUrls[0], caption, access_token: accessToken }),
+        body: JSON.stringify({ image_url: toPublicImageUrl(imageUrl), caption, access_token: accessToken }),
       });
       const containerData = await containerRes.json();
       if (!containerData.id) {
@@ -205,7 +228,7 @@ export async function publishToInstagram(
       const childRes = await fetch(`https://graph.facebook.com/v21.0/${igUserId}/media`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_url: url, is_carousel_item: true, access_token: accessToken }),
+        body: JSON.stringify({ image_url: toPublicImageUrl(url), is_carousel_item: true, access_token: accessToken }),
       });
       const childData = await childRes.json();
       if (childData.id) {
