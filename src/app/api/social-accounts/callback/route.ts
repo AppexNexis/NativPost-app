@@ -137,6 +137,42 @@ async function fetchPlatformProfile(
 ): Promise<PlatformProfile | null> {
   try {
     switch (platform) {
+      // case 'facebook':
+      // case 'instagram': {
+      //   // Step 1: Get the user's managed pages
+      //   const accountsRes = await fetch(
+      //     `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,picture&access_token=${accessToken}`,
+      //   );
+      //   const accountsData = await accountsRes.json();
+      //   const page = accountsData.data?.[0];
+
+      //   if (page) {
+      //     // ✅ Store the PAGE token and PAGE id — this is what allows publishing
+      //     // We mutate accessToken here so the caller saves the page token, not user token
+      //     // We do this by returning a special marker and handling it in the outer function
+      //     return {
+      //       id: page.id,
+      //       username: page.name,
+      //       type: platform === 'facebook' ? 'page' : 'personal',
+      //       imageUrl: page.picture?.data?.url,
+      //       // Pass page token back via a custom field
+      //       pageAccessToken: page.access_token,
+      //     };
+      //   }
+
+      //   // Fallback to user profile if no pages found
+      //   const res = await fetch(
+      //     `https://graph.facebook.com/v21.0/me?fields=id,name,picture&access_token=${accessToken}`,
+      //   );
+      //   const data = await res.json();
+      //   return {
+      //     id: data.id,
+      //     username: data.name,
+      //     type: platform === 'facebook' ? 'page' : 'personal',
+      //     imageUrl: data.picture?.data?.url,
+      //   };
+      // }
+
       case 'facebook':
       case 'instagram': {
         // Step 1: Get the user's managed pages
@@ -144,23 +180,40 @@ async function fetchPlatformProfile(
           `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,picture&access_token=${accessToken}`,
         );
         const accountsData = await accountsRes.json();
-        const page = accountsData.data?.[0];
+        let page = accountsData.data?.[0];
+
+        // Temporary fallback: if no pages returned (Development mode limitation),
+        // fetch the page token directly using the known page ID
+        if (!page) {
+          console.log('[Facebook] /me/accounts returned empty — fetching page token directly');
+          const pageId = '1094955300358244'; // Nativpost page ID
+          const pageRes = await fetch(
+            `https://graph.facebook.com/v21.0/${pageId}?fields=id,name,access_token,picture&access_token=${accessToken}`,
+          );
+          const pageData = await pageRes.json();
+          console.log('[Facebook] Direct page fetch:', JSON.stringify(pageData));
+
+          if (pageData.access_token) {
+            page = {
+              id: pageData.id,
+              name: pageData.name,
+              access_token: pageData.access_token,
+              picture: pageData.picture,
+            };
+          }
+        }
 
         if (page) {
-          // ✅ Store the PAGE token and PAGE id — this is what allows publishing
-          // We mutate accessToken here so the caller saves the page token, not user token
-          // We do this by returning a special marker and handling it in the outer function
           return {
             id: page.id,
             username: page.name,
             type: platform === 'facebook' ? 'page' : 'personal',
             imageUrl: page.picture?.data?.url,
-            // Pass page token back via a custom field
             pageAccessToken: page.access_token,
           };
         }
 
-        // Fallback to user profile if no pages found
+        // Final fallback: user profile if no page found at all
         const res = await fetch(
           `https://graph.facebook.com/v21.0/me?fields=id,name,picture&access_token=${accessToken}`,
         );
