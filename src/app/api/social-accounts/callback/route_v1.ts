@@ -61,8 +61,6 @@ export async function GET(request: NextRequest) {
     const config = PLATFORM_CONFIGS[platform];
     const accountType = profile?.type ?? config?.accountType ?? 'personal';
 
-    // Use page token if available (Facebook), otherwise use the OAuth token
-    const effectiveAccessToken = profile?.pageAccessToken ?? tokens.accessToken;
     // For platforms that support multiple accounts (e.g. linkedin + linkedin_page),
     // match on both platform name AND account type to allow both to coexist.
     const existing = await db
@@ -86,7 +84,7 @@ export async function GET(request: NextRequest) {
         .set({
           platformUserId: profile?.id ?? null,
           platformUsername: profile?.username ?? null,
-          accessToken: effectiveAccessToken,
+          accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken ?? null,
           tokenExpiresAt,
           profileImageUrl: profile?.imageUrl ?? null,
@@ -100,7 +98,7 @@ export async function GET(request: NextRequest) {
         platform,
         platformUserId: profile?.id ?? null,
         platformUsername: profile?.username ?? null,
-        accessToken: effectiveAccessToken,
+        accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken ?? null,
         tokenExpiresAt,
         accountType,
@@ -128,7 +126,6 @@ type PlatformProfile = {
   username: string;
   type: string;
   imageUrl?: string;
-  pageAccessToken?: string;
 };
 
 async function fetchPlatformProfile(
@@ -139,28 +136,6 @@ async function fetchPlatformProfile(
     switch (platform) {
       case 'facebook':
       case 'instagram': {
-        // Step 1: Get the user's managed pages
-        const accountsRes = await fetch(
-          `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,picture&access_token=${accessToken}`,
-        );
-        const accountsData = await accountsRes.json();
-        const page = accountsData.data?.[0];
-
-        if (page) {
-          // ✅ Store the PAGE token and PAGE id — this is what allows publishing
-          // We mutate accessToken here so the caller saves the page token, not user token
-          // We do this by returning a special marker and handling it in the outer function
-          return {
-            id: page.id,
-            username: page.name,
-            type: platform === 'facebook' ? 'page' : 'personal',
-            imageUrl: page.picture?.data?.url,
-            // Pass page token back via a custom field
-            pageAccessToken: page.access_token,
-          };
-        }
-
-        // Fallback to user profile if no pages found
         const res = await fetch(
           `https://graph.facebook.com/v21.0/me?fields=id,name,picture&access_token=${accessToken}`,
         );
