@@ -173,7 +173,8 @@ async function fetchPlatformProfile(
       //   };
       // }
 
-      case 'facebook': {
+      case 'facebook':
+      case 'instagram': {
         // Step 1: Get the user's managed pages
         const accountsRes = await fetch(
           `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,picture&access_token=${accessToken}`,
@@ -206,13 +207,13 @@ async function fetchPlatformProfile(
           return {
             id: page.id,
             username: page.name,
-            type: 'page',
+            type: platform === 'facebook' ? 'page' : 'personal',
             imageUrl: page.picture?.data?.url,
             pageAccessToken: page.access_token,
           };
         }
 
-        // Final fallback
+        // Final fallback: user profile if no page found at all
         const res = await fetch(
           `https://graph.facebook.com/v21.0/me?fields=id,name,picture&access_token=${accessToken}`,
         );
@@ -220,70 +221,11 @@ async function fetchPlatformProfile(
         return {
           id: data.id,
           username: data.name,
-          type: 'page',
+          type: platform === 'facebook' ? 'page' : 'personal',
           imageUrl: data.picture?.data?.url,
         };
       }
 
-      case 'instagram': {
-        // Step 1: Get the Facebook Page with instagram_business_account field
-        const accountsRes = await fetch(
-          `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,instagram_business_account&access_token=${accessToken}`,
-        );
-        const accountsData = await accountsRes.json();
-        let page = accountsData.data?.[0];
-
-        // Fallback: fetch page directly if /me/accounts returns empty
-        if (!page) {
-          console.log('[Instagram] /me/accounts returned empty — fetching page directly');
-          const pageId = '1094955300358244'; // Nativpost page ID
-          const pageRes = await fetch(
-            `https://graph.facebook.com/v21.0/${pageId}?fields=id,name,access_token,instagram_business_account&access_token=${accessToken}`,
-          );
-          const pageData = await pageRes.json();
-          console.log('[Instagram] Direct page fetch:', JSON.stringify(pageData));
-
-          if (pageData.access_token) {
-            page = {
-              id: pageData.id,
-              name: pageData.name,
-              access_token: pageData.access_token,
-              instagram_business_account: pageData.instagram_business_account,
-            };
-          }
-        }
-
-        if (page?.instagram_business_account?.id) {
-          // Step 2: Fetch the Instagram Business Account details
-          const igId = page.instagram_business_account.id;
-          const igRes = await fetch(
-            `https://graph.facebook.com/v21.0/${igId}?fields=id,name,username,profile_picture_url&access_token=${page.access_token}`,
-          );
-          const igData = await igRes.json();
-          console.log('[Instagram] IG Business Account:', JSON.stringify(igData));
-
-          return {
-            id: igData.id,                           // ← real Instagram Business Account ID
-            username: igData.username ?? igData.name,
-            type: 'personal',
-            imageUrl: igData.profile_picture_url,
-            pageAccessToken: page.access_token,      // ← Page token needed for publishing
-          };
-        }
-
-        // Final fallback
-        console.warn('[Instagram] No instagram_business_account found on page');
-        const res = await fetch(
-          `https://graph.facebook.com/v21.0/me?fields=id,name,picture&access_token=${accessToken}`,
-        );
-        const data = await res.json();
-        return {
-          id: data.id,
-          username: data.name,
-          type: 'personal',
-          imageUrl: data.picture?.data?.url,
-        };
-      }
       case 'linkedin': {
         const res = await fetch('https://api.linkedin.com/v2/userinfo', {
           headers: { Authorization: `Bearer ${accessToken}` },
