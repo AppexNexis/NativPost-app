@@ -211,6 +211,21 @@ export async function publishToInstagram(
         return { success: false, error: containerData.error?.message || 'IG container failed' };
       }
 
+      // Wait for single image to finish processing
+      for (let attempt = 0; attempt < 10; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        const statusRes = await fetch(
+          `https://graph.facebook.com/v21.0/${containerData.id}?fields=status_code&access_token=${accessToken}`,
+        );
+        const statusData = await statusRes.json();
+        if (statusData.status_code === 'FINISHED') {
+          break;
+        }
+        if (statusData.status_code === 'ERROR') {
+          return { success: false, error: 'IG image processing failed' };
+        }
+      }
+
       const publishRes = await fetch(`https://graph.facebook.com/v21.0/${igUserId}/media_publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -223,6 +238,7 @@ export async function publishToInstagram(
       return { success: false, error: publishData.error?.message || 'IG publish failed' };
     }
 
+    // ── Carousel ──
     const childIds: string[] = [];
     for (const url of imageUrls.slice(0, 10)) {
       const childRes = await fetch(`https://graph.facebook.com/v21.0/${igUserId}/media`, {
@@ -231,8 +247,37 @@ export async function publishToInstagram(
         body: JSON.stringify({ image_url: toPublicImageUrl(url), is_carousel_item: true, access_token: accessToken }),
       });
       const childData = await childRes.json();
-      if (childData.id) {
+      console.log(`[Instagram] Child container for ${url}:`, JSON.stringify(childData));
+
+      if (!childData.id) {
+        console.error(`[Instagram] Child container failed:`, childData.error?.message);
+        continue;
+      }
+
+      // Wait for Instagram to finish processing each image before adding to carousel
+      let ready = false;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        const statusRes = await fetch(
+          `https://graph.facebook.com/v21.0/${childData.id}?fields=status_code&access_token=${accessToken}`,
+        );
+        const statusData = await statusRes.json();
+        console.log(`[Instagram] Child ${childData.id} status attempt ${attempt + 1}:`, statusData.status_code);
+
+        if (statusData.status_code === 'FINISHED') {
+          ready = true;
+          break;
+        }
+        if (statusData.status_code === 'ERROR') {
+          console.error(`[Instagram] Child container errored: ${childData.id}`);
+          break;
+        }
+      }
+
+      if (ready) {
         childIds.push(childData.id);
+      } else {
+        console.error(`[Instagram] Child container not ready after polling: ${childData.id}`);
       }
     }
 
@@ -264,7 +309,6 @@ export async function publishToInstagram(
     return { success: false, error: `Instagram error: ${err}` };
   }
 }
-
 // ============================================================
 // LINKEDIN — personal profile
 // ============================================================
