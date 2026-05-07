@@ -291,8 +291,26 @@ export async function publishToInstagram(
       body: JSON.stringify({ media_type: 'CAROUSEL', children: childIds, caption, access_token: accessToken }),
     });
     const carouselData = await carouselRes.json();
+    console.log(`[Instagram] Carousel container response:`, JSON.stringify(carouselData));
+
     if (!carouselData.id) {
       return { success: false, error: carouselData.error?.message || 'IG carousel container failed' };
+    }
+
+    // Wait for carousel container to be ready before publishing
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const statusRes = await fetch(
+        `https://graph.facebook.com/v21.0/${carouselData.id}?fields=status_code&access_token=${accessToken}`,
+      );
+      const statusData = await statusRes.json();
+      console.log(`[Instagram] Carousel container status attempt ${attempt + 1}:`, statusData.status_code);
+      if (statusData.status_code === 'FINISHED') {
+        break;
+      }
+      if (statusData.status_code === 'ERROR') {
+        return { success: false, error: 'IG carousel container processing failed' };
+      }
     }
 
     const publishRes = await fetch(`https://graph.facebook.com/v21.0/${igUserId}/media_publish`, {
@@ -301,6 +319,8 @@ export async function publishToInstagram(
       body: JSON.stringify({ creation_id: carouselData.id, access_token: accessToken }),
     });
     const publishData = await publishRes.json();
+    console.log(`[Instagram] Publish response:`, JSON.stringify(publishData));
+
     if (publishData.id) {
       return { success: true, platformPostId: publishData.id };
     }
