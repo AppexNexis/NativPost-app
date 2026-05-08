@@ -24,10 +24,7 @@ type RouteParams = { params: Promise<{ id: string }> };
  *   imageStyle   — "minimal"|"vibrant"|"professional"|"elegant"|"bold"|"cinematic" (default: "professional")
  *   modelTier    — "pro"|"dev"|"schnell" (default: "pro")
  *   overlayStyle — "standard"|"minimal"|"none" (default: "standard")
- *   scenePrompt  — explicit background scene description (overrides auto-generation)
- *   headline     — override the headline text shown on the image (default: auto-extracted from caption)
- *   subtext      — override the subtext line shown below headline (default: auto-extracted)
- *   eyebrow      — small label above the headline e.g. "NEW LAUNCH" (default: none)
+ *   scenePrompt  — explicit scene description (overrides auto-generation)
  */
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
@@ -86,10 +83,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const modelTier = (body.modelTier as string) || 'pro';
     const overlayStyle = (body.overlayStyle as string) || 'standard';
     const scenePrompt = (body.scenePrompt as string) || undefined;
-    // Optional design overrides — if not provided, engine auto-extracts from caption
-    const headline = (body.headline as string) || undefined;
-    const subtext = (body.subtext as string) || undefined;
-    const eyebrow = (body.eyebrow as string) || undefined;
 
     const payload = {
       caption: item.caption,
@@ -100,9 +93,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       modelTier,
       overlayStyle,
       scenePrompt,
-      ...(headline ? { headline } : {}),
-      ...(subtext ? { subtext } : {}),
-      ...(eyebrow ? { eyebrow } : {}),
       brandName: profile?.brandName || 'Brand',
       brandPrimary: profile?.primaryColor || '#864FFE',
       brandSecondary: profile?.secondaryColor || '#0D0D0D',
