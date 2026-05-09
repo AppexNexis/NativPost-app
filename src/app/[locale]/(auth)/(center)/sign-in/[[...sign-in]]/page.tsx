@@ -18,7 +18,6 @@ export async function generateMetadata(props: { params: { locale: string } }) {
 
 const SignInPage = (props: { params: { locale: string } }) => (
   <>
-    {/* <Image src="/assets/images/shared/main-logo.svg" alt="Sign In Illustration" className="mb-6" width={100} height={100} /> */}
     <SignIn path={getI18nPath('/sign-in', props.params.locale)} />
   </>
 

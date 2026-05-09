@@ -4,6 +4,7 @@ import { Webhook } from 'svix';
 
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
+import { fireEmailEvent } from '@/lib/email-webhook';
 
 const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY;
@@ -23,14 +24,8 @@ type ClerkOrganizationEvent = {
 
 // -----------------------------------------------------------
 // CLERK BACKEND API HELPERS
-// Uses the Clerk Backend API directly (no SDK needed)
-// Docs: https://clerk.com/docs/reference/backend-api
 // -----------------------------------------------------------
 
-/**
- * Look up a Clerk user by email address.
- * Returns the user object or null if not found.
- */
 async function getClerkUserByEmail(email: string): Promise<{ id: string } | null> {
   if (!CLERK_SECRET_KEY) {
     console.error('[Clerk Webhook] Missing CLERK_SECRET_KEY');
@@ -40,10 +35,10 @@ async function getClerkUserByEmail(email: string): Promise<{ id: string } | null
   const res = await fetch(
     `https://api.clerk.com/v1/users?email_address=${encodeURIComponent(email)}&limit=1`,
     {
-      headers: {
+      headers: new Headers({
         'Authorization': `Bearer ${CLERK_SECRET_KEY}`,
         'Content-Type': 'application/json',
-      },
+      }),
     },
   );
 
@@ -64,11 +59,11 @@ async function getClerkUserByEmail(email: string): Promise<{ id: string } | null
   return { id: user.id };
 }
 
-/**
- * Add a user as an admin member of a Clerk organization.
- * Uses the Clerk Backend API POST /v1/organizations/{org_id}/memberships
- */
-async function addOrgMember(orgId: string, userId: string, role: 'admin' | 'basic_member' = 'admin'): Promise<boolean> {
+async function addOrgMember(
+  orgId: string,
+  userId: string,
+  role: 'admin' | 'basic_member' = 'admin',
+): Promise<boolean> {
   if (!CLERK_SECRET_KEY) {
     console.error('[Clerk Webhook] Missing CLERK_SECRET_KEY — cannot add org member');
     return false;
@@ -78,27 +73,118 @@ async function addOrgMember(orgId: string, userId: string, role: 'admin' | 'basi
     `https://api.clerk.com/v1/organizations/${orgId}/memberships`,
     {
       method: 'POST',
-      headers: {
+      headers: new Headers({
         'Authorization': `Bearer ${CLERK_SECRET_KEY}`,
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ user_id: userId, role }),
     },
   );
 
   if (!res.ok) {
     const body = await res.text();
-    // 422 typically means the user is already a member — not a true error
     if (res.status === 422) {
-      console.log(`[Clerk Webhook] User ${userId} is already a member of org ${orgId} — skipping`);
+      // Already a member — not an error
+      console.log(`[Clerk Webhook] User ${userId} already a member of org ${orgId} — skipping`);
       return true;
     }
     console.error(`[Clerk Webhook] Failed to add member to org ${orgId}: ${res.status}`, body);
     return false;
   }
 
-  console.log(`[Clerk Webhook] Successfully added ${userId} as ${role} to org ${orgId}`);
+  console.log(`[Clerk Webhook] Added ${userId} as ${role} to org ${orgId}`);
   return true;
+}
+
+// -----------------------------------------------------------
+// SHARED HELPERS — exported so billing.ts can call them
+// as fallbacks when the webhook was missed/delayed.
+// -----------------------------------------------------------
+
+/**
+ * Ensure the NativPost admin account is a member of the org.
+ * Idempotent — safe to call multiple times, 422 is handled gracefully.
+ */
+export async function ensureNativPostAdminInOrg(orgId: string): Promise<void> {
+  try {
+    const adminUser = await getClerkUserByEmail(NATIVPOST_ADMIN_EMAIL);
+    if (!adminUser) {
+      console.warn(`[ensureAdmin] Could not find Clerk user for ${NATIVPOST_ADMIN_EMAIL}`);
+      return;
+    }
+    const added = await addOrgMember(orgId, adminUser.id, 'admin');
+    if (!added) {
+      console.warn(
+        `[ensureAdmin] Could not add ${NATIVPOST_ADMIN_EMAIL} to org ${orgId}. `
+        + 'Add manually from Clerk Dashboard if needed.',
+      );
+    }
+  } catch (err) {
+    // Non-fatal — never crash the caller
+    console.error(`[ensureAdmin] Unexpected error for org ${orgId}:`, err);
+  }
+}
+
+/**
+ * Resolve the creator of an org via Clerk memberships API,
+ * then fire the welcome email sequence.
+ * Idempotent — the email tool deduplicates enrollments via UNIQUE KEY.
+ */
+export async function fireWelcomeEmailForOrg(orgId: string): Promise<void> {
+  try {
+    if (!CLERK_SECRET_KEY) return;
+
+    // Get the org's current members to find the real creator
+    const res = await fetch(
+      `https://api.clerk.com/v1/organizations/${orgId}/memberships?limit=10`,
+      {
+        headers: new Headers({
+          'Authorization': `Bearer ${CLERK_SECRET_KEY}`,
+          'Content-Type': 'application/json',
+        }),
+      },
+    );
+
+    if (!res.ok) {
+      console.warn(`[fireWelcomeEmail] Could not fetch members for org ${orgId}: ${res.status}`);
+      return;
+    }
+
+    const json = await res.json();
+    const members: Array<{
+      role: string;
+      public_user_data: {
+        identifier: string;
+        first_name?: string;
+        last_name?: string;
+        user_id: string;
+      };
+    }> = json.data ?? json;
+
+    // First admin who is NOT the NativPost internal account
+    const creator = members.find(
+      m => m.role === 'admin' && m.public_user_data?.identifier !== NATIVPOST_ADMIN_EMAIL,
+    );
+
+    if (!creator) {
+      console.warn(`[fireWelcomeEmail] No real creator found in org ${orgId} memberships`);
+      return;
+    }
+
+    await fireEmailEvent('user.signup', {
+      email: creator.public_user_data.identifier,
+      first_name: creator.public_user_data.first_name ?? '',
+      last_name: creator.public_user_data.last_name ?? '',
+      clerk_user_id: creator.public_user_data.user_id,
+    });
+
+    console.log(
+      `[fireWelcomeEmail] Welcome email queued for org ${orgId} → ${creator.public_user_data.identifier}`,
+    );
+  } catch (err) {
+    // Non-fatal
+    console.error(`[fireWelcomeEmail] Error for org ${orgId}:`, err);
+  }
 }
 
 // -----------------------------------------------------------
@@ -107,13 +193,11 @@ async function addOrgMember(orgId: string, userId: string, role: 'admin' | 'basi
 export async function POST(request: Request) {
   const db = await getDb();
 
-  // ── ENV check ──
   if (!WEBHOOK_SECRET) {
     console.error('[Clerk Webhook] Missing CLERK_WEBHOOK_SECRET');
     return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 });
   }
 
-  // ── Svix header validation ──
   const svixId = request.headers.get('svix-id');
   const svixTimestamp = request.headers.get('svix-timestamp');
   const svixSignature = request.headers.get('svix-signature');
@@ -123,7 +207,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Missing svix headers' }, { status: 400 });
   }
 
-  // ── Signature verification ──
   const payload = await request.text();
   const wh = new Webhook(WEBHOOK_SECRET);
 
@@ -140,13 +223,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid webhook signature' }, { status: 400 });
   }
 
-  // ── Event handling ──
   try {
     switch (event.type) {
       // -----------------------------------------------------------
       // ORGANIZATION CREATED
-      // 1. Insert org row into DB (inactive — trial is started separately)
-      // 2. Auto-add NativPost admin as an org admin via Clerk Backend API
+      // 1. Insert org row into DB
+      // 2. Auto-add NativPost admin as org admin
+      // 3. Queue welcome email sequence for the creator
       // -----------------------------------------------------------
       case 'organization.created': {
         const orgId = event.data.id;
@@ -170,28 +253,18 @@ export async function POST(request: Request) {
           })
           .onConflictDoNothing();
 
-        // 2. Look up the NativPost admin user and add them to the org.
-        //    We do this async-safely: a failure here should not break the webhook response.
-        const adminUser = await getClerkUserByEmail(NATIVPOST_ADMIN_EMAIL);
+        // 2. Add NativPost admin — non-fatal if it fails,
+        //    billing.ts fallback will retry on next request
+        await ensureNativPostAdminInOrg(orgId);
 
-        if (adminUser) {
-          const added = await addOrgMember(orgId, adminUser.id, 'admin');
-          if (!added) {
-            // Log the failure but do not return an error — the org was created successfully.
-            // The admin can be added manually from the Clerk dashboard if needed.
-            console.warn(
-              `[Clerk Webhook] Could not auto-add ${NATIVPOST_ADMIN_EMAIL} to org ${orgId}. `
-              + 'Add manually from the Clerk Dashboard if required.',
-            );
-          }
-        }
+        // 3. Fire welcome email — non-fatal, email tool deduplicates
+        await fireWelcomeEmailForOrg(orgId);
 
         break;
       }
 
       // -----------------------------------------------------------
       // ORGANIZATION DELETED
-      // Remove the org row from our DB. Clerk handles membership cleanup.
       // -----------------------------------------------------------
       case 'organization.deleted': {
         const orgId = event.data.id;

@@ -5,9 +5,9 @@ import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
 import { getPlanByStripePriceId, PLAN_CONFIGS } from '@/lib/plans';
-// import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
+import { firePlanUpgradedEmail, fireSubscriptionCancelledEmail } from '@/lib/billing';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
@@ -16,10 +16,37 @@ function getField(obj: object, key: string): unknown {
   return (obj as Record<string, unknown>)[key];
 }
 
+// Helper — resolve user email from orgId via Supabase
+async function getEmailForOrg(orgId: string): Promise<string | null> {
+  try {
+    const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY;
+    if (!CLERK_SECRET_KEY) return null;
+
+    // Get org members and find the primary admin
+    const res = await fetch(
+      `https://api.clerk.com/v1/organizations/${orgId}/memberships?limit=10`,
+      {
+        headers: new Headers({
+          'Authorization': `Bearer ${CLERK_SECRET_KEY}`,
+          'Content-Type': 'application/json',
+        }),
+      },
+    );
+    if (!res.ok) return null;
+
+    const json = await res.json();
+    const members: Array<{ role: string; public_user_data: { identifier: string } }> = json.data ?? json;
+    const admin = members.find(
+      m => m.role === 'admin' && m.public_user_data?.identifier !== 'admin@nativpost.com',
+    );
+    return admin?.public_user_data?.identifier ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // -----------------------------------------------------------
 // POST /api/billing/stripe-webhook
-// Handles Stripe subscription lifecycle events.
-// No auth — protected by Stripe webhook signature.
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
   const db = await getDb();
@@ -47,13 +74,9 @@ export async function POST(request: NextRequest) {
         const planId = session.metadata?.planId;
         const sessionType = session.metadata?.type;
 
-        if (!orgId) {
-          break;
-        }
+        if (!orgId) break;
 
-        // ── Setup fee payment (one-time, mode: 'payment') ──
-        // Mark setupFeePaid and start the trial. The subscription
-        // will be created later when the user subscribes from billing.
+        // ── Setup fee payment ──
         if (sessionType === 'setup_fee') {
           const trialEndsAt = new Date();
           trialEndsAt.setDate(trialEndsAt.getDate() + 7);
@@ -68,7 +91,6 @@ export async function POST(request: NextRequest) {
               stripeCustomerId: typeof session.customer === 'string'
                 ? session.customer
                 : (session.customer as Stripe.Customer | null)?.id ?? null,
-              // Trial limits
               postsPerMonth: 3,
               platformsLimit: 2,
               updatedAt: new Date(),
@@ -80,16 +102,11 @@ export async function POST(request: NextRequest) {
         }
 
         // ── Subscription checkout completed ──
-        if (!planId) {
-          break;
-        }
+        if (!planId) break;
 
         const plan = PLAN_CONFIGS[planId];
-        if (!plan) {
-          break;
-        }
+        if (!plan) break;
 
-        // Get full subscription details to check trial status
         const subscriptionId = typeof session.subscription === 'string'
           ? session.subscription
           : (session.subscription as Stripe.Subscription | null)?.id;
@@ -130,15 +147,20 @@ export async function POST(request: NextRequest) {
           .where(eq(organizationSchema.id, orgId));
 
         console.log(`[Stripe Webhook] checkout.session.completed: org=${orgId} plan=${planId}`);
+
+        // ── Fire plan.upgraded email ──
+        if (subscriptionStatus === 'active') {
+          const email = await getEmailForOrg(orgId);
+          if (email) await firePlanUpgradedEmail(email, planId);
+        }
+
         break;
       }
 
       case 'customer.subscription.updated': {
         const subscription = event.data.object as Stripe.Subscription;
         const orgId = subscription.metadata?.orgId;
-        if (!orgId) {
-          break;
-        }
+        if (!orgId) break;
 
         const priceId = subscription.items.data[0]?.price?.id;
         const plan = priceId ? getPlanByStripePriceId(priceId) : null;
@@ -153,6 +175,12 @@ export async function POST(request: NextRequest) {
         if (subscription.status === 'trialing' && subscription.trial_end) {
           trialEnd = new Date(subscription.trial_end * 1000);
         }
+
+        const prevStatus = await db
+          .select({ planStatus: organizationSchema.planStatus })
+          .from(organizationSchema)
+          .where(eq(organizationSchema.id, orgId))
+          .limit(1);
 
         await db
           .update(organizationSchema)
@@ -172,15 +200,21 @@ export async function POST(request: NextRequest) {
           .where(eq(organizationSchema.id, orgId));
 
         console.log(`[Stripe Webhook] subscription.updated: org=${orgId} status=${subscription.status}`);
+
+        // ── Fire plan.upgraded when transitioning to active ──
+        const wasNotActive = prevStatus[0]?.planStatus !== 'active';
+        if (subscription.status === 'active' && wasNotActive && plan) {
+          const email = await getEmailForOrg(orgId);
+          if (email) await firePlanUpgradedEmail(email, plan.id);
+        }
+
         break;
       }
 
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription;
         const orgId = subscription.metadata?.orgId;
-        if (!orgId) {
-          break;
-        }
+        if (!orgId) break;
 
         const starterPlan = PLAN_CONFIGS.starter!;
 
@@ -198,6 +232,11 @@ export async function POST(request: NextRequest) {
           .where(eq(organizationSchema.id, orgId));
 
         console.log(`[Stripe Webhook] subscription.deleted: org=${orgId}`);
+
+        // ── Fire subscription.cancelled email ──
+        const email = await getEmailForOrg(orgId);
+        if (email) await fireSubscriptionCancelledEmail(email);
+
         break;
       }
 
@@ -225,7 +264,6 @@ export async function POST(request: NextRequest) {
           : (invoice.customer as Stripe.Customer | null)?.id;
 
         if (customerId) {
-          // Restore active status if past_due was resolved
           const [org] = await db
             .select({ id: organizationSchema.id, planStatus: organizationSchema.planStatus })
             .from(organizationSchema)
@@ -244,18 +282,23 @@ export async function POST(request: NextRequest) {
         break;
       }
 
-      // Handle trial-to-active conversion — Stripe fires this when trial ends
-      // and billing begins. We update DB to reflect the now-active status.
       case 'customer.subscription.trial_will_end': {
         const subscription = event.data.object as Stripe.Subscription;
         const orgId = subscription.metadata?.orgId;
-        if (!orgId) {
-          break;
-        }
+        if (!orgId) break;
 
-        console.log(`[Stripe Webhook] trial_will_end: org=${orgId} trial ends at ${subscription.trial_end}`);
-        // No DB change needed here — just log. The status update happens on
-        // customer.subscription.updated when the trial actually ends.
+        // Fire trial.ending email — this triggers the Day 6 urgency sequence
+        const email = await getEmailForOrg(orgId);
+        if (email) {
+          const { fireEmailEvent } = await import('@/lib/email-webhook');
+          await fireEmailEvent('trial.ending', {
+            email,
+            trial_expiry_date: subscription.trial_end
+              ? new Date(subscription.trial_end * 1000).toLocaleDateString('en-GB')
+              : '',
+          });
+          console.log(`[Stripe Webhook] trial.ending email fired for org ${orgId}`);
+        }
         break;
       }
 
@@ -266,7 +309,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true });
   } catch (err) {
     console.error('[Stripe Webhook] Processing error:', err);
-    // Always return 200 to prevent Stripe retries — log and investigate separately
     return NextResponse.json({ error: 'Processing failed', received: true });
   }
 }

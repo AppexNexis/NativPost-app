@@ -11,9 +11,9 @@
 
 import { and, count, eq, gte, isNotNull } from 'drizzle-orm';
 
-// import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import { contentItemSchema, organizationSchema, publishingQueueSchema } from '@/models/Schema';
+import { fireEmailEvent } from '@/lib/email-webhook';
 
 import { FREE_TRIAL_DAYS, getEffectivePlanFeatures, type PlanFeatures, TRIAL_FEATURES } from './plans';
 
@@ -34,7 +34,7 @@ export type OrgBillingState = {
   paystackSubscriptionCode: string | null;
   paymentType: string;
   // Computed
-  isActive: boolean; // trialing or active
+  isActive: boolean;
   isTrialing: boolean;
   trialDaysLeft: number;
   trialExpired: boolean;
@@ -44,6 +44,55 @@ export type OrgBillingState = {
 export type LimitCheckResult =
   | { allowed: true }
   | { allowed: false; reason: string; upgradeRequired: boolean };
+
+// -----------------------------------------------------------
+// FALLBACK HELPERS
+// Called when the Clerk webhook was missed or delayed.
+// These are lazy — they only run once per org per process lifetime,
+// guarded by the Set below so they never fire on every request.
+// -----------------------------------------------------------
+
+const fallbackRanForOrg = new Set<string>();
+
+async function runMissedWebhookFallbacks(orgId: string): Promise<void> {
+  if (fallbackRanForOrg.has(orgId)) return;
+  fallbackRanForOrg.add(orgId);
+
+  console.log(`[Billing Fallback] Running missed webhook fallbacks for org ${orgId}`);
+
+  // Run both in parallel — fully independent
+  await Promise.allSettled([
+    runAdminMembershipFallback(orgId),
+    runWelcomeEmailFallback(orgId),
+  ]);
+}
+
+/**
+ * Ensure NativPost admin (admin@nativpost.com) is a member of the org.
+ * Delegates to the shared helper in the Clerk webhook route.
+ * Idempotent — 422 Already a member is handled gracefully.
+ */
+async function runAdminMembershipFallback(orgId: string): Promise<void> {
+  try {
+    const { ensureNativPostAdminInOrg } = await import('@/app/api/webhooks/clerk/route');
+    await ensureNativPostAdminInOrg(orgId);
+  } catch (err) {
+    console.error(`[Billing Fallback] ensureNativPostAdminInOrg failed for org ${orgId}:`, err);
+  }
+}
+
+/**
+ * Fire the welcome email sequence for the org's creator.
+ * The email tool deduplicates enrollments via UNIQUE KEY — safe to call more than once.
+ */
+async function runWelcomeEmailFallback(orgId: string): Promise<void> {
+  try {
+    const { fireWelcomeEmailForOrg } = await import('@/app/api/webhooks/clerk/route');
+    await fireWelcomeEmailForOrg(orgId);
+  } catch (err) {
+    console.error(`[Billing Fallback] fireWelcomeEmailForOrg failed for org ${orgId}:`, err);
+  }
+}
 
 // -----------------------------------------------------------
 // GET ORG BILLING STATE
@@ -59,6 +108,8 @@ export async function getOrgBillingState(orgId: string): Promise<OrgBillingState
 
   // -----------------------------------------------------------
   // FALLBACK: Org missing (webhook failed or delayed)
+  // Creates the org row AND runs all the side-effects the webhook
+  // should have handled: admin membership + welcome email sequence.
   // -----------------------------------------------------------
   if (!org) {
     console.warn(`[Billing] Org ${orgId} not found in DB — creating fallback row`);
@@ -69,7 +120,7 @@ export async function getOrgBillingState(orgId: string): Promise<OrgBillingState
         .values({
           id: orgId,
           plan: 'starter',
-          planStatus: 'inactive', // important: DO NOT set trial here
+          planStatus: 'inactive',
           postsPerMonth: 0,
           platformsLimit: 0,
           setupFeePaid: false,
@@ -84,12 +135,19 @@ export async function getOrgBillingState(orgId: string): Promise<OrgBillingState
       console.error('[Billing] Failed to create fallback org:', error);
     }
 
-    // Re-fetch after insert attempt
+    // Re-fetch after insert
     [org] = await db
       .select()
       .from(organizationSchema)
       .where(eq(organizationSchema.id, orgId))
       .limit(1);
+
+    // Fire-and-forget — never slow down the billing check for this
+    if (org) {
+      runMissedWebhookFallbacks(orgId).catch(err =>
+        console.error('[Billing] Fallback side-effects error:', err),
+      );
+    }
   }
 
   // Still no org → real DB issue
@@ -129,10 +187,7 @@ export async function getOrgBillingState(orgId: string): Promise<OrgBillingState
     paystackCustomerCode: org.paystackCustomerCode ?? null,
     paystackSubscriptionCode: org.paystackSubscriptionCode ?? null,
     paymentType: org.paymentType ?? 'stripe',
-
-    // Important: active includes valid trial
     isActive: isActive || (isTrialing && !trialExpired),
-
     isTrialing,
     trialDaysLeft,
     trialExpired,
@@ -142,25 +197,15 @@ export async function getOrgBillingState(orgId: string): Promise<OrgBillingState
 
 // -----------------------------------------------------------
 // SUBSCRIPTION CHECK
-// Used in middleware and API routes to gate access
 // -----------------------------------------------------------
 export async function hasActiveSubscription(orgId: string): Promise<boolean> {
   const billing = await getOrgBillingState(orgId);
-  if (!billing) {
-    return false;
-  }
+  if (!billing) return false;
   return billing.isActive;
 }
 
 // -----------------------------------------------------------
 // CONTENT GENERATION LIMIT CHECK
-//
-// Post quota is counted per PUBLISHED platform delivery:
-//   - A post published to Instagram + LinkedIn = 2 posts used
-//   - A draft or pending post = 0 posts used
-//
-// For trialing orgs: quota counts all published deliveries
-// since the trial started (not just this calendar month).
 // -----------------------------------------------------------
 export async function checkPostLimit(orgId: string): Promise<LimitCheckResult> {
   const db = await getDb();
@@ -173,13 +218,8 @@ export async function checkPostLimit(orgId: string): Promise<LimitCheckResult> {
   }
 
   const { postsPerMonth } = billing.features;
-  if (postsPerMonth === -1) {
-    return { allowed: true };
-  } // unlimited
+  if (postsPerMonth === -1) return { allowed: true };
 
-  // Determine the count window:
-  // - Trialing orgs: count from trial start (trialEndsAt - 7 days)
-  // - Active orgs: count from start of current calendar month
   let windowStart: Date;
   if (billing.isTrialing && billing.trialEndsAt) {
     windowStart = new Date(billing.trialEndsAt);
@@ -191,7 +231,6 @@ export async function checkPostLimit(orgId: string): Promise<LimitCheckResult> {
     windowStart.setHours(0, 0, 0, 0);
   }
 
-  // Count per-platform published deliveries in the window
   const [result] = await db
     .select({ count: count() })
     .from(publishingQueueSchema)
@@ -223,12 +262,6 @@ export async function checkPostLimit(orgId: string): Promise<LimitCheckResult> {
 
 // -----------------------------------------------------------
 // PLATFORMS-PER-POST CHECK
-//
-// Separate from "how many accounts can be connected" —
-// this checks how many platforms a SINGLE post can target.
-//
-// Trial rule: max 1 platform per post.
-// Paid rule: up to plan's platformsLimit.
 // -----------------------------------------------------------
 export async function checkPlatformsPerPost(
   orgId: string,
@@ -242,7 +275,6 @@ export async function checkPlatformsPerPost(
     return { allowed: false, reason: 'Your subscription has expired.', upgradeRequired: true };
   }
 
-  // Trial: max 1 platform per post
   if (billing.isTrialing) {
     if (requestedPlatforms.length > 1) {
       return {
@@ -255,9 +287,7 @@ export async function checkPlatformsPerPost(
   }
 
   const { platformsLimit } = billing.features;
-  if (platformsLimit === -1) {
-    return { allowed: true };
-  }
+  if (platformsLimit === -1) return { allowed: true };
 
   if (requestedPlatforms.length > platformsLimit) {
     return {
@@ -272,8 +302,6 @@ export async function checkPlatformsPerPost(
 
 // -----------------------------------------------------------
 // PLATFORM CONNECTION LIMIT CHECK
-// How many social accounts an org can connect in total.
-// Trial: 2 connections max. Paid: per plan.
 // -----------------------------------------------------------
 export async function checkPlatformLimit(
   orgId: string,
@@ -288,9 +316,7 @@ export async function checkPlatformLimit(
   }
 
   const { platformsLimit } = billing.features;
-  if (platformsLimit === -1) {
-    return { allowed: true };
-  }
+  if (platformsLimit === -1) return { allowed: true };
 
   if (requestedPlatforms.length > platformsLimit) {
     return {
@@ -305,7 +331,6 @@ export async function checkPlatformLimit(
 
 // -----------------------------------------------------------
 // FEATURE CHECK
-// Generic check for a specific feature flag
 // -----------------------------------------------------------
 export async function checkFeatureAccess(
   orgId: string,
@@ -321,7 +346,9 @@ export async function checkFeatureAccess(
 
   const value = billing.features[feature];
   if (value === false) {
-    const trialSuffix = billing.isTrialing ? ' Subscribe to unlock this feature.' : ' Upgrade your plan to access it.';
+    const trialSuffix = billing.isTrialing
+      ? ' Subscribe to unlock this feature.'
+      : ' Upgrade your plan to access it.';
     return {
       allowed: false,
       reason: `This feature is not available on your current plan.${trialSuffix}`,
@@ -334,14 +361,11 @@ export async function checkFeatureAccess(
 
 // -----------------------------------------------------------
 // GET USAGE STATS FOR BILLING PAGE
-// Counts per published platform deliveries, not raw content items
 // -----------------------------------------------------------
 export async function getOrgUsage(orgId: string) {
   const db = await getDb();
-
   const billing = await getOrgBillingState(orgId);
 
-  // Window: trial start or calendar month start
   let windowStart: Date;
   if (billing?.isTrialing && billing.trialEndsAt) {
     windowStart = new Date(billing.trialEndsAt);
@@ -374,7 +398,8 @@ export async function getOrgUsage(orgId: string) {
 
 // -----------------------------------------------------------
 // INIT ORG TRIAL
-// Called when a new org is created to set trial end date
+// Called when setup fee is paid to start the trial.
+// Welcome email was already fired at org creation — no duplicate needed.
 // -----------------------------------------------------------
 export async function initOrgTrial(orgId: string) {
   const db = await getDb();
@@ -385,11 +410,39 @@ export async function initOrgTrial(orgId: string) {
     .update(organizationSchema)
     .set({
       planStatus: 'trialing',
-      plan: 'starter', // trial always shows as starter
+      plan: 'starter',
       trialEndsAt,
-      // Trial limits — 2 connectable platforms, 3 posts
       postsPerMonth: TRIAL_FEATURES.postsPerMonth,
       platformsLimit: TRIAL_FEATURES.platformsLimit,
     })
     .where(eq(organizationSchema.id, orgId));
+
+  console.log(`[initOrgTrial] Trial started for org ${orgId}, ends at ${trialEndsAt.toISOString()}`);
+}
+
+// -----------------------------------------------------------
+// FIRE PLAN UPGRADED EMAIL
+// Call this after a Stripe/Paystack subscription is activated.
+// Exported so webhook routes can call it directly.
+// -----------------------------------------------------------
+export async function firePlanUpgradedEmail(email: string, plan: string): Promise<void> {
+  try {
+    await fireEmailEvent('plan.upgraded', { email, plan });
+    console.log(`[Email] plan.upgraded fired for ${email} → ${plan}`);
+  } catch (err) {
+    console.error('[Email] plan.upgraded failed (non-fatal):', err);
+  }
+}
+
+// -----------------------------------------------------------
+// FIRE SUBSCRIPTION CANCELLED EMAIL
+// Call this after a Stripe/Paystack subscription is cancelled.
+// -----------------------------------------------------------
+export async function fireSubscriptionCancelledEmail(email: string): Promise<void> {
+  try {
+    await fireEmailEvent('subscription.cancelled', { email });
+    console.log(`[Email] subscription.cancelled fired for ${email}`);
+  } catch (err) {
+    console.error('[Email] subscription.cancelled failed (non-fatal):', err);
+  }
 }
