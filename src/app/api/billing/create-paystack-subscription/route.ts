@@ -142,6 +142,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Record that this org uses Paystack before redirecting
+    await db
+      .update(organizationSchema)
+      .set({ paymentType: 'paystack', updatedAt: new Date() })
+      .where(eq(organizationSchema.id, orgId!));
+
     return NextResponse.json({ url: paystackData.data.authorization_url });
   } catch (err) {
     console.error('[Paystack Subscription] Error:', err);

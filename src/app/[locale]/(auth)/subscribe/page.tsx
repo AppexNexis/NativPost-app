@@ -234,6 +234,18 @@ function SubscribeContent() {
   const [pollAttempts, setPollAttempts] = useState(0);
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Geo-detect Nigeria → default to Paystack, everywhere else → Stripe
+  useEffect(() => {
+    fetch('https://ipapi.co/json/')
+      .then(r => r.json())
+      .then((data: { country_code?: string }) => {
+        if (data.country_code === 'NG') {
+          setPaymentMethod('paystack');
+        }
+      })
+      .catch(() => { /* keep stripe default */ });
+  }, []);
+
   const MAX_POLL_ATTEMPTS = 10;
   const POLL_INTERVAL_MS = 2000;
 
@@ -405,8 +417,8 @@ function SubscribeContent() {
           <Image
             src="/assets/images/shared/main-logo.svg"
             alt="Main Logo"
-            width={100}
-            height={100}
+            width={150}
+            height={150}
           />
 
           {/* Right side: org name + user button */}
@@ -470,16 +482,16 @@ function SubscribeContent() {
               <button
                 type="button"
                 onClick={() => setPaymentMethod('stripe')}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentMethod === 'stripe' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${paymentMethod === 'stripe' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
-                Card (Stripe)
+                Stripe
               </button>
               <button
                 type="button"
                 onClick={() => setPaymentMethod('paystack')}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentMethod === 'paystack' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${paymentMethod === 'paystack' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
-                Africa (Paystack)
+                Paystack
               </button>
             </div>
           </div>
@@ -655,8 +667,25 @@ function SubscribeContent() {
 
         {/* ── Legal footer ── */}
         <p className="mt-8 text-center text-[11px] leading-relaxed text-muted-foreground">
-          By continuing, you agree to our Terms of Service and Privacy Policy.
-          Cancel anytime before your trial ends and you won't be charged.
+          By continuing, you agree to our{' '}
+          <a
+            href="https://nativpost.com/terms-conditions"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-foreground underline underline-offset-2 hover:opacity-70"
+          >
+            Terms of Service
+          </a>
+          {' '}and{' '}
+          <a
+            href="https://nativpost.com/privacy-policy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-foreground underline underline-offset-2 hover:opacity-70"
+          >
+            Privacy Policy
+          </a>
+          . Cancel anytime before your trial ends and you won't be charged.
         </p>
       </div>
     </div>

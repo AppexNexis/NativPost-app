@@ -116,8 +116,9 @@ export async function POST(request: NextRequest) {
       // .set({ paystackCustomerCode: email }) // will be updated to proper code from webhook
       .set({
         paystackCustomerCode: email,
-        paystackPlanCode: planCode ?? null, // store intended plan code
-        plan: planId, // store intended plan id
+        paystackPlanCode: planCode ?? null,
+        plan: planId,
+        paymentType: 'paystack', // record that this org uses Paystack
         updatedAt: new Date(),
       })
       .where(eq(organizationSchema.id, orgId!));

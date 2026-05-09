@@ -58,12 +58,12 @@ const FEATURE_ROWS = [
   {
     label: 'Support',
     render: (plan: typeof VISIBLE_PLANS[0]) =>
-      ({
-        email: 'Email',
-        priority_email: 'Priority email',
-        live_chat: 'Live chat',
-        dedicated_slack: 'Dedicated Slack',
-      }[plan.features.supportLevel] || 'Email'),
+    ({
+      email: 'Email',
+      priority_email: 'Priority email',
+      live_chat: 'Live chat',
+      dedicated_slack: 'Dedicated Slack',
+    }[plan.features.supportLevel] || 'Email'),
   },
 ];
 
@@ -77,7 +77,6 @@ function MobilePlanCard({
   isLoading,
   onSelect,
   onSubscribe,
-  trialDays,
 }: {
   plan: typeof VISIBLE_PLANS[0];
   isSelected: boolean;
@@ -85,7 +84,6 @@ function MobilePlanCard({
   isLoading: string | null;
   onSelect: () => void;
   onSubscribe: () => void;
-  trialDays: number;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -94,7 +92,7 @@ function MobilePlanCard({
       className={`overflow-hidden rounded-2xl border-2 transition-all duration-200 ${isSelected
         ? 'border-foreground shadow-lg'
         : 'border-border hover:border-foreground/30'
-      }`}
+        }`}
     >
       {/* Card header */}
       <div className={`p-5 ${plan.popular ? 'bg-foreground text-background' : 'bg-muted/40'}`}>
@@ -136,7 +134,7 @@ function MobilePlanCard({
               : plan.popular
                 ? 'border border-background/30 bg-background/10 text-background hover:bg-background/20'
                 : 'border border-border bg-background text-foreground hover:bg-muted'
-            }`}
+              }`}
           >
             {isSelected ? (
               <span className="flex items-center gap-1">
@@ -158,12 +156,12 @@ function MobilePlanCard({
             className={`mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-3 text-sm font-semibold transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-60 ${plan.popular
               ? 'bg-background text-foreground'
               : 'bg-foreground text-background'
-            }`}
+              }`}
           >
             {isPlanLoading
               ? <Loader2 className="size-4 animate-spin" />
               : <ChevronRight className="size-4" />}
-            {isPlanLoading ? 'Redirecting...' : `Start ${trialDays}-day free trial`}
+            {isPlanLoading ? 'Redirecting...' : 'Start free trial'}
           </button>
         )}
       </div>
@@ -281,41 +279,33 @@ function SubscribeContent() {
     let mounted = true;
 
     async function init() {
+      // Handle Paystack return with reference — poll until confirmed
       if (paystackSuccess && paystackReference) {
         if (mounted) {
-          setIsPolling(true); setBillingChecked(true);
+          setIsPolling(true);
+          setBillingChecked(true);
         }
         pollBillingStatus(0);
         return;
       }
 
+      // Check billing status directly — don't wait for Clerk org hydration
+      // which adds 2-3 seconds of unnecessary delay
       try {
-        if (!organization) {
-          if (mounted) {
-            setBillingChecked(true);
-          } return;
-        }
-
         const res = await fetch('/api/billing/status', { cache: 'no-store' });
-        if (!res.ok) {
-          if (mounted) {
-            setBillingChecked(true);
-          } return;
-        }
-
-        const billing = await res.json();
-        if ((billing?.isActive || billing?.isTrialing) && !billing?.trialExpired) {
-          router.replace(redirectPath);
-          return;
-        }
-
-        if (mounted) {
-          setBillingChecked(true);
+        if (res.ok) {
+          const billing = await res.json();
+          if (billing?.isActive && !billing?.trialExpired) {
+            router.replace(redirectPath);
+            return;
+          }
         }
       } catch {
-        if (mounted) {
-          setBillingChecked(true);
-        }
+        // Fail open — show the subscribe page
+      }
+
+      if (mounted) {
+        setBillingChecked(true);
       }
     }
 
@@ -326,7 +316,18 @@ function SubscribeContent() {
         clearTimeout(pollTimer.current);
       }
     };
-  }, [organization, paystackSuccess, paystackReference, redirectPath, router, pollBillingStatus]);
+  }, [paystackSuccess, paystackReference, redirectPath, router, pollBillingStatus]);
+
+  // Affonso signup tracking
+  useEffect(() => {
+    const email = user?.primaryEmailAddress?.emailAddress;
+    if (email && typeof window !== 'undefined' && (window as any).Affonso) {
+      (window as any).Affonso.signup({
+        email,
+        externalUserId: user.id,
+      });
+    }
+  }, [user]);
 
   const handleSubscribe = async (planId: string) => {
     setIsLoading(planId);
@@ -336,7 +337,8 @@ function SubscribeContent() {
         const res = await fetch('/api/billing/create-checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planId }),
+          // setupFeeOnly: charge only the $5 setup fee, no subscription yet
+          body: JSON.stringify({ planId, setupFeeOnly: true }),
         });
         const data = await res.json();
         if (data.url) {
@@ -441,13 +443,16 @@ function SubscribeContent() {
             -day free trial
           </h1>
           <p className="mt-3 text-sm text-muted-foreground sm:text-base">
-            $0.00 due today. Cancel anytime before the trial ends and you won't be charged.
+            Pay a one-time $5 setup fee today. Your
+            {' '}
+            {FREE_TRIAL_DAYS}
+            -day trial starts immediately. Cancel before it ends and you won't be charged for a subscription.
           </p>
         </div>
 
         {/* ── Trust strip ── */}
         <div className="mb-8 flex flex-wrap justify-center gap-6">
-          {['No setup hassle', `${FREE_TRIAL_DAYS} days free`, 'Cancel anytime', 'Secure payment'].map(item => (
+          {['$5 setup fee', `${FREE_TRIAL_DAYS} days free`, 'Cancel anytime', 'Secure payment'].map(item => (
             <div key={item} className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <div className="flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
                 <Check className="size-2.5 text-emerald-600" />
@@ -501,7 +506,6 @@ function SubscribeContent() {
               isLoading={isLoading}
               onSelect={() => setSelectedPlan(plan.id)}
               onSubscribe={() => handleSubscribe(plan.id)}
-              trialDays={FREE_TRIAL_DAYS}
             />
           ))}
         </div>
@@ -541,7 +545,7 @@ function SubscribeContent() {
                     className={`relative overflow-hidden rounded-t-2xl p-5 transition-all ${plan.popular
                       ? 'bg-foreground text-background'
                       : 'bg-muted/40'
-                    } ${isSelected ? 'ring-2 ring-foreground ring-offset-0' : ''}`}
+                      } ${isSelected ? 'ring-2 ring-foreground ring-offset-0' : ''}`}
                   >
                     {plan.popular && (
                       <div className="absolute -right-10 -top-10 size-32 rounded-full bg-white/10 blur-2xl" />
@@ -581,7 +585,7 @@ function SubscribeContent() {
                             : plan.popular
                               ? 'border border-background/30 bg-background/10 text-background hover:bg-background/20'
                               : 'border border-border bg-background text-foreground hover:bg-muted'
-                          }`}
+                            }`}
                         >
                           {isSelected && <Check className="size-3" />}
                           {isSelected ? 'Selected' : 'Select plan'}
@@ -595,12 +599,12 @@ function SubscribeContent() {
                             className={`flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-60 ${plan.popular
                               ? 'bg-background text-foreground'
                               : 'bg-foreground text-background'
-                            }`}
+                              }`}
                           >
                             {isPlanLoading
                               ? <Loader2 className="size-3.5 animate-spin" />
                               : <ChevronRight className="size-3.5" />}
-                            {isPlanLoading ? 'Redirecting...' : `Start ${FREE_TRIAL_DAYS}-day trial`}
+                            {isPlanLoading ? 'Redirecting...' : 'Start free trial'}
                           </button>
                         )}
                       </div>
@@ -619,10 +623,10 @@ function SubscribeContent() {
                           {typeof value === 'boolean'
                             ? value
                               ? (
-                                  <div className="flex size-5 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
-                                    <Check className="size-3 text-emerald-600 dark:text-emerald-400" />
-                                  </div>
-                                )
+                                <div className="flex size-5 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+                                  <Check className="size-3 text-emerald-600 dark:text-emerald-400" />
+                                </div>
+                              )
                               : <span className="text-base text-muted-foreground/25">—</span>
                             : <span className="text-sm font-medium text-foreground">{value}</span>}
                         </div>
@@ -659,7 +663,7 @@ function SubscribeContent() {
   );
 }
 
-export default function SubscribePage() {
+export default function SubscribeClient() {
   return (
     <Suspense
       fallback={(

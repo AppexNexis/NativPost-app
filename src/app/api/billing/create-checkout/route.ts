@@ -61,7 +61,13 @@ export async function POST(request: NextRequest) {
       customerId = customer.id;
       await db
         .update(organizationSchema)
-        .set({ stripeCustomerId: customerId })
+        .set({ stripeCustomerId: customerId, paymentType: 'stripe' })
+        .where(eq(organizationSchema.id, orgId!));
+    } else {
+      // Existing Stripe customer — ensure paymentType is recorded
+      await db
+        .update(organizationSchema)
+        .set({ paymentType: 'stripe' })
         .where(eq(organizationSchema.id, orgId!));
     }
 

@@ -51,6 +51,8 @@ export const organizationSchema = pgTable(
     platformsLimit: integer('platforms_limit').default(3).notNull(),
     setupFeePaid: boolean('setup_fee_paid').default(false).notNull(),
     trialEndsAt: timestamp('trial_ends_at', { mode: 'date' }),
+    // Payment provider the org used to subscribe — drives billing page behaviour
+    paymentType: text('payment_type').default('stripe'), // 'stripe' | 'paystack'
     // Metadata
     updatedAt: timestamp('updated_at', { mode: 'date' })
       .defaultNow()
