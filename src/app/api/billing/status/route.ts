@@ -63,7 +63,12 @@ export async function GET(_request: NextRequest) {
       hasStripe: !!billing.stripeCustomerId,
       hasPaystack: !!billing.paystackCustomerCode,
       hasPaystackSub: !!billing.paystackSubscriptionCode,
-      paymentType: billing.paymentType ?? 'stripe',
+      // Derive payment type from actual subscription fields first — the column
+      // may be wrong for orgs created before the migration. hasPaystackSub means
+      // they definitely used Paystack. hasPaystack && !hasStripe is also Paystack.
+      paymentType: (!!billing.paystackSubscriptionCode || (!!billing.paystackCustomerCode && !billing.stripeCustomerId))
+        ? 'paystack'
+        : (billing.paymentType ?? 'stripe'),
       features: billing.features,
       usage: {
         postsThisMonth: usage.postsThisMonth,

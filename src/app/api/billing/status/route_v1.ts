@@ -38,6 +38,7 @@ export async function GET(_request: NextRequest) {
         setupFeePaid: false,
         hasStripe: false,
         hasPaystack: false,
+        paymentType: 'stripe',
         features: {
           postsPerMonth: 0,
           platformsLimit: 0,
@@ -62,6 +63,7 @@ export async function GET(_request: NextRequest) {
       hasStripe: !!billing.stripeCustomerId,
       hasPaystack: !!billing.paystackCustomerCode,
       hasPaystackSub: !!billing.paystackSubscriptionCode,
+      paymentType: billing.paymentType ?? 'stripe',
       features: billing.features,
       usage: {
         postsThisMonth: usage.postsThisMonth,

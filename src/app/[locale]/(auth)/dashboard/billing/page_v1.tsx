@@ -271,6 +271,7 @@ type BillingStatus = {
   hasStripe: boolean;
   hasPaystack: boolean;
   hasPaystackSub: boolean;
+  paymentType: 'stripe' | 'paystack';
   features: Record<string, unknown>;
   usage: {
     postsThisMonth: number;
@@ -390,7 +391,14 @@ function BillingContent() {
     try {
       const res = await fetch('/api/billing/status');
       if (res.ok) {
-        setBilling(await res.json());
+        const data = await res.json();
+        setBilling(data);
+        // Auto-select the payment method the org originally used to subscribe
+        if (data.paymentType === 'paystack') {
+          setPaymentMethod('paystack');
+        } else {
+          setPaymentMethod('stripe');
+        }
       }
     } catch (err) {
       console.error('Failed to load billing:', err);
@@ -677,16 +685,16 @@ function BillingContent() {
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('stripe')}
-                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentMethod === 'stripe' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${paymentMethod === 'stripe' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                 >
-                  Card (Stripe)
+                  Stripe
                 </button>
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('paystack')}
-                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${paymentMethod === 'paystack' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${paymentMethod === 'paystack' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                 >
-                  Africa (Paystack)
+                  Paystack
                 </button>
               </div>
             </div>
