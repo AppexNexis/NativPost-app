@@ -4,13 +4,9 @@ import { Webhook } from 'svix';
 
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
-import { fireEmailEvent } from '@/lib/email-webhook';
+import { ensureNativPostAdminInOrg, fireWelcomeEmailForOrg } from '@/lib/clerk-org-helpers';
 
 const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
-const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY;
-
-// The NativPost company admin email — auto-added to every new org
-const NATIVPOST_ADMIN_EMAIL = 'admin@nativpost.com';
 
 type ClerkOrganizationEvent = {
   type: 'organization.created' | 'organization.deleted' | string;
@@ -23,172 +19,10 @@ type ClerkOrganizationEvent = {
 };
 
 // -----------------------------------------------------------
-// CLERK BACKEND API HELPERS
-// -----------------------------------------------------------
-
-async function getClerkUserByEmail(email: string): Promise<{ id: string } | null> {
-  if (!CLERK_SECRET_KEY) {
-    console.error('[Clerk Webhook] Missing CLERK_SECRET_KEY');
-    return null;
-  }
-
-  const res = await fetch(
-    `https://api.clerk.com/v1/users?email_address=${encodeURIComponent(email)}&limit=1`,
-    {
-      headers: new Headers({
-        'Authorization': `Bearer ${CLERK_SECRET_KEY}`,
-        'Content-Type': 'application/json',
-      }),
-    },
-  );
-
-  if (!res.ok) {
-    const body = await res.text();
-    console.error(`[Clerk Webhook] Failed to look up user by email: ${res.status}`, body);
-    return null;
-  }
-
-  const users = await res.json();
-  const user = Array.isArray(users) ? users[0] : users?.data?.[0];
-
-  if (!user) {
-    console.warn(`[Clerk Webhook] No Clerk user found for email: ${email}`);
-    return null;
-  }
-
-  return { id: user.id };
-}
-
-async function addOrgMember(
-  orgId: string,
-  userId: string,
-  role: 'admin' | 'basic_member' = 'admin',
-): Promise<boolean> {
-  if (!CLERK_SECRET_KEY) {
-    console.error('[Clerk Webhook] Missing CLERK_SECRET_KEY — cannot add org member');
-    return false;
-  }
-
-  const res = await fetch(
-    `https://api.clerk.com/v1/organizations/${orgId}/memberships`,
-    {
-      method: 'POST',
-      headers: new Headers({
-        'Authorization': `Bearer ${CLERK_SECRET_KEY}`,
-        'Content-Type': 'application/json',
-      }),
-      body: JSON.stringify({ user_id: userId, role }),
-    },
-  );
-
-  if (!res.ok) {
-    const body = await res.text();
-    if (res.status === 422) {
-      // Already a member — not an error
-      console.log(`[Clerk Webhook] User ${userId} already a member of org ${orgId} — skipping`);
-      return true;
-    }
-    console.error(`[Clerk Webhook] Failed to add member to org ${orgId}: ${res.status}`, body);
-    return false;
-  }
-
-  console.log(`[Clerk Webhook] Added ${userId} as ${role} to org ${orgId}`);
-  return true;
-}
-
-// -----------------------------------------------------------
-// SHARED HELPERS — exported so billing.ts can call them
-// as fallbacks when the webhook was missed/delayed.
-// -----------------------------------------------------------
-
-/**
- * Ensure the NativPost admin account is a member of the org.
- * Idempotent — safe to call multiple times, 422 is handled gracefully.
- */
-export async function ensureNativPostAdminInOrg(orgId: string): Promise<void> {
-  try {
-    const adminUser = await getClerkUserByEmail(NATIVPOST_ADMIN_EMAIL);
-    if (!adminUser) {
-      console.warn(`[ensureAdmin] Could not find Clerk user for ${NATIVPOST_ADMIN_EMAIL}`);
-      return;
-    }
-    const added = await addOrgMember(orgId, adminUser.id, 'admin');
-    if (!added) {
-      console.warn(
-        `[ensureAdmin] Could not add ${NATIVPOST_ADMIN_EMAIL} to org ${orgId}. `
-        + 'Add manually from Clerk Dashboard if needed.',
-      );
-    }
-  } catch (err) {
-    // Non-fatal — never crash the caller
-    console.error(`[ensureAdmin] Unexpected error for org ${orgId}:`, err);
-  }
-}
-
-/**
- * Resolve the creator of an org via Clerk memberships API,
- * then fire the welcome email sequence.
- * Idempotent — the email tool deduplicates enrollments via UNIQUE KEY.
- */
-export async function fireWelcomeEmailForOrg(orgId: string): Promise<void> {
-  try {
-    if (!CLERK_SECRET_KEY) return;
-
-    // Get the org's current members to find the real creator
-    const res = await fetch(
-      `https://api.clerk.com/v1/organizations/${orgId}/memberships?limit=10`,
-      {
-        headers: new Headers({
-          'Authorization': `Bearer ${CLERK_SECRET_KEY}`,
-          'Content-Type': 'application/json',
-        }),
-      },
-    );
-
-    if (!res.ok) {
-      console.warn(`[fireWelcomeEmail] Could not fetch members for org ${orgId}: ${res.status}`);
-      return;
-    }
-
-    const json = await res.json();
-    const members: Array<{
-      role: string;
-      public_user_data: {
-        identifier: string;
-        first_name?: string;
-        last_name?: string;
-        user_id: string;
-      };
-    }> = json.data ?? json;
-
-    // First admin who is NOT the NativPost internal account
-    const creator = members.find(
-      m => m.role === 'admin' && m.public_user_data?.identifier !== NATIVPOST_ADMIN_EMAIL,
-    );
-
-    if (!creator) {
-      console.warn(`[fireWelcomeEmail] No real creator found in org ${orgId} memberships`);
-      return;
-    }
-
-    await fireEmailEvent('user.signup', {
-      email: creator.public_user_data.identifier,
-      first_name: creator.public_user_data.first_name ?? '',
-      last_name: creator.public_user_data.last_name ?? '',
-      clerk_user_id: creator.public_user_data.user_id,
-    });
-
-    console.log(
-      `[fireWelcomeEmail] Welcome email queued for org ${orgId} → ${creator.public_user_data.identifier}`,
-    );
-  } catch (err) {
-    // Non-fatal
-    console.error(`[fireWelcomeEmail] Error for org ${orgId}:`, err);
-  }
-}
-
-// -----------------------------------------------------------
 // WEBHOOK HANDLER
+// Only POST is exported — Next.js App Router requirement.
+// Shared helpers live in @/lib/clerk-org-helpers to avoid
+// "not a valid Route export field" build errors.
 // -----------------------------------------------------------
 export async function POST(request: Request) {
   const db = await getDb();

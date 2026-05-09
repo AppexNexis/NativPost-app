@@ -74,7 +74,7 @@ async function runMissedWebhookFallbacks(orgId: string): Promise<void> {
  */
 async function runAdminMembershipFallback(orgId: string): Promise<void> {
   try {
-    const { ensureNativPostAdminInOrg } = await import('@/app/api/webhooks/clerk/route');
+    const { ensureNativPostAdminInOrg } = await import('@/lib/clerk-org-helpers');
     await ensureNativPostAdminInOrg(orgId);
   } catch (err) {
     console.error(`[Billing Fallback] ensureNativPostAdminInOrg failed for org ${orgId}:`, err);
@@ -87,7 +87,7 @@ async function runAdminMembershipFallback(orgId: string): Promise<void> {
  */
 async function runWelcomeEmailFallback(orgId: string): Promise<void> {
   try {
-    const { fireWelcomeEmailForOrg } = await import('@/app/api/webhooks/clerk/route');
+    const { fireWelcomeEmailForOrg } = await import('@/lib/clerk-org-helpers');
     await fireWelcomeEmailForOrg(orgId);
   } catch (err) {
     console.error(`[Billing Fallback] fireWelcomeEmailForOrg failed for org ${orgId}:`, err);

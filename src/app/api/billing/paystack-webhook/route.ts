@@ -5,9 +5,9 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getPlanByPaystackCode, PLAN_CONFIGS } from '@/lib/plans';
-// import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
+import { firePlanUpgradedEmail, fireSubscriptionCancelledEmail } from '@/lib/billing'; // ← NEW
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY!;
 
@@ -106,6 +106,7 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
   }
 
   const customerCode = (data.customer as Record<string, unknown>)?.customer_code as string | undefined;
+  const customerEmail = (data.customer as Record<string, unknown>)?.email as string | undefined; // ← NEW
   const authorizationCode = (data.authorization as Record<string, unknown>)?.authorization_code as string | undefined;
   const planCode = (data.plan as Record<string, unknown>)?.plan_code as string | undefined;
   const subscriptionCode = (data.subscription as Record<string, unknown>)?.subscription_code as string | undefined
@@ -160,7 +161,7 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            email: (data.customer as Record<string, unknown>)?.email ?? '',
+            email: customerEmail ?? '',
             customer_id: orgId,
             status: 'trialing',
           }),
@@ -201,6 +202,12 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
 
   console.log(`[Paystack Webhook] Activated ${planId} for org ${orgId}`);
 
+  // ── NEW: Fire plan.upgraded email ──────────────────────────────────────────
+  if (customerEmail) {
+    await firePlanUpgradedEmail(customerEmail, planId);
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   // ── Affonso: create commission on first subscription only ──
   // Recurring charges from paystack-activate cron use type: 'trial_activation'
   // and never include affonso_referral in metadata, so they are automatically
@@ -222,7 +229,7 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          email: (data.customer as Record<string, unknown>)?.email ?? '',
+          email: customerEmail ?? '',
           customer_id: orgId,
           status: 'customer',
         }),
@@ -268,6 +275,13 @@ async function handlePaystackCancelled(data: Record<string, unknown>) {
     .where(eq(organizationSchema.paystackSubscriptionCode, subscriptionCode));
 
   console.log(`[Paystack Webhook] Subscription cancelled: ${subscriptionCode}`);
+
+  // ── NEW: Fire subscription.cancelled email ─────────────────────────────────
+  const customerEmail = (data.customer as Record<string, unknown>)?.email as string | undefined;
+  if (customerEmail) {
+    await fireSubscriptionCancelledEmail(customerEmail);
+  }
+  // ──────────────────────────────────────────────────────────────────────────
 }
 
 async function handlePaystackPaymentFailed(data: Record<string, unknown>) {
