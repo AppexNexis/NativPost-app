@@ -156,6 +156,15 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [videoGenError, setVideoGenError] = useState<string | null>(null);
   const [videoPhotoTier, setVideoPhotoTier] = useState<'unsplash' | 'flux'>('unsplash');
+  // Video format: slideshow (photo-backed) or text-motion (branded animation)
+  const [videoFormat, setVideoFormat] = useState<'slideshow' | 'text-motion'>('slideshow');
+  const [textMotionStyle, setTextMotionStyle] = useState<'dark' | 'light' | 'brand'>('dark');
+  const [textMotionHeadlineOverride, setTextMotionHeadlineOverride] = useState('');
+  const [textMotionEyebrow, setTextMotionEyebrow] = useState('');
+  const [textMotionCta, setTextMotionCta] = useState('');
+  const [textMotionResult, setTextMotionResult] = useState<{ headlineUsed?: string; durationSeconds?: number } | null>(null);
+  const [isGeneratingTextMotion, setIsGeneratingTextMotion] = useState(false);
+  const [textMotionError, setTextMotionError] = useState<string | null>(null);
   const [isGeneratingUGC, setIsGeneratingUGC] = useState(false);
   const [ugcError, setUgcError] = useState<string | null>(null);
   const [ugcPhotoTier, setUgcPhotoTier] = useState<'unsplash' | 'flux' | 'seedance'>('unsplash');
@@ -382,6 +391,42 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       setVideoGenError('Network error. Please try again.');
     } finally {
       setIsGeneratingVideo(false);
+    }
+  };
+
+  const generateTextMotion = async () => {
+    if (!item) return;
+    setIsGeneratingTextMotion(true);
+    setTextMotionError(null);
+    setTextMotionResult(null);
+    try {
+      const res = await fetch(`/api/content/${item.id}/generate-text-motion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          style: textMotionStyle,
+          formats: ['vertical', 'square'],
+          ...(textMotionHeadlineOverride.trim() ? { headline: textMotionHeadlineOverride.trim() } : {}),
+          ...(textMotionEyebrow.trim() ? { eyebrow: textMotionEyebrow.trim().toUpperCase() } : {}),
+          ...(textMotionCta.trim() ? { cta: textMotionCta.trim() } : {}),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setTextMotionResult({ headlineUsed: data.headlineUsed, durationSeconds: data.durationSeconds });
+        const refreshRes = await fetch(`/api/content/${item.id}`);
+        if (refreshRes.ok) {
+          const refreshData = await refreshRes.json();
+          if (refreshData?.item?.id) setItem(refreshData.item);
+        }
+      } else {
+        setTextMotionError(data.error || 'Text motion generation failed. Please try again.');
+      }
+    } catch (err) {
+      console.error('[TextMotion] error:', err);
+      setTextMotionError('Network error. Please try again.');
+    } finally {
+      setIsGeneratingTextMotion(false);
     }
   };
 
@@ -1153,55 +1198,179 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
 
               {!hasUploadedVideo && !hasGeneratedVideo && (
                 <div className="mb-5">
-                  {/* Photo source selector */}
+
+                  {/* Video format toggle */}
                   <div className="mb-4">
-                    <p className="mb-2 text-xs font-medium text-muted-foreground">Photo source</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setVideoPhotoTier('unsplash')}
-                        className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${videoPhotoTier === 'unsplash' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
-                      >
-                        <p className={`text-xs font-semibold ${videoPhotoTier === 'unsplash' ? 'text-primary' : ''}`}>Unsplash</p>
-                        <p className="mt-0.5 text-[11px] text-muted-foreground">Free editorial photos</p>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setVideoPhotoTier('flux')}
-                        className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${videoPhotoTier === 'flux' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
-                      >
-                        <p className={`text-xs font-semibold ${videoPhotoTier === 'flux' ? 'text-primary' : ''}`}>AI Scene</p>
-                        <p className="mt-0.5 text-[11px] text-muted-foreground">FLUX Pro — brand-aligned</p>
-                      </button>
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">Video format</p>
+                    <div className="grid grid-cols-2 gap-1.5 rounded-lg bg-muted p-1">
+                      {(['slideshow', 'text-motion'] as const).map(fmt => (
+                        <button
+                          key={fmt}
+                          type="button"
+                          onClick={() => {
+                            setVideoFormat(fmt);
+                            setVideoGenError(null);
+                            setTextMotionError(null);
+                            setTextMotionResult(null);
+                          }}
+                          className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${videoFormat === fmt ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                        >
+                          {fmt === 'slideshow' ? 'Photo Slideshow' : 'Text Motion'}
+                        </button>
+                      ))}
                     </div>
+                    <p className="mt-1.5 text-[11px] text-muted-foreground">
+                      {videoFormat === 'slideshow'
+                        ? 'Cinematic photos with Ken Burns animation and your caption.'
+                        : 'Bold animated text — no photos needed. Great for quotes and insights.'}
+                    </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={generateVideo}
-                    disabled={isGeneratingVideo}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                  >
-                    {isGeneratingVideo
-                      ? (<><Loader2 className="size-4 animate-spin" />Generating video (~30–60s)...</>)
-                      : (<><Sparkles className="size-4" />Generate branded video</>)}
-                  </button>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Renders 9:16 for Reels/TikTok and 1:1 for LinkedIn. Takes 30–60 seconds.
-                  </p>
-                  {videoGenError && <p className="mt-2 text-xs text-red-500">{videoGenError}</p>}
-
-                  {uploadedSlideImages.length > 0 && (
-                    <div className="mt-4">
-                      <p className="mb-2 text-xs font-medium text-muted-foreground">Or use your uploaded images</p>
-                      <div className="flex gap-2 overflow-x-auto pb-1">
-                        {uploadedSlideImages.slice(0, 5).map((url, i) => (
-                          <div key={i} className="size-14 shrink-0 overflow-hidden rounded-md border">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={url} alt="" className="size-full object-cover" />
-                          </div>
-                        ))}
+                  {/* ── Slideshow options ── */}
+                  {videoFormat === 'slideshow' && (
+                    <>
+                      <div className="mb-4">
+                        <p className="mb-2 text-xs font-medium text-muted-foreground">Photo source</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setVideoPhotoTier('unsplash')}
+                            className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${videoPhotoTier === 'unsplash' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
+                          >
+                            <p className={`text-xs font-semibold ${videoPhotoTier === 'unsplash' ? 'text-primary' : ''}`}>Unsplash</p>
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">Free editorial photos</p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setVideoPhotoTier('flux')}
+                            className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${videoPhotoTier === 'flux' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
+                          >
+                            <p className={`text-xs font-semibold ${videoPhotoTier === 'flux' ? 'text-primary' : ''}`}>AI Scene</p>
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">FLUX Pro — brand-aligned</p>
+                          </button>
+                        </div>
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={generateVideo}
+                        disabled={isGeneratingVideo}
+                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                      >
+                        {isGeneratingVideo
+                          ? (<><Loader2 className="size-4 animate-spin" />Generating video (~30–60s)...</>)
+                          : (<><Sparkles className="size-4" />Generate photo slideshow</>)}
+                      </button>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Renders 9:16 for Reels/TikTok and 1:1 for LinkedIn. Takes 30–60 seconds.
+                      </p>
+                      {videoGenError && <p className="mt-2 text-xs text-red-500">{videoGenError}</p>}
+
+                      {uploadedSlideImages.length > 0 && (
+                        <div className="mt-4">
+                          <p className="mb-2 text-xs font-medium text-muted-foreground">Or use your uploaded images</p>
+                          <div className="flex gap-2 overflow-x-auto pb-1">
+                            {uploadedSlideImages.slice(0, 5).map((url, i) => (
+                              <div key={i} className="size-14 shrink-0 overflow-hidden rounded-md border">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={url} alt="" className="size-full object-cover" />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* ── Text Motion options ── */}
+                  {videoFormat === 'text-motion' && (
+                    <div className="space-y-3">
+                      {/* Style picker */}
+                      <div>
+                        <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Visual style</p>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {([
+                            ['dark',  'Dark',  'Dark bg, white text'],
+                            ['light', 'Light', 'Light bg, dark text'],
+                            ['brand', 'Brand', 'Brand color bg'],
+                          ] as const).map(([val, label, sub]) => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => setTextMotionStyle(val)}
+                              className={`rounded-lg border px-2.5 py-2 text-left transition-colors ${textMotionStyle === val ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
+                            >
+                              <p className={`text-[11px] font-semibold ${textMotionStyle === val ? 'text-primary' : ''}`}>{label}</p>
+                              <p className="text-[10px] text-muted-foreground">{sub}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Headline override */}
+                      <div>
+                        <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Headline (optional)</p>
+                        <input
+                          type="text"
+                          value={textMotionHeadlineOverride}
+                          onChange={e => setTextMotionHeadlineOverride(e.target.value)}
+                          placeholder="Auto-extracted from your caption…"
+                          className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                      </div>
+
+                      {/* Eyebrow label */}
+                      <div>
+                        <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Eyebrow label (optional)</p>
+                        <input
+                          type="text"
+                          value={textMotionEyebrow}
+                          onChange={e => setTextMotionEyebrow(e.target.value)}
+                          placeholder="e.g. HOT TAKE · MILESTONE · PRO TIP"
+                          className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                      </div>
+
+                      {/* CTA */}
+                      <div>
+                        <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Outro CTA (optional)</p>
+                        <input
+                          type="text"
+                          value={textMotionCta}
+                          onChange={e => setTextMotionCta(e.target.value)}
+                          placeholder="e.g. Follow for more · nativpost.com"
+                          className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                      </div>
+
+                      {/* Result feedback */}
+                      {textMotionResult && (
+                        <div className="rounded-lg bg-muted/50 p-3 space-y-1">
+                          {textMotionResult.headlineUsed && (
+                            <p className="text-[11px] text-muted-foreground">
+                              <span className="font-medium text-foreground">Headline: </span>
+                              {textMotionResult.headlineUsed}
+                            </p>
+                          )}
+                          {textMotionResult.durationSeconds && (
+                            <p className="text-[11px] text-green-600 font-medium">
+                              Generated — {textMotionResult.durationSeconds.toFixed(1)}s video
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={generateTextMotion}
+                        disabled={isGeneratingTextMotion}
+                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                      >
+                        {isGeneratingTextMotion
+                          ? (<><Loader2 className="size-4 animate-spin" />Generating (~15–30s)...</>)
+                          : (<><Sparkles className="size-4" />Generate text motion video</>)}
+                      </button>
+                      {textMotionError && <p className="mt-2 text-xs text-red-500">{textMotionError}</p>}
                     </div>
                   )}
                 </div>
@@ -1233,15 +1402,26 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                       </div>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={generateVideo}
-                    disabled={isGeneratingVideo}
-                    className="mt-3 inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-60"
-                  >
-                    {isGeneratingVideo ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
-                    Regenerate video
-                  </button>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={generateVideo}
+                      disabled={isGeneratingVideo || isGeneratingTextMotion}
+                      className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-60"
+                    >
+                      {isGeneratingVideo ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
+                      Regenerate slideshow
+                    </button>
+                    <button
+                      type="button"
+                      onClick={generateTextMotion}
+                      disabled={isGeneratingVideo || isGeneratingTextMotion}
+                      className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-60"
+                    >
+                      {isGeneratingTextMotion ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
+                      Try text motion
+                    </button>
+                  </div>
                   {videoGenError && <p className="mt-1 text-xs text-red-500">{videoGenError}</p>}
                   {/* Unsplash attribution — required by Unsplash API guidelines */}
                   {(() => {

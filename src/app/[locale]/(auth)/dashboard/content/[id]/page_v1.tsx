@@ -175,7 +175,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [sceneStyle, setSceneStyle] = useState<'professional' | 'minimal' | 'vibrant' | 'elegant' | 'bold' | 'cinematic'>('professional');
   const [sceneOverlay, setSceneOverlay] = useState<'standard' | 'minimal' | 'none'>('standard');
   const [scenePromptOverride, setScenePromptOverride] = useState('');
-  const [sceneResult, setSceneResult] = useState<{ promptUsed?: string; modelUsed?: string; fallback?: boolean } | null>(null);
+  const [sceneHeadlineOverride, setSceneHeadlineOverride] = useState('');
+  const [sceneEyebrowOverride, setSceneEyebrowOverride] = useState('');
+  const [sceneResult, setSceneResult] = useState<{ promptUsed?: string; modelUsed?: string; fallback?: boolean; headlineUsed?: string } | null>(null);
   // Carousel engine state
   const [isGeneratingCarousel, setIsGeneratingCarousel] = useState(false);
   const [carouselError, setCarouselError] = useState<string | null>(null);
@@ -545,11 +547,13 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           modelTier: 'pro',
           overlayStyle: sceneOverlay,
           ...(scenePromptOverride.trim() ? { scenePrompt: scenePromptOverride.trim() } : {}),
+          ...(sceneHeadlineOverride.trim() ? { headline: sceneHeadlineOverride.trim() } : {}),
+          ...(sceneEyebrowOverride.trim() ? { eyebrow: sceneEyebrowOverride.trim().toUpperCase() } : {}),
         }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setSceneResult({ promptUsed: data.promptUsed, modelUsed: data.modelUsed, fallback: data.fallback });
+        setSceneResult({ promptUsed: data.promptUsed, modelUsed: data.modelUsed, fallback: data.fallback, headlineUsed: data.headlineUsed });
         const refreshRes = await fetch(`/api/content/${item.id}`);
         if (refreshRes.ok) {
           setItem((await refreshRes.json()).item);
@@ -1541,16 +1545,18 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <div className="mb-5">
                   <p className="mb-3 text-xs font-medium text-muted-foreground">Generated images</p>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {item.graphicUrls.map((url, i) => (
-                      <div key={i} className="overflow-hidden rounded-lg border">
-                        <div className="border-b px-3 py-2">
-                          <p className="text-[11px] font-medium text-muted-foreground">
-                            {i === 0 ? '1:1 — Square (Instagram, LinkedIn)' : '9:16 — Vertical (Stories, Reels)'}
-                          </p>
+                    {item.graphicUrls.map((url, i) => {
+                      const fmt = imageFormats[i] ?? (i === 0 ? 'square' : 'vertical');
+                      const fmtLabel = fmt === 'square' ? '1:1 — Square (Instagram, LinkedIn)' : '9:16 — Vertical (Stories, Reels)';
+                      return (
+                        <div key={i} className="overflow-hidden rounded-lg border">
+                          <div className="border-b px-3 py-2">
+                            <p className="text-[11px] font-medium text-muted-foreground">{fmtLabel}</p>
+                          </div>
+                          <Image src={url} alt={`Generated graphic ${i + 1}`} width={540} height={540} className="w-full object-cover" unoptimized />
                         </div>
-                        <Image src={url} alt={`Generated graphic ${i + 1}`} width={540} height={540} className="w-full object-cover" unoptimized />
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1599,7 +1605,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     <div className="mb-3">
                       <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Brand overlay</p>
                       <div className="grid grid-cols-3 gap-1.5">
-                        {([['standard', 'Logo + name'], ['minimal', 'Logo only'], ['none', 'None']] as const).map(([val, label]) => (
+                        {([['standard', 'Logo + name'], ['minimal', 'Subtle'], ['none', 'None']] as const).map(([val, label]) => (
                           <button
                             key={val}
                             type="button"
@@ -1632,7 +1638,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     </div>
 
                     {/* Optional prompt override */}
-                    <div className="mb-4">
+                    <div className="mb-3">
                       <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Scene description (optional)</p>
                       <input
                         type="text"
@@ -1643,14 +1649,44 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                       />
                     </div>
 
+                    {/* Optional headline override */}
+                    <div className="mb-3">
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Headline on image (optional)</p>
+                      <input
+                        type="text"
+                        value={sceneHeadlineOverride}
+                        onChange={e => setSceneHeadlineOverride(e.target.value)}
+                        placeholder="Auto-extracted from your caption..."
+                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+
+                    {/* Optional eyebrow */}
+                    <div className="mb-4">
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Eyebrow label (optional)</p>
+                      <input
+                        type="text"
+                        value={sceneEyebrowOverride}
+                        onChange={e => setSceneEyebrowOverride(e.target.value)}
+                        placeholder="e.g. NEW LAUNCH · CASE STUDY · PRO TIP"
+                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+
                     {/* Scene result info */}
                     {sceneResult && (
-                      <div className="mb-3 rounded-lg bg-muted/50 p-3">
+                      <div className="mb-3 rounded-lg bg-muted/50 p-3 space-y-1">
                         {sceneResult.fallback && (
-                          <p className="mb-1 text-[11px] text-amber-600 font-medium">Template fallback used. Top up fal.ai credits to enable AI scene generation.</p>
+                          <p className="text-[11px] text-amber-600 font-medium">Template fallback used — top up fal.ai credits to enable AI scenes.</p>
                         )}
                         {sceneResult.modelUsed && !sceneResult.fallback && (
-                          <p className="mb-1 text-[11px] text-green-600 font-medium">Generated with FLUX {sceneResult.modelUsed}</p>
+                          <p className="text-[11px] text-green-600 font-medium">Generated with FLUX {sceneResult.modelUsed}</p>
+                        )}
+                        {sceneResult.headlineUsed && (
+                          <p className="text-[11px] text-muted-foreground">
+                            <span className="font-medium text-foreground">Headline: </span>
+                            {sceneResult.headlineUsed}
+                          </p>
                         )}
                         {sceneResult.promptUsed && (
                           <p className="text-[11px] text-muted-foreground line-clamp-2">{sceneResult.promptUsed}</p>

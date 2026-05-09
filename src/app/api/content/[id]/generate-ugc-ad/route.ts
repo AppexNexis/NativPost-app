@@ -59,7 +59,7 @@ function splitCaptionIntoSections(caption: string): {
   };
 }
 
-export async function POST(_request: NextRequest, { params }: RouteParams) {
+export async function POST(request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
@@ -67,6 +67,10 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
   }
 
   const { id } = await params;
+
+  // Read photoTier from request body — dashboard already sends this from the tier selector
+  const body = await request.json().catch(() => ({})) as { photoTier?: string };
+  const requestedPhotoTier = body.photoTier; // 'unsplash' | 'flux' | 'seedance' | undefined
 
   try {
     const [item] = await db
@@ -125,8 +129,8 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       brandSecondary: profile?.secondaryColor || '#1A1A1C',
       brandName: profile?.brandName || 'NativPost',
       ...(profile?.logoUrl ? { logoUrl: profile.logoUrl } : {}),
-      // Auto-fetch per-section photos when none pre-provided
-      photoTier: imageUrls.length < 4 ? 'unsplash' : 'none',
+      // Use tier from dashboard selector; fall back to unsplash when no images provided
+      photoTier: requestedPhotoTier || (imageUrls.length < 4 ? 'unsplash' : 'none'),
       industry: (profile as any)?.industry || undefined,
     };
 

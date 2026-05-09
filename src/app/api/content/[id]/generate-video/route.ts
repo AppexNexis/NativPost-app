@@ -56,8 +56,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .where(eq(brandProfileSchema.orgId, orgId!))
       .limit(1);
 
-    // Parse photoTier from request body (dashboard sends this)
-    let requestBody: { photoTier?: string } = {};
+    // Parse photoTier and imageStyle from request body (dashboard sends these)
+    let requestBody: { photoTier?: string; imageStyle?: string } = {};
     try { requestBody = await request.json(); } catch { /* no body */ }
 
     const payload = {
@@ -67,9 +67,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       brandSecondary: profile?.secondaryColor || '#1A1A1C',
       brandName:      profile?.brandName      || 'NativPost',
       logoUrl:        profile?.logoUrl        || undefined,
-      // Use Unsplash when no images provided — auto-fetches studio photos
       photoTier: requestBody.photoTier || (imageUrls.length === 0 ? 'unsplash' : 'none'),
       industry:  profile?.industry || undefined,
+      // Pass imageStyle as stylePreset so FLUX uses correct visual style (cinematic, professional, etc.)
+      ...(requestBody.imageStyle ? { imageStyle: requestBody.imageStyle } : {}),
     };
 
     console.log('[Video] Calling renderer at:', `${VIDEO_RENDERER_URL}/render`);
