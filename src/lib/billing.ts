@@ -32,6 +32,7 @@ export type OrgBillingState = {
   stripeSubscriptionId: string | null;
   paystackCustomerCode: string | null;
   paystackSubscriptionCode: string | null;
+  paymentType: string;
   // Computed
   isActive: boolean; // trialing or active
   isTrialing: boolean;
@@ -127,6 +128,7 @@ export async function getOrgBillingState(orgId: string): Promise<OrgBillingState
     stripeSubscriptionId: org.stripeSubscriptionId ?? null,
     paystackCustomerCode: org.paystackCustomerCode ?? null,
     paystackSubscriptionCode: org.paystackSubscriptionCode ?? null,
+    paymentType: org.paymentType ?? 'stripe',
 
     // Important: active includes valid trial
     isActive: isActive || (isTrialing && !trialExpired),

@@ -36,6 +36,13 @@
       "when": 1777704638780,
       "tag": "0004_deep_vargas",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778288730591,
+      "tag": "0005_mean_lady_deathstrike",
+      "breakpoints": true
     }
   ]
 }
