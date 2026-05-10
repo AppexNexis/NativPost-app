@@ -67,6 +67,9 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Connections', href: '/dashboard/connections', icon: 'Link2', roles: ['admin', 'editor', 'member'], group: 'Workspace' },
   { label: 'Team', href: '/dashboard/settings', icon: 'Users', roles: ['admin'], group: 'Workspace' },
 
+  // Support — visible to all roles
+  { label: 'Support', href: '/dashboard/support', icon: 'LifeBuoy', roles: ['admin', 'editor', 'member'], group: 'Support' },
+
   // --- Configuration ---
   { label: 'Settings', href: '/dashboard/settings', icon: 'Settings', roles: ['admin', 'editor', 'member'], group: 'Configuration' },
   { label: 'Billing', href: '/dashboard/billing', icon: 'CreditCard', roles: ['admin', 'member'], group: 'Configuration' },

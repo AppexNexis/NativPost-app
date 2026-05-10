@@ -1,5 +1,14 @@
 'use client';
 
+/**
+ * src/app/[locale]/(auth)/dashboard/DashboardClientLayout.tsx
+ *
+ * Changes:
+ * - Added LifeBuoy to ICONS map for the Support nav item
+ * - Added ShieldCheck icon for the Admin ops link
+ * - Added Admin ops link at the bottom of the sidebar for admin role only
+ */
+
 import { OrganizationSwitcher, useAuth, useOrganization, UserButton } from '@clerk/nextjs';
 import {
   BarChart3,
@@ -9,14 +18,16 @@ import {
   Clock,
   CreditCard,
   FileText,
-  Fingerprint,
+  Fingerprint, 
   Image,
   LayoutList,
+  LifeBuoy,
   Link2,
   Menu,
   PenLine,
   Plus,
   Settings,
+  ShieldCheck,
   Users,
 } from 'lucide-react';
 import NextImage from 'next/image';
@@ -30,24 +41,25 @@ import mainLogo from '/public/assets/images/shared/main-logo.svg';
 import { getNavForRole, getUserRole, isTeamMember } from '@/lib/roles';
 
 const ICONS: Record<string, typeof Calendar> = {
-  Calendar,
-  LayoutList,
-  Clock,
-  CheckCircle2,
-  FileText,
-  CircleCheck,
   BarChart3,
-  PenLine,
-  Fingerprint,
-  Link2,
-  Users,
-  Settings,
+  Calendar,
+  CheckCircle2,
+  CircleCheck,
+  Clock,
   CreditCard,
+  FileText,
+  Fingerprint,
   Image,
+  LayoutList,
+  LifeBuoy,
+  Link2,
+  PenLine,
+  Settings,
+  Users,
 };
 
 export default function DashboardClientLayout({ children }: { children: React.ReactNode }) {
-  const { orgRole } = useAuth();
+  const { orgRole, orgId } = useAuth();
   const { organization } = useOrganization();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -55,6 +67,14 @@ export default function DashboardClientLayout({ children }: { children: React.Re
   const role = getUserRole(orgRole);
   const navGroups = getNavForRole(role);
   const isTeam = isTeamMember(role);
+
+  // Admin ops link only shows when the NativPost internal org is active.
+  // Clients are org:admin inside their own orgs but NATIVPOST_TEAM_ORG_ID
+  // is only set in the server env — on the client we expose it via a
+  // data attribute or simply gate by role AND a known pattern.
+  // The safest client-side signal: use the NEXT_PUBLIC_ prefixed version.
+  const teamOrgId = process.env.NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID;
+  const isNativPostStaff = !!(teamOrgId && orgId === teamOrgId && role === 'admin');
 
   const cleanPath = pathname.replace(/^\/[a-z]{2}(\/|$)/, '/');
 
@@ -99,7 +119,7 @@ export default function DashboardClientLayout({ children }: { children: React.Re
           />
         </div>
 
-        {/* Create post button */}
+        {/* Create post button — team only */}
         {isTeam && (
           <div className="px-3 pt-3">
             <Link
@@ -144,14 +164,26 @@ export default function DashboardClientLayout({ children }: { children: React.Re
           ))}
         </nav>
 
+        {/* Admin ops link — only visible to NativPost staff with internal org active */}
+        {isNativPostStaff && (
+          <div className="border-t px-3 py-2">
+            <Link
+              href="/admin/support"
+              onClick={() => setSidebarOpen(false)}
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <ShieldCheck className="size-4 shrink-0" />
+              Admin ops
+            </Link>
+          </div>
+        )}
+
         {/* User section */}
         <div className="border-t p-3">
           <div className="flex items-center gap-2.5">
             <UserButton
               afterSignOutUrl="/"
-              appearance={{
-                elements: { avatarBox: 'size-8' },
-              }}
+              appearance={{ elements: { avatarBox: 'size-8' } }}
             />
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-medium">{organization?.name || 'Organization'}</p>
@@ -186,9 +218,7 @@ export default function DashboardClientLayout({ children }: { children: React.Re
           <div className="flex items-center gap-3">
             <UserButton
               afterSignOutUrl="/"
-              appearance={{
-                elements: { avatarBox: 'size-8' },
-              }}
+              appearance={{ elements: { avatarBox: 'size-8' } }}
             />
           </div>
         </header>

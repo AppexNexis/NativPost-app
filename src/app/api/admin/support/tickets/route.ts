@@ -18,6 +18,14 @@ import {
   supportTicketSchema,
 } from '@/models/Schema';
 
+
+function isNativPostStaff(orgId: string | null | undefined, orgRole: string | null | undefined): boolean {
+  const teamOrgId = process.env.NATIVPOST_TEAM_ORG_ID;
+  if (!teamOrgId) return false;
+  return orgId === teamOrgId && orgRole === 'org:admin';
+}
+
+
 // -----------------------------------------------------------
 // GET — All tickets, cross-org, with full filter surface
 // Query params:
@@ -30,9 +38,9 @@ import {
 //   offset    default 0
 // -----------------------------------------------------------
 export async function GET(req: NextRequest) {
-  const { userId, orgRole } = await auth();
+  const { userId, orgId, orgRole } = await auth();
 
-  if (!userId || orgRole !== 'org:admin') {
+  if (!userId || !isNativPostStaff(orgId, orgRole)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 

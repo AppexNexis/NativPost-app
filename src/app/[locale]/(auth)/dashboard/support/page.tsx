@@ -311,7 +311,7 @@ export default function SupportPage() {
   useEffect(() => { fetchTickets(); }, [fetchTickets]);
 
   const getStatCount = (status: string) =>
-    stats.find((s) => s.status === status)?.count ?? 0;
+    Number(stats.find((s) => s.status === status)?.count ?? 0);
 
   const openCount = getStatCount('open') + getStatCount('in_progress');
   const aiResolvedCount = getStatCount('auto_resolved');

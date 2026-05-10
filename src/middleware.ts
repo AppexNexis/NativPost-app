@@ -1,10 +1,20 @@
 /**
  * src/middleware.ts
  *
- * Changes from previous version:
- * - Added isAdminRoute matcher for /admin/(.*)
- * - Admin routes: require auth + org:admin role, NO org required
- * - Admin routes bypass the org redirect guard entirely
+ * Admin access model:
+ *
+ * Clerk makes the creator of any org org:admin by default. This means every
+ * NativPost client who creates their own organization is org:admin inside that
+ * org — so checking orgRole === 'org:admin' would grant clients access to the
+ * admin panel.
+ *
+ * The correct check is: is the user's active org the NativPost internal org?
+ * Clients are structurally never members of the internal org, making this
+ * airtight at the data model level.
+ *
+ * Required env var: NATIVPOST_TEAM_ORG_ID
+ * Set this to the Clerk org ID of your internal NativPost team organization.
+ * Find it in: Clerk Dashboard → Organizations → your internal org → copy the ID.
  */
 
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
@@ -27,8 +37,8 @@ const isProtectedRoute = createRouteMatcher([
   '/:locale/onboarding(.*)',
   '/subscribe(.*)',
   '/:locale/subscribe(.*)',
-  '/admin(.*)',         // ← NEW
-  '/:locale/admin(.*)', // ← NEW
+  '/admin(.*)',
+  '/:locale/admin(.*)',
 ]);
 
 const isDashboardRoute = createRouteMatcher([
@@ -36,23 +46,39 @@ const isDashboardRoute = createRouteMatcher([
   '/:locale/dashboard(.*)',
 ]);
 
-// NEW: Admin route matcher — separate from dashboard
-// No org required, but must have org:admin role
 const isAdminRoute = createRouteMatcher([
   '/admin(.*)',
   '/:locale/admin(.*)',
 ]);
 
 const isApiRoute = createRouteMatcher(['/api(.*)']);
-
-// NEW: Admin API routes — no org required, admin only
 const isAdminApiRoute = createRouteMatcher(['/api/admin(.*)']);
 
+/**
+ * Returns true only for NativPost staff members.
+ *
+ * A staff member must have the NativPost internal org active (orgId matches)
+ * AND hold the admin role inside it. Both conditions are required.
+ *
+ * Clients are org:admin inside their own orgs but can never be members of
+ * the NativPost internal org, so they will always fail the orgId check.
+ */
+function isNativPostStaff(
+  orgId: string | null | undefined,
+  orgRole: string | null | undefined,
+): boolean {
+  const teamOrgId = process.env.NATIVPOST_TEAM_ORG_ID;
+  if (!teamOrgId) {
+    console.warn('[middleware] NATIVPOST_TEAM_ORG_ID is not set. Admin access is disabled.');
+    return false;
+  }
+  return orgId === teamOrgId && orgRole === 'org:admin';
+}
+
 export default function middleware(request: NextRequest, event: NextFetchEvent) {
-  // ───────────────────────── API ROUTES ─────────────────────────
+  // API ROUTES
   if (isApiRoute(request)) {
     return clerkMiddleware(async (auth, req) => {
-      // Webhooks and crons are public
       if (
         req.nextUrl.pathname.startsWith('/api/billing/stripe-webhook')
         || req.nextUrl.pathname.startsWith('/api/billing/paystack-webhook')
@@ -62,14 +88,13 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
       }
 
       const authObj = await auth();
+
       if (!authObj.userId) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
 
-      // Admin API routes: require org:admin role
       if (isAdminApiRoute(req)) {
-        const role = authObj.orgRole;
-        if (role !== 'org:admin') {
+        if (!isNativPostStaff(authObj.orgId, authObj.orgRole)) {
           return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
       }
@@ -78,32 +103,25 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
     })(request, event);
   }
 
-  // ───────────────────────── PAGE ROUTES ─────────────────────────
+  // PAGE ROUTES
   return clerkMiddleware(async (auth, req) => {
     const authObj = await auth();
-
     const localeMatch = req.nextUrl.pathname.match(/^(\/[a-z]{2})\//);
     const locale = localeMatch?.[1] ?? '';
 
-    // 1. AUTH GUARD — all protected routes require login
     if (isProtectedRoute(req)) {
       await auth.protect({
         unauthenticatedUrl: new URL(`${locale}/sign-in`, req.url).toString(),
       });
     }
 
-    // 2. ADMIN ROUTE GUARD — require org:admin role, no org context needed
     if (isAdminRoute(req)) {
-      const role = authObj.orgRole;
-      if (role !== 'org:admin') {
-        // Redirect non-admins back to dashboard
+      if (!isNativPostStaff(authObj.orgId, authObj.orgRole)) {
         return NextResponse.redirect(new URL('/dashboard', req.url));
       }
-      // Admins pass through — no org switcher redirect
       return intlMiddleware(req);
     }
 
-    // 3. ORG GUARD — dashboard routes require an active org
     if (authObj.userId && !authObj.orgId && isDashboardRoute(req)) {
       return NextResponse.redirect(
         new URL('/onboarding/organization-selection', req.url),

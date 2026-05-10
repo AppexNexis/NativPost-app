@@ -9,26 +9,17 @@ export const Env = createEnv({
     STRIPE_SECRET_KEY: z.string().min(1),
     STRIPE_WEBHOOK_SECRET: z.string().min(1),
     BILLING_PLAN_ENV: z.enum(['dev', 'test', 'prod']),
-    ANTHROPIC_API_KEY: z.string().min(1),
-    RESEND_API_KEY: z.string().min(1),
-    // The Clerk org ID of the internal NativPost team organisation.
-    // Any user whose active org matches this ID AND holds org:admin within it
-    // is treated as NativPost staff and granted access to /admin routes.
-    // Never hardcode this value — set it in Vercel environment variables.
-    NATIVPOST_TEAM_ORG_ID: z.string().min(1),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().optional(),
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().min(1),
     NEXT_PUBLIC_CLERK_SIGN_IN_URL: z.string().min(1),
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().min(1),
-    // Exposed to the client solely to show/hide the Admin ops sidebar link.
-    // Must match NATIVPOST_TEAM_ORG_ID exactly.
-    NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID: z.string().min(1),
   },
   shared: {
     NODE_ENV: z.enum(['test', 'development', 'production']).optional(),
   },
+  // You need to destructure all the keys manually
   runtimeEnv: {
     CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
     DATABASE_URL: process.env.DATABASE_URL,
@@ -36,14 +27,12 @@ export const Env = createEnv({
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
     BILLING_PLAN_ENV: process.env.BILLING_PLAN_ENV,
-    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-    RESEND_API_KEY: process.env.RESEND_API_KEY,
-    NATIVPOST_TEAM_ORG_ID: process.env.NATIVPOST_TEAM_ORG_ID,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
-    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
+      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
     NEXT_PUBLIC_CLERK_SIGN_IN_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL,
-    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
-    NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID: process.env.NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID,
+    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:
+      process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
     NODE_ENV: process.env.NODE_ENV,
   },
 });
