@@ -3,17 +3,12 @@
 /**
  * src/app/[locale]/(auth)/dashboard/support/[id]/page.tsx
  *
- * Real-time streaming ticket conversation.
- *
- * When a client sends a reply:
- * 1. Message is saved via POST /reply
- * 2. Client message appears instantly in the thread
- * 3. An AI "typing" indicator appears immediately
- * 4. POST /stream opens an SSE connection to Claude
- * 5. Claude's response streams token by token into the bubble
- * 6. When done, the full message is persisted in DB
- *
- * No polling. No refresh. Instant, like Claude.ai.
+ * Full ticket conversation view.
+ * Features:
+ * - Complete message thread (client, agent, AI messages styled differently)
+ * - Reply composer with AI Polish button
+ * - Status management (resolve, close)
+ * - Ticket metadata sidebar
  */
 
 import {
@@ -37,11 +32,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 type Ticket = {
   id: string;
   subject: string;
+  aiSummary: string | null;
   aiCategory: string | null;
   aiPriority: string | null;
+  aiAutoResolved: boolean;
   status: string;
   submitterName: string;
   submitterEmail: string;
+  source: string;
   createdAt: string;
   resolvedAt: string | null;
 };
@@ -54,7 +52,6 @@ type Message = {
   isInternal: boolean;
   aiPolished: boolean;
   createdAt: string;
-  streaming?: boolean; // true while Claude is still typing
 };
 
 // -----------------------------------------------------------
@@ -62,8 +59,11 @@ type Message = {
 // -----------------------------------------------------------
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   });
 }
 
@@ -100,23 +100,11 @@ function MessageBubble({ message }: { message: Message }) {
         <div className="flex-1">
           <div className="rounded-xl rounded-tl-sm border border-emerald-200 bg-emerald-50 px-4 py-3">
             <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-emerald-700">
-              <Sparkles className="size-3" />
-              AI Support
-              {message.streaming && (
-                <span className="ml-1 inline-flex gap-0.5">
-                  <span className="size-1 animate-bounce rounded-full bg-emerald-500 [animation-delay:0ms]" />
-                  <span className="size-1 animate-bounce rounded-full bg-emerald-500 [animation-delay:150ms]" />
-                  <span className="size-1 animate-bounce rounded-full bg-emerald-500 [animation-delay:300ms]" />
-                </span>
-              )}
+              <Sparkles className="size-3" /> AI Support
             </p>
-            <p className="whitespace-pre-wrap text-sm text-emerald-900">
-              {message.body || (message.streaming ? '\u00A0' : '')}
-            </p>
+            <p className="whitespace-pre-wrap text-sm text-emerald-900">{message.body}</p>
           </div>
-          {!message.streaming && (
-            <p className="mt-1 text-[11px] text-muted-foreground">{formatDate(message.createdAt)}</p>
-          )}
+          <p className="mt-1 text-[11px] text-muted-foreground">{formatDate(message.createdAt)}</p>
         </div>
       </div>
     );
@@ -129,9 +117,7 @@ function MessageBubble({ message }: { message: Message }) {
           <div className="rounded-xl rounded-tr-sm bg-primary px-4 py-3 text-primary-foreground">
             <p className="whitespace-pre-wrap text-sm">{message.body}</p>
           </div>
-          <p className="mt-1 text-right text-[11px] text-muted-foreground">
-            {message.authorName} · {formatDate(message.createdAt)}
-          </p>
+          <p className="mt-1 text-right text-[11px] text-muted-foreground">{message.authorName} · {formatDate(message.createdAt)}</p>
         </div>
         <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
           <User className="size-4 text-primary" />
@@ -140,7 +126,7 @@ function MessageBubble({ message }: { message: Message }) {
     );
   }
 
-  // Agent message
+  // Agent
   return (
     <div className="flex gap-3">
       <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100">
@@ -155,47 +141,34 @@ function MessageBubble({ message }: { message: Message }) {
           )}
           <p className="whitespace-pre-wrap text-sm">{message.body}</p>
         </div>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          {message.authorName} · {formatDate(message.createdAt)}
-        </p>
+        <p className="mt-1 text-[11px] text-muted-foreground">{message.authorName} · {formatDate(message.createdAt)}</p>
       </div>
     </div>
   );
 }
 
 // -----------------------------------------------------------
-// STREAMING_ID constant — placeholder ID while Claude types
-// -----------------------------------------------------------
-const STREAMING_MSG_ID = '__streaming__';
-
-// -----------------------------------------------------------
 // MAIN PAGE
 // -----------------------------------------------------------
 export default function TicketDetailPage() {
-  const params    = useParams();
-  const ticketId  = params.id as string;
+  const params = useParams();
+  const ticketId = params.id as string;
 
-  const [ticket,   setTicket]   = useState<Ticket | null>(null);
+  const [ticket, setTicket] = useState<Ticket | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [reply,    setReply]    = useState('');
-  const [sending,  setSending]  = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [reply, setReply] = useState('');
+  const [sending, setSending] = useState(false);
   const [polishing, setPolishing] = useState(false);
   const [polishInfo, setPolishInfo] = useState<string | null>(null);
   const [originalDraft, setOriginalDraft] = useState<string | null>(null);
-
-  const bottomRef    = useRef<HTMLDivElement>(null);
-  const abortRef     = useRef<AbortController | null>(null);
-
-  const scrollToBottom = () => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const fetchTicket = useCallback(async () => {
     try {
-      const res  = await fetch(`/api/support/tickets/${ticketId}`);
+      const res = await fetch(`/api/support/tickets/${ticketId}`);
       const data = await res.json();
-      setTicket(data.ticket ?? null);
+      setTicket(data.ticket);
       setMessages(data.messages ?? []);
     } catch {
       //
@@ -205,152 +178,45 @@ export default function TicketDetailPage() {
   }, [ticketId]);
 
   useEffect(() => { fetchTicket(); }, [fetchTicket]);
-  useEffect(() => { scrollToBottom(); }, [messages]);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
-  // -----------------------------------------------------------
-  // SEND REPLY + OPEN STREAM
-  // -----------------------------------------------------------
   const sendReply = async () => {
-    if (!reply.trim() || sending) return;
-
-    const text = reply.trim();
+    if (!reply.trim()) return;
     setSending(true);
-    setReply('');
-    setPolishInfo(null);
-    setOriginalDraft(null);
-
-    // 1. Optimistically add client message to thread immediately
-    const optimisticMsg: Message = {
-      id:         `opt-${Date.now()}`,
-      authorType: 'client',
-      authorName: ticket?.submitterName ?? 'You',
-      body:       text,
-      isInternal: false,
-      aiPolished: false,
-      createdAt:  new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, optimisticMsg]);
-    scrollToBottom();
-
     try {
-      // 2. Save message to DB
       await fetch(`/api/support/tickets/${ticketId}/reply`, {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ body: text }),
+        body: JSON.stringify({
+          body: reply.trim(),
+          aiPolished: !!originalDraft,
+          originalBody: originalDraft,
+        }),
       });
-
-      // 3. Add streaming placeholder bubble immediately
-      const streamingMsg: Message = {
-        id:         STREAMING_MSG_ID,
-        authorType: 'ai',
-        authorName: 'NativPost Support',
-        body:       '',
-        isInternal: false,
-        aiPolished: false,
-        createdAt:  new Date().toISOString(),
-        streaming:  true,
-      };
-      setMessages((prev) => [...prev, streamingMsg]);
-      scrollToBottom();
-
-      // 4. Open SSE stream to Claude
-      const abort   = new AbortController();
-      abortRef.current = abort;
-
-      const streamRes = await fetch(`/api/support/tickets/${ticketId}/stream`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal:  abort.signal,
-      });
-
-      if (!streamRes.body) throw new Error('No stream body');
-
-      const reader  = streamRes.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer    = '';
-
-      // 5. Read tokens as they arrive and update the streaming bubble
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          if (line.startsWith('event: token')) continue;
-          if (line.startsWith('event: done')) {
-            // Stream finished — mark bubble as complete
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === STREAMING_MSG_ID
-                  ? { ...m, streaming: false, createdAt: new Date().toISOString() }
-                  : m,
-              ),
-            );
-            continue;
-          }
-          if (line.startsWith('event: error')) {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === STREAMING_MSG_ID
-                  ? { ...m, body: 'Something went wrong. Our team has been notified.', streaming: false }
-                  : m,
-              ),
-            );
-            continue;
-          }
-
-          if (line.startsWith('data: ')) {
-            const rawData = line.slice(6);
-            try {
-              const token = JSON.parse(rawData);
-              if (typeof token === 'string') {
-                // Append token to streaming bubble
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === STREAMING_MSG_ID
-                      ? { ...m, body: m.body + token }
-                      : m,
-                  ),
-                );
-                scrollToBottom();
-              }
-            } catch {
-              // Not JSON — skip
-            }
-          }
-        }
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'AbortError') return;
-      console.error('[stream] error:', err);
-      // Remove streaming bubble on unexpected error
-      setMessages((prev) => prev.filter((m) => m.id !== STREAMING_MSG_ID));
+      setReply('');
+      setOriginalDraft(null);
+      setPolishInfo(null);
+      fetchTicket();
     } finally {
       setSending(false);
-      abortRef.current = null;
     }
   };
 
-  // -----------------------------------------------------------
-  // AI POLISH
-  // -----------------------------------------------------------
   const polishReply = async () => {
-    if (!reply.trim() || polishing) return;
+    if (!reply.trim()) return;
     setPolishing(true);
     try {
-      const res  = await fetch(`/api/support/tickets/${ticketId}/polish`, {
-        method:  'POST',
+      const res = await fetch(`/api/support/tickets/${ticketId}/polish`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ draft: reply }),
+        body: JSON.stringify({ draft: reply }),
       });
       const data = await res.json();
       setOriginalDraft(reply);
-      setReply(data.polishedReply ?? reply);
-      setPolishInfo(data.changesMade ?? null);
+      setReply(data.polishedReply);
+      setPolishInfo(data.changesMade);
     } finally {
       setPolishing(false);
     }
@@ -358,9 +224,9 @@ export default function TicketDetailPage() {
 
   const updateStatus = async (status: string) => {
     await fetch(`/api/support/tickets/${ticketId}`, {
-      method:  'PATCH',
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ status }),
+      body: JSON.stringify({ status }),
     });
     fetchTicket();
   };
@@ -385,7 +251,6 @@ export default function TicketDetailPage() {
   }
 
   const isClosed = ['resolved', 'closed'].includes(ticket.status);
-  const isStreaming = messages.some((m) => m.id === STREAMING_MSG_ID && m.streaming);
 
   return (
     <div className="flex h-full flex-col">
@@ -401,6 +266,7 @@ export default function TicketDetailPage() {
               #{ticketId.slice(0, 8).toUpperCase()} · {ticket.submitterName} · opened {formatDate(ticket.createdAt)}
             </p>
           </div>
+          {/* Status actions */}
           <div className="flex items-center gap-2">
             {!isClosed && ticket.status !== 'resolved' && (
               <button
@@ -426,10 +292,8 @@ export default function TicketDetailPage() {
 
       {/* Message thread */}
       <div className="flex-1 overflow-y-auto p-6 space-y-5">
-        {messages.map((m) => (
-          <MessageBubble key={m.id} message={m} />
-        ))}
-        <div ref={bottomRef} />
+        {messages.map((m) => <MessageBubble key={m.id} message={m as Message} />)}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Reply composer */}
@@ -454,43 +318,38 @@ export default function TicketDetailPage() {
           <textarea
             value={reply}
             onChange={(e) => setReply(e.target.value)}
-            placeholder="Write a reply..."
+            placeholder="Write a reply…"
             rows={3}
-            disabled={sending || isStreaming}
-            className="mb-2 w-full resize-none rounded-xl border bg-muted/30 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
+            className="mb-2 w-full resize-none rounded-xl border bg-muted/30 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !isStreaming) sendReply();
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendReply();
             }}
           />
           <div className="flex items-center justify-between">
             <button
               onClick={polishReply}
-              disabled={polishing || !reply.trim() || sending || isStreaming}
+              disabled={polishing || !reply.trim()}
               className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted disabled:opacity-40"
             >
-              {polishing
-                ? <Loader2 className="size-3.5 animate-spin" />
-                : <Sparkles className="size-3.5" />}
+              {polishing ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
               AI Polish
             </button>
             <button
               onClick={sendReply}
-              disabled={sending || !reply.trim() || isStreaming}
+              disabled={sending || !reply.trim()}
               className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
-              {sending
-                ? <Loader2 className="size-4 animate-spin" />
-                : <Send className="size-4" />}
-              {isStreaming ? 'AI is responding...' : 'Send reply'}
+              {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+              Send reply
             </button>
           </div>
         </div>
       ) : (
         <div className="border-t bg-muted/20 p-4 text-center text-sm text-muted-foreground">
-          This ticket is {ticket.status}.{' '}
+          This ticket is {ticket.status}. Reopen by replying — or{' '}
           <button onClick={() => updateStatus('open')} className="text-primary hover:underline">
-            Reopen
-          </button>
+            reopen now
+          </button>.
         </div>
       )}
     </div>
