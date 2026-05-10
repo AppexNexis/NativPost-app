@@ -66,7 +66,7 @@
     "stripe": "^20.4.1",
     "svix": "^1.89.0",
     "tailwind-merge": "^2.5.4",
-    "zod": "^3.23.8"
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^2.27.3",
