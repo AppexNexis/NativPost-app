@@ -47,6 +47,7 @@
     "@t3-oss/env-nextjs": "^0.11.1",
     "@tanstack/react-table": "^8.20.5",
     "@uploadcare/react-uploader": "^1.13.0",
+    "@vercel/functions": "^3.5.1",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.35.1",
