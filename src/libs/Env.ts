@@ -9,22 +9,19 @@ export const Env = createEnv({
     STRIPE_SECRET_KEY: z.string().min(1),
     STRIPE_WEBHOOK_SECRET: z.string().min(1),
     BILLING_PLAN_ENV: z.enum(['dev', 'test', 'prod']),
-    ANTHROPIC_API_KEY: z.string().min(1),
-    RESEND_API_KEY: z.string().min(1),
-    // The Clerk org ID of the internal NativPost team organisation.
-    // Any user whose active org matches this ID AND holds org:admin within it
-    // is treated as NativPost staff and granted access to /admin routes.
-    // Never hardcode this value — set it in Vercel environment variables.
-    NATIVPOST_TEAM_ORG_ID: z.string().min(1),
+    ANTHROPIC_API_KEY: z.string().min(1).optional(),
+    RESEND_API_KEY: z.string().min(1).optional(),
+    // Optional — middleware fails closed (denies all admin access) if unset.
+    // Set in Vercel env vars. Never hardcode the value.
+    NATIVPOST_TEAM_ORG_ID: z.string().min(1).optional(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().optional(),
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().min(1),
     NEXT_PUBLIC_CLERK_SIGN_IN_URL: z.string().min(1),
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().min(1),
-    // Exposed to the client solely to show/hide the Admin ops sidebar link.
-    // Must match NATIVPOST_TEAM_ORG_ID exactly.
-    NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID: z.string().min(1),
+    // Optional — only controls sidebar link visibility, not actual access.
+    NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID: z.string().min(1).optional(),
   },
   shared: {
     NODE_ENV: z.enum(['test', 'development', 'production']).optional(),
