@@ -1,12 +1,3 @@
-/**
- * src/middleware.ts
- *
- * Changes from previous version:
- * - Added isAdminRoute matcher for /admin/(.*)
- * - Admin routes: require auth + org:admin role, NO org required
- * - Admin routes bypass the org redirect guard entirely
- */
-
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import type { NextFetchEvent, NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -27,8 +18,6 @@ const isProtectedRoute = createRouteMatcher([
   '/:locale/onboarding(.*)',
   '/subscribe(.*)',
   '/:locale/subscribe(.*)',
-  '/admin(.*)',         // ← NEW
-  '/:locale/admin(.*)', // ← NEW
 ]);
 
 const isDashboardRoute = createRouteMatcher([
@@ -36,23 +25,23 @@ const isDashboardRoute = createRouteMatcher([
   '/:locale/dashboard(.*)',
 ]);
 
-// NEW: Admin route matcher — separate from dashboard
-// No org required, but must have org:admin role
-const isAdminRoute = createRouteMatcher([
-  '/admin(.*)',
-  '/:locale/admin(.*)',
-]);
-
 const isApiRoute = createRouteMatcher(['/api(.*)']);
 
-// NEW: Admin API routes — no org required, admin only
-const isAdminApiRoute = createRouteMatcher(['/api/admin(.*)']);
+// routes that should NOT trigger billing redirect loop
+// const isSubscriptionExemptRoute = createRouteMatcher([
+//   '/subscribe(.*)',
+//   '/:locale/subscribe(.*)',
+//   '/onboarding(.*)',
+//   '/:locale/onboarding(.*)',
+//   '/dashboard/billing(.*)',
+//   '/:locale/dashboard/billing(.*)',
+//   '/api/billing(.*)', // IMPORTANT: prevent recursion issues
+// ]);
 
 export default function middleware(request: NextRequest, event: NextFetchEvent) {
   // ───────────────────────── API ROUTES ─────────────────────────
   if (isApiRoute(request)) {
     return clerkMiddleware(async (auth, req) => {
-      // Webhooks and crons are public
       if (
         req.nextUrl.pathname.startsWith('/api/billing/stripe-webhook')
         || req.nextUrl.pathname.startsWith('/api/billing/paystack-webhook')
@@ -66,14 +55,6 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
 
-      // Admin API routes: require org:admin role
-      if (isAdminApiRoute(req)) {
-        const role = authObj.orgRole;
-        if (role !== 'org:admin') {
-          return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-        }
-      }
-
       return NextResponse.next();
     })(request, event);
   }
@@ -85,30 +66,64 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
     const localeMatch = req.nextUrl.pathname.match(/^(\/[a-z]{2})\//);
     const locale = localeMatch?.[1] ?? '';
 
-    // 1. AUTH GUARD — all protected routes require login
+    // 1. AUTH GUARD
     if (isProtectedRoute(req)) {
       await auth.protect({
         unauthenticatedUrl: new URL(`${locale}/sign-in`, req.url).toString(),
       });
     }
 
-    // 2. ADMIN ROUTE GUARD — require org:admin role, no org context needed
-    if (isAdminRoute(req)) {
-      const role = authObj.orgRole;
-      if (role !== 'org:admin') {
-        // Redirect non-admins back to dashboard
-        return NextResponse.redirect(new URL('/dashboard', req.url));
-      }
-      // Admins pass through — no org switcher redirect
-      return intlMiddleware(req);
-    }
-
-    // 3. ORG GUARD — dashboard routes require an active org
-    if (authObj.userId && !authObj.orgId && isDashboardRoute(req)) {
+    // 2. ORG GUARD
+    if (
+      authObj.userId
+      && !authObj.orgId
+      && isDashboardRoute(req)
+    ) {
       return NextResponse.redirect(
         new URL('/onboarding/organization-selection', req.url),
       );
     }
+
+    // 3. 🔥 STRONG BILLING ENFORCEMENT (CORE FIX)
+    // if (
+    //   authObj.userId
+    //   && authObj.orgId
+    //   && req.nextUrl.pathname.startsWith('/dashboard')
+    //   && !isSubscriptionExemptRoute(req)
+    // ) {
+    //   try {
+    //     const billingRes = await fetch(
+    //       new URL('/api/billing/status', req.url),
+    //       {
+    //         headers: {
+    //           cookie: req.headers.get('cookie') ?? '',
+    //         },
+    //       },
+    //     );
+
+    //     if (billingRes.ok) {
+    //       const billing = await billingRes.json();
+
+    //       const isActive = billing?.isActive;
+    //       const trialExpired = billing?.trialExpired;
+
+    //       // 🚨 HARD BLOCK
+    //       if (!isActive || trialExpired) {
+    //         const redirectUrl = new URL(`${locale}/subscribe`, req.url);
+
+    //         redirectUrl.searchParams.set(
+    //           'redirect',
+    //           req.nextUrl.pathname,
+    //         );
+
+    //         return NextResponse.redirect(redirectUrl);
+    //       }
+    //     }
+    //   } catch (err) {
+    //     // fail open (never break app)
+    //     console.error('[Middleware] Billing check failed:', err);
+    //   }
+    // }
 
     return intlMiddleware(req);
   })(request, event);
