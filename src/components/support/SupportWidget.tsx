@@ -3,13 +3,10 @@
 /**
  * src/components/support/SupportWidget.tsx
  *
- * Floating support widget — appears on all dashboard pages.
- * A pulsing button in the bottom-right corner opens a compact
- * panel where clients can submit a ticket without leaving their
- * current page. On submit, redirects to the ticket detail.
- *
- * Design: minimal, fast, dismissible.
- * Does NOT show on /dashboard/support pages (redundant there).
+ * Floating support widget for the dashboard.
+ * Receives currentPath as a prop from DashboardClientLayout
+ * to avoid calling usePathname inside this component — which
+ * was causing a next-intl locale context crash.
  */
 
 import {
@@ -19,23 +16,21 @@ import {
   Send,
   X,
 } from 'lucide-react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 type Step = 'closed' | 'home' | 'form' | 'submitting';
 
-export default function SupportWidget() {
-  const pathname = usePathname();
-  const router   = useRouter();
+export default function SupportWidget({ currentPath }: { currentPath: string }) {
+  const router     = useRouter();
   const [step,    setStep]    = useState<Step>('closed');
   const [subject, setSubject] = useState('');
   const [body,    setBody]    = useState('');
   const [error,   setError]   = useState('');
   const subjectRef = useRef<HTMLInputElement>(null);
 
-  // Don't render on support pages — client already has the full UI there
-  const isOnSupportPage = pathname.includes('/support');
-  if (isOnSupportPage) return null;
+  // Hide on support pages — the full UI is already there
+  if (currentPath.includes('/support')) return null;
 
   const open  = () => setStep('home');
   const close = () => {
@@ -45,7 +40,6 @@ export default function SupportWidget() {
     setError('');
   };
 
-  // Focus subject when form opens
   useEffect(() => {
     if (step === 'form') {
       setTimeout(() => subjectRef.current?.focus(), 50);
@@ -79,7 +73,7 @@ export default function SupportWidget() {
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
       {/* Panel */}
       {step !== 'closed' && (
-        <div className="w-80 overflow-hidden rounded-2xl border bg-background shadow-2xl shadow-black/10 animate-in slide-in-from-bottom-2 duration-200">
+        <div className="w-80 overflow-hidden rounded-2xl border bg-background shadow-2xl shadow-black/10">
           {/* Header */}
           <div className="flex items-center justify-between bg-primary px-4 py-3.5">
             <div className="flex items-center gap-2.5">
@@ -127,13 +121,11 @@ export default function SupportWidget() {
             </div>
           )}
 
-          {/* Form screen */}
+          {/* Form */}
           {(step === 'form' || step === 'submitting') && (
             <div className="p-4 space-y-3">
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                  Subject
-                </label>
+                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Subject</label>
                 <input
                   ref={subjectRef}
                   value={subject}
@@ -144,13 +136,11 @@ export default function SupportWidget() {
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                  Describe the issue
-                </label>
+                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Describe the issue</label>
                 <textarea
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
-                  placeholder="What happened? What did you expect? Include any relevant details."
+                  placeholder="What happened? What did you expect? Any relevant details."
                   rows={4}
                   disabled={step === 'submitting'}
                   className="w-full resize-none rounded-lg border bg-muted/30 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
@@ -159,9 +149,7 @@ export default function SupportWidget() {
                   }}
                 />
               </div>
-              {error && (
-                <p className="text-xs text-destructive">{error}</p>
-              )}
+              {error && <p className="text-xs text-destructive">{error}</p>}
               <div className="flex gap-2">
                 <button
                   onClick={() => setStep('home')}
@@ -175,18 +163,13 @@ export default function SupportWidget() {
                   disabled={step === 'submitting' || !subject.trim() || !body.trim()}
                   className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                 >
-                  {step === 'submitting' ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <>
-                      <Send className="size-3.5" />
-                      Send
-                    </>
-                  )}
+                  {step === 'submitting'
+                    ? <Loader2 className="size-4 animate-spin" />
+                    : <><Send className="size-3.5" />Send</>}
                 </button>
               </div>
               <p className="text-center text-[10px] text-muted-foreground">
-                Our AI will respond instantly. A human is always available.
+                Our AI responds instantly. A human is always available.
               </p>
             </div>
           )}
@@ -196,15 +179,16 @@ export default function SupportWidget() {
       {/* Trigger button */}
       <button
         onClick={step === 'closed' ? open : close}
-        className={`group relative flex size-14 items-center justify-center rounded-full shadow-lg shadow-primary/30 transition-all hover:scale-105 active:scale-95 ${
-          step !== 'closed' ? 'bg-muted text-foreground' : 'bg-primary text-primary-foreground'
+        className={`relative flex size-14 items-center justify-center rounded-full shadow-lg transition-all hover:scale-105 active:scale-95 ${
+          step !== 'closed'
+            ? 'bg-muted text-foreground shadow-black/10'
+            : 'bg-primary text-primary-foreground shadow-primary/30'
         }`}
         aria-label="Support"
       >
         {step === 'closed' ? (
           <>
             <MessageCircle className="size-6" />
-            {/* Pulse ring */}
             <span className="absolute inset-0 rounded-full animate-ping bg-primary opacity-20" />
           </>
         ) : (
