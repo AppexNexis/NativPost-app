@@ -1,14 +1,5 @@
 'use client';
 
-/**
- * src/app/[locale]/(auth)/dashboard/DashboardClientLayout.tsx
- *
- * Changes:
- * - Added LifeBuoy to ICONS map for the Support nav item
- * - Added ShieldCheck icon for the Admin ops link
- * - Added Admin ops link at the bottom of the sidebar for admin role only
- */
-
 import { OrganizationSwitcher, useAuth, useOrganization, UserButton } from '@clerk/nextjs';
 import {
   BarChart3,
@@ -18,7 +9,7 @@ import {
   Clock,
   CreditCard,
   FileText,
-  Fingerprint, 
+  Fingerprint,
   Image,
   LayoutList,
   LifeBuoy,
@@ -39,6 +30,7 @@ import logoIcon from '/public/assets/images/shared/logo.svg';
 import logoDark from '/public/assets/images/shared/logo-dark.svg';
 import mainLogo from '/public/assets/images/shared/main-logo.svg';
 import { getNavForRole, getUserRole, isTeamMember } from '@/lib/roles';
+import SupportWidget from '@/components/support/SupportWidget';
 
 const ICONS: Record<string, typeof Calendar> = {
   BarChart3,
@@ -68,11 +60,6 @@ export default function DashboardClientLayout({ children }: { children: React.Re
   const navGroups = getNavForRole(role);
   const isTeam = isTeamMember(role);
 
-  // Admin ops link only shows when the NativPost internal org is active.
-  // Clients are org:admin inside their own orgs but NATIVPOST_TEAM_ORG_ID
-  // is only set in the server env — on the client we expose it via a
-  // data attribute or simply gate by role AND a known pattern.
-  // The safest client-side signal: use the NEXT_PUBLIC_ prefixed version.
   const teamOrgId = process.env.NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID;
   const isNativPostStaff = !!(teamOrgId && orgId === teamOrgId && role === 'admin');
 
@@ -228,6 +215,9 @@ export default function DashboardClientLayout({ children }: { children: React.Re
           {children}
         </div>
       </main>
+
+      {/* Support widget — fixed position, rendered outside scroll container */}
+      <SupportWidget currentPath={cleanPath} />
     </div>
   );
 }

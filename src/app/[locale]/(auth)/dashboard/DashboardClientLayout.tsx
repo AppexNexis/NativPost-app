@@ -51,7 +51,7 @@ const ICONS: Record<string, typeof Calendar> = {
 };
 
 export default function DashboardClientLayout({ children }: { children: React.ReactNode }) {
-  const { orgRole, orgId } = useAuth();
+  const { orgRole } = useAuth();
   const { organization } = useOrganization();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -60,6 +60,11 @@ export default function DashboardClientLayout({ children }: { children: React.Re
   const navGroups = getNavForRole(role);
   const isTeam = isTeamMember(role);
 
+  // Use organization.id from useOrganization() rather than orgId from useAuth().
+  // Reading orgId from useAuth() subscribes to Clerk's MessagePort auth sync,
+  // which reads locale during client-side navigation and crashes if the
+  // NextIntlClientProvider context is momentarily unavailable in the transition.
+  const orgId = organization?.id;
   const teamOrgId = process.env.NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID;
   const isNativPostStaff = !!(teamOrgId && orgId === teamOrgId && role === 'admin');
 
