@@ -37,28 +37,28 @@ const NAV = [
   {
     group: 'Support ops',
     items: [
-      { label: 'Overview',      href: '/admin/support',                    icon: LayoutDashboard },
-      { label: 'All tickets',   href: '/admin/support/tickets',            icon: MessageSquare },
+      { label: 'Overview',      href: '/admin/support',                     icon: LayoutDashboard },
+      { label: 'All tickets',   href: '/admin/support/tickets',             icon: MessageSquare },
       { label: 'Open',          href: '/admin/support/tickets?status=open', icon: HeadphonesIcon },
     ],
   },
   {
     group: 'Knowledge base',
     items: [
-      { label: 'Articles',      href: '/admin/support/kb',                 icon: BookOpen },
-      { label: 'Categories',    href: '/admin/support/kb/categories',      icon: Tag },
+      { label: 'Articles',      href: '/admin/support/kb',                  icon: BookOpen },
+      { label: 'Categories',    href: '/admin/support/kb/categories',       icon: Tag },
     ],
   },
   {
     group: 'Analytics',
     items: [
-      { label: 'Support stats', href: '/admin/support/analytics',          icon: BarChart3 },
+      { label: 'Support stats', href: '/admin/support/analytics',           icon: BarChart3 },
     ],
   },
   {
     group: 'System',
     items: [
-      { label: 'Settings',      href: '/admin/settings',                   icon: Settings },
+      { label: 'Settings',      href: '/admin/settings',                    icon: Settings },
     ],
   },
 ];
