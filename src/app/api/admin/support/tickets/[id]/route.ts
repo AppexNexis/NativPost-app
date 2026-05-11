@@ -1,13 +1,11 @@
 /**
  * src/app/api/admin/support/tickets/[id]/route.ts
  *
- * Admin ticket operations — no orgId restriction.
- *
  * GET   → full ticket + messages + org info
- * PATCH → update status, assign, set priority override
+ * PATCH → update status, assign, set priority
  */
 
-import { auth, clerkClient } from '@clerk/nextjs/server';
+import { auth } from '@clerk/nextjs/server';
 import { asc, eq } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -18,17 +16,26 @@ import {
   supportMessageSchema,
   supportTicketSchema,
 } from '@/models/Schema';
-import { sendReplyNotification, sendTicketClosedNotification } from '@/lib/support-email';
-import { polishAgentReply } from '@/lib/support-ai';
+import { sendTicketClosedNotification } from '@/lib/support-email';
 
 type RouteContext = { params: Promise<{ id: string }> };
+
+function isNativPostStaff(
+  orgId: string | null | undefined,
+  orgRole: string | null | undefined,
+): boolean {
+  const teamOrgId = process.env.NATIVPOST_TEAM_ORG_ID;
+  if (!teamOrgId) return false;
+  return orgId === teamOrgId && orgRole === 'org:admin';
+}
 
 // -----------------------------------------------------------
 // GET — Full ticket with messages + org details
 // -----------------------------------------------------------
 export async function GET(_req: NextRequest, { params }: RouteContext) {
-  const { userId, orgRole } = await auth();
-  if (!userId || orgRole !== 'org:admin') {
+  const { userId, orgId, orgRole } = await auth();
+
+  if (!userId || !isNativPostStaff(orgId, orgRole)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
@@ -40,11 +47,16 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
     .from(supportTicketSchema)
     .where(eq(supportTicketSchema.id, id));
 
-  if (!ticket) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (!ticket) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
 
-  // Fetch the org name for display
   const [org] = await db
-    .select({ id: organizationSchema.id, plan: organizationSchema.plan, planStatus: organizationSchema.planStatus })
+    .select({
+      id:         organizationSchema.id,
+      plan:       organizationSchema.plan,
+      planStatus: organizationSchema.planStatus,
+    })
     .from(organizationSchema)
     .where(eq(organizationSchema.id, ticket.orgId));
 
@@ -64,25 +76,30 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
 
 // -----------------------------------------------------------
 // PATCH — Update ticket (status, assignment, priority)
-// Body: { status?, assignedToUserId?, aiPriority? }
 // -----------------------------------------------------------
 export async function PATCH(req: NextRequest, { params }: RouteContext) {
-  const { userId, orgRole } = await auth();
-  if (!userId || orgRole !== 'org:admin') {
+  const { userId, orgId, orgRole } = await auth();
+
+  if (!userId || !isNativPostStaff(orgId, orgRole)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const { id } = await params;
   const db = await getDb();
-  const body = await req.json();
+
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
 
   const updates: Partial<typeof supportTicketSchema.$inferInsert> = {};
 
-  if (body.status) {
+  if (body.status && typeof body.status === 'string') {
     updates.status = body.status;
     if (body.status === 'resolved') {
       updates.resolvedAt = new Date();
-      // Fetch ticket to send CSAT email
       const [ticket] = await db
         .select()
         .from(supportTicketSchema)
@@ -99,9 +116,9 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
     if (body.status === 'closed') updates.closedAt = new Date();
   }
   if (body.assignedToUserId !== undefined) {
-    updates.assignedToUserId = body.assignedToUserId || null;
+    updates.assignedToUserId = (body.assignedToUserId as string) || null;
   }
-  if (body.aiPriority) {
+  if (body.aiPriority && typeof body.aiPriority === 'string') {
     updates.aiPriority = body.aiPriority;
   }
 
@@ -111,103 +128,9 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
     .where(eq(supportTicketSchema.id, id))
     .returning();
 
-  if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (!updated) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
   return NextResponse.json({ ticket: updated });
-}
-
-// -----------------------------------------------------------
-// POST — Agent reply or AI polish (sub-action via URL)
-// -----------------------------------------------------------
-export async function POST(req: NextRequest, { params }: RouteContext) {
-  const { userId, orgRole } = await auth();
-  if (!userId || orgRole !== 'org:admin') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
-
-  const { id } = await params;
-  const url = req.nextUrl.pathname;
-  const db = await getDb();
-
-  // Fetch agent name from Clerk
-  const clerk = await clerkClient();
-  const clerkUser = await clerk.users.getUser(userId).catch(() => null);
-  const agentName = clerkUser
-    ? `${clerkUser.firstName ?? ''} ${clerkUser.lastName ?? ''}`.trim() || 'Support Agent'
-    : 'Support Agent';
-  const agentEmail = clerkUser?.emailAddresses[0]?.emailAddress ?? '';
-
-  if (url.endsWith('/reply')) {
-    const body = await req.json();
-    if (!body.body?.trim()) {
-      return NextResponse.json({ error: 'Reply body required' }, { status: 400 });
-    }
-
-    const [ticket] = await db
-      .select()
-      .from(supportTicketSchema)
-      .where(eq(supportTicketSchema.id, id));
-
-    if (!ticket) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-    const isInternal = body.isInternal === true;
-
-    const [message] = await db
-      .insert(supportMessageSchema)
-      .values({
-        ticketId: id,
-        authorType: 'agent',
-        authorUserId: userId,
-        authorName: agentName,
-        authorEmail: agentEmail,
-        body: body.body.trim(),
-        isInternal,
-        aiPolished: body.aiPolished === true,
-        originalBody: body.originalBody ?? null,
-      })
-      .returning();
-
-    // Move ticket to in_progress if open
-    if (['open', 'auto_resolved'].includes(ticket.status)) {
-      await db
-        .update(supportTicketSchema)
-        .set({ status: 'in_progress', assignedToUserId: userId })
-        .where(eq(supportTicketSchema.id, id));
-    }
-
-    // Email client (not for internal notes)
-    if (!isInternal && ticket.submitterEmail) {
-      sendReplyNotification(
-        ticket.submitterEmail,
-        ticket.submitterName,
-        ticket.subject,
-        body.body.trim(),
-        id,
-      ).catch(() => {});
-    }
-
-    return NextResponse.json({ message }, { status: 201 });
-  }
-
-  if (url.endsWith('/polish')) {
-    const body = await req.json();
-    if (!body.draft?.trim()) {
-      return NextResponse.json({ error: 'Draft required' }, { status: 400 });
-    }
-
-    const [ticket] = await db
-      .select({ subject: supportTicketSchema.subject, submitterName: supportTicketSchema.submitterName })
-      .from(supportTicketSchema)
-      .where(eq(supportTicketSchema.id, id));
-
-    if (!ticket) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-    const result = await polishAgentReply(body.draft, {
-      subject: ticket.subject,
-      clientName: ticket.submitterName,
-    });
-
-    return NextResponse.json(result);
-  }
-
-  return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
 }

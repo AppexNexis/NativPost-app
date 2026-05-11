@@ -1,14 +1,16 @@
 /**
  * src/app/[locale]/(admin)/admin/layout.tsx
  *
- * Server-side gate for all /admin routes.
+ * Admin layout with locale support.
  *
- * Uses the same staff check as middleware: the user must have the NativPost
- * internal org active AND be org:admin within it. Client org admins fail
- * because their orgId will never match NATIVPOST_TEAM_ORG_ID.
+ * IMPORTANT: Must accept and forward the locale param from [locale].
+ * Without calling unstable_setRequestLocale, next-intl crashes with
+ * "Cannot read properties of undefined (reading 'locale')" because
+ * the request locale context is never set for this route segment.
  */
 
 import { auth } from '@clerk/nextjs/server';
+import { unstable_setRequestLocale } from 'next-intl/server';
 import { redirect } from 'next/navigation';
 
 import AdminShell from './AdminShell';
@@ -26,9 +28,14 @@ function isNativPostStaff(
 
 export default async function AdminLayout({
   children,
+  params,
 }: {
   children: React.ReactNode;
+  params: { locale: string };
 }) {
+  // Must be called before any next-intl usage in this route segment
+  unstable_setRequestLocale(params.locale);
+
   const { userId, orgId, orgRole } = await auth();
 
   if (!userId) redirect('/sign-in');

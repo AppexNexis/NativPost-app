@@ -18,12 +18,15 @@ import {
   supportTicketSchema,
 } from '@/models/Schema';
 
-
-function isNativPostStaff(orgId: string | null | undefined, orgRole: string | null | undefined): boolean {
+function isNativPostStaff(
+  orgId: string | null | undefined,
+  orgRole: string | null | undefined,
+): boolean {
   const teamOrgId = process.env.NATIVPOST_TEAM_ORG_ID;
   if (!teamOrgId) return false;
   return orgId === teamOrgId && orgRole === 'org:admin';
 }
+
 
 
 // -----------------------------------------------------------
