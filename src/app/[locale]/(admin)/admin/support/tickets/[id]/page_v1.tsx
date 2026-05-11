@@ -44,7 +44,6 @@ type Ticket = {
   source: string;
   createdAt: string;
   resolvedAt: string | null;
-  aiEnabled: boolean;
 };
 
 type Message = {
@@ -255,29 +254,6 @@ function MetadataSidebar({
             Assigned · {ticket.assignedToUserId.slice(0, 8)}…
           </p>
         )}
-      </div>
-
-      {/* AI toggle */}
-      <div>
-        <p className="mb-1.5 text-xs font-medium text-muted-foreground">AI auto-reply</p>
-        <button
-          onClick={() => update({ aiEnabled: ticket.aiEnabled ? 'false' : 'true' })}
-          disabled={saving}
-          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none disabled:opacity-40 ${
-            ticket.aiEnabled ? 'bg-primary' : 'bg-muted-foreground/30'
-          }`}
-        >
-          <span
-            className={`pointer-events-none inline-block size-4 transform rounded-full bg-white shadow transition-transform ${
-              ticket.aiEnabled ? 'translate-x-4' : 'translate-x-0'
-            }`}
-          />
-        </button>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          {ticket.aiEnabled
-            ? 'AI is responding automatically'
-            : 'Agent has taken over — AI is paused'}
-        </p>
       </div>
 
       <div className="border-t pt-4 space-y-3">

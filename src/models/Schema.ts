@@ -330,6 +330,8 @@ export const supportTicketSchema = pgTable('support_ticket', {
   aiPriority: text('ai_priority').default('medium'), // low, medium, high, urgent
   aiAutoResolved: boolean('ai_auto_resolved').default(false),
   aiConfidence: real('ai_confidence'), // 0-1, how confident the AI was in its response
+  aiEnabled: boolean('ai_enabled').default(true).notNull(), // whether AI assistance is enabled for this ticket
+  aiHistory: jsonb('ai_history').default([]), // array of { response, feedback, timestamp }
   // Assignment & status
   status: text('status').default('open').notNull(), // open, in_progress, waiting_on_client, auto_resolved, resolved, closed
   assignedToUserId: text('assigned_to_user_id'), // Clerk user ID of agent

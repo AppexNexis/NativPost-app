@@ -39,6 +39,7 @@ import logoIcon from '/public/assets/images/shared/logo.svg';
 import logoDark from '/public/assets/images/shared/logo-dark.svg';
 import mainLogo from '/public/assets/images/shared/main-logo.svg';
 import { getNavForRole, getUserRole, isTeamMember } from '@/lib/roles';
+import SupportWidget from '@/components/support/SupportWidget';
 
 const ICONS: Record<string, typeof Calendar> = {
   BarChart3,
@@ -228,6 +229,7 @@ export default function DashboardClientLayout({ children }: { children: React.Re
           {children}
         </div>
       </main>
+        <SupportWidget />
     </div>
   );
 }

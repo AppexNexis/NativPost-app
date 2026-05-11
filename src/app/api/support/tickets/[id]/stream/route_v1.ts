@@ -81,27 +81,7 @@ export async function POST(_req: NextRequest, { params }: RouteContext) {
     return new Response('Not found', { status: 404 });
   }
 
-  // If an agent has disabled AI for this ticket, return a signal immediately.
-  // The client detail page receives 'ai_disabled' and suppresses the streaming bubble.
-  if (ticket.aiEnabled === false) {
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(
-          encoder.encode(`event: ai_disabled\ndata: "Agent has taken over this conversation"\n\n`),
-        );
-        controller.close();
-      },
-    });
-    return new Response(stream, {
-      headers: {
-        'Content-Type':      'text/event-stream',
-        'Cache-Control':     'no-cache, no-transform',
-        'Connection':        'keep-alive',
-        'X-Accel-Buffering': 'no',
-      },
-    });
-  }
+  // Fetch full conversation history for context
   const allMessages = await db
     .select({
       authorType: supportMessageSchema.authorType,

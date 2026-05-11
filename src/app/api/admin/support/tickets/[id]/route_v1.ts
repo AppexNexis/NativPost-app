@@ -121,10 +121,6 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
   if (body.aiPriority && typeof body.aiPriority === 'string') {
     updates.aiPriority = body.aiPriority;
   }
-  if (body.aiEnabled !== undefined) {
-    // Comes as string 'true'/'false' from the toggle button
-    updates.aiEnabled = body.aiEnabled === 'true' || body.aiEnabled === true;
-  }
 
   const [updated] = await db
     .update(supportTicketSchema)

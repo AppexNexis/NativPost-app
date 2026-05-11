@@ -37,28 +37,28 @@ const NAV = [
   {
     group: 'Support ops',
     items: [
-      { label: 'Overview',      href: '/admin/support',                     icon: LayoutDashboard },
-      { label: 'All tickets',   href: '/admin/support/tickets',             icon: MessageSquare },
-      { label: 'Open',          href: '/admin/support/tickets?status=open', icon: HeadphonesIcon },
+      { label: 'Overview', href: '/admin/support', icon: LayoutDashboard },
+      { label: 'All tickets', href: '/admin/support/tickets', icon: MessageSquare },
+      { label: 'Open', href: '/admin/support/tickets?status=open', icon: HeadphonesIcon },
     ],
   },
   {
     group: 'Knowledge base',
     items: [
-      { label: 'Articles',      href: '/admin/support/kb',                  icon: BookOpen },
-      { label: 'Categories',    href: '/admin/support/kb/categories',       icon: Tag },
+      { label: 'Articles', href: '/admin/support/kb', icon: BookOpen },
+      { label: 'Categories', href: '/admin/support/kb/categories', icon: Tag },
     ],
   },
   {
     group: 'Analytics',
     items: [
-      { label: 'Support stats', href: '/admin/support/analytics',           icon: BarChart3 },
+      { label: 'Support stats', href: '/admin/support/analytics', icon: BarChart3 },
     ],
   },
   {
     group: 'System',
     items: [
-      { label: 'Settings',      href: '/admin/settings',                    icon: Settings },
+      { label: 'Settings', href: '/admin/settings', icon: Settings },
     ],
   },
 ];
@@ -68,13 +68,13 @@ const NAV = [
 // -----------------------------------------------------------
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router   = useRouter();
+  const router = useRouter();
   const { orgId, orgRole, isLoaded } = useAuth();
   const [open, setOpen] = useState(false);
 
   // Client-side auth gate — belt-and-suspenders after middleware
   const teamOrgId = process.env.NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID;
-  const isStaff   = !!(teamOrgId && orgId === teamOrgId && orgRole === 'org:admin');
+  const isStaff = !!(teamOrgId && orgId === teamOrgId && orgRole === 'org:admin');
 
   useEffect(() => {
     if (isLoaded && !isStaff) {
@@ -133,11 +133,10 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
                     key={href + label}
                     href={href}
                     onClick={() => setOpen(false)}
-                    className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors ${
-                      active
+                    className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors ${active
                         ? 'bg-primary/10 font-medium text-primary'
                         : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                    }`}
+                      }`}
                   >
                     <Icon className="size-4 shrink-0" />
                     {label}
