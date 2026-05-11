@@ -29,9 +29,6 @@ export default function SupportWidget({ currentPath }: { currentPath: string }) 
   const [error,   setError]   = useState('');
   const subjectRef = useRef<HTMLInputElement>(null);
 
-  // Hide on support pages — the full UI is already there
-  if (currentPath.includes('/support')) return null;
-
   const open  = () => setStep('home');
   const close = () => {
     setStep('closed');
@@ -70,7 +67,10 @@ export default function SupportWidget({ currentPath }: { currentPath: string }) 
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+    <div
+      className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3"
+      style={{ display: currentPath.includes('/support') ? 'none' : 'flex' }}
+    >
       {/* Panel */}
       {step !== 'closed' && (
         <div className="w-80 overflow-hidden rounded-2xl border bg-background shadow-2xl shadow-black/10">
