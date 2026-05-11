@@ -268,7 +268,8 @@ export default function TicketDetailPage() {
 
       const reader  = streamRes.body.getReader();
       const decoder = new TextDecoder();
-      let buffer    = '';
+      let buffer       = '';
+      let currentEvent = '';
 
       // 5. Read tokens as they arrive and update the streaming bubble
       while (true) {
@@ -280,47 +281,75 @@ export default function TicketDetailPage() {
         buffer = lines.pop() ?? '';
 
         for (const line of lines) {
-          if (line.startsWith('event: token')) continue;
-          if (line.startsWith('event: done')) {
-            // Stream finished — mark bubble as complete
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === STREAMING_MSG_ID
-                  ? { ...m, streaming: false, createdAt: new Date().toISOString() }
-                  : m,
-              ),
-            );
-            continue;
-          }
-          if (line.startsWith('event: error')) {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === STREAMING_MSG_ID
-                  ? { ...m, body: 'Something went wrong. Our team has been notified.', streaming: false }
-                  : m,
-              ),
-            );
+          // Track which event type the next data line belongs to
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim();
             continue;
           }
 
           if (line.startsWith('data: ')) {
             const rawData = line.slice(6);
-            try {
-              const token = JSON.parse(rawData);
-              if (typeof token === 'string') {
-                // Append token to streaming bubble
+
+            if (currentEvent === 'token') {
+              try {
+                const token = JSON.parse(rawData);
+                if (typeof token === 'string') {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === STREAMING_MSG_ID
+                        ? { ...m, body: m.body + token }
+                        : m,
+                    ),
+                  );
+                  scrollToBottom();
+                }
+              } catch {
+                // Malformed token — skip
+              }
+            } else if (currentEvent === 'done') {
+              // Parse the saved message details from the done payload
+              try {
+                const saved = JSON.parse(rawData) as { messageId?: string; createdAt?: string };
+                // Replace the streaming placeholder with the real persisted message.
+                // This gives it a stable ID so it cannot be matched again on the next stream.
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === STREAMING_MSG_ID
-                      ? { ...m, body: m.body + token }
+                      ? {
+                          ...m,
+                          id:        saved.messageId ?? `ai-${Date.now()}`,
+                          streaming: false,
+                          createdAt: saved.createdAt ?? new Date().toISOString(),
+                        }
                       : m,
                   ),
                 );
-                scrollToBottom();
+              } catch {
+                // If parse fails, just mark streaming complete with a temporary ID
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === STREAMING_MSG_ID
+                      ? { ...m, id: `ai-${Date.now()}`, streaming: false }
+                      : m,
+                  ),
+                );
               }
-            } catch {
-              // Not JSON — skip
+              currentEvent = '';
+            } else if (currentEvent === 'error') {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === STREAMING_MSG_ID
+                    ? { ...m, body: 'Something went wrong. Our team has been notified.', streaming: false }
+                    : m,
+                ),
+              );
+              currentEvent = '';
             }
+          }
+
+          // Blank line = end of SSE message block, reset event type
+          if (line === '') {
+            currentEvent = '';
           }
         }
       }

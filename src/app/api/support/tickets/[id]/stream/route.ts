@@ -182,8 +182,12 @@ export async function POST(_req: NextRequest, { params }: RouteContext) {
           })
           .returning({ id: supportMessageSchema.id, createdAt: supportMessageSchema.createdAt });
 
-        // Tell the client the message is saved (includes ID and timestamp)
-        send('done', JSON.stringify({ messageId: saved?.id, createdAt: saved?.createdAt }));
+        // Signal to the client that streaming is complete.
+        // Send the saved message ID so the client can replace the streaming
+        // placeholder with the real DB message without an extra fetch.
+        controller.enqueue(
+          encoder.encode(`event: done\ndata: ${JSON.stringify({ messageId: saved?.id, createdAt: saved?.createdAt })}\n\n`),
+        );
       } catch (err) {
         console.error('[stream] Claude streaming error:', err);
         send('error', 'Something went wrong. Our team has been notified.');
