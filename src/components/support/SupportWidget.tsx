@@ -108,16 +108,15 @@ export default function SupportWidget({ currentPath }: { currentPath: string }) 
                   Describe your issue and get help from our AI or team
                 </p>
               </button>
-              <a
-                href="/dashboard/support"
-                onClick={close}
+              <button
+                onClick={() => { close(); router.push('/dashboard/support'); }}
                 className="block w-full rounded-xl border px-4 py-3.5 text-left transition-colors hover:bg-muted/40"
               >
                 <p className="text-sm font-medium">View my tickets</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   Check status and continue existing conversations
                 </p>
-              </a>
+              </button>
             </div>
           )}
 
