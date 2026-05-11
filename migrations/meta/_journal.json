@@ -50,6 +50,13 @@
       "when": 1778397658853,
       "tag": "0006_clean_maginty",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1778510462687,
+      "tag": "0007_chilly_dragon_man",
+      "breakpoints": true
     }
   ]
 }
