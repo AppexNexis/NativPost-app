@@ -10,7 +10,7 @@
  * - UserButton kept for sign-out
  */
 
-import { UserButton } from '@clerk/nextjs';
+import { useAuth, UserButton } from '@clerk/nextjs';
 import {
   BarChart3,
   BookOpen,
@@ -25,8 +25,8 @@ import {
 } from 'lucide-react';
 import NextImage from 'next/image';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 import mainLogo from '/public/assets/images/shared/main-logo.svg';
 
@@ -68,7 +68,27 @@ const NAV = [
 // -----------------------------------------------------------
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router   = useRouter();
+  const { orgId, orgRole, isLoaded } = useAuth();
   const [open, setOpen] = useState(false);
+
+  // Client-side auth gate — belt-and-suspenders after middleware
+  const teamOrgId = process.env.NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID;
+  const isStaff   = !!(teamOrgId && orgId === teamOrgId && orgRole === 'org:admin');
+
+  useEffect(() => {
+    if (isLoaded && !isStaff) {
+      router.replace('/dashboard');
+    }
+  }, [isLoaded, isStaff, router]);
+
+  if (!isLoaded || !isStaff) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="size-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
 
   // Strip locale prefix for active matching
   const clean = pathname.replace(/^\/[a-z]{2}(\/|$)/, '/');
