@@ -20,6 +20,7 @@ export async function GET() {
   }
 
   try {
+    // In GET /api/social-accounts
     const accounts = await db
       .select({
         id: socialAccountSchema.id,
@@ -29,6 +30,7 @@ export async function GET() {
         profileImageUrl: socialAccountSchema.profileImageUrl,
         isActive: socialAccountSchema.isActive,
         connectedAt: socialAccountSchema.connectedAt,
+        oauthToken: socialAccountSchema.oauthToken,  // ← add this
       })
       .from(socialAccountSchema)
       .where(eq(socialAccountSchema.orgId, orgId!));
