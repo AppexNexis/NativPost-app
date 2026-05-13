@@ -1,5 +1,5 @@
 import { clerkClient } from '@clerk/nextjs/server';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -7,6 +7,7 @@ import { getAuthContext } from '@/lib/auth';
 import { sendScheduledNotification } from '@/lib/email';
 import { getDb } from '@/libs/DB';
 import { brandProfileSchema, contentItemSchema } from '@/models/Schema';
+import { notifyConnect } from '@/lib/notify-connect';
 
 type RouteParams = {
   params: Promise<{ id: string }>;
@@ -182,6 +183,24 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (!updated) {
       return NextResponse.json({ error: 'Content item not found' }, { status: 404 });
+    }
+
+    // Notify client when posts enter review queue
+    if (body.status === 'pending_review') {
+      getDb().then(async (db) => {
+        const { count } = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(contentItemSchema)
+          .where(and(
+            eq(contentItemSchema.orgId, orgId!),
+            eq(contentItemSchema.status, 'pending_review'),
+          ))
+          .then(r => r[0] ?? { count: 0 });
+
+        notifyConnect(orgId!, 'approval_needed', {
+          count: Number(count),
+        });
+      }).catch(() => { });
     }
 
     // ── Phase 4: feedback signals ─────────────────────────────────────────────

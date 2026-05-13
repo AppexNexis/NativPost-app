@@ -11,6 +11,7 @@ import {
   publishingQueueSchema,
   socialAccountSchema,
 } from '@/models/Schema';
+import { notifyConnect } from '@/lib/notify-connect';
 
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY || '';
 
@@ -221,6 +222,24 @@ export async function GET(request: NextRequest) {
               );
             })
             .catch(err => console.error(`[Cron] Email notification failed for post ${item.id}:`, err));
+        }
+
+        // Phase 5: Connect notifications
+        if (someSucceeded) {
+          const successPlatforms = platformResults.filter(r => r.success).map(r => r.platform);
+          notifyConnect(item.orgId, 'post_published', {
+            platform: successPlatforms[0] ?? 'your platform',
+            caption: item.caption?.substring(0, 120),
+            engagementUrl: `https://app.nativpost.com/dashboard/posts/${item.id}`,
+          });
+        }
+
+        const failedPlatforms = platformResults.filter(r => !r.success);
+        for (const failed of failedPlatforms) {
+          notifyConnect(item.orgId, 'post_failed', {
+            platform: failed.platform,
+            error: failed.error ?? 'Unknown error',
+          });
         }
 
         results.push({
