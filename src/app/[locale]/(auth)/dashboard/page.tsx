@@ -1,5 +1,6 @@
 'use client';
 
+import { useAuth } from '@clerk/nextjs';
 import {
   AlertCircle,
   BarChart3,
@@ -225,6 +226,11 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // At the top of DashboardPage, alongside the existing useState/useEffect:
+  const { orgId } = useAuth();
+  const teamOrgId = process.env.NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID;
+  const isStaff = !!(teamOrgId && orgId === teamOrgId);
+
   useEffect(() => {
     async function load() {
       try {
@@ -271,9 +277,8 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* Failure alert — shown only when there are recent failures */}
-      {/* TODO: REMOVE THIS SECTION */}
-      {hasFailures && (
+      {/* Failure alert — staff/admin org only - shown only when there are recent failures */}
+      {isStaff && hasFailures && (
         <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3.5">
           <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-500" />
           <div className="min-w-0 flex-1">
