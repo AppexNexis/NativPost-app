@@ -304,3 +304,127 @@ export const onboardingProgressSchema = pgTable('onboarding_progress', {
   completedAt: timestamp('completed_at', { mode: 'date' }),
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
 });
+
+// -----------------------------------------------------------
+// SUPPORT SYSTEM — Append these tables to src/models/Schema.ts
+// -----------------------------------------------------------
+
+// -----------------------------------------------------------
+// SUPPORT TICKETS
+// -----------------------------------------------------------
+export const supportTicketSchema = pgTable('support_ticket', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: text('org_id')
+    .references(() => organizationSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  // Submitter
+  submitterUserId: text('submitter_user_id').notNull(), // Clerk user ID
+  submitterEmail: text('submitter_email').notNull(),
+  submitterName: text('submitter_name').notNull(),
+  // Ticket content
+  subject: text('subject').notNull(),
+  body: text('body').notNull(),
+  // AI-generated fields
+  aiSummary: text('ai_summary'),
+  aiCategory: text('ai_category'), // billing, content_generation, social_connection, analytics, account, technical, other
+  aiPriority: text('ai_priority').default('medium'), // low, medium, high, urgent
+  aiAutoResolved: boolean('ai_auto_resolved').default(false),
+  aiConfidence: real('ai_confidence'), // 0-1, how confident the AI was in its response
+  aiEnabled: boolean('ai_enabled').default(true).notNull(), // whether AI assistance is enabled for this ticket
+  aiHistory: jsonb('ai_history').default([]), // array of { response, feedback, timestamp }
+  // Assignment & status
+  status: text('status').default('open').notNull(), // open, in_progress, waiting_on_client, auto_resolved, resolved, closed
+  assignedToUserId: text('assigned_to_user_id'), // Clerk user ID of agent
+  // Source
+  source: text('source').default('web').notNull(), // web, email, api, personal_assistant
+  inboundEmailId: text('inbound_email_id'), // tracks email thread for replies
+  // Resolution
+  resolvedAt: timestamp('resolved_at', { mode: 'date' }),
+  closedAt: timestamp('closed_at', { mode: 'date' }),
+  // CSAT
+  csatScore: integer('csat_score'), // 1-5 stars, collected on close
+  csatFeedback: text('csat_feedback'),
+  // Metadata
+  updatedAt: timestamp('updated_at', { mode: 'date' })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------
+// SUPPORT MESSAGES (conversation thread on a ticket)
+// -----------------------------------------------------------
+export const supportMessageSchema = pgTable('support_message', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  ticketId: uuid('ticket_id')
+    .references(() => supportTicketSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  // Author
+  authorType: text('author_type').notNull(), // client, agent, ai
+  authorUserId: text('author_user_id'), // Clerk user ID (null for AI)
+  authorName: text('author_name').notNull(),
+  authorEmail: text('author_email'),
+  // Content
+  body: text('body').notNull(),
+  isInternal: boolean('is_internal').default(false).notNull(), // internal notes not sent to client
+  // AI polish tracking
+  originalBody: text('original_body'), // stored if body was AI-polished
+  aiPolished: boolean('ai_polished').default(false),
+  // Email delivery
+  emailMessageId: text('email_message_id'), // for threading
+  emailDelivered: boolean('email_delivered').default(false),
+  // Metadata
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------
+// SUPPORT TICKET ATTACHMENTS
+// -----------------------------------------------------------
+export const supportAttachmentSchema = pgTable('support_attachment', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  ticketId: uuid('ticket_id')
+    .references(() => supportTicketSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  messageId: uuid('message_id').references(() => supportMessageSchema.id),
+  fileName: text('file_name').notNull(),
+  fileUrl: text('file_url').notNull(), // Supabase Storage URL
+  fileSize: integer('file_size'), // bytes
+  mimeType: text('mime_type'),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------
+// KNOWLEDGE BASE ARTICLES (for RAG + agent reference)
+// -----------------------------------------------------------
+export const knowledgeArticleSchema = pgTable('knowledge_article', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  // Content
+  title: text('title').notNull(),
+  slug: text('slug').notNull(),
+  body: text('body').notNull(), // full markdown content
+  excerpt: text('excerpt'), // short summary for search results
+  // Categorisation
+  category: text('category').notNull(), // billing, features, integrations, troubleshooting, account, getting_started
+  tags: jsonb('tags').default([]),
+  // Visibility
+  isPublished: boolean('is_published').default(true).notNull(),
+  isInternal: boolean('is_internal').default(false).notNull(), // internal-only articles for agents
+  // SEO / helpful
+  helpful: integer('helpful').default(0), // thumbs up count
+  notHelpful: integer('not_helpful').default(0), // thumbs down count
+  viewCount: integer('view_count').default(0),
+  // Metadata
+  authorUserId: text('author_user_id'), // who wrote it
+  updatedAt: timestamp('updated_at', { mode: 'date' })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------
+// SUPPORT QUICK STATS VIEW (computed on-demand, not a real table)
+// Used by the dashboard stats API
+// -----------------------------------------------------------
+// No schema needed — queried via SQL aggregates in the API route

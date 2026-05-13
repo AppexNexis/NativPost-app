@@ -105,9 +105,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             .where(eq(socialAccountSchema.id, account.id));
         },
         item.contentType, // ← tells dispatcher whether this is a reel/video post
-        (account as any).oauthToken || undefined,        // ← add
-        (account as any).oauthTokenSecret || undefined,  // ← add
-
       );
 
       results.push({ platform, ...result });
