@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { exchangeCodeForTokens, PLATFORM_CONFIGS, type SocialPlatform } from '@/lib/social-oauth';
+import { decodePlatformFromState, exchangeCodeForTokens, PLATFORM_CONFIGS, type SocialPlatform } from '@/lib/social-oauth';
 // import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import { organizationSchema, socialAccountSchema } from '@/models/Schema';
@@ -33,7 +33,14 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const platform = state.split(':')[0] as SocialPlatform;
+  // const platform = state.split(':')[0] as SocialPlatform;
+  const platform = decodePlatformFromState(state);
+
+  if (!platform) {
+    return NextResponse.redirect(
+      new URL('/dashboard/connections?error=invalid_state', request.url),
+    );
+  }
 
   // Safety net: ensure org row exists before FK-dependent insert
   await db
@@ -58,7 +65,13 @@ export async function GET(request: NextRequest) {
 
   try {
     const profile = await fetchPlatformProfile(platform, tokens.accessToken);
+    // const config = PLATFORM_CONFIGS[platform];
     const config = PLATFORM_CONFIGS[platform];
+    if (!config) {
+      return NextResponse.redirect(
+        new URL('/dashboard/connections?error=invalid_platform', request.url),
+      );
+    }
     const accountType = profile?.type ?? config?.accountType ?? 'personal';
 
     // Use page token if available (Facebook), otherwise use the OAuth token
