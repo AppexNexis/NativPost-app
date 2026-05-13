@@ -613,6 +613,210 @@ function oauthSign(
   return `OAuth ${headerParams}`;
 }
 
+async function uploadVideoToTwitter(
+  videoUrl: string,
+  oauthToken: string,
+  oauthTokenSecret: string,
+): Promise<string | null> {
+  const consumerKey = process.env.TWITTER_CONSUMER_KEY!;
+  const consumerSecret = process.env.TWITTER_CONSUMER_SECRET!;
+
+  const media = await fetchMediaBuffer(videoUrl);
+
+  if (!media) {
+    console.error('[Twitter] Failed to fetch video buffer');
+    return null;
+  }
+
+  // Convert ArrayBuffer → Node Buffer
+  const videoBuffer = Buffer.from(media.buffer);
+
+  const uploadUrl = 'https://upload.twitter.com/1.1/media/upload.json';
+
+  // =========================================================
+  // STEP 1 — INIT
+  // =========================================================
+
+  const initParams = {
+    command: 'INIT',
+    total_bytes: videoBuffer.length.toString(),
+    media_type: media.contentType || 'video/mp4',
+    media_category: 'tweet_video',
+  };
+
+  const initAuth = oauthSign(
+    'POST',
+    uploadUrl,
+    initParams,
+    consumerKey,
+    consumerSecret,
+    oauthTokenSecret,
+    oauthToken,
+  );
+
+  const initRes = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: initAuth,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams(initParams).toString(),
+  });
+
+  const initData = await initRes.json();
+
+  if (!initData.media_id_string) {
+    console.error('[Twitter] INIT failed:', initData);
+    return null;
+  }
+
+  const mediaId = initData.media_id_string;
+
+  // =========================================================
+  // STEP 2 — APPEND CHUNKS
+  // =========================================================
+
+  const chunkSize = 5 * 1024 * 1024; // 5MB chunks
+  let segmentIndex = 0;
+
+  for (let i = 0; i < videoBuffer.length; i += chunkSize) {
+    const chunk = videoBuffer.subarray(i, i + chunkSize);
+
+    const appendParams = {
+      command: 'APPEND',
+      media_id: mediaId,
+      segment_index: segmentIndex.toString(),
+    };
+
+    const appendAuth = oauthSign(
+      'POST',
+      uploadUrl,
+      appendParams,
+      consumerKey,
+      consumerSecret,
+      oauthTokenSecret,
+      oauthToken,
+    );
+
+    const form = new FormData();
+
+    form.append('command', 'APPEND');
+    form.append('media_id', mediaId);
+    form.append('segment_index', String(segmentIndex));
+
+    const blob = new Blob(
+      [chunk as BlobPart],
+      {
+        type: media.contentType || 'video/mp4',
+      },
+    );
+
+    form.append('media', blob, 'video.mp4');
+
+    const appendRes = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: appendAuth,
+      },
+      body: form,
+    });
+
+    if (!appendRes.ok) {
+      const errorText = await appendRes.text();
+
+      console.error(
+        `[Twitter] APPEND failed (segment ${segmentIndex}):`,
+        errorText,
+      );
+
+      return null;
+    }
+
+    segmentIndex++;
+  }
+
+  // =========================================================
+  // STEP 3 — FINALIZE
+  // =========================================================
+
+  const finalizeParams = {
+    command: 'FINALIZE',
+    media_id: mediaId,
+  };
+
+  const finalizeAuth = oauthSign(
+    'POST',
+    uploadUrl,
+    finalizeParams,
+    consumerKey,
+    consumerSecret,
+    oauthTokenSecret,
+    oauthToken,
+  );
+
+  const finalizeRes = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: finalizeAuth,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams(finalizeParams).toString(),
+  });
+
+  const finalizeData = await finalizeRes.json();
+
+  if (finalizeData.processing_info) {
+    let processing = finalizeData.processing_info;
+
+    while (
+      processing.state === 'pending' ||
+      processing.state === 'in_progress'
+    ) {
+      const waitTime = (processing.check_after_secs || 5) * 1000;
+
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+
+      const statusParams = {
+        command: 'STATUS',
+        media_id: mediaId,
+      };
+
+      const statusAuth = oauthSign(
+        'GET',
+        uploadUrl,
+        statusParams,
+        consumerKey,
+        consumerSecret,
+        oauthTokenSecret,
+        oauthToken,
+      );
+
+      const statusUrl =
+        `${uploadUrl}?command=STATUS&media_id=${mediaId}`;
+
+      const statusRes = await fetch(statusUrl, {
+        method: 'GET',
+        headers: {
+          Authorization: statusAuth,
+        },
+      });
+
+      const statusData = await statusRes.json();
+
+      processing = statusData.processing_info;
+
+      if (processing?.state === 'failed') {
+        console.error('[Twitter] Video processing failed:', statusData);
+
+        return null;
+      }
+    }
+  }
+
+  console.info('[Twitter] Video upload success:', mediaId);
+
+  return mediaId;
+}
 async function uploadMediaToTwitter(
   mediaUrl: string,
   oauthToken: string,
@@ -674,13 +878,31 @@ export async function publishToTwitter(
 ): Promise<PublishResult> {
   try {
     // Upload media via OAuth 1.0a if credentials are present
+
+
     const mediaIds: string[] = [];
 
     if (oauthToken && oauthTokenSecret) {
-      const mediaItems = videoUrl ? [videoUrl] : imageUrls.slice(0, 4);
-      for (const url of mediaItems) {
-        const mediaId = await uploadMediaToTwitter(url, oauthToken, oauthTokenSecret);
+      if (videoUrl) {
+        const mediaId = await uploadVideoToTwitter(
+          videoUrl,
+          oauthToken,
+          oauthTokenSecret,
+        );
+
         if (mediaId) mediaIds.push(mediaId);
+      } else {
+        const mediaItems = imageUrls.slice(0, 4);
+
+        for (const url of mediaItems) {
+          const mediaId = await uploadMediaToTwitter(
+            url,
+            oauthToken,
+            oauthTokenSecret,
+          );
+
+          if (mediaId) mediaIds.push(mediaId);
+        }
       }
     } else {
       console.warn('[Twitter] No OAuth 1.0a credentials — publishing text only');

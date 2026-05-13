@@ -15,6 +15,13 @@ export type PublishResult = {
   error?: string;
 };
 
+function encodeRFC3986(str: string): string {
+  return encodeURIComponent(str)
+    .replace(/[!'()*]/g, (c) => {
+      return '%' + c.charCodeAt(0).toString(16).toUpperCase();
+    });
+}
+
 async function fetchMediaBuffer(
   url: string,
 ): Promise<{ buffer: ArrayBuffer; contentType: string } | null> {
@@ -549,29 +556,58 @@ function oauthSign(
     oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
     oauth_token: token,
     oauth_version: '1.0',
+  };
+
+  // -------------------------------------------------------
+  // 1. Normalize ALL params (OAuth + request params)
+  // -------------------------------------------------------
+  const allParams: Record<string, string> = {
+    ...oauthParams,
     ...params,
   };
 
-  const sortedKeys = Object.keys(oauthParams).sort();
+  // -------------------------------------------------------
+  // 2. Build parameter string (RFC 3986 encoding)
+  // -------------------------------------------------------
+  const sortedKeys = Object.keys(allParams).sort();
+
   const paramString = sortedKeys
-    .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(oauthParams[k]!)}`)
+    .map((key) => {
+      return `${encodeRFC3986(key)}=${encodeRFC3986(allParams[key]!)}`;
+    })
     .join('&');
 
+  // -------------------------------------------------------
+  // 3. Build signature base string
+  // -------------------------------------------------------
   const baseString = [
     method.toUpperCase(),
-    encodeURIComponent(url),
-    encodeURIComponent(paramString),
+    encodeRFC3986(url),
+    encodeRFC3986(paramString),
   ].join('&');
 
-  const signingKey = `${encodeURIComponent(consumerSecret)}&${encodeURIComponent(tokenSecret)}`;
-  const signature = createHmac('sha1', signingKey).update(baseString).digest('base64');
+  // -------------------------------------------------------
+  // 4. Create signing key
+  // -------------------------------------------------------
+  const signingKey = `${encodeRFC3986(consumerSecret)}&${encodeRFC3986(tokenSecret)}`;
 
+  const signature = createHmac('sha1', signingKey)
+    .update(baseString)
+    .digest('base64');
+
+  // -------------------------------------------------------
+  // 5. Attach signature
+  // -------------------------------------------------------
   oauthParams.oauth_signature = signature;
 
+  // -------------------------------------------------------
+  // 6. Build Authorization header (ONLY oauth_* params)
+  // -------------------------------------------------------
   const headerParams = Object.keys(oauthParams)
-    .filter(k => k.startsWith('oauth_'))
     .sort()
-    .map(k => `${encodeURIComponent(k)}="${encodeURIComponent(oauthParams[k]!)}"`)
+    .map((key) => {
+      return `${encodeRFC3986(key)}="${encodeRFC3986(oauthParams[key]!)}"`;
+    })
     .join(', ');
 
   return `OAuth ${headerParams}`;
@@ -593,17 +629,21 @@ async function uploadMediaToTwitter(
   const mediaData = Buffer.from(media.buffer).toString('base64');
   const uploadUrl = 'https://upload.twitter.com/1.1/media/upload.json';
 
+  const params = {
+    media_data: mediaData,
+  };
+
   const authHeader = oauthSign(
     'POST',
     uploadUrl,
-    {},
+    params,
     consumerKey,
     consumerSecret,
     oauthTokenSecret,
     oauthToken,
   );
-
-  const formBody = new URLSearchParams({ media_data: mediaData });
+  // const formBody = new URLSearchParams({ media_data: mediaData });
+  const formBody = new URLSearchParams(params);
 
   const res = await fetch(uploadUrl, {
     method: 'POST',
@@ -685,8 +725,6 @@ async function postTweet(
   if (data.data?.id) return { success: true, platformPostId: data.data.id };
   return { success: false, error: data.detail || data.title || 'Twitter publish failed' };
 }
-
-
 
 async function refreshTwitterToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string } | null> {
   try {
