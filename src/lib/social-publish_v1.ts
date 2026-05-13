@@ -7,6 +7,7 @@
  */
 
 import { Buffer } from 'node:buffer';
+import { createHmac, randomBytes } from 'node:crypto';
 
 export type PublishResult = {
   success: boolean;
@@ -527,34 +528,138 @@ export async function publishToLinkedInPage(
   }
 }
 
+
 // ============================================================
-// TWITTER / X
+// TWITTER / X  — OAuth 2.0 for tweets, OAuth 1.0a for media
 // ============================================================
 
+function oauthSign(
+  method: string,
+  url: string,
+  params: Record<string, string>,
+  consumerKey: string,
+  consumerSecret: string,
+  tokenSecret: string,
+  token: string,
+): string {
+  const oauthParams: Record<string, string> = {
+    oauth_consumer_key: consumerKey,
+    oauth_nonce: randomBytes(16).toString('hex'),
+    oauth_signature_method: 'HMAC-SHA1',
+    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_token: token,
+    oauth_version: '1.0',
+    ...params,
+  };
+
+  const sortedKeys = Object.keys(oauthParams).sort();
+  const paramString = sortedKeys
+    .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(oauthParams[k]!)}`)
+    .join('&');
+
+  const baseString = [
+    method.toUpperCase(),
+    encodeURIComponent(url),
+    encodeURIComponent(paramString),
+  ].join('&');
+
+  const signingKey = `${encodeURIComponent(consumerSecret)}&${encodeURIComponent(tokenSecret)}`;
+  const signature = createHmac('sha1', signingKey).update(baseString).digest('base64');
+
+  oauthParams.oauth_signature = signature;
+
+  const headerParams = Object.keys(oauthParams)
+    .filter(k => k.startsWith('oauth_'))
+    .sort()
+    .map(k => `${encodeURIComponent(k)}="${encodeURIComponent(oauthParams[k]!)}"`)
+    .join(', ');
+
+  return `OAuth ${headerParams}`;
+}
+
+async function uploadMediaToTwitter(
+  mediaUrl: string,
+  oauthToken: string,
+  oauthTokenSecret: string,
+): Promise<string | null> {
+  // const consumerKey = process.env.TWITTER_CLIENT_ID!;
+  // const consumerSecret = process.env.TWITTER_CLIENT_SECRET!;
+  const consumerKey = process.env.TWITTER_CONSUMER_KEY!;
+  const consumerSecret = process.env.TWITTER_CONSUMER_SECRET!;
+
+  const media = await fetchMediaBuffer(mediaUrl);
+  if (!media) return null;
+
+  const mediaData = Buffer.from(media.buffer).toString('base64');
+  const uploadUrl = 'https://upload.twitter.com/1.1/media/upload.json';
+
+  const authHeader = oauthSign(
+    'POST',
+    uploadUrl,
+    {},
+    consumerKey,
+    consumerSecret,
+    oauthTokenSecret,
+    oauthToken,
+  );
+
+  const formBody = new URLSearchParams({ media_data: mediaData });
+
+  const res = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: authHeader,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: formBody.toString(),
+  });
+
+  const data = await res.json();
+  if (data.media_id_string) {
+    return data.media_id_string;
+  }
+  console.error('[Twitter] Media upload failed:', JSON.stringify(data));
+  return null;
+}
+
 export async function publishToTwitter(
-  accessToken: string,
+  accessToken: string,          // OAuth 2.0 — for posting the tweet text
   caption: string,
   imageUrls: string[] = [],
   videoUrl?: string,
   refreshToken?: string,
   onTokenRefresh?: (newAccessToken: string, newRefreshToken: string) => Promise<void>,
+  oauthToken?: string,          // OAuth 1.0a — for media upload
+  oauthTokenSecret?: string,    // OAuth 1.0a — for media upload
 ): Promise<PublishResult> {
   try {
-    const result = await postTweet(accessToken, caption);
+    // Upload media via OAuth 1.0a if credentials are present
+    const mediaIds: string[] = [];
+
+    if (oauthToken && oauthTokenSecret) {
+      const mediaItems = videoUrl ? [videoUrl] : imageUrls.slice(0, 4);
+      for (const url of mediaItems) {
+        const mediaId = await uploadMediaToTwitter(url, oauthToken, oauthTokenSecret);
+        if (mediaId) mediaIds.push(mediaId);
+      }
+    } else {
+      console.warn('[Twitter] No OAuth 1.0a credentials — publishing text only');
+    }
+
+    const tweetBody: Record<string, unknown> = { text: caption };
+    if (mediaIds.length > 0) {
+      tweetBody.media = { media_ids: mediaIds };
+    }
+
+    const result = await postTweet(accessToken, tweetBody);
 
     if (!result.success && result.error === 'Unauthorized' && refreshToken) {
       const refreshed = await refreshTwitterToken(refreshToken);
       if (!refreshed) {
         return { success: false, error: 'Twitter token expired. Please reconnect.' };
       }
-      if (onTokenRefresh) {
-        await onTokenRefresh(refreshed.accessToken, refreshed.refreshToken);
-      }
-      return postTweet(refreshed.accessToken, caption);
-    }
-
-    if (result.success && (imageUrls.length > 0 || videoUrl)) {
-      console.log('[Twitter] Published as text-only — media requires OAuth 1.0a');
+      if (onTokenRefresh) await onTokenRefresh(refreshed.accessToken, refreshed.refreshToken);
+      return postTweet(refreshed.accessToken, tweetBody);
     }
 
     return result;
@@ -563,21 +668,25 @@ export async function publishToTwitter(
   }
 }
 
-async function postTweet(accessToken: string, text: string): Promise<PublishResult> {
+async function postTweet(
+  accessToken: string,
+  body: Record<string, unknown>,
+): Promise<PublishResult> {
   const res = await fetch('https://api.x.com/2/tweets', {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
   });
   const data = await res.json();
-  if (res.status === 401) {
-    return { success: false, error: 'Unauthorized' };
-  }
-  if (data.data?.id) {
-    return { success: true, platformPostId: data.data.id };
-  }
+  if (res.status === 401) return { success: false, error: 'Unauthorized' };
+  if (data.data?.id) return { success: true, platformPostId: data.data.id };
   return { success: false, error: data.detail || data.title || 'Twitter publish failed' };
 }
+
+
 
 async function refreshTwitterToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string } | null> {
   try {
@@ -1303,6 +1412,8 @@ export async function publishToplatform(
   refreshToken?: string,
   onTokenRefresh?: (newAccessToken: string, newRefreshToken: string) => Promise<void>,
   contentType?: string,
+  oauthToken?: string,           // ← add
+  oauthTokenSecret?: string,     // ← add
 ): Promise<PublishResult> {
   // ugc_ad and data_story also produce video content stored in graphicUrls
   const isVideo = contentType === 'reel' || contentType === 'ugc_ad' || contentType === 'data_story';
@@ -1324,7 +1435,16 @@ export async function publishToplatform(
       return publishToLinkedInPage(accessToken, platformUserId, caption, imageUrls, squareVideo);
 
     case 'twitter':
-      return publishToTwitter(accessToken, caption, imageUrls, verticalVideo, refreshToken, onTokenRefresh);
+      return publishToTwitter(
+        accessToken,
+        caption,
+        imageUrls,
+        verticalVideo,
+        refreshToken,
+        onTokenRefresh,
+        oauthToken,         // ← new
+        oauthTokenSecret,   // ← new
+      );
 
     case 'tiktok':
       return publishToTikTok(accessToken, caption, verticalVideo, refreshToken, onTokenRefresh);
