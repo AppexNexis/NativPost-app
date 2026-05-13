@@ -9,6 +9,7 @@ import { type PlatformInfo, PLATFORMS } from '@/components/icons/PlatformIcons';
 // -----------------------------------------------------------
 // TYPES
 // -----------------------------------------------------------
+// 1. Add to the type at the top
 type SocialAccount = {
   id: string;
   platform: string;
@@ -17,8 +18,8 @@ type SocialAccount = {
   profileImageUrl: string | null;
   isActive: boolean;
   connectedAt: string;
-  // OAuth 1.0a fields (present when twitter_v1 connected)
   oauthToken?: string | null;
+  accessToken?: string | null; // ← add this
 };
 
 // A "virtual" platform entry for the X media (OAuth 1.0a) row
@@ -55,24 +56,24 @@ function buildGroups(platforms: PlatformInfo[]): { label: string; platforms: Pla
         // Text-only row (OAuth 2.0)
         ...(twitterPlatform
           ? [{
-              ...twitterPlatform,
-              description: 'Text only',
-              _badge: 'Text',
-              _badgeVariant: 'default' as const,
-            }]
+            ...twitterPlatform,
+            description: 'Text only',
+            _badge: 'Text',
+            _badgeVariant: 'default' as const,
+          }]
           : []),
         // Media row (OAuth 1.0a)
         ...(twitterPlatform
           ? [{
-              ...twitterPlatform,
-              id: 'twitter_v1',
-              name: 'X',
-              description: 'Images & video',
-              _connectHref: '/api/social-accounts/connect/twitter-v1',
-              _accountKey: 'twitter_v1_media',
-              _badge: 'Media',
-              _badgeVariant: 'highlight' as const,
-            }]
+            ...twitterPlatform,
+            id: 'twitter_v1',
+            name: 'X',
+            description: 'Images & video',
+            _connectHref: '/api/social-accounts/connect/twitter-v1',
+            _accountKey: 'twitter_v1_media',
+            _badge: 'Media',
+            _badgeVariant: 'highlight' as const,
+          }]
           : []),
         ...platforms.filter(p => p.id === 'tiktok'),
       ],
@@ -135,13 +136,17 @@ function ConnectionsContent() {
   };
 
   // For regular platforms: find by platform id + isActive
-  const getAccount = (platformId: string) =>
-    accounts.find(a => a.platform === platformId && a.isActive);
+  const getAccount = (platformId: string) => {
+    const acc = accounts.find(a => a.platform === platformId && a.isActive);
+    if (!acc) return undefined;
+    if (platformId === 'twitter') return acc.accessToken ? acc : undefined; // ← needs OAuth 2.0
+    return acc;
+  };
 
   // For the twitter_v1 (media) row: same twitter account but must have oauthToken
   const getTwitterMediaAccount = () => {
-    const twAccount = accounts.find(a => a.platform === 'twitter' && a.isActive);
-    return twAccount?.oauthToken ? twAccount : undefined;
+    const acc = accounts.find(a => a.platform === 'twitter' && a.isActive);
+    return acc?.oauthToken ? acc : undefined; // ← needs OAuth 1.0a
   };
 
   const resolveAccount = (entry: PlatformEntry) => {
@@ -284,11 +289,10 @@ function ConnectionsContent() {
                         <button
                           type="button"
                           onClick={() => connectPlatform(platform)}
-                          className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors sm:px-4 sm:py-2 ${
-                            isTwitterMediaRow
-                              ? 'border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100'
-                              : 'bg-foreground text-background hover:opacity-90'
-                          }`}
+                          className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors sm:px-4 sm:py-2 ${isTwitterMediaRow
+                            ? 'border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100'
+                            : 'bg-foreground text-background hover:opacity-90'
+                            }`}
                         >
                           Connect
                         </button>

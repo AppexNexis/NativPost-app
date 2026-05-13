@@ -144,12 +144,31 @@ export async function GET(request: NextRequest) {
         for (const platform of platforms) {
           const account = accounts.find(a => a.platform === platform);
 
-          if (!account?.accessToken) {
+          // if (!account?.accessToken) {
+          //   platformResults.push({
+          //     platform,
+          //     success: false,
+          //     error: `No connected ${platform} account`,
+          //   });
+          //   continue;
+          // }
+
+          if (!account) {
+            platformResults.push({ platform, success: false, error: `No connected ${platform} account` });
+            continue;
+          }
+
+          if (platform === 'twitter' && !account.accessToken) {
             platformResults.push({
               platform,
               success: false,
-              error: `No connected ${platform} account`,
+              error: 'X text connection missing. Please connect X (Text) in Connections.',
             });
+            continue;
+          }
+
+          if (!account.accessToken && platform !== 'twitter') {
+            platformResults.push({ platform, success: false, error: `${platform} access token missing` });
             continue;
           }
 
@@ -157,7 +176,7 @@ export async function GET(request: NextRequest) {
 
           const result = await publishToplatform(
             platform,
-            account.accessToken,
+            account.accessToken!,              // ← add ! (safe here because we checked above)
             account.platformUserId || '',
             caption,
             graphicUrls,
@@ -173,8 +192,9 @@ export async function GET(request: NextRequest) {
                 .where(eq(socialAccountSchema.id, account.id));
             },
             item.contentType,
+            (account as any).oauthToken || undefined,
+            (account as any).oauthTokenSecret || undefined,
           );
-
           platformResults.push({ platform, ...result });
 
           // 4. Record in publishing queue

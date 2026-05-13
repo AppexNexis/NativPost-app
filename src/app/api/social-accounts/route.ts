@@ -30,12 +30,20 @@ export async function GET() {
         profileImageUrl: socialAccountSchema.profileImageUrl,
         isActive: socialAccountSchema.isActive,
         connectedAt: socialAccountSchema.connectedAt,
-        oauthToken: socialAccountSchema.oauthToken,  // ← add this
+        oauthToken: socialAccountSchema.oauthToken,  // already added
+        accessToken: socialAccountSchema.accessToken, // ← add this
       })
       .from(socialAccountSchema)
       .where(eq(socialAccountSchema.orgId, orgId!));
 
-    return NextResponse.json({ accounts }, { status: 200 });
+    // Mask tokens before sending to client
+    const maskedAccounts = accounts.map(a => ({
+      ...a,
+      accessToken: a.accessToken ? 'connected' : null,
+      oauthToken: a.oauthToken ? 'connected' : null,
+    }));
+
+    return NextResponse.json({ accounts: maskedAccounts }, { status: 200 });
   } catch (err) {
     console.error('Failed to fetch social accounts:', err);
     return NextResponse.json(
