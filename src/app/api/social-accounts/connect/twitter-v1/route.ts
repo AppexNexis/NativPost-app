@@ -1,11 +1,11 @@
-import crypto from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { twitterRequestTokenStore } from '@/lib/twitter-request-token-store';
 
-// In-memory store for request tokens (same pattern as PKCE store)
-export const twitterRequestTokenStore = new Map<string, string>();
+import { createHmac, randomBytes } from 'node:crypto';
+
 
 function oauthSign1a(
   method: string,
@@ -18,7 +18,7 @@ function oauthSign1a(
 ): string {
   const oauthParams: Record<string, string> = {
     oauth_consumer_key: consumerKey,
-    oauth_nonce: crypto.randomBytes(16).toString('hex'),
+    oauth_nonce: randomBytes(16).toString('hex'),
     oauth_signature_method: 'HMAC-SHA1',
     oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
     oauth_version: '1.0',
@@ -39,7 +39,7 @@ function oauthSign1a(
   ].join('&');
 
   const signingKey = `${encodeURIComponent(consumerSecret)}&${encodeURIComponent(tokenSecret)}`;
-  const signature = crypto.createHmac('sha1', signingKey).update(baseString).digest('base64');
+  const signature = createHmac('sha1', signingKey).update(baseString).digest('base64');
   oauthParams.oauth_signature = signature;
 
   const headerParts = Object.keys(oauthParams)
