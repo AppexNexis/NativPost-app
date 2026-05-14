@@ -622,21 +622,18 @@ async function uploadVideoToTwitter(
   const consumerSecret = process.env.TWITTER_CONSUMER_SECRET!;
 
   const media = await fetchMediaBuffer(videoUrl);
-
   if (!media) {
     console.error('[Twitter] Failed to fetch video buffer');
     return null;
   }
 
-  // Convert ArrayBuffer → Node Buffer
-  const videoBuffer = Buffer.from(media.buffer);
-
+  // const videoBuffer = Buffer.from(media.buffer);
+  const videoBuffer = Buffer.isBuffer(media.buffer)
+  ? media.buffer
+  : Buffer.from(media.buffer);
   const uploadUrl = 'https://upload.twitter.com/1.1/media/upload.json';
 
-  // =========================================================
-  // STEP 1 — INIT
-  // =========================================================
-
+  // ── INIT ──
   const initParams = {
     command: 'INIT',
     total_bytes: videoBuffer.length.toString(),
@@ -645,26 +642,17 @@ async function uploadVideoToTwitter(
   };
 
   const initAuth = oauthSign(
-    'POST',
-    uploadUrl,
-    initParams,
-    consumerKey,
-    consumerSecret,
-    oauthTokenSecret,
-    oauthToken,
+    'POST', uploadUrl, initParams,
+    consumerKey, consumerSecret, oauthTokenSecret, oauthToken,
   );
 
   const initRes = await fetch(uploadUrl, {
     method: 'POST',
-    headers: {
-      Authorization: initAuth,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+    headers: { Authorization: initAuth, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(initParams).toString(),
   });
 
   const initData = await initRes.json();
-
   if (!initData.media_id_string) {
     console.error('[Twitter] INIT failed:', initData);
     return null;
@@ -672,94 +660,54 @@ async function uploadVideoToTwitter(
 
   const mediaId = initData.media_id_string;
 
-  // =========================================================
-  // STEP 2 — APPEND CHUNKS
-  // =========================================================
-
-  const chunkSize = 5 * 1024 * 1024; // 5MB chunks
+  // ── APPEND ──
+  const chunkSize = 5 * 1024 * 1024;
   let segmentIndex = 0;
 
   for (let i = 0; i < videoBuffer.length; i += chunkSize) {
     const chunk = videoBuffer.subarray(i, i + chunkSize);
 
-    const appendParams = {
-      command: 'APPEND',
-      media_id: mediaId,
-      segment_index: segmentIndex.toString(),
-    };
-
+    // ✅ KEY FIX: multipart uploads must be signed with NO body params
+    // Including form fields in the signature base string breaks HMAC-SHA1
+    // for multipart/form-data because the body is not URL-encoded.
     const appendAuth = oauthSign(
-      'POST',
-      uploadUrl,
-      appendParams,
-      consumerKey,
-      consumerSecret,
-      oauthTokenSecret,
-      oauthToken,
+      'POST', uploadUrl,
+      {}, // ← empty: do NOT include multipart body params in OAuth signature
+      consumerKey, consumerSecret, oauthTokenSecret, oauthToken,
     );
 
     const form = new FormData();
-
     form.append('command', 'APPEND');
     form.append('media_id', mediaId);
     form.append('segment_index', String(segmentIndex));
-
-    const blob = new Blob(
-      [chunk as BlobPart],
-      {
-        type: media.contentType || 'video/mp4',
-      },
-    );
-
-    form.append('media', blob, 'video.mp4');
+    form.append('media', new Blob([chunk as BlobPart], { type: media.contentType || 'video/mp4' }), 'video.mp4');
 
     const appendRes = await fetch(uploadUrl, {
       method: 'POST',
-      headers: {
-        Authorization: appendAuth,
-      },
+      headers: { Authorization: appendAuth }, // ← no Content-Type header; FormData sets boundary automatically
       body: form,
     });
 
     if (!appendRes.ok) {
       const errorText = await appendRes.text();
-
-      console.error(
-        `[Twitter] APPEND failed (segment ${segmentIndex}):`,
-        errorText,
-      );
-
+      console.error(`[Twitter] APPEND failed (segment ${segmentIndex}):`, errorText);
       return null;
     }
 
     segmentIndex++;
   }
 
-  // =========================================================
-  // STEP 3 — FINALIZE
-  // =========================================================
-
-  const finalizeParams = {
-    command: 'FINALIZE',
-    media_id: mediaId,
-  };
+  // ── FINALIZE ──
+  const finalizeParams = { command: 'FINALIZE', media_id: mediaId };
 
   const finalizeAuth = oauthSign(
-    'POST',
-    uploadUrl,
-    finalizeParams,
-    consumerKey,
-    consumerSecret,
-    oauthTokenSecret,
-    oauthToken,
+    'POST', uploadUrl, finalizeParams,
+    consumerKey, consumerSecret, oauthTokenSecret, oauthToken,
   );
 
   const finalizeRes = await fetch(uploadUrl, {
     method: 'POST',
-    headers: {
-      Authorization: finalizeAuth,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+    headers: { Authorization: finalizeAuth, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(finalizeParams).toString(),
   });
 
@@ -768,55 +716,35 @@ async function uploadVideoToTwitter(
   if (finalizeData.processing_info) {
     let processing = finalizeData.processing_info;
 
-    while (
-      processing.state === 'pending' ||
-      processing.state === 'in_progress'
-    ) {
+    while (processing.state === 'pending' || processing.state === 'in_progress') {
       const waitTime = (processing.check_after_secs || 5) * 1000;
-
       await new Promise(resolve => setTimeout(resolve, waitTime));
 
-      const statusParams = {
-        command: 'STATUS',
-        media_id: mediaId,
-      };
-
+      const statusParams = { command: 'STATUS', media_id: mediaId };
       const statusAuth = oauthSign(
-        'GET',
-        uploadUrl,
-        statusParams,
-        consumerKey,
-        consumerSecret,
-        oauthTokenSecret,
-        oauthToken,
+        'GET', uploadUrl, statusParams,
+        consumerKey, consumerSecret, oauthTokenSecret, oauthToken,
       );
 
-      const statusUrl =
-        `${uploadUrl}?command=STATUS&media_id=${mediaId}`;
-
-      const statusRes = await fetch(statusUrl, {
+      const statusRes = await fetch(`${uploadUrl}?command=STATUS&media_id=${mediaId}`, {
         method: 'GET',
-        headers: {
-          Authorization: statusAuth,
-        },
+        headers: { Authorization: statusAuth },
       });
 
       const statusData = await statusRes.json();
-
       processing = statusData.processing_info;
 
       if (processing?.state === 'failed') {
         console.error('[Twitter] Video processing failed:', statusData);
-
         return null;
       }
     }
   }
 
   console.info('[Twitter] Video upload success:', mediaId);
-
   return mediaId;
 }
+
 async function uploadMediaToTwitter(
   mediaUrl: string,
   oauthToken: string,
