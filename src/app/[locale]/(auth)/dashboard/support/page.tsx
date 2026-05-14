@@ -2,14 +2,6 @@
 
 /**
  * src/app/[locale]/(auth)/dashboard/support/page.tsx
- *
- * Drop path: src/app/[locale]/(auth)/dashboard/support/page.tsx
- *
- * The main support hub. Shows:
- * - Stats bar (open, in progress, auto-resolved)
- * - Ticket list with priority badges and category labels
- * - Create ticket modal
- * - Click through to individual ticket (handled by /support/[id]/page.tsx)
  */
 
 import {
@@ -18,13 +10,13 @@ import {
   Bot,
   CheckCircle2,
   Clock,
-  ExternalLink,
   Loader2,
   MessageSquare,
   Plus,
   RefreshCw,
   X,
   Zap,
+  ChevronRight,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
@@ -57,9 +49,9 @@ type Stats = { status: string; count: number }[];
 // -----------------------------------------------------------
 const PRIORITY_CONFIG: Record<string, { label: string; classes: string }> = {
   urgent: { label: 'Urgent', classes: 'bg-red-50 text-red-700 border-red-200' },
-  high:   { label: 'High',   classes: 'bg-orange-50 text-orange-700 border-orange-200' },
+  high: { label: 'High', classes: 'bg-orange-50 text-orange-700 border-orange-200' },
   medium: { label: 'Medium', classes: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
-  low:    { label: 'Low',    classes: 'bg-zinc-50 text-zinc-600 border-zinc-200' },
+  low: { label: 'Low', classes: 'bg-zinc-50 text-zinc-600 border-zinc-200' },
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -73,12 +65,12 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 const STATUS_CONFIG: Record<string, { label: string; icon: React.ElementType; classes: string }> = {
-  open:               { label: 'Open',        icon: Clock,         classes: 'bg-blue-50 text-blue-700' },
-  in_progress:        { label: 'In progress', icon: RefreshCw,     classes: 'bg-purple-50 text-purple-700' },
-  auto_resolved:      { label: 'AI resolved', icon: Bot,           classes: 'bg-emerald-50 text-emerald-700' },
-  waiting_on_client:  { label: 'Waiting',     icon: Clock,         classes: 'bg-amber-50 text-amber-700' },
-  resolved:           { label: 'Resolved',    icon: CheckCircle2,  classes: 'bg-emerald-50 text-emerald-700' },
-  closed:             { label: 'Closed',      icon: CheckCircle2,  classes: 'bg-zinc-100 text-zinc-500' },
+  open: { label: 'Open', icon: Clock, classes: 'bg-blue-50 text-blue-700' },
+  in_progress: { label: 'In progress', icon: RefreshCw, classes: 'bg-purple-50 text-purple-700' },
+  auto_resolved: { label: 'AI resolved', icon: Bot, classes: 'bg-emerald-50 text-emerald-700' },
+  waiting_on_client: { label: 'Waiting', icon: Clock, classes: 'bg-amber-50 text-amber-700' },
+  resolved: { label: 'Resolved', icon: CheckCircle2, classes: 'bg-emerald-50 text-emerald-700' },
+  closed: { label: 'Closed', icon: CheckCircle2, classes: 'bg-zinc-100 text-zinc-500' },
 };
 
 // -----------------------------------------------------------
@@ -98,23 +90,28 @@ function StatusBadge({ status }: { status: string }) {
   const Icon = cfg.icon;
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${cfg.classes}`}>
-      <Icon className="size-3" />
+      <Icon className="size-3 shrink-0" />
       {cfg.label}
     </span>
   );
 }
 
-function StatCard({ label, value, icon, color }: {
+function StatCard({
+  label,
+  value,
+  icon,
+  color,
+}: {
   label: string;
   value: number;
   icon: React.ReactNode;
   color: string;
 }) {
   return (
-    <div className="rounded-xl border bg-card p-4">
-      <div className={`mb-2 inline-flex rounded-lg p-2 ${color}`}>{icon}</div>
-      <p className="text-2xl font-semibold">{value}</p>
-      <p className="text-sm text-muted-foreground">{label}</p>
+    <div className="rounded-2xl border bg-card p-5">
+      <div className={`mb-3 inline-flex rounded-xl p-2.5 ${color}`}>{icon}</div>
+      <p className="text-2xl font-bold">{value}</p>
+      <p className="mt-0.5 text-sm text-muted-foreground">{label}</p>
     </div>
   );
 }
@@ -164,18 +161,26 @@ function CreateTicketModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 backdrop-blur-sm sm:items-center">
       <div className="w-full max-w-xl rounded-2xl border bg-background shadow-xl">
-        <div className="flex items-center justify-between border-b p-5">
+        {/* Header */}
+        <div className="flex items-start justify-between border-b p-5">
           <div>
             <h2 className="text-base font-semibold">Open a support ticket</h2>
-            <p className="text-sm text-muted-foreground">Our team usually responds within 4 hours</p>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Our team usually responds within 4 hours.
+            </p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-muted">
+          <button
+            type="button"
+            onClick={onClose}
+            className="ml-4 shrink-0 rounded-lg p-1.5 hover:bg-muted"
+          >
             <X className="size-4" />
           </button>
         </div>
 
+        {/* Body */}
         <div className="space-y-4 p-5">
           <div>
             <label className="mb-1.5 block text-sm font-medium">Subject</label>
@@ -183,8 +188,8 @@ function CreateTicketModal({
               type="text"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              placeholder="e.g. My Instagram post didn't publish"
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              placeholder="e.g. My Instagram post did not publish"
+              className="w-full rounded-xl border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-foreground/20"
             />
           </div>
           <div>
@@ -192,34 +197,42 @@ function CreateTicketModal({
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              placeholder="Include as much detail as possible — what you tried, what you expected, what happened instead."
+              placeholder="Include as much detail as possible — what you tried, what you expected, and what happened instead."
               rows={5}
-              className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="w-full resize-none rounded-xl border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-foreground/20"
             />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Our AI will instantly try to resolve common issues — if it can't, a human takes over.
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Our AI will instantly try to resolve common issues. If it cannot, a human takes over.
             </p>
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
               <AlertCircle className="size-4 shrink-0" />
               {error}
             </div>
           )}
         </div>
 
-        <div className="flex justify-end gap-3 border-t p-5">
-          <button onClick={onClose} className="rounded-lg border px-4 py-2 text-sm hover:bg-muted">
+        {/* Footer */}
+        <div className="flex flex-col-reverse gap-2 border-t p-5 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border px-4 py-2.5 text-sm font-medium hover:bg-muted"
+          >
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleSubmit}
             disabled={submitting}
-            className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            className="flex items-center justify-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background hover:opacity-90 disabled:opacity-50"
           >
-            {submitting ? <Loader2 className="size-4 animate-spin" /> : <MessageSquare className="size-4" />}
-            {submitting ? 'Submitting…' : 'Submit ticket'}
+            {submitting
+              ? <Loader2 className="size-4 animate-spin" />
+              : <MessageSquare className="size-4" />}
+            {submitting ? 'Submitting' : 'Submit ticket'}
           </button>
         </div>
       </div>
@@ -240,31 +253,38 @@ function TicketRow({ ticket }: { ticket: Ticket }) {
     return `${d}d ago`;
   };
 
+  const priorityColor =
+    ticket.aiPriority === 'urgent'
+      ? 'bg-red-500'
+      : ticket.aiPriority === 'high'
+        ? 'bg-orange-400'
+        : ticket.aiPriority === 'medium'
+          ? 'bg-yellow-400'
+          : 'bg-zinc-300';
+
   return (
     <Link
       href={`/dashboard/support/${ticket.id}`}
-      className="group flex items-start gap-4 border-b px-5 py-4 transition-colors hover:bg-muted/40 last:border-b-0"
+      className="group flex items-start gap-3 border-b px-4 py-4 transition-colors last:border-b-0 hover:bg-muted/40 sm:gap-4 sm:px-5"
     >
-      {/* Priority indicator */}
-      <div className={`mt-1 size-2 shrink-0 rounded-full ${
-        ticket.aiPriority === 'urgent' ? 'bg-red-500' :
-        ticket.aiPriority === 'high' ? 'bg-orange-400' :
-        ticket.aiPriority === 'medium' ? 'bg-yellow-400' : 'bg-zinc-300'
-      }`} />
+      {/* Priority dot */}
+      <div className={`mt-1.5 size-2 shrink-0 rounded-full ${priorityColor}`} />
 
-      {/* Main content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-3">
-          <p className="truncate text-sm font-medium group-hover:text-primary">{ticket.subject}</p>
+      {/* Content */}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <p className="truncate text-sm font-medium">{ticket.subject}</p>
           <div className="flex shrink-0 items-center gap-2">
             <StatusBadge status={ticket.status} />
-            <ArrowRight className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+            <ArrowRight className="hidden size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 sm:block" />
           </div>
         </div>
+
         {ticket.aiSummary && (
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">{ticket.aiSummary}</p>
+          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{ticket.aiSummary}</p>
         )}
-        <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {ticket.aiCategory && (
             <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
               {CATEGORY_LABELS[ticket.aiCategory] ?? ticket.aiCategory}
@@ -272,8 +292,9 @@ function TicketRow({ ticket }: { ticket: Ticket }) {
           )}
           <PriorityBadge priority={ticket.aiPriority} />
           {ticket.aiAutoResolved && (
-            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600">
-              <Zap className="size-3" />AI resolved
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600">
+              <Zap className="size-3" />
+              AI resolved
             </span>
           )}
           <span className="text-[11px] text-muted-foreground">{timeAgo(ticket.createdAt)}</span>
@@ -308,7 +329,9 @@ export default function SupportPage() {
     }
   }, [statusFilter]);
 
-  useEffect(() => { fetchTickets(); }, [fetchTickets]);
+  useEffect(() => {
+    fetchTickets();
+  }, [fetchTickets]);
 
   const getStatCount = (status: string) =>
     Number(stats.find((s) => s.status === status)?.count ?? 0);
@@ -318,23 +341,24 @@ export default function SupportPage() {
   const resolvedCount = getStatCount('resolved') + getStatCount('closed');
 
   const STATUS_FILTERS = [
-    { value: 'all',          label: 'All tickets' },
-    { value: 'open',         label: 'Open' },
-    { value: 'in_progress',  label: 'In progress' },
-    { value: 'auto_resolved',label: 'AI resolved' },
-    { value: 'resolved',     label: 'Resolved' },
+    { value: 'all', label: 'All' },
+    { value: 'open', label: 'Open' },
+    { value: 'in_progress', label: 'In progress' },
+    { value: 'auto_resolved', label: 'AI resolved' },
+    { value: 'resolved', label: 'Resolved' },
   ];
 
   return (
     <>
-      <div className="flex flex-col gap-6 p-6">
+      <div className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:py-10">
         <PageHeader
           title="Support"
-          description="Get help with your NativPost account"
+          description="Get help with your NativPost account."
           actions={
             <button
+              type="button"
               onClick={() => setShowCreate(true)}
-              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              className="flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background hover:opacity-90"
             >
               <Plus className="size-4" />
               Open ticket
@@ -343,7 +367,7 @@ export default function SupportPage() {
         />
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <StatCard
             label="Open tickets"
             value={openCount}
@@ -365,16 +389,17 @@ export default function SupportPage() {
         </div>
 
         {/* Ticket list */}
-        <div className="rounded-xl border bg-card">
-          {/* Filters */}
-          <div className="flex items-center gap-1 border-b px-4 py-3">
+        <div className="overflow-hidden rounded-2xl border bg-card">
+          {/* Filter tabs — scrollable on mobile */}
+          <div className="flex items-center gap-0.5 overflow-x-auto border-b px-3 py-2.5 scrollbar-none sm:px-4">
             {STATUS_FILTERS.map((f) => (
               <button
                 key={f.value}
+                type="button"
                 onClick={() => setStatusFilter(f.value)}
-                className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
+                className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                   statusFilter === f.value
-                    ? 'bg-muted font-medium text-foreground'
+                    ? 'bg-muted text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -391,33 +416,41 @@ export default function SupportPage() {
             <EmptyState
               icon={MessageSquare}
               title="No tickets"
-              description={statusFilter === 'all' ? "You haven't opened any support tickets yet." : `No ${statusFilter} tickets.`}
+              description={
+                statusFilter === 'all'
+                  ? "You haven't opened any support tickets yet."
+                  : `No ${statusFilter.replace('_', ' ')} tickets.`
+              }
               actionLabel="Open your first ticket"
               onAction={() => setShowCreate(true)}
             />
           ) : (
             <div>
-              {tickets.map((t) => <TicketRow key={t.id} ticket={t} />)}
+              {tickets.map((t) => (
+                <TicketRow key={t.id} ticket={t} />
+              ))}
             </div>
           )}
         </div>
 
         {/* Quick links */}
-        <div className="rounded-xl border bg-card p-5">
-          <p className="mb-3 text-sm font-medium">Quick links</p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <div className="overflow-hidden rounded-2xl border bg-card">
+          <div className="border-b px-5 py-4">
+            <p className="text-sm font-semibold">Quick links</p>
+          </div>
+          <div className="grid grid-cols-1 gap-px bg-border sm:grid-cols-3">
             {[
               { label: 'Connect a platform', href: '/dashboard/connections' },
-              { label: 'Billing & plans', href: '/dashboard/billing' },
-              { label: 'Brand Profile', href: '/dashboard/brand-profile' },
+              { label: 'Billing and plans', href: '/dashboard/billing' },
+              { label: 'Brand profile', href: '/dashboard/brand-profile' },
             ].map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className="flex items-center justify-between rounded-lg border px-3 py-2.5 text-sm hover:bg-muted"
+                className="flex items-center justify-between bg-card px-5 py-4 text-sm font-medium transition-colors hover:bg-muted/40"
               >
                 {link.label}
-                <ExternalLink className="size-3.5 text-muted-foreground" />
+                <ChevronRight className="size-4 text-muted-foreground" />
               </Link>
             ))}
           </div>

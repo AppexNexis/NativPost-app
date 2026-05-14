@@ -393,12 +393,11 @@ function BillingContent() {
       if (res.ok) {
         const data = await res.json();
         setBilling(data);
-        // Auto-select the payment method the org originally used to subscribe
-        if (data.paymentType === 'paystack') {
-          setPaymentMethod('paystack');
-        } else {
-          setPaymentMethod('stripe');
-        }
+        // Detect actual payment provider from real subscription fields first,
+        // fall back to paymentType column. This handles existing orgs where
+        // the column may be wrong (e.g. defaulted to 'stripe' before migration).
+        const isActuallyPaystack = data.hasPaystackSub || (data.hasPaystack && !data.hasStripe);
+        setPaymentMethod(isActuallyPaystack ? 'paystack' : 'stripe');
       }
     } catch (err) {
       console.error('Failed to load billing:', err);
@@ -677,30 +676,46 @@ function BillingContent() {
               setup fee on first subscription.
             </p>
           </div>
-          {/* Payment method toggle */}
+          {/* Payment method — toggle only for non-active orgs choosing a plan.
+              Active subscribers are locked to their provider — no switching. */}
           <div className="flex flex-col gap-1.5 sm:items-end">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Pay with:</span>
-              <div className="flex rounded-lg border bg-muted/50 p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('stripe')}
-                  className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${paymentMethod === 'stripe' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                >
-                  Stripe
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('paystack')}
-                  className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${paymentMethod === 'paystack' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                >
-                  Paystack
-                </button>
-              </div>
-            </div>
-            {paymentMethod === 'stripe' && (
-              <span className="text-[11px] text-muted-foreground">Have a promo code? Enter it on the next page.</span>
-            )}
+            {billing?.planStatus === 'active'
+              ? (
+                  // Active subscriber — show which provider they're on, no toggle
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Billed via</span>
+                    <span className="rounded-lg border bg-muted/50 px-4 py-1.5 text-xs font-bold text-foreground">
+                      {paymentMethod === 'paystack' ? 'Paystack' : 'Stripe'}
+                    </span>
+                  </div>
+                )
+              : (
+                  // Non-active — show toggle so they can choose before subscribing
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Pay with:</span>
+                      <div className="flex rounded-lg border bg-muted/50 p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('stripe')}
+                          className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${paymentMethod === 'stripe' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                        >
+                          Stripe
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('paystack')}
+                          className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${paymentMethod === 'paystack' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                        >
+                          Paystack
+                        </button>
+                      </div>
+                    </div>
+                    {paymentMethod === 'stripe' && (
+                      <span className="text-[11px] text-muted-foreground">Have a promo code? Enter it on the next page.</span>
+                    )}
+                  </>
+                )}
           </div>
         </div>
 

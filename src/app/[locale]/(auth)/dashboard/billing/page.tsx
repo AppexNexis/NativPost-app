@@ -6,10 +6,10 @@ import {
   Check,
   ChevronRight,
   CreditCard,
-  // Download,
   ExternalLink,
   Loader2,
   X,
+  // ChevronDown,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -35,230 +35,14 @@ type PaystackSubscription = {
   next_payment_date: string;
   amount: number;
   plan: { name: string; interval: string };
-  authorization: { last4: string; brand: string; exp_month: string; exp_year: string };
+  authorization: {
+    last4: string;
+    brand: string;
+    exp_month: string;
+    exp_year: string;
+  };
 };
 
-// -----------------------------------------------------------
-// PAYSTACK MANAGEMENT MODAL
-// -----------------------------------------------------------
-function PaystackPortal({
-  onClose,
-  onCancelled,
-}: {
-  onClose: () => void;
-  onCancelled: () => void;
-}) {
-  const [data, setData] = useState<{ subscription: PaystackSubscription | null; invoices: PaystackInvoice[] } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [cancelling, setCancelling] = useState(false);
-  const [confirmCancel, setConfirmCancel] = useState(false);
-  const [cancelError, setCancelError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch('/api/billing/paystack-manage')
-      .then(r => r.json())
-      .then(setData)
-      .catch(() => setData({ subscription: null, invoices: [] }))
-      .finally(() => setLoading(false));
-  }, []);
-
-  const handleCancel = async () => {
-    setCancelling(true);
-    setCancelError(null);
-    try {
-      const res = await fetch('/api/billing/paystack-manage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'cancel' }),
-      });
-      const result = await res.json();
-      if (result.success) {
-        onCancelled();
-        onClose();
-      } else {
-        setCancelError(result.error || 'Failed to cancel. Please try again.');
-      }
-    } catch {
-      setCancelError('Network error. Please try again.');
-    } finally {
-      setCancelling(false);
-    }
-  };
-
-  const sub = data?.subscription;
-  const invoices = data?.invoices ?? [];
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-lg overflow-hidden rounded-2xl border bg-background shadow-xl">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b px-6 py-4">
-          <div className="flex items-center gap-2">
-            <CreditCard className="size-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold">Manage Subscription</h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1 transition-colors hover:bg-muted"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-
-        <div className="max-h-[75vh] space-y-6 overflow-y-auto p-6">
-          {loading
-            ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
-                </div>
-              )
-            : (
-                <>
-                  {/* Subscription details */}
-                  {sub
-                    ? (
-                        <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
-                          <div className="flex items-center justify-between">
-                            <p className="text-sm font-semibold">{sub.plan?.name}</p>
-                            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${sub.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground'}`}>
-                              {sub.status}
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3 text-xs">
-                            <div>
-                              <p className="text-muted-foreground">Amount</p>
-                              <p className="mt-0.5 font-medium">
-                                NGN
-                                {' '}
-                                {((sub.amount ?? 0) / 100).toLocaleString()}
-                                /
-                                {sub.plan?.interval}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground">Next charge</p>
-                              <p className="mt-0.5 font-medium">
-                                {sub.next_payment_date
-                                  ? new Date(sub.next_payment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                                  : '—'}
-                              </p>
-                            </div>
-                            {sub.authorization && (
-                              <div className="col-span-2">
-                                <p className="text-muted-foreground">Card</p>
-                                <p className="mt-0.5 font-medium capitalize">
-                                  {sub.authorization.brand}
-                                  {' '}
-                                  ••••
-                                  {' '}
-                                  {sub.authorization.last4}
-                                  {' '}
-                                  · expires
-                                  {' '}
-                                  {sub.authorization.exp_month}
-                                  /
-                                  {sub.authorization.exp_year}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    : (
-                        <p className="py-4 text-center text-sm text-muted-foreground">
-                          No active subscription details found.
-                        </p>
-                      )}
-
-                  {/* Transaction history */}
-                  {invoices.length > 0 && (
-                    <div>
-                      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Recent Transactions
-                      </p>
-                      <div className="divide-y overflow-hidden rounded-xl border">
-                        {invoices.map(inv => (
-                          <div key={inv.id} className="flex items-center justify-between px-4 py-3">
-                            <div>
-                              <p className="text-xs font-medium">
-                                NGN
-                                {' '}
-                                {((inv.amount ?? 0) / 100).toLocaleString()}
-                              </p>
-                              <p className="mt-0.5 text-[10px] text-muted-foreground">
-                                {inv.paid_at ? new Date(inv.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
-                                {' · '}
-                                {inv.channel}
-                              </p>
-                            </div>
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${inv.status === 'success' ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground'}`}>
-                              {inv.status}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="mt-2 text-[11px] text-muted-foreground">
-                        Full receipts are sent to your email after each payment.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Cancel subscription */}
-                  {sub && sub.status === 'active' && (
-                    <div className="border-t pt-4">
-                      {!confirmCancel
-                        ? (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmCancel(true)}
-                              className="text-xs text-red-500 underline underline-offset-2 hover:text-red-600"
-                            >
-                              Cancel subscription
-                            </button>
-                          )
-                        : (
-                            <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
-                              <p className="text-sm font-medium text-red-700 dark:text-red-400">Cancel subscription?</p>
-                              <p className="text-xs text-red-600 dark:text-red-500">
-                                Your subscription will remain active until the end of the current billing period. You won't be charged again.
-                              </p>
-                              {cancelError && (
-                                <p className="text-xs text-red-600">{cancelError}</p>
-                              )}
-                              <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={handleCancel}
-                                  disabled={cancelling}
-                                  className="flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-60"
-                                >
-                                  {cancelling && <Loader2 className="size-3 animate-spin" />}
-                                  Yes, cancel
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmCancel(false)}
-                                  className="rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted"
-                                >
-                                  Keep subscription
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                    </div>
-                  )}
-                </>
-              )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// -----------------------------------------------------------
-// TYPES
-// -----------------------------------------------------------
 type BillingStatus = {
   plan: string;
   planStatus: string;
@@ -292,10 +76,12 @@ const FEATURE_ROWS = [
   {
     label: 'Social platforms',
     render: (plan: typeof VISIBLE_PLANS[0]) =>
-      plan.features.platformsLimit === -1 ? 'All platforms' : `Up to ${plan.features.platformsLimit}`,
+      plan.features.platformsLimit === -1
+        ? 'All platforms'
+        : `Up to ${plan.features.platformsLimit}`,
   },
   {
-    label: 'Image & text posts',
+    label: 'Image and text posts',
     render: (plan: typeof VISIBLE_PLANS[0]) => plan.features.imagePosts as boolean,
   },
   {
@@ -303,7 +89,7 @@ const FEATURE_ROWS = [
     render: (plan: typeof VISIBLE_PLANS[0]) => plan.features.carouselPosts as boolean,
   },
   {
-    label: 'Video posts + generation',
+    label: 'Video posts and generation',
     render: (plan: typeof VISIBLE_PLANS[0]) => plan.features.videoGeneration as boolean,
   },
   {
@@ -324,22 +110,29 @@ const FEATURE_ROWS = [
   },
   {
     label: 'Support',
-    render: (plan: typeof VISIBLE_PLANS[0]) => ({
-      email: 'Email',
-      priority_email: 'Priority email',
-      live_chat: 'Live chat',
-      dedicated_slack: 'Dedicated Slack',
-    }[plan.features.supportLevel as string] || 'Email'),
+    render: (plan: typeof VISIBLE_PLANS[0]) =>
+      ({
+        email: 'Email',
+        priority_email: 'Priority email',
+        live_chat: 'Live chat',
+        dedicated_slack: 'Dedicated Slack',
+      }[plan.features.supportLevel as string] || 'Email'),
   },
 ];
 
 // -----------------------------------------------------------
 // STATUS BADGE
 // -----------------------------------------------------------
-function StatusBadge({ status, isTrialing }: { status: string; isTrialing: boolean }) {
+function StatusBadge({
+  status,
+  isTrialing,
+}: {
+  status: string;
+  isTrialing: boolean;
+}) {
   if (isTrialing) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+      <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
         <span className="size-1.5 rounded-full bg-blue-500" />
         Trial
       </span>
@@ -347,7 +140,7 @@ function StatusBadge({ status, isTrialing }: { status: string; isTrialing: boole
   }
   if (status === 'active') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
         <span className="size-1.5 rounded-full bg-emerald-500" />
         Active
       </span>
@@ -355,17 +148,242 @@ function StatusBadge({ status, isTrialing }: { status: string; isTrialing: boole
   }
   if (status === 'past_due') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700">
         <span className="size-1.5 rounded-full bg-red-500" />
         Past due
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
       <span className="size-1.5 rounded-full bg-muted-foreground/50" />
       Inactive
     </span>
+  );
+}
+
+// -----------------------------------------------------------
+// PAYSTACK PORTAL MODAL
+// -----------------------------------------------------------
+function PaystackPortal({
+  onClose,
+  onCancelled,
+}: {
+  onClose: () => void;
+  onCancelled: () => void;
+}) {
+  const [data, setData] = useState<{
+    subscription: PaystackSubscription | null;
+    invoices: PaystackInvoice[];
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [cancelling, setCancelling] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/billing/paystack-manage')
+      .then((r) => r.json())
+      .then(setData)
+      .catch(() => setData({ subscription: null, invoices: [] }))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleCancel = async () => {
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      const res = await fetch('/api/billing/paystack-manage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        onCancelled();
+        onClose();
+      } else {
+        setCancelError(result.error || 'Failed to cancel. Please try again.');
+      }
+    } catch {
+      setCancelError('Network error. Please try again.');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const sub = data?.subscription;
+  const invoices = data?.invoices ?? [];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 backdrop-blur-sm sm:items-center">
+      <div className="w-full max-w-lg overflow-hidden rounded-2xl border bg-background shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b px-5 py-4">
+          <div className="flex items-center gap-2">
+            <CreditCard className="size-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold">Manage Subscription</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 hover:bg-muted"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="max-h-[70vh] space-y-5 overflow-y-auto p-5">
+          {loading ? (
+            <div className="flex justify-center py-10">
+              <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <>
+              {/* Subscription details */}
+              {sub ? (
+                <div className="rounded-xl border bg-muted/30 p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-sm font-semibold">{sub.plan?.name}</p>
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
+                        sub.status === 'active'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-muted text-muted-foreground'
+                      }`}
+                    >
+                      {sub.status}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <p className="text-muted-foreground">Amount</p>
+                      <p className="mt-0.5 font-semibold">
+                        NGN {((sub.amount ?? 0) / 100).toLocaleString()}/{sub.plan?.interval}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Next charge</p>
+                      <p className="mt-0.5 font-semibold">
+                        {sub.next_payment_date
+                          ? new Date(sub.next_payment_date).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })
+                          : 'N/A'}
+                      </p>
+                    </div>
+                    {sub.authorization && (
+                      <div className="col-span-2">
+                        <p className="text-muted-foreground">Card</p>
+                        <p className="mt-0.5 font-semibold capitalize">
+                          {sub.authorization.brand} •••• {sub.authorization.last4} · expires{' '}
+                          {sub.authorization.exp_month}/{sub.authorization.exp_year}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="py-4 text-center text-sm text-muted-foreground">
+                  No active subscription details found.
+                </p>
+              )}
+
+              {/* Transaction history */}
+              {invoices.length > 0 && (
+                <div>
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Recent transactions
+                  </p>
+                  <div className="overflow-hidden rounded-xl border divide-y">
+                    {invoices.map((inv) => (
+                      <div
+                        key={inv.id}
+                        className="flex items-center justify-between px-4 py-3"
+                      >
+                        <div>
+                          <p className="text-xs font-semibold">
+                            NGN {((inv.amount ?? 0) / 100).toLocaleString()}
+                          </p>
+                          <p className="mt-0.5 text-[10px] text-muted-foreground">
+                            {inv.paid_at
+                              ? new Date(inv.paid_at).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })
+                              : 'N/A'}{' '}
+                            · {inv.channel}
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            inv.status === 'success'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-muted text-muted-foreground'
+                          }`}
+                        >
+                          {inv.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    Full receipts are sent to your email after each payment.
+                  </p>
+                </div>
+              )}
+
+              {/* Cancel */}
+              {sub && sub.status === 'active' && (
+                <div className="border-t pt-4">
+                  {!confirmCancel ? (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmCancel(true)}
+                      className="text-xs font-medium text-red-500 underline underline-offset-2 hover:text-red-600"
+                    >
+                      Cancel subscription
+                    </button>
+                  ) : (
+                    <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-4">
+                      <p className="text-sm font-semibold text-red-700">Cancel subscription?</p>
+                      <p className="text-xs text-red-600">
+                        Your subscription stays active until the end of the billing period. You
+                        will not be charged again.
+                      </p>
+                      {cancelError && (
+                        <p className="text-xs text-red-600">{cancelError}</p>
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCancel}
+                          disabled={cancelling}
+                          className="flex items-center gap-1.5 rounded-xl bg-red-500 px-3 py-2 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-60"
+                        >
+                          {cancelling && <Loader2 className="size-3 animate-spin" />}
+                          Yes, cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmCancel(false)}
+                          className="rounded-xl border px-3 py-2 text-xs font-medium hover:bg-muted"
+                        >
+                          Keep subscription
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -375,6 +393,7 @@ function StatusBadge({ status, isTrialing }: { status: string; isTrialing: boole
 function BillingContent() {
   const { user } = useUser();
   const searchParams = useSearchParams();
+
   const [billing, setBilling] = useState<BillingStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
@@ -393,9 +412,6 @@ function BillingContent() {
       if (res.ok) {
         const data = await res.json();
         setBilling(data);
-        // Detect actual payment provider from real subscription fields first,
-        // fall back to paymentType column. This handles existing orgs where
-        // the column may be wrong (e.g. defaulted to 'stripe' before migration).
         const isActuallyPaystack = data.hasPaystackSub || (data.hasPaystack && !data.hasStripe);
         setPaymentMethod(isActuallyPaystack ? 'paystack' : 'stripe');
       }
@@ -429,7 +445,8 @@ function BillingContent() {
       } else {
         const email = user?.primaryEmailAddress?.emailAddress;
         if (!email) {
-          setError('Could not find your email. Please use card payment.'); return;
+          setError('Could not find your email. Please use card payment.');
+          return;
         }
         const res = await fetch('/api/billing/create-paystack-subscription', {
           method: 'POST',
@@ -455,9 +472,7 @@ function BillingContent() {
     try {
       const res = await fetch('/api/billing/manage', { method: 'POST' });
       const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-      }
+      if (data.url) window.location.href = data.url;
     } catch {
       setError('Failed to open billing portal.');
     } finally {
@@ -466,8 +481,8 @@ function BillingContent() {
   };
 
   const trialDaysLeft = billing?.trialDaysLeft ?? 0;
-  const currentPlan = VISIBLE_PLANS.find(p => p.id === billing?.plan);
-  const currentPlanIndex = VISIBLE_PLANS.findIndex(p => p.id === billing?.plan);
+  const currentPlan = VISIBLE_PLANS.find((p) => p.id === billing?.plan);
+  const currentPlanIndex = VISIBLE_PLANS.findIndex((p) => p.id === billing?.plan);
 
   if (isLoading) {
     return (
@@ -479,30 +494,31 @@ function BillingContent() {
 
   return (
     <div className="space-y-8">
-
-      {/* ── Banners ── */}
+      {/* Banners */}
       {success && (
-        <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400">
+        <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
           <div className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-500">
             <Check className="size-3 text-white" />
           </div>
           {successPlan
-            ? `Your ${VISIBLE_PLANS.find(p => p.id === successPlan)?.name ?? successPlan} plan is now active.`
+            ? `Your ${VISIBLE_PLANS.find((p) => p.id === successPlan)?.name ?? successPlan} plan is now active.`
             : 'Subscription activated successfully.'}
         </div>
       )}
+
       {cancelled && (
-        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-900/20">
+        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
           <AlertCircle className="size-4 shrink-0" />
           Checkout cancelled. No changes were made.
         </div>
       )}
+
       {billing?.planStatus === 'past_due' && (
-        <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+        <div className="flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 p-4 sm:flex-row sm:items-start">
           <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-500" />
           <div className="flex-1">
-            <p className="text-sm font-medium text-red-700 dark:text-red-400">Payment past due</p>
-            <p className="mt-0.5 text-xs text-red-600 dark:text-red-500">
+            <p className="text-sm font-semibold text-red-700">Payment past due</p>
+            <p className="mt-0.5 text-xs text-red-600">
               Your last payment failed. Update your payment method to keep your account active.
             </p>
           </div>
@@ -511,81 +527,91 @@ function BillingContent() {
               type="button"
               onClick={handleManage}
               disabled={portalLoading}
-              className="shrink-0 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-60"
+              className="w-fit shrink-0 rounded-xl bg-red-500 px-3 py-2 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-60"
             >
               Fix payment
             </button>
           )}
         </div>
       )}
+
       {error && (
-        <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20">
+        <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           <X className="size-4 shrink-0" />
           {error}
         </div>
       )}
 
-      {/* ── Current Plan Card ── */}
+      {/* Current plan card */}
       <div className="overflow-hidden rounded-2xl border bg-card">
-        <div className="border-b bg-muted/30 px-6 py-5">
+        <div className="border-b bg-muted/30 px-5 py-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-sm font-semibold">
-                  {currentPlan?.name ?? 'Starter'}
-                  {' '}
-                  Plan
+                  {currentPlan?.name ?? 'Starter'} Plan
                 </p>
-                <StatusBadge status={billing?.planStatus ?? 'inactive'} isTrialing={billing?.isTrialing ?? false} />
+                <StatusBadge
+                  status={billing?.planStatus ?? 'inactive'}
+                  isTrialing={billing?.isTrialing ?? false}
+                />
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
                 {billing?.isTrialing
-                  ? `Trial ends ${new Date(billing.trialEndsAt!).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
+                  ? `Trial ends ${new Date(billing.trialEndsAt!).toLocaleDateString('en-US', {
+                      month: 'long',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}`
                   : `${billing?.usage.postsLimit === 999999 ? 'Unlimited' : billing?.usage.postsLimit} posts/mo · ${billing?.usage.platformsLimit === 99 ? 'All' : billing?.usage.platformsLimit} platforms`}
               </p>
             </div>
-            {billing?.planStatus === 'active' && (billing.hasStripe || billing.hasPaystackSub) && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (billing.hasPaystackSub) {
-                    setShowPaystackPortal(true);
-                  } else {
-                    handleManage();
-                  }
-                }}
-                disabled={portalLoading}
-                className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-60"
-              >
-                {portalLoading ? <Loader2 className="size-4 animate-spin" /> : <ExternalLink className="size-4" />}
-                Manage subscription
-              </button>
-            )}
+
+            {billing?.planStatus === 'active' &&
+              (billing.hasStripe || billing.hasPaystackSub) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (billing.hasPaystackSub) {
+                      setShowPaystackPortal(true);
+                    } else {
+                      handleManage();
+                    }
+                  }}
+                  disabled={portalLoading}
+                  className="flex w-fit items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium hover:bg-muted disabled:opacity-60"
+                >
+                  {portalLoading ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <ExternalLink className="size-4" />
+                  )}
+                  Manage subscription
+                </button>
+              )}
           </div>
         </div>
 
         {/* Stats row */}
         <div className="grid grid-cols-2 divide-x sm:grid-cols-4">
-          <div className="px-6 py-4">
-            <p className="text-xs text-muted-foreground">Posts used this month</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums">
+          <div className="px-5 py-4">
+            <p className="text-xs text-muted-foreground">Posts this month</p>
+            <p className="mt-1 text-2xl font-bold tabular-nums">
               {billing?.usage.postsThisMonth ?? 0}
               <span className="ml-1 text-sm font-normal text-muted-foreground">
-                /
-                {' '}
-                {billing?.usage.postsLimit === 999999 ? '∞' : (billing?.usage.postsLimit ?? 0)}
+                / {billing?.usage.postsLimit === 999999 ? '∞' : (billing?.usage.postsLimit ?? 0)}
               </span>
             </p>
-            {/* Explain trial limit discrepancy */}
             {billing?.isTrialing && billing.plan !== 'starter' && (
               <p className="mt-1 text-[11px] leading-tight text-muted-foreground">
                 Starter limits apply during trial
               </p>
             )}
           </div>
-          <div className="px-6 py-4">
+
+          <div className="px-5 py-4">
             <p className="text-xs text-muted-foreground">Platforms</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums">
+            <p className="mt-1 text-2xl font-bold tabular-nums">
               {billing?.usage.platformsLimit === 99 ? '∞' : (billing?.usage.platformsLimit ?? 0)}
             </p>
             {billing?.isTrialing && billing.plan !== 'starter' && (
@@ -594,67 +620,56 @@ function BillingContent() {
               </p>
             )}
           </div>
-          <div className="border-t px-6 py-4 sm:border-t-0">
+
+          <div className="border-t px-5 py-4 sm:border-t-0">
             <p className="text-xs text-muted-foreground">Plan price</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums">
-              $
-              {currentPlan?.priceUsd ?? 0}
+            <p className="mt-1 text-2xl font-bold tabular-nums">
+              ${currentPlan?.priceUsd ?? 0}
               <span className="ml-1 text-sm font-normal text-muted-foreground">/mo</span>
             </p>
           </div>
-          <div className="border-t px-6 py-4 sm:border-t-0">
+
+          <div className="border-t px-5 py-4 sm:border-t-0">
             <p className="text-xs text-muted-foreground">Setup fee</p>
-            <p className="mt-1 text-xl font-semibold">
-              {billing?.setupFeePaid
-                ? <span className="text-emerald-600">Paid</span>
-                : (
-                    <span className="text-muted-foreground">
-                      $
-                      {SETUP_FEE_USD}
-                      {' '}
-                      due
-                    </span>
-                  )}
+            <p className="mt-1 text-2xl font-bold">
+              {billing?.setupFeePaid ? (
+                <span className="text-emerald-600">Paid</span>
+              ) : (
+                <span className="text-muted-foreground">${SETUP_FEE_USD} due</span>
+              )}
             </p>
           </div>
         </div>
 
-        {/* Trial note explaining limits */}
+        {/* Trial note */}
         {billing?.isTrialing && billing.plan !== 'starter' && (
-          <div className="border-t bg-blue-50/50 px-6 py-3 dark:bg-blue-900/10">
-            <p className="text-xs text-blue-700 dark:text-blue-400">
-              <strong className="font-semibold">Trial note:</strong>
-              {' '}
-              During your
-              {` ${FREE_TRIAL_DAYS}-day trial, `}
-              {' '}
-              access is limited to Starter plan features (15 posts, 3 platforms) regardless of your selected plan. Your full
-              {` ${currentPlan?.name}`}
-              {' '}
-              limits unlock the moment you subscribe.
+          <div className="border-t bg-blue-50/60 px-5 py-3">
+            <p className="text-xs text-blue-700">
+              <strong className="font-semibold">Trial note:</strong> During your{' '}
+              {FREE_TRIAL_DAYS}-day trial, access is limited to Starter plan features (15 posts, 3
+              platforms) regardless of your selected plan. Your full {currentPlan?.name} limits
+              unlock the moment you subscribe.
             </p>
           </div>
         )}
 
         {/* Trial progress bar */}
         {billing?.isTrialing && billing.trialEndsAt && (
-          <div className="border-t px-6 py-4">
+          <div className="border-t px-5 py-4">
             <div className="mb-2 flex items-center justify-between text-xs">
               <span className="text-muted-foreground">Trial progress</span>
               <span className="font-semibold">
-                {trialDaysLeft}
-                {' '}
-                of
-                {' '}
-                {FREE_TRIAL_DAYS}
-                {' '}
-                days remaining
+                {trialDaysLeft} of {FREE_TRIAL_DAYS} days remaining
               </span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full rounded-full bg-blue-500 transition-all"
-                style={{ width: `${Math.round(((FREE_TRIAL_DAYS - trialDaysLeft) / FREE_TRIAL_DAYS) * 100)}%` }}
+                style={{
+                  width: `${Math.round(
+                    ((FREE_TRIAL_DAYS - trialDaysLeft) / FREE_TRIAL_DAYS) * 100,
+                  )}%`,
+                }}
               />
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
@@ -664,62 +679,65 @@ function BillingContent() {
         )}
       </div>
 
-      {/* ── Plans Section ── */}
+      {/* Plans section */}
       <div>
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="text-base font-semibold">Available Plans</h2>
+            <h2 className="text-base font-semibold">Available plans</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              All plans include a one-time $
-              {SETUP_FEE_USD}
-              {' '}
-              setup fee on first subscription.
+              All plans include a one-time ${SETUP_FEE_USD} setup fee on first subscription.
             </p>
           </div>
-          {/* Payment method — toggle only for non-active orgs choosing a plan.
-              Active subscribers are locked to their provider — no switching. */}
+
+          {/* Payment method selector */}
           <div className="flex flex-col gap-1.5 sm:items-end">
-            {billing?.planStatus === 'active'
-              ? (
-                  // Active subscriber — show which provider they're on, no toggle
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Billed via</span>
-                    <span className="rounded-lg border bg-muted/50 px-4 py-1.5 text-xs font-bold text-foreground">
-                      {paymentMethod === 'paystack' ? 'Paystack' : 'Stripe'}
-                    </span>
+            {billing?.planStatus === 'active' ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Billed via</span>
+                <span className="rounded-lg border bg-muted/50 px-4 py-1.5 text-xs font-bold">
+                  {paymentMethod === 'paystack' ? 'Paystack' : 'Stripe'}
+                </span>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Pay with:</span>
+                  <div className="flex rounded-lg border bg-muted/50 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('stripe')}
+                      className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${
+                        paymentMethod === 'stripe'
+                          ? 'border bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      Stripe
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('paystack')}
+                      className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${
+                        paymentMethod === 'paystack'
+                          ? 'border bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      Paystack
+                    </button>
                   </div>
-                )
-              : (
-                  // Non-active — show toggle so they can choose before subscribing
-                  <>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">Pay with:</span>
-                      <div className="flex rounded-lg border bg-muted/50 p-0.5">
-                        <button
-                          type="button"
-                          onClick={() => setPaymentMethod('stripe')}
-                          className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${paymentMethod === 'stripe' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                        >
-                          Stripe
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPaymentMethod('paystack')}
-                          className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${paymentMethod === 'paystack' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                        >
-                          Paystack
-                        </button>
-                      </div>
-                    </div>
-                    {paymentMethod === 'stripe' && (
-                      <span className="text-[11px] text-muted-foreground">Have a promo code? Enter it on the next page.</span>
-                    )}
-                  </>
+                </div>
+                {paymentMethod === 'stripe' && (
+                  <span className="text-[11px] text-muted-foreground">
+                    Have a promo code? Enter it on the next page.
+                  </span>
                 )}
+              </>
+            )}
           </div>
         </div>
 
-        {/* Plan cards */}
+        {/* Plan cards — 1 col mobile, 2 col sm, 4 col xl */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {VISIBLE_PLANS.map((plan, idx) => {
             const isCurrent = billing?.plan === plan.id && billing?.planStatus === 'active';
@@ -728,86 +746,100 @@ function BillingContent() {
             const isAboveCurrent = idx > currentPlanIndex;
 
             let ctaLabel = 'Get started';
-            if (isCurrent) {
-              ctaLabel = 'Current plan';
-            } else if (isTrialingOnThis) {
-              ctaLabel = 'Subscribe now';
-            } else if (billing?.planStatus === 'active' && !isCurrent) {
+            if (isCurrent) ctaLabel = 'Current plan';
+            else if (isTrialingOnThis) ctaLabel = 'Subscribe now';
+            else if (billing?.planStatus === 'active' && !isCurrent)
               ctaLabel = isAboveCurrent ? 'Upgrade' : 'Downgrade';
-            } else if (billing?.isTrialing) {
-              ctaLabel = 'Subscribe now';
-            }
+            else if (billing?.isTrialing) ctaLabel = 'Subscribe now';
 
             return (
               <div
                 key={plan.id}
-                className={`relative flex flex-col rounded-2xl border transition-shadow ${plan.popular
-                  ? 'border-foreground shadow-lg'
-                  : isTrialingOnThis
-                    ? 'border-blue-300 shadow-md dark:border-blue-700'
-                    : 'border-border hover:shadow-md'
+                className={`relative flex flex-col overflow-hidden rounded-2xl border transition-shadow ${
+                  plan.popular
+                    ? 'border-foreground shadow-lg'
+                    : isTrialingOnThis
+                      ? 'border-blue-300 shadow-md'
+                      : 'border-border hover:shadow-sm'
                 }`}
               >
-                {/* Top label chips */}
+                {/* Chip labels */}
                 {plan.popular && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <span className="whitespace-nowrap rounded-full border border-foreground bg-foreground px-3 py-0.5 text-[10px] font-semibold text-background">
+                  <div className="absolute -top-px left-0 right-0 flex justify-center">
+                    <span className="rounded-b-lg bg-foreground px-3 py-0.5 text-[10px] font-semibold text-background">
                       Most popular
                     </span>
                   </div>
                 )}
                 {isTrialingOnThis && !plan.popular && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <span className="whitespace-nowrap rounded-full border border-blue-300 bg-blue-50 px-3 py-0.5 text-[10px] font-semibold text-blue-700 dark:border-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                  <div className="absolute -top-px left-0 right-0 flex justify-center">
+                    <span className="rounded-b-lg bg-blue-500 px-3 py-0.5 text-[10px] font-semibold text-white">
                       Your trial plan
                     </span>
                   </div>
                 )}
                 {isCurrent && !plan.popular && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <span className="whitespace-nowrap rounded-full border border-emerald-300 bg-emerald-50 px-3 py-0.5 text-[10px] font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                  <div className="absolute -top-px left-0 right-0 flex justify-center">
+                    <span className="rounded-b-lg bg-emerald-500 px-3 py-0.5 text-[10px] font-semibold text-white">
                       Your plan
                     </span>
                   </div>
                 )}
 
                 {/* Plan header */}
-                <div className={`rounded-t-2xl p-5 ${plan.popular ? 'bg-foreground text-background' : 'bg-muted/30'}`}>
-                  <p className={`mb-3 text-sm font-semibold ${plan.popular ? 'text-background' : ''}`}>
+                <div
+                  className={`px-5 pt-8 pb-4 ${
+                    plan.popular ? 'bg-foreground text-background' : 'bg-muted/30'
+                  }`}
+                >
+                  <p
+                    className={`mb-2 text-sm font-semibold ${
+                      plan.popular ? 'text-background' : ''
+                    }`}
+                  >
                     {plan.name}
                   </p>
                   <div className="flex items-baseline gap-1">
-                    <span className={`text-3xl font-bold tracking-tight ${plan.popular ? 'text-background' : ''}`}>
-                      $
-                      {plan.priceUsd}
+                    <span
+                      className={`text-3xl font-bold tracking-tight ${
+                        plan.popular ? 'text-background' : ''
+                      }`}
+                    >
+                      ${plan.priceUsd}
                     </span>
-                    <span className={`text-sm ${plan.popular ? 'text-background/60' : 'text-muted-foreground'}`}>/mo</span>
+                    <span
+                      className={`text-sm ${
+                        plan.popular ? 'text-background/60' : 'text-muted-foreground'
+                      }`}
+                    >
+                      /mo
+                    </span>
                   </div>
-                  <p className={`mt-0.5 text-xs ${plan.popular ? 'text-background/50' : 'text-muted-foreground'}`}>
-                    + $
-                    {SETUP_FEE_USD}
-                    {' '}
-                    one-time setup
+                  <p
+                    className={`mt-0.5 text-xs ${
+                      plan.popular ? 'text-background/50' : 'text-muted-foreground'
+                    }`}
+                  >
+                    + ${SETUP_FEE_USD} one-time setup
                   </p>
                 </div>
 
                 {/* Features */}
-                <div className="flex flex-1 flex-col gap-2.5 p-5">
+                <div className="flex flex-1 flex-col gap-2.5 px-5 py-4">
                   {FEATURE_ROWS.map((row) => {
                     const value = row.render(plan);
-                    if (typeof value === 'boolean' && !value) {
-                      return null;
-                    }
+                    if (typeof value === 'boolean' && !value) return null;
                     return (
                       <div key={row.label} className="flex items-start gap-2.5 text-sm">
-                        <div className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
-                          <Check className="size-2.5 text-emerald-600 dark:text-emerald-400" />
+                        <div className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+                          <Check className="size-2.5 text-emerald-600" />
                         </div>
                         <span className="text-muted-foreground">
-                          {typeof value === 'boolean' ? row.label : (
+                          {typeof value === 'boolean' ? (
+                            row.label
+                          ) : (
                             <>
-                              <strong className="font-medium text-foreground">{value}</strong>
-                              {' '}
+                              <strong className="font-semibold text-foreground">{value}</strong>{' '}
                               {row.label.toLowerCase()}
                             </>
                           )}
@@ -818,16 +850,17 @@ function BillingContent() {
                 </div>
 
                 {/* CTA */}
-                <div className="p-5 pt-0">
+                <div className="px-5 pb-5">
                   <button
                     type="button"
                     onClick={() => handleCheckout(plan.id)}
                     disabled={isCurrent || !!checkoutLoading}
-                    className={`flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all disabled:opacity-60 ${isCurrent
-                      ? 'cursor-default bg-muted text-muted-foreground'
-                      : plan.popular
-                        ? 'bg-foreground text-background hover:opacity-90 active:scale-[0.98]'
-                        : 'border bg-background text-foreground hover:bg-muted active:scale-[0.98]'
+                    className={`flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-60 ${
+                      isCurrent
+                        ? 'cursor-default bg-muted text-muted-foreground'
+                        : plan.popular
+                          ? 'bg-foreground text-background hover:opacity-90 active:scale-[0.98]'
+                          : 'border bg-background text-foreground hover:bg-muted active:scale-[0.98]'
                     }`}
                   >
                     {isLoadingThis && <Loader2 className="size-3.5 animate-spin" />}
@@ -855,18 +888,22 @@ function BillingContent() {
         </div>
       </div>
 
-      {/* ── Payment History ── */}
+      {/* Payment history */}
       <div>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold">Payment History</h2>
+          <h2 className="text-base font-semibold">Payment history</h2>
           {billing?.hasStripe && billing.planStatus === 'active' && !billing.hasPaystackSub && (
             <button
               type="button"
               onClick={handleManage}
               disabled={portalLoading}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-primary underline underline-offset-2 hover:opacity-70 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground underline underline-offset-2 hover:opacity-70 disabled:opacity-50"
             >
-              {portalLoading ? <Loader2 className="size-3 animate-spin" /> : <ExternalLink className="size-3" />}
+              {portalLoading ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <ExternalLink className="size-3" />
+              )}
               View invoices
             </button>
           )}
@@ -874,7 +911,7 @@ function BillingContent() {
             <button
               type="button"
               onClick={() => setShowPaystackPortal(true)}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-primary underline underline-offset-2 hover:opacity-70"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground underline underline-offset-2 hover:opacity-70"
             >
               <ExternalLink className="size-3" />
               View transactions
@@ -883,18 +920,20 @@ function BillingContent() {
         </div>
 
         <div className="overflow-hidden rounded-2xl border bg-card">
-          <div className="grid grid-cols-3 border-b bg-muted/30 px-6 py-3 text-xs font-medium text-muted-foreground sm:grid-cols-4">
+          {/* Table header — hidden on mobile */}
+          <div className="hidden grid-cols-4 border-b bg-muted/30 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:grid">
             <span>Date</span>
             <span>Description</span>
-            <span className="hidden sm:block">Method</span>
+            <span>Method</span>
             <span className="text-right">Amount</span>
           </div>
-          <div className="flex min-h-[140px] flex-col items-center justify-center gap-2 px-6 py-10 text-center">
-            <p className="text-sm font-medium text-muted-foreground">No payments yet</p>
+
+          <div className="flex min-h-[140px] flex-col items-center justify-center gap-2 px-5 py-10 text-center">
+            <p className="text-sm font-semibold text-muted-foreground">No payments yet</p>
             <p className="max-w-sm text-xs text-muted-foreground">
               Your payment history will appear here after your first billing cycle.
               {billing?.hasPaystack
-                ? ' Payment receipts for Paystack transactions are sent to your email address.'
+                ? ' Receipts for Paystack transactions are sent to your email.'
                 : ''}
             </p>
           </div>
@@ -903,23 +942,20 @@ function BillingContent() {
         <p className="mt-3 text-xs text-muted-foreground">
           {billing?.hasStripe && (
             <>
-              <strong className="font-medium">Stripe:</strong>
-              {' '}
-              Full invoice history is available via the billing portal.
-              {' '}
+              <strong className="font-semibold">Stripe:</strong> Full invoice history is available
+              via the billing portal.{' '}
             </>
           )}
           {billing?.hasPaystack && (
             <>
-              <strong className="font-medium">Paystack:</strong>
-              {' '}
-              A payment receipt is sent to your email after every successful transaction.
+              <strong className="font-semibold">Paystack:</strong> A receipt is sent to your email
+              after every successful transaction.
             </>
           )}
         </p>
       </div>
 
-      {/* Paystack Management Portal Modal */}
+      {/* Paystack portal modal */}
       {showPaystackPortal && (
         <PaystackPortal
           onClose={() => setShowPaystackPortal(false)}
@@ -938,17 +974,22 @@ function BillingContent() {
 // -----------------------------------------------------------
 export default function BillingPage() {
   return (
-    <>
-      <PageHeader title="Billing" description="Manage your subscription and payment details." />
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:py-10">
+      <div className="mb-8">
+        <PageHeader
+          title="Billing"
+          description="Manage your subscription and payment details."
+        />
+      </div>
       <Suspense
-        fallback={(
+        fallback={
           <div className="flex min-h-[300px] items-center justify-center">
             <Loader2 className="size-5 animate-spin text-muted-foreground" />
           </div>
-        )}
+        }
       >
         <BillingContent />
       </Suspense>
-    </>
+    </div>
   );
 }
