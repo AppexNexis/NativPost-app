@@ -104,6 +104,23 @@ export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
     pkceMethod: 'S256',
     accountType: 'personal',
   },
+  //   youtube: {
+  //     name: 'YouTube',
+  //     authUrl: 'google.com',
+  //     tokenUrl: 'googleapis.com',
+  //     scopes: [
+  //       'googleapis.com',
+  //       'googleapis.com',
+  //       'https://www.googleapis.com/auth/yt-analytics.readonly', // Added for tracking likes/impressions
+  //       'googleapis.com',
+  //     ],
+  //     clientIdEnv: 'GOOGLE_CLIENT_ID',
+  //     clientSecretEnv: 'GOOGLE_CLIENT_SECRET',
+  //     scopeSeparator: ' ',
+  //     pkceMethod: 'S256',
+  //     accountType: 'personal',
+  // },
+
   youtube: {
     name: 'YouTube',
     authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
