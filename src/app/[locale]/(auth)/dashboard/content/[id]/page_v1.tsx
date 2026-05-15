@@ -1238,7 +1238,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                             className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${videoPhotoTier === 'unsplash' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
                           >
                             <p className={`text-xs font-semibold ${videoPhotoTier === 'unsplash' ? 'text-primary' : ''}`}>Unsplash</p>
-                            <p className="mt-0.5 text-[11px] text-muted-foreground">Free editorial photos</p>
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">Free photos</p>
                           </button>
                           <button
                             type="button"
@@ -1246,7 +1246,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                             className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${videoPhotoTier === 'flux' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
                           >
                             <p className={`text-xs font-semibold ${videoPhotoTier === 'flux' ? 'text-primary' : ''}`}>AI Scene</p>
-                            <p className="mt-0.5 text-[11px] text-muted-foreground">FLUX Pro — brand-aligned</p>
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">FLUX Pro</p>
                           </button>
                         </div>
                       </div>
@@ -1290,15 +1290,15 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                         <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Visual style</p>
                         <div className="grid grid-cols-3 gap-1.5">
                           {([
-                            ['dark',  'Dark',  'Dark bg, white text'],
-                            ['light', 'Light', 'Light bg, dark text'],
-                            ['brand', 'Brand', 'Brand color bg'],
+                            ['dark',  'Dark',  'Dark bg'],
+                            ['light', 'Light', 'Light bg'],
+                            ['brand', 'Brand', 'Brand color'],
                           ] as const).map(([val, label, sub]) => (
                             <button
                               key={val}
                               type="button"
                               onClick={() => setTextMotionStyle(val)}
-                              className={`rounded-lg border px-2.5 py-2 text-left transition-colors ${textMotionStyle === val ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
+                              className={`rounded-lg border px-2 py-2 text-left transition-colors ${textMotionStyle === val ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
                             >
                               <p className={`text-[11px] font-semibold ${textMotionStyle === val ? 'text-primary' : ''}`}>{label}</p>
                               <p className="text-[10px] text-muted-foreground">{sub}</p>
@@ -1389,7 +1389,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                           <p className="text-[11px] font-medium text-muted-foreground">9:16 — Instagram Reels, TikTok</p>
                         </div>
                         {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                        <video src={toVideoSrc(item.graphicUrls[0])} className="w-full" controls preload="metadata" playsInline style={{ maxHeight: 300 }} />
+                        <video src={toVideoSrc(item.graphicUrls[0])} className="w-full" controls preload="metadata" playsInline style={{ maxHeight: 360 }} />
                       </div>
                     )}
                     {item.graphicUrls[1] && (
@@ -1398,7 +1398,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                           <p className="text-[11px] font-medium text-muted-foreground">1:1 — LinkedIn, Facebook</p>
                         </div>
                         {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                        <video src={toVideoSrc(item.graphicUrls[1])} className="w-full" controls preload="metadata" playsInline />
+                        <video src={toVideoSrc(item.graphicUrls[1])} className="w-full" controls preload="metadata" playsInline style={{ maxHeight: 360 }} />
                       </div>
                     )}
                   </div>
@@ -1516,7 +1516,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               {/* Visual source selector */}
               <div className="mb-4">
                 <p className="mb-2 text-xs font-medium text-muted-foreground">Visual source</p>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   {([
                     { tier: 'unsplash', label: 'Unsplash', sub: 'Free editorial photos' },
                     { tier: 'flux',     label: 'AI Scene',  sub: 'FLUX Pro per section' },
@@ -1671,13 +1671,11 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               </div>
 
               {item.graphicUrls && item.graphicUrls.length > 0 && (
-                <div className="mt-4 flex gap-2 overflow-x-auto">
-                  {item.graphicUrls.filter(isVideoFileUrl).map((url, i) => {
-                    return (
-                      /* eslint-disable-next-line jsx-a11y/media-has-caption */
-                      <video key={i} src={toVideoSrc(url)} controls playsInline className="h-32 rounded-lg" />
-                    );
-                  })}
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {item.graphicUrls.filter(isVideoFileUrl).map((url, i) => (
+                    /* eslint-disable-next-line jsx-a11y/media-has-caption */
+                    <video key={i} src={toVideoSrc(url)} controls playsInline className="w-full rounded-lg" style={{ maxHeight: 300 }} />
+                  ))}
                 </div>
               )}
 
@@ -1733,7 +1731,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                           <div className="border-b px-3 py-2">
                             <p className="text-[11px] font-medium text-muted-foreground">{fmtLabel}</p>
                           </div>
-                          <Image src={url} alt={`Generated graphic ${i + 1}`} width={540} height={540} className="w-full object-cover" unoptimized />
+                          <div className="relative w-full">
+                            <Image src={url} alt={`Generated graphic ${i + 1}`} width={540} height={540} className="w-full object-contain" style={{ maxHeight: 360 }} unoptimized />
+                          </div>
                         </div>
                       );
                     })}
@@ -1773,7 +1773,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                             key={s}
                             type="button"
                             onClick={() => setSceneStyle(s)}
-                            className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium capitalize transition-colors ${sceneStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
+                            className={`rounded-lg border px-2 py-2 text-[10px] font-medium capitalize transition-colors sm:px-2.5 sm:text-[11px] ${sceneStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
                           >
                             {s}
                           </button>
@@ -1790,7 +1790,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                             key={val}
                             type="button"
                             onClick={() => setSceneOverlay(val)}
-                            className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium transition-colors ${sceneOverlay === val ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
+                            className={`rounded-lg border px-1.5 py-2 text-[10px] font-medium transition-colors sm:px-2.5 sm:text-[11px] ${sceneOverlay === val ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
                           >
                             {label}
                           </button>
@@ -2027,16 +2027,17 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     {' '}
                     generated
                   </p>
-                  <div className="flex gap-3 overflow-x-auto pb-2">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {item.graphicUrls.map((url, i) => (
-                      <div key={i} className="shrink-0 overflow-hidden rounded-lg border" style={{ width: 120 }}>
+                      <div key={i} className="overflow-hidden rounded-lg border">
                         <div className="border-b px-2 py-1">
                           <p className="text-[10px] text-muted-foreground">
                             Slide
+                            {' '}
                             {i + 1}
                           </p>
                         </div>
-                        <Image src={url} alt={`Carousel slide ${i + 1}`} width={120} height={120} className="w-full object-cover" unoptimized />
+                        <Image src={url} alt={`Carousel slide ${i + 1}`} width={300} height={300} className="w-full object-cover" unoptimized />
                       </div>
                     ))}
                   </div>
