@@ -888,6 +888,25 @@ function BillingContent() {
         </div>
       </div>
 
+      {/* Pricing page link */}
+      <div className="flex flex-col gap-3 rounded-xl border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-medium">See the full feature breakdown</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Compare every feature across all plans on our pricing page.
+          </p>
+        </div>
+        <Link
+          href="https://nativpost.com/pricing"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          View pricing page
+          <ExternalLink className="size-3.5" />
+        </Link>
+      </div>
+
       {/* Payment history */}
       <div>
         <div className="mb-4 flex items-center justify-between">
