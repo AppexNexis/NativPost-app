@@ -98,6 +98,24 @@ const DEFAULT_USER_PREFS: UserPrefs = {
 };
 
 // -----------------------------------------------------------
+// applyTheme — updates <html> class only, never called on page load.
+// The layout already applied the correct theme before this page mounted.
+// Only called when the user actively picks a new theme.
+// -----------------------------------------------------------
+function applyTheme(theme: string) {
+  const root = document.documentElement;
+  if (theme === 'dark') {
+    root.classList.add('dark');
+  } else if (theme === 'light') {
+    root.classList.remove('dark');
+  } else {
+    // System — follow the OS preference
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    root.classList.toggle('dark', prefersDark);
+  }
+}
+
+// -----------------------------------------------------------
 // Form row helpers
 // -----------------------------------------------------------
 function SettingRow({
@@ -180,35 +198,24 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [themeSaving, setThemeSaving] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  // Load settings on mount
+  // Load settings on mount.
+  // IMPORTANT: we do NOT call applyTheme here. The theme was already applied
+  // by the root layout (or a ThemeProvider) before this component mounted.
+  // Calling applyTheme here would reset the user's current session theme to
+  // whatever the server last stored — causing the "switches back to system" bug.
   useEffect(() => {
     Promise.all([
       fetch('/api/settings/org').then(r => r.ok ? r.json() : null),
       fetch('/api/settings/user').then(r => r.ok ? r.json() : null),
     ]).then(([org, user]) => {
       if (org) setOrgSettings(s => ({ ...s, ...org }));
-      if (user) {
-        setUserPrefs(s => ({ ...s, ...user }));
-        // Apply theme immediately
-        if (user.theme) applyTheme(user.theme as string);
-      }
+      // Sync UI state only — do not touch the DOM theme here
+      if (user) setUserPrefs(s => ({ ...s, ...user }));
     }).finally(() => setLoading(false));
   }, []);
-
-  const applyTheme = (theme: string) => {
-    const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-    } else if (theme === 'light') {
-      root.classList.remove('dark');
-    } else {
-      // System
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      root.classList.toggle('dark', prefersDark);
-    }
-  };
 
   const saveOrgSettings = useCallback(async (settings: OrgSettings) => {
     setSaving(true);
@@ -243,14 +250,33 @@ export default function SettingsPage() {
   }, []);
 
   const updateOrg = <K extends keyof OrgSettings>(key: K, value: OrgSettings[K]) => {
-    const next = { ...orgSettings, [key]: value };
-    setOrgSettings(next);
+    setOrgSettings(prev => ({ ...prev, [key]: value }));
   };
 
   const updateUser = <K extends keyof UserPrefs>(key: K, value: UserPrefs[K]) => {
-    const next = { ...userPrefs, [key]: value };
-    setUserPrefs(next);
-    if (key === 'theme') applyTheme(value as string);
+    setUserPrefs(prev => ({ ...prev, [key]: value }));
+  };
+
+  // Theme is the one setting that saves immediately and silently —
+  // it must feel instant. No "Save changes" click required.
+  const handleThemeChange = async (theme: string) => {
+    // 1. Apply to DOM immediately — user sees the change right away
+    applyTheme(theme);
+    // 2. Update local state so the selected button reflects the choice
+    setUserPrefs(prev => ({ ...prev, theme }));
+    // 3. Persist to server silently (no spinner on the main save button)
+    setThemeSaving(true);
+    try {
+      await fetch('/api/settings/user', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme }),
+      });
+    } catch {
+      // Non-fatal — theme is still applied in DOM, will retry on next full save
+    } finally {
+      setThemeSaving(false);
+    }
   };
 
   const handleSave = async () => {
@@ -263,10 +289,9 @@ export default function SettingsPage() {
   };
 
   const togglePlatform = (platform: string) => {
-    const current = orgSettings.defaultPlatforms;
-    const next = current.includes(platform)
-      ? current.filter(p => p !== platform)
-      : [...current, platform];
+    const next = orgSettings.defaultPlatforms.includes(platform)
+      ? orgSettings.defaultPlatforms.filter(p => p !== platform)
+      : [...orgSettings.defaultPlatforms, platform];
     updateOrg('defaultPlatforms', next);
   };
 
@@ -293,13 +318,7 @@ export default function SettingsPage() {
             disabled={saving}
             className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
           >
-            {saving ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : saved ? (
-              <Save className="size-4" />
-            ) : (
-              <Save className="size-4" />
-            )}
+            {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
             {saving ? 'Saving' : saved ? 'Saved' : 'Save changes'}
           </button>
         }
@@ -496,8 +515,11 @@ export default function SettingsPage() {
             {/* ── Appearance ── */}
             {activeTab === 'appearance' && (
               <>
-                <SettingRow label="Theme" description="Your display preference. Syncs across all your devices.">
-                  <div className="flex gap-2">
+                <SettingRow
+                  label="Theme"
+                  description="Your display preference. Saves instantly and syncs across all your devices."
+                >
+                  <div className="flex items-center gap-2">
                     {[
                       { value: 'light', label: 'Light' },
                       { value: 'dark', label: 'Dark' },
@@ -506,8 +528,9 @@ export default function SettingsPage() {
                       <button
                         key={opt.value}
                         type="button"
-                        onClick={() => updateUser('theme', opt.value)}
-                        className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                        onClick={() => handleThemeChange(opt.value)}
+                        disabled={themeSaving}
+                        className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors disabled:opacity-60 ${
                           userPrefs.theme === opt.value
                             ? 'border-primary bg-primary/10 text-primary'
                             : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -516,6 +539,7 @@ export default function SettingsPage() {
                         {opt.label}
                       </button>
                     ))}
+                    {themeSaving && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
                   </div>
                 </SettingRow>
                 <SettingRow label="Sidebar density" description="Adjusts spacing in the navigation sidebar.">
