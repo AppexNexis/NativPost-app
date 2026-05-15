@@ -8,6 +8,7 @@ import {
   CircleCheck,
   Clock,
   CreditCard,
+  ExternalLink,
   FileText,
   Fingerprint,
   Image,
@@ -24,13 +25,15 @@ import {
 import NextImage from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import logoIcon from '/public/assets/images/shared/logo.svg';
 import logoDark from '/public/assets/images/shared/logo-dark.svg';
 import mainLogo from '/public/assets/images/shared/main-logo.svg';
-import { getNavForRole, getUserRole, isTeamMember } from '@/lib/roles';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 import SupportWidget from '@/components/support/SupportWidget';
+import { getNavForRole, getUserRole, isTeamMember } from '@/lib/roles';
+import type { NavItem } from '@/lib/roles';
 
 const ICONS: Record<string, typeof Calendar> = {
   BarChart3,
@@ -39,6 +42,7 @@ const ICONS: Record<string, typeof Calendar> = {
   CircleCheck,
   Clock,
   CreditCard,
+  ExternalLink,
   FileText,
   Fingerprint,
   Image,
@@ -50,31 +54,115 @@ const ICONS: Record<string, typeof Calendar> = {
   Users,
 };
 
-export default function DashboardClientLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardClientLayout({
+  children,
+  plan,
+}: {
+  children: React.ReactNode;
+  plan?: string;
+}) {
   const { orgRole } = useAuth();
   const { organization } = useOrganization();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [currentPlan, setCurrentPlan] = useState<string>(plan || 'starter');
 
   const role = getUserRole(orgRole);
   const navGroups = getNavForRole(role);
   const isTeam = isTeamMember(role);
 
-  // Use organization.id from useOrganization() rather than orgId from useAuth().
-  // Reading orgId from useAuth() subscribes to Clerk's MessagePort auth sync,
-  // which reads locale during client-side navigation and crashes if the
-  // NextIntlClientProvider context is momentarily unavailable in the transition.
   const orgId = organization?.id;
   const teamOrgId = process.env.NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID;
   const isNativPostStaff = !!(teamOrgId && orgId === teamOrgId && role === 'admin');
 
+  // Fetch current plan if not passed from server (fallback)
+  useEffect(() => {
+    if (plan) return;
+    fetch('/api/billing/status')
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { plan?: string } | null) => {
+        if (data?.plan) setCurrentPlan(data.plan);
+      })
+      .catch(() => null);
+  }, [plan]);
+
+  // Fix: use a proper RegExp literal — avoids the TS7053 index-type error
+  // that occurred when the regex was written as a string escape sequence.
   const cleanPath = pathname.replace(/^\/[a-z]{2}(\/|$)/, '/');
 
   const isActive = (href: string) => {
+    if (href.startsWith('http')) return false;
     if (href.includes('?')) {
-      return cleanPath === href.split('?')[0] && pathname.includes(href.split('?')[1] || '');
+      return (
+        cleanPath === href.split('?')[0]
+        && pathname.includes(href.split('?')[1] ?? '')
+      );
     }
     return cleanPath === href || cleanPath.startsWith(`${href}/`);
+  };
+
+  const isPlanEligible = (item: NavItem) => {
+    if (!item.planRequired) return true;
+    return item.planRequired.includes(currentPlan);
+  };
+
+  const renderNavItem = (item: NavItem) => {
+    const Icon = ICONS[item.icon] ?? FileText;
+    const active = isActive(item.href);
+    const eligible = isPlanEligible(item);
+
+    const baseClass =
+      'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors w-full';
+    const activeClass = 'bg-primary/10 font-medium text-primary';
+    const inactiveClass = 'text-muted-foreground hover:bg-muted hover:text-foreground';
+    const disabledClass = 'text-muted-foreground/50 cursor-default';
+
+    if (!eligible) {
+      return (
+        <div
+          key={item.href + item.label}
+          title={`Available on ${item.planRequired
+            ?.map(p => p.charAt(0).toUpperCase() + p.slice(1))
+            .join(', ')} plans`}
+          className={`${baseClass} ${disabledClass} group relative`}
+        >
+          <Icon className="size-4 shrink-0" />
+          <span>{item.label}</span>
+          <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+            Growth+
+          </span>
+        </div>
+      );
+    }
+
+    if (item.external) {
+      return (
+        <a
+          key={item.href + item.label}
+          href={item.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => setSidebarOpen(false)}
+          className={`${baseClass} ${inactiveClass}`}
+        >
+          <Icon className="size-4 shrink-0" />
+          <span>{item.label}</span>
+          <ExternalLink className="ml-auto size-3 text-muted-foreground/50" />
+        </a>
+      );
+    }
+
+    return (
+      <Link
+        key={item.href + item.label}
+        href={item.href}
+        onClick={() => setSidebarOpen(false)}
+        className={`${baseClass} ${active ? activeClass : inactiveClass}`}
+      >
+        <Icon className="size-4 shrink-0" />
+        {item.label}
+      </Link>
+    );
   };
 
   return (
@@ -89,11 +177,26 @@ export default function DashboardClientLayout({ children }: { children: React.Re
         <div className="flex h-14 items-center border-b px-4">
           <Link href="/dashboard" className="inline-flex items-center">
             <figure className="hidden sm:block sm:max-w-[140px]">
-              <NextImage src={mainLogo} alt="NativPost" className="h-auto w-full dark:invert" priority />
+              <NextImage
+                src={mainLogo}
+                alt="NativPost"
+                className="h-auto w-full dark:invert"
+                priority
+              />
             </figure>
             <figure className="block max-w-[32px] sm:hidden">
-              <NextImage src={logoIcon} alt="NativPost" className="block h-auto w-full dark:hidden" priority />
-              <NextImage src={logoDark} alt="NativPost" className="hidden h-auto w-full dark:block" priority />
+              <NextImage
+                src={logoIcon}
+                alt="NativPost"
+                className="block h-auto w-full dark:hidden"
+                priority
+              />
+              <NextImage
+                src={logoDark}
+                alt="NativPost"
+                className="hidden h-auto w-full dark:block"
+                priority
+              />
             </figure>
           </Link>
         </div>
@@ -105,7 +208,8 @@ export default function DashboardClientLayout({ children }: { children: React.Re
             appearance={{
               elements: {
                 rootBox: 'w-full',
-                organizationSwitcherTrigger: 'w-full justify-between rounded-lg border px-3 py-2 text-sm hover:bg-muted',
+                organizationSwitcherTrigger:
+                  'w-full justify-between rounded-lg border px-3 py-2 text-sm hover:bg-muted',
               },
             }}
           />
@@ -132,31 +236,13 @@ export default function DashboardClientLayout({ children }: { children: React.Re
                 {group}
               </p>
               <div className="space-y-0.5">
-                {items.map((item) => {
-                  const Icon = ICONS[item.icon] || FileText;
-                  const active = isActive(item.href);
-                  return (
-                    <Link
-                      key={item.href + item.label}
-                      href={item.href}
-                      onClick={() => setSidebarOpen(false)}
-                      className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors ${
-                        active
-                          ? 'bg-primary/10 font-medium text-primary'
-                          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                      }`}
-                    >
-                      <Icon className="size-4 shrink-0" />
-                      {item.label}
-                    </Link>
-                  );
-                })}
+                {items.map(item => renderNavItem(item))}
               </div>
             </div>
           ))}
         </nav>
 
-        {/* Admin ops link — only visible to NativPost staff with internal org active */}
+        {/* Admin ops — NativPost staff only */}
         {isNativPostStaff && (
           <div className="border-t px-3 py-2">
             <Link
@@ -178,9 +264,13 @@ export default function DashboardClientLayout({ children }: { children: React.Re
               appearance={{ elements: { avatarBox: 'size-8' } }}
             />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium">{organization?.name || 'Organization'}</p>
+              <p className="truncate text-xs font-medium">
+                {organization?.name || 'Organization'}
+              </p>
               <p className="truncate text-[11px] text-muted-foreground">
-                {isTeam ? 'NativPost Team' : 'Free Plan'}
+                {isTeam
+                  ? 'NativPost Team'
+                  : `${currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)} plan`}
               </p>
             </div>
           </div>
@@ -207,7 +297,8 @@ export default function DashboardClientLayout({ children }: { children: React.Re
             <Menu className="size-5" />
           </button>
           <div className="hidden lg:block" />
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <NotificationBell />
             <UserButton
               afterSignOutUrl="/"
               appearance={{ elements: { avatarBox: 'size-8' } }}
@@ -221,7 +312,7 @@ export default function DashboardClientLayout({ children }: { children: React.Re
         </div>
       </main>
 
-      {/* Support widget — fixed position, rendered outside scroll container */}
+      {/* Support widget */}
       <SupportWidget currentPath={cleanPath} />
     </div>
   );

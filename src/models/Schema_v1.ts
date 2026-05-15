@@ -12,7 +12,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 // ============================================================
-// NATIVPOST DATABASE SCHEMA v3
+// NATIVPOST DATABASE SCHEMA v4
 // Using Drizzle ORM with Supabase PostgreSQL
 // Run: npm run db:generate → npm run db:migrate
 //
@@ -22,6 +22,14 @@ import {
 //
 // v3 additions:
 // - contentPlanSchema: monthly AI-generated content plan per org
+//
+// v4 additions:
+// - socialAccountSchema: oauthToken, oauthTokenSecret
+//   Stores OAuth 1.0a credentials for Twitter/X media uploads.
+//   The existing accessToken/refreshToken fields hold OAuth 2.0 tokens
+//   (used for tweet text). The new fields hold the OAuth 1.0a access
+//   token + secret obtained via the /connect/twitter-v1 flow, which
+//   are required by the X v1.1 media upload endpoint.
 // ============================================================
 
 // -----------------------------------------------------------
@@ -136,15 +144,23 @@ export const socialAccountSchema = pgTable('social_account', {
   platform: text('platform').notNull(), // instagram, facebook, linkedin, twitter, tiktok
   platformUserId: text('platform_user_id'),
   platformUsername: text('platform_username'),
-  accessToken: text('access_token'), // encrypted at rest
-  refreshToken: text('refresh_token'), // encrypted at rest
+  accessToken: text('access_token'),       // OAuth 2.0 access token — encrypted at rest
+  refreshToken: text('refresh_token'),     // OAuth 2.0 refresh token — encrypted at rest
   tokenExpiresAt: timestamp('token_expires_at', { mode: 'date' }),
-  accountType: text('account_type'), // personal, page, company
+  accountType: text('account_type'),       // personal, page, company
   profileImageUrl: text('profile_image_url'),
   isActive: boolean('is_active').default(true).notNull(),
   connectedAt: timestamp('connected_at', { mode: 'date' })
     .defaultNow()
     .notNull(),
+  // v4: OAuth 1.0a credentials for Twitter/X media uploads.
+  // The X v1.1 media upload endpoint rejects OAuth 2.0 bearer tokens;
+  // images and videos require a request signed with HMAC-SHA1 using
+  // these per-user credentials. Populated by the /connect/twitter-v1
+  // flow; null for all other platforms and for Twitter accounts that
+  // have only completed the OAuth 2.0 (text-only) connection.
+  oauthToken: text('oauth_token'),         // OAuth 1.0a access token — encrypted at rest
+  oauthTokenSecret: text('oauth_token_secret'), // OAuth 1.0a access token secret — encrypted at rest
 });
 
 // -----------------------------------------------------------

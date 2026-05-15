@@ -42,37 +42,50 @@ export function isCustomer(role: UserRole): boolean {
 export type NavItem = {
   label: string;
   href: string;
-  icon: string; // lucide icon name
-  roles: UserRole[]; // who can see this item
+  icon: string;       // lucide icon name (must exist in ICONS map in DashboardClientLayout)
+  roles: UserRole[];
   group: string;
   badge?: string;
+  external?: boolean; // renders as <a target="_blank"> instead of <Link>
+  planRequired?: string[]; // plans that unlock this item — shows upgrade hint if not met
 };
 
 export const NAV_ITEMS: NavItem[] = [
   // --- Posts ---
-  { label: 'Calendar', href: '/dashboard/calendar', icon: 'Calendar', roles: ['admin', 'editor', 'member'], group: 'Posts' },
-  { label: 'All posts', href: '/dashboard/posts', icon: 'LayoutList', roles: ['admin', 'editor', 'member'], group: 'Posts' },
-  { label: 'Scheduled', href: '/dashboard/posts?status=scheduled', icon: 'Clock', roles: ['admin', 'editor', 'member'], group: 'Posts' },
-  { label: 'Published', href: '/dashboard/posts?status=published', icon: 'CheckCircle2', roles: ['admin', 'editor', 'member'], group: 'Posts' },
-  { label: 'Drafts', href: '/dashboard/posts?status=draft', icon: 'FileText', roles: ['admin', 'editor'], group: 'Posts' },
-  { label: 'Approvals', href: '/dashboard/approvals', icon: 'CircleCheck', roles: ['admin', 'editor', 'member'], group: 'Posts' },
-  { label: 'Analytics', href: '/dashboard/analytics', icon: 'BarChart3', roles: ['admin', 'editor', 'member'], group: 'Posts' },
+  { label: 'Calendar',   href: '/dashboard/calendar',             icon: 'Calendar',     roles: ['admin', 'editor', 'member'], group: 'Posts' },
+  { label: 'All posts',  href: '/dashboard/posts',                icon: 'LayoutList',   roles: ['admin', 'editor', 'member'], group: 'Posts' },
+  { label: 'Scheduled',  href: '/dashboard/posts?status=scheduled', icon: 'Clock',      roles: ['admin', 'editor', 'member'], group: 'Posts' },
+  { label: 'Published',  href: '/dashboard/posts?status=published', icon: 'CheckCircle2', roles: ['admin', 'editor', 'member'], group: 'Posts' },
+  { label: 'Drafts',     href: '/dashboard/posts?status=draft',   icon: 'FileText',     roles: ['admin', 'editor'],           group: 'Posts' },
+  { label: 'Approvals',  href: '/dashboard/approvals',            icon: 'CircleCheck',  roles: ['admin', 'editor', 'member'], group: 'Posts' },
+  { label: 'Analytics',  href: '/dashboard/analytics',            icon: 'BarChart3',    roles: ['admin', 'editor', 'member'], group: 'Posts' },
 
   // --- Create (team only) ---
-  { label: 'New post', href: '/dashboard/content/create', icon: 'PenLine', roles: ['admin', 'editor'], group: 'Create' },
-  { label: 'Brand Profile', href: '/dashboard/brand-profile', icon: 'Fingerprint', roles: ['admin', 'editor'], group: 'Create' },
-  { label: 'Media library', href: '/dashboard/media-library', icon: 'Image', roles: ['admin', 'editor'], group: 'Create' },
+  { label: 'New post',      href: '/dashboard/content/create', icon: 'PenLine',    roles: ['admin', 'editor'], group: 'Create' },
+  { label: 'Brand Profile', href: '/dashboard/brand-profile',  icon: 'Fingerprint', roles: ['admin', 'editor'], group: 'Create' },
+  { label: 'Media library', href: '/dashboard/media-library',  icon: 'Image',      roles: ['admin', 'editor'], group: 'Create' },
 
   // --- Workspace ---
-  { label: 'Connections', href: '/dashboard/connections', icon: 'Link2', roles: ['admin', 'editor', 'member'], group: 'Workspace' },
-  { label: 'Team', href: '/dashboard/settings', icon: 'Users', roles: ['admin'], group: 'Workspace' },
+  { label: 'Connections', href: '/dashboard/connections',      icon: 'Link2',         roles: ['admin', 'editor', 'member'], group: 'Workspace' },
+  // Team now has its own dedicated route — no longer shares /dashboard/settings
+  { label: 'Team',        href: '/dashboard/team',             icon: 'Users',         roles: ['admin'],                     group: 'Workspace' },
+  // NativPost Connect — external link; visible to Growth+ plans
+  {
+    label: 'Connect',
+    href: 'https://connect.nativpost.com',
+    icon: 'ExternalLink',
+    roles: ['admin', 'editor', 'member'],
+    group: 'Workspace',
+    external: true,
+    planRequired: ['growth', 'pro', 'agency', 'enterprise'],
+  },
 
   // Support — visible to all roles
   { label: 'Support', href: '/dashboard/support', icon: 'LifeBuoy', roles: ['admin', 'editor', 'member'], group: 'Support' },
 
   // --- Configuration ---
-  { label: 'Settings', href: '/dashboard/settings', icon: 'Settings', roles: ['admin', 'editor', 'member'], group: 'Configuration' },
-  { label: 'Billing', href: '/dashboard/billing', icon: 'CreditCard', roles: ['admin', 'member'], group: 'Configuration' },
+  { label: 'Settings', href: '/dashboard/settings', icon: 'Settings',    roles: ['admin', 'editor', 'member'], group: 'Configuration' },
+  { label: 'Billing',  href: '/dashboard/billing',  icon: 'CreditCard',  roles: ['admin', 'member'],           group: 'Configuration' },
 ];
 
 export function getNavForRole(role: UserRole): Record<string, NavItem[]> {

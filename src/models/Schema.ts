@@ -12,7 +12,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 // ============================================================
-// NATIVPOST DATABASE SCHEMA v4
+// NATIVPOST DATABASE SCHEMA v5
 // Using Drizzle ORM with Supabase PostgreSQL
 // Run: npm run db:generate → npm run db:migrate
 //
@@ -30,6 +30,11 @@ import {
 //   (used for tweet text). The new fields hold the OAuth 1.0a access
 //   token + secret obtained via the /connect/twitter-v1 flow, which
 //   are required by the X v1.1 media upload endpoint.
+//
+// v5 additions:
+// - organizationSchema: settings JSONB column (workspace-level configuration)
+// - notificationSchema: in-app notification center (90-day lifetime)
+// - userSettingsSchema: per-user preferences synced across devices
 // ============================================================
 
 // -----------------------------------------------------------
@@ -61,6 +66,20 @@ export const organizationSchema = pgTable(
     trialEndsAt: timestamp('trial_ends_at', { mode: 'date' }),
     // Payment provider the org used to subscribe — drives billing page behaviour
     paymentType: text('payment_type').default('stripe'), // 'stripe' | 'paystack'
+    // v5: Workspace-level configuration (timezone, content defaults, publishing prefs)
+    // Shape: {
+    //   timezone: string,            e.g. "Africa/Lagos"
+    //   contentLanguage: string,     "en" | "es" | "fr" | "pt"
+    //   defaultContentMode: string,  "normal" | "concise" | "controversial"
+    //   defaultPlatforms: string[],  ["instagram", "linkedin"]
+    //   defaultVariantCount: number, 1 | 2 | 3
+    //   hashtagStrategy: string,     "auto" | "custom" | "none"
+    //   hashtagCount: number,        1–20
+    //   antiSlopThreshold: number,   0.6 | 0.7 | 0.8
+    //   autoSchedule: boolean,
+    //   defaultPostTime: string,     "HH:MM" in org timezone
+    // }
+    settings: jsonb('settings').default({}).notNull(),
     // Metadata
     updatedAt: timestamp('updated_at', { mode: 'date' })
       .defaultNow()
@@ -93,9 +112,9 @@ export const brandProfileSchema = pgTable('brand_profile', {
   websiteUrl: text('website_url'),
   // --- Voice & Personality ---
   toneFormality: integer('tone_formality').default(5), // 1=very casual → 10=very formal
-  toneHumor: integer('tone_humor').default(5), // 1=serious → 10=playful
-  toneEnergy: integer('tone_energy').default(5), // 1=calm → 10=energetic
-  vocabulary: jsonb('vocabulary').default([]), // preferred words/phrases
+  toneHumor: integer('tone_humor').default(5),         // 1=serious → 10=playful
+  toneEnergy: integer('tone_energy').default(5),       // 1=calm → 10=energetic
+  vocabulary: jsonb('vocabulary').default([]),          // preferred words/phrases
   forbiddenWords: jsonb('forbidden_words').default([]), // words to NEVER use
   communicationStyle: text('communication_style'),
   // --- Visual Identity ---
@@ -107,7 +126,7 @@ export const brandProfileSchema = pgTable('brand_profile', {
   logoUrl: text('logo_url'),
   // --- Content Preferences ---
   contentExamples: jsonb('content_examples').default([]), // URLs or descriptions
-  antiPatterns: jsonb('anti_patterns').default([]), // things to avoid
+  antiPatterns: jsonb('anti_patterns').default([]),       // things to avoid
   hashtagStrategy: text('hashtag_strategy'),
   // --- Platform-Specific Voice ---
   linkedinVoice: text('linkedin_voice'),
@@ -159,7 +178,7 @@ export const socialAccountSchema = pgTable('social_account', {
   // these per-user credentials. Populated by the /connect/twitter-v1
   // flow; null for all other platforms and for Twitter accounts that
   // have only completed the OAuth 2.0 (text-only) connection.
-  oauthToken: text('oauth_token'),         // OAuth 1.0a access token — encrypted at rest
+  oauthToken: text('oauth_token'),              // OAuth 1.0a access token — encrypted at rest
   oauthTokenSecret: text('oauth_token_secret'), // OAuth 1.0a access token secret — encrypted at rest
 });
 
@@ -199,7 +218,7 @@ export const contentItemSchema = pgTable('content_item', {
   qualityFlags: jsonb('quality_flags').default([]),
   // v2: Content Mode & Enrichment
   contentMode: text('content_mode').default('normal'), // normal, concise, controversial
-  enrichmentData: jsonb('enrichment_data').default({}), // the enrichment options used
+  enrichmentData: jsonb('enrichment_data').default({}),     // the enrichment options used
   enrichmentApplied: jsonb('enrichment_applied').default([]), // which elements were woven in
   // Engagement (post-publish)
   engagementData: jsonb('engagement_data').default({}),
@@ -223,7 +242,7 @@ export const contentCalendarSchema = pgTable('content_calendar', {
     () => contentItemSchema.id,
   ),
   scheduledDate: text('scheduled_date').notNull(), // YYYY-MM-DD
-  scheduledTime: text('scheduled_time'), // HH:MM
+  scheduledTime: text('scheduled_time'),           // HH:MM
   timezone: text('timezone').default('UTC'),
   isPublished: boolean('is_published').default(false),
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
@@ -322,10 +341,6 @@ export const onboardingProgressSchema = pgTable('onboarding_progress', {
 });
 
 // -----------------------------------------------------------
-// SUPPORT SYSTEM — Append these tables to src/models/Schema.ts
-// -----------------------------------------------------------
-
-// -----------------------------------------------------------
 // SUPPORT TICKETS
 // -----------------------------------------------------------
 export const supportTicketSchema = pgTable('support_ticket', {
@@ -346,14 +361,14 @@ export const supportTicketSchema = pgTable('support_ticket', {
   aiPriority: text('ai_priority').default('medium'), // low, medium, high, urgent
   aiAutoResolved: boolean('ai_auto_resolved').default(false),
   aiConfidence: real('ai_confidence'), // 0-1, how confident the AI was in its response
-  aiEnabled: boolean('ai_enabled').default(true).notNull(), // whether AI assistance is enabled for this ticket
+  aiEnabled: boolean('ai_enabled').default(true).notNull(),
   aiHistory: jsonb('ai_history').default([]), // array of { response, feedback, timestamp }
   // Assignment & status
   status: text('status').default('open').notNull(), // open, in_progress, waiting_on_client, auto_resolved, resolved, closed
   assignedToUserId: text('assigned_to_user_id'), // Clerk user ID of agent
   // Source
   source: text('source').default('web').notNull(), // web, email, api, personal_assistant
-  inboundEmailId: text('inbound_email_id'), // tracks email thread for replies
+  inboundEmailId: text('inbound_email_id'),
   // Resolution
   resolvedAt: timestamp('resolved_at', { mode: 'date' }),
   closedAt: timestamp('closed_at', { mode: 'date' }),
@@ -378,17 +393,17 @@ export const supportMessageSchema = pgTable('support_message', {
     .notNull(),
   // Author
   authorType: text('author_type').notNull(), // client, agent, ai
-  authorUserId: text('author_user_id'), // Clerk user ID (null for AI)
+  authorUserId: text('author_user_id'),      // Clerk user ID (null for AI)
   authorName: text('author_name').notNull(),
   authorEmail: text('author_email'),
   // Content
   body: text('body').notNull(),
-  isInternal: boolean('is_internal').default(false).notNull(), // internal notes not sent to client
+  isInternal: boolean('is_internal').default(false).notNull(),
   // AI polish tracking
-  originalBody: text('original_body'), // stored if body was AI-polished
+  originalBody: text('original_body'),
   aiPolished: boolean('ai_polished').default(false),
   // Email delivery
-  emailMessageId: text('email_message_id'), // for threading
+  emailMessageId: text('email_message_id'),
   emailDelivered: boolean('email_delivered').default(false),
   // Metadata
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
@@ -405,7 +420,7 @@ export const supportAttachmentSchema = pgTable('support_attachment', {
   messageId: uuid('message_id').references(() => supportMessageSchema.id),
   fileName: text('file_name').notNull(),
   fileUrl: text('file_url').notNull(), // Supabase Storage URL
-  fileSize: integer('file_size'), // bytes
+  fileSize: integer('file_size'),      // bytes
   mimeType: text('mime_type'),
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
 });
@@ -418,20 +433,20 @@ export const knowledgeArticleSchema = pgTable('knowledge_article', {
   // Content
   title: text('title').notNull(),
   slug: text('slug').notNull(),
-  body: text('body').notNull(), // full markdown content
-  excerpt: text('excerpt'), // short summary for search results
+  body: text('body').notNull(),    // full markdown content
+  excerpt: text('excerpt'),        // short summary for search results
   // Categorisation
   category: text('category').notNull(), // billing, features, integrations, troubleshooting, account, getting_started
   tags: jsonb('tags').default([]),
   // Visibility
   isPublished: boolean('is_published').default(true).notNull(),
-  isInternal: boolean('is_internal').default(false).notNull(), // internal-only articles for agents
-  // SEO / helpful
-  helpful: integer('helpful').default(0), // thumbs up count
-  notHelpful: integer('not_helpful').default(0), // thumbs down count
+  isInternal: boolean('is_internal').default(false).notNull(),
+  // Helpfulness tracking
+  helpful: integer('helpful').default(0),
+  notHelpful: integer('not_helpful').default(0),
   viewCount: integer('view_count').default(0),
   // Metadata
-  authorUserId: text('author_user_id'), // who wrote it
+  authorUserId: text('author_user_id'),
   updatedAt: timestamp('updated_at', { mode: 'date' })
     .defaultNow()
     .$onUpdate(() => new Date())
@@ -440,7 +455,75 @@ export const knowledgeArticleSchema = pgTable('knowledge_article', {
 });
 
 // -----------------------------------------------------------
-// SUPPORT QUICK STATS VIEW (computed on-demand, not a real table)
-// Used by the dashboard stats API
+// v5: NOTIFICATIONS
+//
+// In-app notification center. Displayed in the bell panel in the
+// dashboard top bar. Lifetime: 90 days — run a cleanup job:
+//   DELETE FROM notification WHERE created_at < NOW() - INTERVAL '90 days'
 // -----------------------------------------------------------
-// No schema needed — queried via SQL aggregates in the API route
+export const notificationSchema = pgTable('notification', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: text('org_id')
+    .references(() => organizationSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  // null = org-wide (visible to all members); set = only that specific user
+  userId: text('user_id'),
+  // Severity — drives icon colour and urgency treatment in the panel
+  type: text('type').notNull(),     // 'error' | 'warning' | 'info' | 'success'
+  // Category — used for tab filtering
+  category: text('category').notNull(), // 'publish' | 'approval' | 'billing' | 'system' | 'content'
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  // Optional deep-link into the dashboard (e.g. /dashboard/content/[id])
+  actionUrl: text('action_url'),
+  actionLabel: text('action_label'), // e.g. "View post"
+  isRead: boolean('is_read').default(false).notNull(),
+  readAt: timestamp('read_at', { mode: 'date' }),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------
+// v5: USER SETTINGS
+//
+// Per-user preferences that sync across all devices.
+// One row per (user_id, org_id) pair — enforced by unique index.
+// Theme changes are applied client-side immediately; this table
+// ensures the preference persists when the user logs in elsewhere.
+// -----------------------------------------------------------
+export const userSettingsSchema = pgTable(
+  'user_settings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id').notNull(), // Clerk user ID
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    // Display preference: 'light' | 'dark' | 'system'
+    theme: text('theme').default('system').notNull(),
+    // In-app notification toggles (mirrors notification_pref in Connect)
+    notifyPublish: boolean('notify_publish').default(true).notNull(),
+    notifyFailure: boolean('notify_failure').default(true).notNull(),
+    notifyApproval: boolean('notify_approval').default(true).notNull(),
+    notifyBilling: boolean('notify_billing').default(true).notNull(),
+    // Sidebar density: 'comfortable' | 'compact'
+    sidebarDensity: text('sidebar_density').default('comfortable').notNull(),
+    // Metadata
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => ({
+    // One settings row per user per org
+    userOrgIdx: uniqueIndex('user_settings_user_org_idx').on(
+      table.userId,
+      table.orgId,
+    ),
+  }),
+);
+
+// -----------------------------------------------------------
+// SUPPORT QUICK STATS VIEW (computed on-demand, not a real table)
+// Queried via SQL aggregates in the API route — no schema needed.
+// -----------------------------------------------------------
