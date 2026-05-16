@@ -230,13 +230,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         graphicUrls: videoUrls,
         platformSpecific: {
           ...(item.platformSpecific as object),
-          sourceImages:        imageUrls,
+          sourceImages:         imageUrls,
           videoDurationSeconds: renderData.durationSeconds ?? 0,
-          photoTier:           renderData.photoTier ?? 'none',
-          unsplashCredits:     renderData.credits ?? [],
-          videoGenerated:      true,
-          // Store what style was used — useful for regeneration consistency
-          stylePresetUsed:     stylePreset,
+          photoTier:            renderData.photoTier ?? 'none',
+          unsplashCredits:      renderData.credits ?? [],
+          videoGenerated:       true,
+          // stylePresetUsed is intentionally not stored in platformSpecific
+          // to keep the platform adaptations panel clean
         },
         updatedAt: new Date(),
       })

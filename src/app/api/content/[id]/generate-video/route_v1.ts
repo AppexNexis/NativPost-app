@@ -11,12 +11,65 @@ const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
+/**
+ * Maps brand tone sliders + content mode to a FLUX/Unsplash style preset.
+ *
+ * The brand profile imageStyle field ("minimal", "vibrant", "professional") is
+ * the first source. If not set, we derive a style from the tone sliders:
+ *   - High energy + low formality  → "bold"
+ *   - High formality + low energy  → "professional"
+ *   - Low humor + high formality   → "minimal"
+ *   - High humor + high energy     → "vibrant"
+ *   - Controversial content mode   → "bold" (amplifies the drama)
+ *   - Default                      → "cinematic"
+ *
+ * This ensures the Unsplash/FLUX query mood matches the brand's actual personality.
+ */
+function deriveStylePreset(params: {
+  imageStyle?: string | null;
+  toneFormality?: number | null;
+  toneHumor?: number | null;
+  toneEnergy?: number | null;
+  contentMode?: string | null;
+}): string {
+  // Explicit imageStyle from brand profile always wins
+  const explicit = params.imageStyle?.toLowerCase().trim();
+  if (explicit && ['minimal', 'vibrant', 'professional', 'cinematic', 'bold', 'dark'].includes(explicit)) {
+    // Controversial mode amplifies any style toward bold
+    if (params.contentMode === 'controversial' && explicit !== 'minimal') {
+      return 'bold';
+    }
+    return explicit;
+  }
+
+  const energy   = params.toneEnergy   ?? 5;
+  const formality = params.toneFormality ?? 5;
+  const humor    = params.toneHumor    ?? 5;
+  const mode     = params.contentMode  || 'normal';
+
+  // Controversial posts → bold, dramatic visuals regardless of tone
+  if (mode === 'controversial') return 'bold';
+
+  // High formality, low energy → clean professional
+  if (formality >= 7 && energy <= 4) return 'professional';
+
+  // High energy, high humor → vibrant
+  if (energy >= 7 && humor >= 7) return 'vibrant';
+
+  // Very minimal brands (low energy, low humor, high formality)
+  if (energy <= 3 && formality >= 7) return 'minimal';
+
+  // High energy but serious → cinematic drama
+  if (energy >= 7 && humor <= 4) return 'cinematic';
+
+  // Default — cinematic works universally as a safe choice
+  return 'cinematic';
+}
+
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) {
-    return error;
-  }
+  if (error) return error;
 
   const { id } = await params;
 
@@ -43,41 +96,66 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const imageUrls = (item.graphicUrls as string[]) || [];
 
-    // Fetch brand profile
+    // Fetch full brand profile — every field that influences visual generation
     const [profile] = await db
       .select({
-        brandName:      brandProfileSchema.brandName,
-        primaryColor:   brandProfileSchema.primaryColor,
-        secondaryColor: brandProfileSchema.secondaryColor,
-        logoUrl:        brandProfileSchema.logoUrl,
-        industry:       brandProfileSchema.industry,
+        brandName:         brandProfileSchema.brandName,
+        primaryColor:      brandProfileSchema.primaryColor,
+        secondaryColor:    brandProfileSchema.secondaryColor,
+        accentColor:       brandProfileSchema.accentColor,
+        logoUrl:           brandProfileSchema.logoUrl,
+        industry:          brandProfileSchema.industry,
+        imageStyle:        brandProfileSchema.imageStyle,
+        toneFormality:     brandProfileSchema.toneFormality,
+        toneHumor:         brandProfileSchema.toneHumor,
+        toneEnergy:        brandProfileSchema.toneEnergy,
+        communicationStyle: brandProfileSchema.communicationStyle,
+        targetAudience:    brandProfileSchema.targetAudience,
+        growthStage:       brandProfileSchema.growthStage,
       })
       .from(brandProfileSchema)
       .where(eq(brandProfileSchema.orgId, orgId!))
       .limit(1);
 
-    // Parse photoTier and imageStyle from request body (dashboard sends these)
-    let requestBody: { photoTier?: string; imageStyle?: string } = {};
+    // Parse request body — dashboard can override photoTier
+    let requestBody: { photoTier?: string } = {};
     try { requestBody = await request.json(); } catch { /* no body */ }
 
+    // Derive the visual style preset from brand personality
+    const stylePreset = deriveStylePreset({
+      imageStyle:    profile?.imageStyle,
+      toneFormality: profile?.toneFormality,
+      toneHumor:     profile?.toneHumor,
+      toneEnergy:    profile?.toneEnergy,
+      contentMode:   item.contentMode,
+    });
+
     const payload = {
-      images: imageUrls,
-      caption: item.caption,
+      // Content
+      images:      imageUrls,
+      caption:     item.caption,
+      topic:       item.topic     || undefined,
+      contentMode: item.contentMode || 'normal',
+
+      // Brand identity — visual rendering
       brandPrimary:   profile?.primaryColor   || '#864FFE',
       brandSecondary: profile?.secondaryColor || '#1A1A1C',
+      brandAccent:    profile?.accentColor    || undefined,
       brandName:      profile?.brandName      || 'NativPost',
       logoUrl:        profile?.logoUrl        || undefined,
+
+      // Brand personality — drives photo selection
+      industry:       profile?.industry       || undefined,
+      imageStyle:     stylePreset,
+
+      // Photo tier
       photoTier: requestBody.photoTier || (imageUrls.length === 0 ? 'unsplash' : 'none'),
-      industry:  profile?.industry || undefined,
-      // Pass imageStyle as stylePreset so FLUX uses correct visual style (cinematic, professional, etc.)
-      ...(requestBody.imageStyle ? { imageStyle: requestBody.imageStyle } : {}),
     };
 
+    console.log('[Video] Brand context → industry:', payload.industry, '| style:', payload.imageStyle, '| mode:', payload.contentMode);
     console.log('[Video] Calling renderer at:', `${VIDEO_RENDERER_URL}/render`);
     console.log('[Video] Payload images count:', imageUrls.length);
-    console.log('[Video] Logo URL set:', !!payload.logoUrl);
 
-    // 180s timeout — generous for large slideshows
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180_000);
 
@@ -131,10 +209,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     };
 
     console.log('[Video] Render success:', renderData.vertical, renderData.square);
-    console.log(`[Video] Render time: ${renderData.renderSeconds}s | Images: ${renderData.imageCount}`);
+    console.log(`[Video] Render time: ${renderData.renderSeconds}s | Images: ${renderData.imageCount} | Tier: ${renderData.photoTier}`);
 
     const vertical = renderData.vertical;
-    const square = renderData.square;
+    const square   = renderData.square;
 
     if (!vertical || !square) {
       console.error('[Video] Renderer returned undefined URLs:', renderData);
@@ -152,12 +230,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         graphicUrls: videoUrls,
         platformSpecific: {
           ...(item.platformSpecific as object),
-          sourceImages: imageUrls,
+          sourceImages:        imageUrls,
           videoDurationSeconds: renderData.durationSeconds ?? 0,
-          photoTier: renderData.photoTier ?? 'none',
-          unsplashCredits: renderData.credits ?? [],
-          // Mark as generated so hasGeneratedVideo stays true even with empty sourceImages
-          videoGenerated: true,
+          photoTier:           renderData.photoTier ?? 'none',
+          unsplashCredits:     renderData.credits ?? [],
+          videoGenerated:      true,
+          // Store what style was used — useful for regeneration consistency
+          stylePresetUsed:     stylePreset,
         },
         updatedAt: new Date(),
       })
@@ -168,10 +247,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       vertical,
       square,
       durationSeconds: renderData.durationSeconds ?? 0,
-      imageCount: renderData.imageCount ?? imageUrls.length,
-      renderSeconds: renderData.renderSeconds ?? 0,
-      photoTier: renderData.photoTier ?? 'none',
-      credits: renderData.credits ?? [],
+      imageCount:      renderData.imageCount ?? imageUrls.length,
+      renderSeconds:   renderData.renderSeconds ?? 0,
+      photoTier:       renderData.photoTier ?? 'none',
+      credits:         renderData.credits ?? [],
     });
   } catch (err) {
     console.error('[Video] generate-video failed:', err);
