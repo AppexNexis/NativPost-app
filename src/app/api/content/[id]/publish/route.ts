@@ -80,9 +80,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         continue;
       }
 
-      // Get platform-specific caption or fall back to main caption
-      const platformCaptions = (item.platformSpecific as Record<string, string>) || {};
-      const caption = platformCaptions[platform] || item.caption;
+      // Get platform-specific caption or fall back to main caption.
+      // IMPORTANT: platformSpecific[platform] must be a STRING — not an object.
+      // The 'youtube' key stores { title, thumbnailUrl } which is an object,
+      // not a caption. Guard with typeof to prevent "t.split is not a function".
+      const platformSpecificData = (item.platformSpecific as Record<string, unknown>) || {};
+      const platformCaption = platformSpecificData[platform];
+      const caption = (typeof platformCaption === 'string' && platformCaption.trim())
+        ? platformCaption
+        : item.caption;
 
       // Get all graphic URLs — supports text (empty), single image, carousel, and video
       const graphicUrls = (item.graphicUrls as string[]) || [];
@@ -105,8 +111,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             .where(eq(socialAccountSchema.id, account.id));
         },
         item.contentType, // ← tells dispatcher whether this is a reel/video post
-        (account as any).oauthToken || undefined,        // ← add
-        (account as any).oauthTokenSecret || undefined,  // ← add
+        (account as any).oauthToken || undefined,
+        (account as any).oauthTokenSecret || undefined,
+        platformSpecificData, // ← YouTube title + thumbnail extracted inside publishToplatform
 
       );
 
