@@ -485,6 +485,36 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     }
   };
 
+  const deleteVideo = async () => {
+    if (!item) return;
+    setActionLoading('delete-video');
+    try {
+      // Clear graphicUrls and reset video-related platformSpecific flags
+      const existingPs = (item.platformSpecific as Record<string, unknown>) || {};
+      const res = await fetch(`/api/content/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          graphicUrls: [],
+          platformSpecific: {
+            ...existingPs,
+            videoGenerated: false,
+            photoTier: 'none',
+            sourceImages: [],
+            videoDurationSeconds: 0,
+            unsplashCredits: [],
+          },
+        }),
+      });
+      if (res.ok) {
+        const updated = await res.json() as { item: ContentItem };
+        setItem(updated.item);
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const generateVideo = async () => {
     if (!item) return;
     setIsGeneratingVideo(true);
@@ -494,17 +524,18 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // Re-derive here to avoid using uploadedSlideImages before its definition.
-          photoTier: videoPhotoTier === 'flux'
-            ? 'flux'
-            : (item.graphicUrls || []).length === 0 ? 'unsplash' : 'none',
+          // Always force a fresh photo fetch on generate/regenerate.
+          // When regenerating an existing video, graphicUrls contains the
+          // old video files — not source photos — so we must not use them
+          // as the photo source. Always request new photos from the selected tier.
+          photoTier: videoPhotoTier === 'flux' ? 'flux' : 'unsplash',
         }),
       });
-      const data = await res.json();
+      const data = await res.json() as { success?: boolean; vertical?: string; square?: string; error?: string };
       if (res.ok && data.success && data.vertical && data.square) {
         const refreshRes = await fetch(`/api/content/${item.id}`);
         if (refreshRes.ok) {
-          const refreshData = await refreshRes.json();
+          const refreshData = await refreshRes.json() as { item: ContentItem };
           if (refreshData?.item?.id) setItem(refreshData.item);
         }
       } else {
@@ -1695,6 +1726,15 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     >
                       {isGeneratingTextMotion ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
                       Try text motion
+                    </button>
+                    <button
+                      type="button"
+                      onClick={deleteVideo}
+                      disabled={actionLoading === 'delete-video' || isGeneratingVideo || isGeneratingTextMotion}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-500 hover:bg-red-50 disabled:opacity-60"
+                    >
+                      {actionLoading === 'delete-video' ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
+                      Delete video
                     </button>
                   </div>
                   {videoGenError && <p className="mt-1 text-xs text-red-500">{videoGenError}</p>}

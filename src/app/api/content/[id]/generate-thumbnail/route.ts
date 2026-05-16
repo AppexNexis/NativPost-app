@@ -76,12 +76,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const style = (body.style as string) || 'brand';
     const eyebrow = (body.eyebrow as string) || undefined;
 
-    // Call image engine — announcement-card works well as a thumbnail
-    // YouTube thumbnail standard: 1280×720 (16:9). We use landscape format.
+    // Call image engine — announcement-card as a thumbnail
+    // The image engine only supports 'square' (1:1) and 'vertical' (9:16).
+    // We use square — it crops cleanly to YouTube's 16:9 thumbnail requirement
+    // and renders at full quality. The user can also upload their own 16:9 image.
     const payload = {
       template: 'announcement-card',
       style,
-      formats: ['landscape'],        // 16:9 — YouTube thumbnail aspect ratio
+      formats: ['square'],
       brandName:      profile?.brandName      || 'Brand',
       brandPrimary:   profile?.primaryColor   || '#864FFE',
       brandSecondary: profile?.secondaryColor || '#0D0D0D',
@@ -119,11 +121,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Thumbnail generation failed.', detail }, { status: 502 });
     }
 
-    const engineData = await engineRes.json() as { landscape?: string; square?: string; vertical?: string };
+    const engineData = await engineRes.json() as { square?: string; vertical?: string };
 
-    // The image engine returns whichever formats were requested.
-    // We asked for landscape (16:9) — that's the thumbnail URL.
-    const thumbnailUrl = engineData.landscape || engineData.square || engineData.vertical;
+    // We requested 'square' — use it as the thumbnail
+    const thumbnailUrl = engineData.square || engineData.vertical;
 
     if (!thumbnailUrl) {
       return NextResponse.json({ error: 'Image engine returned no URL.' }, { status: 502 });
