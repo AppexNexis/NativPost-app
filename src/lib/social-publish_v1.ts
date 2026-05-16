@@ -823,12 +823,14 @@ export async function publishToYouTube(
   videoUrl?: string,
   refreshToken?: string,
   onTokenRefresh?: (newAccessToken: string, newRefreshToken: string) => Promise<void>,
+  title?: string,
+  thumbnailUrl?: string,
 ): Promise<PublishResult> {
   if (!videoUrl) {
     return { success: false, error: 'YouTube requires a video. Create a video post first.' };
   }
 
-  const result = await _uploadToYouTube(accessToken, caption, videoUrl);
+  const result = await _uploadToYouTube(accessToken, caption, videoUrl, title, thumbnailUrl);
 
   // Auth error — refresh token and retry once
   if (!result.success && result.error?.includes('authentication') && refreshToken) {
@@ -847,7 +849,7 @@ export async function publishToYouTube(
     }
 
     console.log('[YouTube] Token refreshed, retrying upload...');
-    return _uploadToYouTube(refreshed.accessToken, caption, videoUrl);
+    return _uploadToYouTube(refreshed.accessToken, caption, videoUrl, title, thumbnailUrl);
   }
 
   return result;
@@ -857,6 +859,8 @@ async function _uploadToYouTube(
   accessToken: string,
   caption: string,
   videoUrl: string,
+  title?: string,
+  thumbnailUrl?: string,
 ): Promise<PublishResult> {
   try {
     // Resolve playable URL — bare Uploadcare CDN URLs need /video.mp4 appended
@@ -886,7 +890,8 @@ async function _uploadToYouTube(
         },
         body: JSON.stringify({
           snippet: {
-            title: caption.slice(0, 100),
+            // Use the explicit title if set by the user; fall back to first line of caption
+            title: (title ?? caption.split('\n')[0] ?? caption).slice(0, 100),
             description: caption,
             categoryId: '22', // People & Blogs
           },
@@ -959,8 +964,53 @@ async function _uploadToYouTube(
 
     const uploadData = await uploadRes.json() as { id?: string };
     if (uploadData.id) {
-      console.log(`[YouTube] Uploaded: https://www.youtube.com/watch?v=${uploadData.id}`);
-      return { success: true, platformPostId: uploadData.id };
+      const videoId = uploadData.id;
+      console.log(`[YouTube] Uploaded: https://www.youtube.com/watch?v=${videoId}`);
+
+      // Upload thumbnail if provided — fire-and-forget, never blocks the publish result
+      if (thumbnailUrl) {
+        const uploadThumbnail = async (attempt: number): Promise<void> => {
+          try {
+            const thumbRes = await fetch(thumbnailUrl);
+            if (!thumbRes.ok) {
+              console.warn(`[YouTube] Could not fetch thumbnail (${thumbRes.status})`);
+              return;
+            }
+            const thumbBuffer = await thumbRes.arrayBuffer();
+            const thumbContentType = thumbRes.headers.get('content-type') || 'image/jpeg';
+
+            const setRes = await fetch(
+              `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}&uploadType=media`,
+              {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  'Content-Type': thumbContentType,
+                },
+                body: thumbBuffer,
+              },
+            );
+
+            if (setRes.ok) {
+              console.log(`[YouTube] Thumbnail set for ${videoId}`);
+            } else {
+              const errBody = await setRes.text();
+              // Video may still be processing — retry once after 10s
+              if (attempt === 1 && (setRes.status === 400 || errBody.includes('processing'))) {
+                console.warn('[YouTube] Thumbnail: video still processing — retrying in 10s...');
+                await new Promise(r => setTimeout(r, 10_000));
+                return uploadThumbnail(2);
+              }
+              console.warn(`[YouTube] Thumbnail failed (${setRes.status}):`, errBody);
+            }
+          } catch (thumbErr) {
+            console.warn('[YouTube] Thumbnail error (non-fatal):', thumbErr);
+          }
+        };
+        uploadThumbnail(1).catch(() => null);
+      }
+
+      return { success: true, platformPostId: videoId };
     }
 
     return { success: false, error: 'YouTube upload completed but no video ID was returned.' };
@@ -1241,12 +1291,18 @@ export async function publishToplatform(
   contentType?: string,
   oauthToken?: string,           // ← add
   oauthTokenSecret?: string,     // ← add
+  platformSpecific?: Record<string, unknown>, // ← v5: YouTube title + thumbnail
 ): Promise<PublishResult> {
   // ugc_ad and data_story also produce video content stored in graphicUrls
   const isVideo = contentType === 'reel' || contentType === 'ugc_ad' || contentType === 'data_story';
   const verticalVideo = isVideo ? graphicUrls[0] : undefined;
   const squareVideo = isVideo ? (graphicUrls[1] || graphicUrls[0]) : undefined;
   const imageUrls = isVideo ? [] : graphicUrls;
+
+  // Extract YouTube-specific overrides — set by user via YouTube settings panel
+  const ps = platformSpecific as Record<string, Record<string, string>> | undefined;
+  const youtubeTitle: string | undefined = ps?.youtube?.title || undefined;
+  const youtubeThumbnail: string | undefined = ps?.youtube?.thumbnailUrl || undefined;
 
   switch (platform) {
     case 'facebook':
@@ -1283,6 +1339,8 @@ export async function publishToplatform(
         squareVideo ?? verticalVideo,
         refreshToken,
         onTokenRefresh,
+        youtubeTitle,
+        youtubeThumbnail,
       );
 
     case 'threads':
