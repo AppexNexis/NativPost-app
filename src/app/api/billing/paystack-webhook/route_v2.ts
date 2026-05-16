@@ -7,8 +7,7 @@ import { NextResponse } from 'next/server';
 import { getPlanByPaystackCode, PLAN_CONFIGS } from '@/lib/plans';
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
-import { firePlanUpgradedEmail, fireSubscriptionCancelledEmail } from '@/lib/billing';
-import { sendTrustpilotInvitation } from '@/lib/trustpilot';
+import { firePlanUpgradedEmail, fireSubscriptionCancelledEmail } from '@/lib/billing'; // ← NEW
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY!;
 
@@ -25,6 +24,7 @@ const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY!;
 // - invoice.payment_failed → mark past_due
 //
 // Paystack sends webhooks from IP 52.31.139.75 and 52.49.173.169
+// You can optionally whitelist these in your server/CDN.
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
   const body = await request.text();
@@ -106,12 +106,7 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
   }
 
   const customerCode = (data.customer as Record<string, unknown>)?.customer_code as string | undefined;
-  const customerEmail = (data.customer as Record<string, unknown>)?.email as string | undefined;
-  // Paystack includes first_name/last_name on the customer object
-  const customerFirstName = (data.customer as Record<string, unknown>)?.first_name as string | undefined;
-  const customerLastName = (data.customer as Record<string, unknown>)?.last_name as string | undefined;
-  const customerName = [customerFirstName, customerLastName].filter(Boolean).join(' ') || 'there';
-
+  const customerEmail = (data.customer as Record<string, unknown>)?.email as string | undefined; // ← NEW
   const authorizationCode = (data.authorization as Record<string, unknown>)?.authorization_code as string | undefined;
   const planCode = (data.plan as Record<string, unknown>)?.plan_code as string | undefined;
   const subscriptionCode = (data.subscription as Record<string, unknown>)?.subscription_code as string | undefined
@@ -127,7 +122,8 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
   const resolvedPlanCode = planCode ?? existingOrg?.paystackPlanCode ?? null;
   const plan = resolvedPlanCode ? getPlanByPaystackCode(resolvedPlanCode) : null;
 
-  // This is a setup fee payment — mark paid and start trial
+  // This is a setup fee payment (₦7,500) — mark paid and start trial
+  // Detect by metadata type OR by absence of planCode/subscriptionCode
   const metadataType = metadata?.type as string | undefined;
   const isSetupFee = metadataType === 'setup_fee' || (!planCode && !subscriptionCode);
 
@@ -206,30 +202,26 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
 
   console.log(`[Paystack Webhook] Activated ${planId} for org ${orgId}`);
 
-  // ── Fire plan.upgraded email + Trustpilot review invitation ──
+  // ── NEW: Fire plan.upgraded email ──────────────────────────────────────────
   if (customerEmail) {
     await firePlanUpgradedEmail(customerEmail, planId);
-
-    // Trustpilot invitation — sends 7 days after conversion.
-    // Fire-and-forget, never throws, never blocks billing.
-    sendTrustpilotInvitation({
-      customerEmail,
-      customerName,
-      orgId,
-      plan: planId,
-    }).catch(() => null);
   }
+  // ──────────────────────────────────────────────────────────────────────────
 
   // ── Affonso: create commission on first subscription only ──
+  // Recurring charges from paystack-activate cron use type: 'trial_activation'
+  // and never include affonso_referral in metadata, so they are automatically
+  // skipped — no extra guard needed.
   const affonsoReferral = metadata?.affonso_referral as string | undefined;
   const AFFONSO_API_KEY = process.env.AFFONSO_API_KEY;
 
   if (affonsoReferral && AFFONSO_API_KEY) {
     try {
       const saleAmountKobo = data.amount as number ?? 0;
-      const saleAmount = saleAmountKobo / 100;
-      const commissionAmount = saleAmount * 0.30;
+      const saleAmount = saleAmountKobo / 100; // kobo to NGN
+      const commissionAmount = saleAmount * 0.30; // 30% commission
 
+      // Update referral status to customer
       await fetch(`https://api.affonso.io/v1/referrals/${affonsoReferral}`, {
         method: 'PUT',
         headers: {
@@ -243,6 +235,7 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
         }),
       });
 
+      // Create the commission — one time only
       const commissionRes = await fetch('https://api.affonso.io/v1/commissions', {
         method: 'POST',
         headers: {
@@ -255,8 +248,8 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
           commission_amount: commissionAmount,
           sale_amount_currency: 'NGN',
           commission_currency: 'NGN',
-          payment_intent_id: data.reference as string,
-          is_subscription: false,
+          payment_intent_id: data.reference as string, // prevents duplicate commissions
+          is_subscription: false, // one-time commission, not recurring
           sales_status: 'complete',
         }),
       });
@@ -283,10 +276,12 @@ async function handlePaystackCancelled(data: Record<string, unknown>) {
 
   console.log(`[Paystack Webhook] Subscription cancelled: ${subscriptionCode}`);
 
+  // ── NEW: Fire subscription.cancelled email ─────────────────────────────────
   const customerEmail = (data.customer as Record<string, unknown>)?.email as string | undefined;
   if (customerEmail) {
     await fireSubscriptionCancelledEmail(customerEmail);
   }
+  // ──────────────────────────────────────────────────────────────────────────
 }
 
 async function handlePaystackPaymentFailed(data: Record<string, unknown>) {

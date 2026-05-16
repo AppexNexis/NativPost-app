@@ -8,7 +8,6 @@ import { getPlanByStripePriceId, PLAN_CONFIGS } from '@/lib/plans';
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 import { firePlanUpgradedEmail, fireSubscriptionCancelledEmail } from '@/lib/billing';
-import { sendTrustpilotInvitation } from '@/lib/trustpilot';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
@@ -17,14 +16,13 @@ function getField(obj: object, key: string): unknown {
   return (obj as Record<string, unknown>)[key];
 }
 
-// -----------------------------------------------------------
-// Helpers — resolve user email and name from orgId via Clerk
-// -----------------------------------------------------------
+// Helper — resolve user email from orgId via Supabase
 async function getEmailForOrg(orgId: string): Promise<string | null> {
   try {
     const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY;
     if (!CLERK_SECRET_KEY) return null;
 
+    // Get org members and find the primary admin
     const res = await fetch(
       `https://api.clerk.com/v1/organizations/${orgId}/memberships?limit=10`,
       {
@@ -42,44 +40,6 @@ async function getEmailForOrg(orgId: string): Promise<string | null> {
       m => m.role === 'admin' && m.public_user_data?.identifier !== 'admin@nativpost.com',
     );
     return admin?.public_user_data?.identifier ?? null;
-  } catch {
-    return null;
-  }
-}
-
-async function getNameForOrg(orgId: string): Promise<string | null> {
-  try {
-    const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY;
-    if (!CLERK_SECRET_KEY) return null;
-
-    const res = await fetch(
-      `https://api.clerk.com/v1/organizations/${orgId}/memberships?limit=10`,
-      {
-        headers: new Headers({
-          'Authorization': `Bearer ${CLERK_SECRET_KEY}`,
-          'Content-Type': 'application/json',
-        }),
-      },
-    );
-    if (!res.ok) return null;
-
-    const json = await res.json();
-    const members: Array<{
-      role: string;
-      public_user_data: {
-        identifier: string;
-        first_name?: string;
-        last_name?: string;
-      };
-    }> = json.data ?? json;
-
-    const admin = members.find(
-      m => m.role === 'admin' && m.public_user_data?.identifier !== 'admin@nativpost.com',
-    );
-    if (!admin) return null;
-
-    const { first_name, last_name } = admin.public_user_data;
-    return [first_name, last_name].filter(Boolean).join(' ') || null;
   } catch {
     return null;
   }
@@ -188,22 +148,10 @@ export async function POST(request: NextRequest) {
 
         console.log(`[Stripe Webhook] checkout.session.completed: org=${orgId} plan=${planId}`);
 
-        // ── Fire plan.upgraded email + Trustpilot review invitation ──
+        // ── Fire plan.upgraded email ──
         if (subscriptionStatus === 'active') {
           const email = await getEmailForOrg(orgId);
-          if (email) {
-            await firePlanUpgradedEmail(email, planId);
-
-            // Trustpilot invitation — sends 7 days after conversion.
-            // Fire-and-forget, never throws, never blocks billing.
-            const name = await getNameForOrg(orgId);
-            sendTrustpilotInvitation({
-              customerEmail: email,
-              customerName:  name || 'there',
-              orgId,
-              plan: planId,
-            }).catch(() => null);
-          }
+          if (email) await firePlanUpgradedEmail(email, planId);
         }
 
         break;
@@ -253,23 +201,11 @@ export async function POST(request: NextRequest) {
 
         console.log(`[Stripe Webhook] subscription.updated: org=${orgId} status=${subscription.status}`);
 
-        // ── Fire plan.upgraded + Trustpilot when transitioning to active ──
-        // wasNotActive guard ensures we only fire once on the trial → active
-        // transition, not on every subsequent renewal.
+        // ── Fire plan.upgraded when transitioning to active ──
         const wasNotActive = prevStatus[0]?.planStatus !== 'active';
         if (subscription.status === 'active' && wasNotActive && plan) {
           const email = await getEmailForOrg(orgId);
-          if (email) {
-            await firePlanUpgradedEmail(email, plan.id);
-
-            const name = await getNameForOrg(orgId);
-            sendTrustpilotInvitation({
-              customerEmail: email,
-              customerName:  name || 'there',
-              orgId,
-              plan: plan.id,
-            }).catch(() => null);
-          }
+          if (email) await firePlanUpgradedEmail(email, plan.id);
         }
 
         break;
@@ -297,6 +233,7 @@ export async function POST(request: NextRequest) {
 
         console.log(`[Stripe Webhook] subscription.deleted: org=${orgId}`);
 
+        // ── Fire subscription.cancelled email ──
         const email = await getEmailForOrg(orgId);
         if (email) await fireSubscriptionCancelledEmail(email);
 
@@ -350,6 +287,7 @@ export async function POST(request: NextRequest) {
         const orgId = subscription.metadata?.orgId;
         if (!orgId) break;
 
+        // Fire trial.ending email — this triggers the Day 6 urgency sequence
         const email = await getEmailForOrg(orgId);
         if (email) {
           const { fireEmailEvent } = await import('@/lib/email-webhook');
