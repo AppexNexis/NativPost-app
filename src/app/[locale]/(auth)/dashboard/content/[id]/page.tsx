@@ -2513,7 +2513,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         </div>
 
         {/* ── Sidebar — hidden on mobile, visible lg+ ────────── */}
-        <div className="hidden lg:block self-start">
+        <div className="hidden lg:block">
           <div className="sticky top-6 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 5rem)' }}>
 
           {/* Actions */}
