@@ -83,7 +83,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 };
 
 const TITLE_PLATFORMS = new Set(['youtube', 'pinterest']);
-const PLATFORM_SPECIFIC_SYSTEM_KEYS = ['sourceImages', 'videoDurationSeconds', 'title', 'imageTemplate', 'imageStyle', 'carouselAspectRatio', 'carouselStyle', 'carouselSlideCount', 'photoTier', 'sceneModelUsed', 'promptUsed', 'isFallback', 'ugcHook', 'ugcProblem', 'ugcSolution', 'ugcCta', 'DataStoryFormats', 'Data_story_stats', 'DataStoryStatCount', 'captionOriginal', 'videoGenerated', 'unsplashCredits'];
+const PLATFORM_SPECIFIC_SYSTEM_KEYS = ['sourceImages', 'videoDurationSeconds', 'title', 'imageTemplate', 'imageStyle', 'carouselAspectRatio', 'carouselStyle', 'carouselSlideCount', 'photoTier', 'sceneModelUsed', 'promptUsed', 'isFallback', 'ugcHook', 'ugcProblem', 'ugcSolution', 'ugcCta', 'DataStoryFormats', 'Data_story_stats', 'DataStoryStatCount', 'captionOriginal', 'videoGenerated', 'unsplashCredits', 'stylePresetUsed', 'youtube'];
 const MEDIA_CONTENT_TYPES = ['single_image', 'carousel', 'reel', 'ugc_ad', 'data_story'];
 
 // -----------------------------------------------------------
@@ -2447,7 +2447,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Platform adaptations</h3>
               <div className="space-y-3">
                 {Object.entries(item.platformSpecific)
-                  .filter(([k]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k))
+                  .filter(([k, v]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k) && typeof v === 'string')
                   .map(([platform, text]) => {
                     const isEditingThis = editingAdaptation === platform;
                     const loadingKey = `adaptation-${platform}`;

@@ -1160,7 +1160,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       )}
 
       {/* Add bottom padding on mobile so content isn't hidden behind sticky bar */}
-      <div className={`grid gap-6 lg:grid-cols-3 ${primaryAction ? 'pb-24 lg:pb-0' : ''}`}>
+      <div className={`grid items-start gap-6 lg:grid-cols-3 ${primaryAction ? 'pb-24 lg:pb-0' : ''}`}>
 
         {/* ── Main content ─────────────────────────────────── */}
         <div className="space-y-4 lg:col-span-2">
@@ -2514,7 +2514,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
 
         {/* ── Sidebar — hidden on mobile, visible lg+ ────────── */}
         <div className="hidden lg:block">
-          <div className="sticky top-6 space-y-4" style={{ maxHeight: 'calc(100vh - 6rem)' }}>
+          <div className="sticky top-0 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 56px)' }}>
 
           {/* Actions */}
           <ActionsPanel />
