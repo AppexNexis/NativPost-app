@@ -411,27 +411,25 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     setIsGeneratingYoutubeThumbnail(true);
     setYoutubeThumbnailError(null);
     try {
-      const res = await fetch(`/api/content/${item.id}/generate-image`, {
+      // Use the dedicated thumbnail endpoint — works for any content type,
+      // unlike generate-image which is restricted to single_image posts.
+      const res = await fetch(`/api/content/${item.id}/generate-thumbnail`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          template: 'announcement-card',
-          style: 'brand',
-          formats: ['square'],
-        }),
+        body: JSON.stringify({ style: 'brand' }),
       });
-      const data = await res.json() as { success?: boolean; error?: string };
-      if (res.ok && data.success) {
-        // Reload item to get new graphic URL, use first one as thumbnail
+      const data = await res.json() as { success?: boolean; thumbnailUrl?: string; error?: string };
+      if (res.ok && data.success && data.thumbnailUrl) {
+        // The route already saves thumbnailUrl to platformSpecific.youtube.thumbnailUrl
+        setYoutubeThumbnailUrl(data.thumbnailUrl);
+        // Reload item so the saved state is reflected
         const refreshRes = await fetch(`/api/content/${item.id}`);
         if (refreshRes.ok) {
           const refreshData = await refreshRes.json() as { item: ContentItem };
-          const newUrl = refreshData.item.graphicUrls?.[0];
-          if (newUrl) setYoutubeThumbnailUrl(newUrl);
           setItem(refreshData.item);
         }
       } else {
-        setYoutubeThumbnailError(data.error || 'Thumbnail generation failed.');
+        setYoutubeThumbnailError(data.error || 'Thumbnail generation failed. Please try again.');
       }
     } catch {
       setYoutubeThumbnailError('Network error. Please try again.');

@@ -204,6 +204,19 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [editingAdaptation, setEditingAdaptation] = useState<string | null>(null);
   const [editAdaptationText, setEditAdaptationText] = useState('');
 
+  // AI Edit state
+  const [isAiEditing, setIsAiEditing] = useState(false);
+  const [aiInstruction, setAiInstruction] = useState('');
+  const [aiEditLoading, setAiEditLoading] = useState(false);
+  const [aiSuggestedCaption, setAiSuggestedCaption] = useState<string | null>(null);
+  const [aiEditError, setAiEditError] = useState<string | null>(null);
+
+  // YouTube thumbnail state
+  const [youtubeThumbnailUrl, setYoutubeThumbnailUrl] = useState<string | null>(null);
+  const [isGeneratingYoutubeThumbnail, setIsGeneratingYoutubeThumbnail] = useState(false);
+  const [youtubeThumbnailError, setYoutubeThumbnailError] = useState<string | null>(null);
+  const [isSavingYoutubeSettings, setIsSavingYoutubeSettings] = useState(false);
+
   useEffect(() => {
     async function load() {
       const { id } = await params;
@@ -214,6 +227,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           setItem(data.item);
           setEditCaption(data.item.caption);
           setEditTitle((data.item.platformSpecific?.title as string) || '');
+          // Load YouTube thumbnail URL if previously saved
+          const yts = (data.item.platformSpecific as Record<string, Record<string, string>>)?.youtube;
+          if (yts?.thumbnailUrl) setYoutubeThumbnailUrl(yts.thumbnailUrl);
           if (data.item.scheduledFor) {
             const d = new Date(data.item.scheduledFor);
             setScheduleDate(d.toISOString().split('T')[0] ?? '');
@@ -311,6 +327,116 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       }
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const handleAiEdit = async () => {
+    if (!item || !aiInstruction.trim()) return;
+    setAiEditLoading(true);
+    setAiEditError(null);
+    setAiSuggestedCaption(null);
+    try {
+      const res = await fetch(`/api/content/${item.id}/edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instruction: aiInstruction.trim(),
+          platform: (item.targetPlatforms as string[])?.[0] || 'instagram',
+        }),
+      });
+      const data = await res.json() as { revisedCaption?: string; error?: string };
+      if (res.ok && data.revisedCaption) {
+        setAiSuggestedCaption(data.revisedCaption);
+      } else {
+        setAiEditError(data.error || 'Edit failed. Please try again.');
+      }
+    } catch {
+      setAiEditError('Network error. Please try again.');
+    } finally {
+      setAiEditLoading(false);
+    }
+  };
+
+  const handleAcceptAiEdit = async () => {
+    if (!item || !aiSuggestedCaption) return;
+    setActionLoading('save');
+    try {
+      const res = await fetch(`/api/content/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caption: aiSuggestedCaption }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setItem(updated.item);
+        setEditCaption(updated.item.caption);
+        setAiSuggestedCaption(null);
+        setAiInstruction('');
+        setIsAiEditing(false);
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const saveYoutubeSettings = async () => {
+    if (!item) return;
+    setIsSavingYoutubeSettings(true);
+    try {
+      const existingPs = (item.platformSpecific as Record<string, unknown>) || {};
+      const existingYt = (existingPs.youtube as Record<string, string>) || {};
+      const res = await fetch(`/api/content/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platformSpecific: {
+            ...existingPs,
+            youtube: {
+              ...existingYt,
+              ...(youtubeThumbnailUrl ? { thumbnailUrl: youtubeThumbnailUrl } : {}),
+            },
+          },
+        }),
+      });
+      if (res.ok) {
+        setItem((await res.json()).item);
+      }
+    } finally {
+      setIsSavingYoutubeSettings(false);
+    }
+  };
+
+  const generateYoutubeThumbnail = async () => {
+    if (!item) return;
+    setIsGeneratingYoutubeThumbnail(true);
+    setYoutubeThumbnailError(null);
+    try {
+      const res = await fetch(`/api/content/${item.id}/generate-image`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          template: 'announcement-card',
+          style: 'brand',
+          formats: ['square'],
+        }),
+      });
+      const data = await res.json() as { success?: boolean; error?: string };
+      if (res.ok && data.success) {
+        // Reload item to get new graphic URL, use first one as thumbnail
+        const refreshRes = await fetch(`/api/content/${item.id}`);
+        if (refreshRes.ok) {
+          const refreshData = await refreshRes.json() as { item: ContentItem };
+          const newUrl = refreshData.item.graphicUrls?.[0];
+          if (newUrl) setYoutubeThumbnailUrl(newUrl);
+          setItem(refreshData.item);
+        }
+      } else {
+        setYoutubeThumbnailError(data.error || 'Thumbnail generation failed.');
+      }
+    } catch {
+      setYoutubeThumbnailError('Network error. Please try again.');
+    } finally {
+      setIsGeneratingYoutubeThumbnail(false);
     }
   };
 
@@ -709,6 +835,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const platformsWithTitle = (item.targetPlatforms || []).filter(p => TITLE_PLATFORMS.has(p));
   const showTitleField = platformsWithTitle.length > 0;
   const currentTitle = (item.platformSpecific?.title as string) || '';
+  const isYoutubeTarget = (item.targetPlatforms as string[] || []).includes('youtube');
 
   type EnrichmentShape = {
     cta_url?: string;
@@ -1023,7 +1150,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 )}
               </div>
               <div className="flex items-center gap-2">
-                {!isEditing && (
+                {!isEditing && !isAiEditing && (
                   <button
                     type="button"
                     onClick={() => setIsEditing(true)}
@@ -1031,6 +1158,16 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   >
                     <Edit3 className="size-3" />
                     Edit
+                  </button>
+                )}
+                {!isEditing && !isAiEditing && (
+                  <button
+                    type="button"
+                    onClick={() => { setIsAiEditing(true); setAiSuggestedCaption(null); setAiEditError(null); }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+                  >
+                    <Sparkles className="size-3" />
+                    Refine with AI
                   </button>
                 )}
                 <button
@@ -1077,6 +1214,65 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               </div>
             ) : (
               <p className="whitespace-pre-wrap text-sm leading-relaxed">{item.caption}</p>
+            )}
+
+            {/* AI Edit panel — shown when "Refine with AI" is active */}
+            {isAiEditing && !isEditing && (
+              <div className="mt-4 space-y-3 rounded-lg border bg-muted/30 p-4">
+                <p className="text-xs font-medium">Describe how to change this content</p>
+                <textarea
+                  value={aiInstruction}
+                  onChange={e => setAiInstruction(e.target.value)}
+                  placeholder="Make this shorter. Change the tone to casual. Add a stronger call to action at the end..."
+                  className="w-full resize-none rounded-lg border bg-background px-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  rows={2}
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAiEdit}
+                    disabled={aiEditLoading || !aiInstruction.trim()}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                  >
+                    {aiEditLoading ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
+                    {aiEditLoading ? 'Rewriting...' : 'Apply'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setIsAiEditing(false); setAiInstruction(''); setAiSuggestedCaption(null); setAiEditError(null); }}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                {aiEditError && <p className="text-xs text-red-500">{aiEditError}</p>}
+
+                {/* Suggested revision */}
+                {aiSuggestedCaption && (
+                  <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
+                    <p className="text-xs font-medium text-primary">Suggested revision</p>
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{aiSuggestedCaption}</p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleAcceptAiEdit}
+                        disabled={actionLoading === 'save'}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                      >
+                        {actionLoading === 'save' ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+                        Accept and save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAiSuggestedCaption(null)}
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        Discard
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {item.hashtags.length > 0 && (
@@ -1160,6 +1356,87 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   )}
                 </p>
               )}
+            </div>
+          )}
+
+          {/* YouTube settings — thumbnail upload/generation */}
+          {isYoutubeTarget && (
+            <div className="rounded-xl border bg-card p-4 sm:p-5">
+              <div className="mb-4 flex items-center gap-2 border-b pb-4">
+                {/* Use existing YoutubeIcon via platform labels — simple SVG inline */}
+                <svg className="size-4 text-muted-foreground" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.546 12 3.546 12 3.546s-7.505 0-9.377.504A3.015 3.015 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.504 9.376.504 9.376.504s7.505 0 9.377-.504a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                </svg>
+                <h3 className="text-sm font-semibold">YouTube settings</h3>
+                <p className="ml-auto text-xs text-muted-foreground">Title and thumbnail</p>
+              </div>
+
+              {/* Thumbnail */}
+              <div className="space-y-3">
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Video thumbnail</p>
+                  {youtubeThumbnailUrl ? (
+                    <div className="relative overflow-hidden rounded-lg border">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={youtubeThumbnailUrl}
+                        alt="YouTube thumbnail"
+                        className="w-full object-cover"
+                        style={{ maxHeight: 180, aspectRatio: '16/9', objectFit: 'cover' }}
+                      />
+                      <div className="flex gap-2 border-t p-2">
+                        <button
+                          type="button"
+                          onClick={() => setYoutubeThumbnailUrl(null)}
+                          className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium text-red-500 hover:bg-red-50"
+                        >
+                          <X className="size-3" />
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={generateYoutubeThumbnail}
+                        disabled={isGeneratingYoutubeThumbnail}
+                        className="flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-60"
+                      >
+                        {isGeneratingYoutubeThumbnail
+                          ? <><Loader2 className="size-4 animate-spin" />Generating...</>
+                          : <><Sparkles className="size-4" />Generate thumbnail with AI</>}
+                      </button>
+                      <p className="text-center text-[11px] text-muted-foreground">
+                        Or upload a custom thumbnail (1280×720px recommended)
+                      </p>
+                      <MediaUploader
+                        contentItemId={item.id}
+                        existingUrls={[]}
+                        onUpdate={(urls) => {
+                          if (urls[0]) setYoutubeThumbnailUrl(urls[0]);
+                        }}
+                        mediaType="image"
+                        maxFiles={1}
+                      />
+                    </div>
+                  )}
+                  {youtubeThumbnailError && <p className="mt-1 text-xs text-red-500">{youtubeThumbnailError}</p>}
+                </div>
+
+                {youtubeThumbnailUrl && (
+                  <button
+                    type="button"
+                    onClick={saveYoutubeSettings}
+                    disabled={isSavingYoutubeSettings}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                  >
+                    {isSavingYoutubeSettings
+                      ? <><Loader2 className="size-4 animate-spin" />Saving...</>
+                      : <><Check className="size-4" />Save YouTube settings</>}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
