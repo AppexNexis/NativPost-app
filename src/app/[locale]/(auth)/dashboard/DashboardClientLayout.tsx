@@ -307,7 +307,7 @@ export default function DashboardClientLayout({
         </header>
 
         {/* Page content — only this area scrolls */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 lg:p-6">
           {children}
         </div>
       </main>
