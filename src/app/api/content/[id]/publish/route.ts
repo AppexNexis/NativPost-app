@@ -29,6 +29,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
   const { id } = await params;
 
+  // Parse optional body — TikTok publish modal sends user-confirmed settings
+  let requestBody: { tiktokSettings?: Record<string, unknown> } = {};
+  try { requestBody = await request.json(); } catch { /* no body is fine */ }
+
   try {
     // 1. Fetch the content item
     const [item] = await db
@@ -90,6 +94,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         ? platformCaption
         : item.caption;
 
+      // For TikTok: merge user-confirmed settings from the publish modal
+      // into platformSpecificData so publishToplatform can read them
+      const mergedPlatformData = platform === 'tiktok' && requestBody.tiktokSettings
+        ? { ...platformSpecificData, tiktok: requestBody.tiktokSettings }
+        : platformSpecificData;
+
       // Get all graphic URLs — supports text (empty), single image, carousel, and video
       const graphicUrls = (item.graphicUrls as string[]) || [];
 
@@ -113,7 +123,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         item.contentType, // ← tells dispatcher whether this is a reel/video post
         (account as any).oauthToken || undefined,
         (account as any).oauthTokenSecret || undefined,
-        platformSpecificData, // ← YouTube title + thumbnail extracted inside publishToplatform
+        mergedPlatformData, // ← YouTube title/thumbnail + TikTok user settings
 
       );
 

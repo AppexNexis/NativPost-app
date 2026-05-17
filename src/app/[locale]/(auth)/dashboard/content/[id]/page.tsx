@@ -24,6 +24,7 @@ import { useEffect, useState } from 'react';
 
 import { MediaUploader } from '@/components/media/MediaUploader';
 import { PageHeader } from '@/features/dashboard/PageHeader';
+import { TikTokPublishModal } from '@/components/tiktok/TikTokPublishModal';
 
 // -----------------------------------------------------------
 // TYPES
@@ -210,6 +211,10 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [aiEditLoading, setAiEditLoading] = useState(false);
   const [aiSuggestedCaption, setAiSuggestedCaption] = useState<string | null>(null);
   const [aiEditError, setAiEditError] = useState<string | null>(null);
+
+  // TikTok publish modal
+  const [showTikTokModal, setShowTikTokModal] = useState(false);
+  const [isTikTokPublishing, setIsTikTokPublishing] = useState(false);
 
   // YouTube thumbnail state
   const [youtubeThumbnailUrl, setYoutubeThumbnailUrl] = useState<string | null>(null);
@@ -447,8 +452,13 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     setTimeout(() => setCopyDone(false), 1500);
   };
 
+  const hasTikTok = (item?.targetPlatforms as string[] || []).includes('tiktok');
+
   const publishNow = async () => {
-    if (!item) {
+    if (!item) return;
+    // If TikTok is a target platform, show the TikTok compliance modal first
+    if (hasTikTok) {
+      setShowTikTokModal(true);
       return;
     }
     setActionLoading('publish');
@@ -461,6 +471,33 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         }
       }
     } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleTikTokPublish = async (tiktokSettings: {
+    title: string; privacyLevel: string; allowComment: boolean;
+    allowDuet: boolean; allowStitch: boolean;
+    brandOrganicToggle: boolean; brandContentToggle: boolean;
+  }) => {
+    if (!item) return;
+    setIsTikTokPublishing(true);
+    setActionLoading('publish');
+    try {
+      const res = await fetch(`/api/content/${item.id}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tiktokSettings }),
+      });
+      if (res.ok) {
+        setShowTikTokModal(false);
+        const refreshRes = await fetch(`/api/content/${item.id}`);
+        if (refreshRes.ok) {
+          setItem((await refreshRes.json()).item);
+        }
+      }
+    } finally {
+      setIsTikTokPublishing(false);
       setActionLoading(null);
     }
   };
@@ -1048,6 +1085,17 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
 
   return (
     <>
+      {/* TikTok compliance publish modal — required by TikTok Direct Post API guidelines */}
+      <TikTokPublishModal
+        open={showTikTokModal}
+        onClose={() => setShowTikTokModal(false)}
+        onConfirm={handleTikTokPublish}
+        caption={item.caption}
+        videoUrl={item.graphicUrls?.[0]}
+        videoDurationSec={(item.platformSpecific?.videoDurationSeconds as number) || 0}
+        loading={isTikTokPublishing}
+      />
+
       <PageHeader
         title="Content detail"
         actions={(

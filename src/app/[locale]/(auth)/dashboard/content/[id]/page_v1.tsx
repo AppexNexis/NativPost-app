@@ -2514,7 +2514,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
 
         {/* ── Sidebar — hidden on mobile, visible lg+ ────────── */}
         <div className="hidden lg:block">
-          <div className="sticky top-6 space-y-4" style={{ maxHeight: 'calc(100vh - 6rem)' }}>
+          <div className="sticky top-6 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 5rem)' }}>
 
           {/* Actions */}
           <ActionsPanel />

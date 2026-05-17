@@ -995,11 +995,12 @@ async function _uploadToYouTube(
               console.log(`[YouTube] Thumbnail set for ${videoId}`);
             } else {
               const errBody = await setRes.text();
-              // Video may still be processing — retry once after 10s
-              if (attempt === 1 && (setRes.status === 400 || errBody.includes('processing'))) {
-                console.warn('[YouTube] Thumbnail: video still processing — retrying in 10s...');
-                await new Promise(r => setTimeout(r, 10_000));
-                return uploadThumbnail(2);
+              // Video may still be processing — retry with increasing delays
+              if (attempt <= 3 && (setRes.status === 400 || setRes.status === 503 || errBody.includes('processing') || errBody.includes('not yet'))) {
+                const delayMs = attempt * 15_000; // 15s, 30s, 45s
+                console.warn(`[YouTube] Thumbnail attempt ${attempt} failed (video processing) — retrying in ${delayMs / 1000}s...`);
+                await new Promise(r => setTimeout(r, delayMs));
+                return uploadThumbnail(attempt + 1);
               }
               console.warn(`[YouTube] Thumbnail failed (${setRes.status}):`, errBody);
             }
@@ -1299,10 +1300,17 @@ export async function publishToplatform(
   const squareVideo = isVideo ? (graphicUrls[1] || graphicUrls[0]) : undefined;
   const imageUrls = isVideo ? [] : graphicUrls;
 
-  // Extract YouTube-specific overrides — set by user via YouTube settings panel
-  const ps = platformSpecific as Record<string, Record<string, string>> | undefined;
-  const youtubeTitle: string | undefined = ps?.youtube?.title || undefined;
-  const youtubeThumbnail: string | undefined = ps?.youtube?.thumbnailUrl || undefined;
+  // Extract YouTube-specific overrides — set by user via YouTube settings panel.
+  // The title is stored at platformSpecific.title (root) by the saveTitle function,
+  // and at platformSpecific.youtube.title by the saveYoutubeSettings function.
+  // Check both — nested takes priority if present.
+  const ps = platformSpecific as Record<string, unknown> | undefined;
+  const youtubeObj = ps?.youtube as Record<string, string> | undefined;
+  const youtubeTitle: string | undefined =
+    youtubeObj?.title
+    || (typeof ps?.title === 'string' ? ps.title : undefined)
+    || undefined;
+  const youtubeThumbnail: string | undefined = youtubeObj?.thumbnailUrl || undefined;
 
   switch (platform) {
     case 'facebook':

@@ -650,6 +650,16 @@ export async function publishToTikTok(
   videoUrl?: string,
   refreshToken?: string,
   onTokenRefresh?: (newAccessToken: string, newRefreshToken: string) => Promise<void>,
+  // User-confirmed settings from the TikTok publish modal
+  tiktokSettings?: {
+    title?: string;
+    privacyLevel?: string;
+    allowComment?: boolean;
+    allowDuet?: boolean;
+    allowStitch?: boolean;
+    brandOrganicToggle?: boolean;
+    brandContentToggle?: boolean;
+  },
 ): Promise<PublishResult> {
   if (!videoUrl) {
     return { success: false, error: 'TikTok requires a video. Create a video post first.' };
@@ -712,11 +722,12 @@ export async function publishToTikTok(
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nativpost.com';
     const tiktokVideoUrl = `${appUrl}/api/media/proxy?url=${encodeURIComponent(playableUrl)}`;
 
-    // Step 4: Pick privacy level — unaudited apps are restricted to SELF_ONLY.
-    // After audit approval, PUBLIC_TO_EVERYONE will appear in privacy_level_options.
-    const privacyLevel = creatorInfo.privacyLevelOptions.includes('SELF_ONLY')
-      ? 'SELF_ONLY'
-      : (creatorInfo.privacyLevelOptions[0] ?? 'SELF_ONLY');
+    // Step 4: Resolve privacy level — use user selection from modal if provided,
+    // otherwise fall back to SELF_ONLY (unaudited apps only get SELF_ONLY anyway).
+    const privacyLevel = tiktokSettings?.privacyLevel
+      || (creatorInfo.privacyLevelOptions.includes('SELF_ONLY')
+        ? 'SELF_ONLY'
+        : (creatorInfo.privacyLevelOptions[0] ?? 'SELF_ONLY'));
 
     // Step 5: Initiate the Direct Post upload.
     // All fields below are required by TikTok's integration guidelines.
@@ -728,16 +739,16 @@ export async function publishToTikTok(
       },
       body: JSON.stringify({
         post_info: {
-          title: caption.slice(0, 2200),
-          privacy_level: privacyLevel,
-          disable_comment: creatorInfo.commentDisabled,
-          disable_duet: creatorInfo.duetDisabled,
-          disable_stitch: creatorInfo.stitchDisabled,
-          brand_content_toggle: false,
-          brand_organic_toggle: false,
+          title:                (tiktokSettings?.title || caption).slice(0, 2200),
+          privacy_level:        privacyLevel,
+          disable_comment:      tiktokSettings?.allowComment === true ? false : creatorInfo.commentDisabled,
+          disable_duet:         tiktokSettings?.allowDuet    === true ? false : creatorInfo.duetDisabled,
+          disable_stitch:       tiktokSettings?.allowStitch  === true ? false : creatorInfo.stitchDisabled,
+          brand_organic_toggle: tiktokSettings?.brandOrganicToggle ?? false,
+          brand_content_toggle: tiktokSettings?.brandContentToggle ?? false,
         },
         source_info: {
-          source: 'PULL_FROM_URL',
+          source:    'PULL_FROM_URL',
           video_url: tiktokVideoUrl,
         },
       }),
@@ -1337,8 +1348,25 @@ export async function publishToplatform(
         oauthTokenSecret,   // ← new
       );
 
-    case 'tiktok':
-      return publishToTikTok(accessToken, caption, verticalVideo, refreshToken, onTokenRefresh);
+    case 'tiktok': {
+      const tiktokSettings = ps?.tiktok as {
+        title?: string;
+        privacyLevel?: string;
+        allowComment?: boolean;
+        allowDuet?: boolean;
+        allowStitch?: boolean;
+        brandOrganicToggle?: boolean;
+        brandContentToggle?: boolean;
+      } | undefined;
+      return publishToTikTok(
+        accessToken,
+        caption,
+        squareVideo ?? verticalVideo,
+        refreshToken,
+        onTokenRefresh,
+        tiktokSettings,
+      );
+    }
 
     case 'youtube':
       return publishToYouTube(
