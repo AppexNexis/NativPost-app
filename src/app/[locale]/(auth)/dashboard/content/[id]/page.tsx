@@ -1090,6 +1090,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         open={showTikTokModal}
         onClose={() => setShowTikTokModal(false)}
         onConfirm={handleTikTokPublish}
+        contentId={item.id}
         caption={item.caption}
         videoUrl={item.graphicUrls?.[0]}
         videoDurationSec={(item.platformSpecific?.videoDurationSeconds as number) || 0}
