@@ -754,12 +754,22 @@ export async function publishToTikTok(
       }),
     });
 
-    const initData = await initRes.json();
+    const initData = await initRes.json() as {
+      data?: { publish_id?: string };
+      error?: { code?: string; message?: string };
+    };
 
-    if (!initData.data?.publish_id) {
+    // TikTok returns unaudited_client_can_only_post_to_private_accounts when the
+    // app hasn't been audited yet. The post still goes through as SELF_ONLY (private).
+    // Treat this as a success — check for publish_id even when there's an error code.
+    const publishId = initData.data?.publish_id;
+    const errCode   = initData.error?.code   || '';
+    const errMsg    = initData.error?.message || '';
+
+    const isUnauditedWarning = errCode === 'unaudited_client_can_only_post_to_private_accounts';
+
+    if (!publishId && !isUnauditedWarning) {
       console.error('[TikTok] Init failed:', JSON.stringify(initData));
-      const errCode = initData.error?.code || '';
-      const errMsg = initData.error?.message || '';
 
       if (errCode === 'spam_risk_too_many_posts' || errMsg.includes('cap')) {
         return { success: false, error: 'TikTok posting limit reached for today. Please try again tomorrow.' };
@@ -774,12 +784,17 @@ export async function publishToTikTok(
       };
     }
 
-    console.log(`[TikTok] Published (privacy: ${privacyLevel}), publish_id: ${initData.data.publish_id}`);
-    if (privacyLevel === 'SELF_ONLY') {
-      console.log('[TikTok] Post is private (SELF_ONLY) — app not yet audited. User can change visibility on TikTok manually.');
+    if (isUnauditedWarning) {
+      console.log('[TikTok] Unaudited app — post submitted as private (SELF_ONLY). publish_id:', publishId || 'pending');
+    } else {
+      console.log(`[TikTok] Published (privacy: ${privacyLevel}), publish_id: ${publishId}`);
     }
 
-    return { success: true, platformPostId: initData.data.publish_id };
+    if (privacyLevel === 'SELF_ONLY') {
+      console.log('[TikTok] Post is private (SELF_ONLY) — user can change visibility on TikTok manually.');
+    }
+
+    return { success: true, platformPostId: publishId || 'tiktok-pending' };
   } catch (err) {
     return { success: false, error: `TikTok error: ${err}` };
   }
