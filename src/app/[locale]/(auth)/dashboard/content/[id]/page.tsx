@@ -53,7 +53,7 @@ type ContentItem = {
 };
 
 // -----------------------------------------------------------
-// CONFIG — no Zap icon anywhere
+// CONFIG
 // -----------------------------------------------------------
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   draft: { label: 'Draft', color: 'bg-zinc-100 text-zinc-600' },
@@ -64,7 +64,6 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   rejected: { label: 'Rejected', color: 'bg-red-50 text-red-700' },
 };
 
-// No icon field — Zap is gone
 const MODE_CONFIG: Record<string, { label: string; color: string }> = {
   normal: { label: 'Normal', color: 'bg-zinc-100 text-zinc-600' },
   concise: { label: 'Concise', color: 'bg-blue-50 text-blue-700' },
@@ -84,8 +83,37 @@ const PLATFORM_LABELS: Record<string, string> = {
 };
 
 const TITLE_PLATFORMS = new Set(['youtube', 'pinterest']);
-const PLATFORM_SPECIFIC_SYSTEM_KEYS = ['sourceImages', 'videoDurationSeconds', 'title', 'imageTemplate', 'imageStyle', 'carouselAspectRatio', 'carouselStyle', 'carouselSlideCount', 'photoTier', 'sceneModelUsed', 'promptUsed', 'isFallback', 'ugcHook', 'ugcProblem', 'ugcSolution', 'ugcCta', 'DataStoryFormats', 'Data_story_stats', 'DataStoryStatCount', 'captionOriginal', 'videoGenerated', 'unsplashCredits', 'stylePresetUsed', 'youtube'];
+const PLATFORM_SPECIFIC_SYSTEM_KEYS = [
+  'sourceImages', 'videoDurationSeconds', 'title', 'imageTemplate', 'imageStyle',
+  'carouselAspectRatio', 'carouselStyle', 'carouselSlideCount', 'photoTier',
+  'sceneModelUsed', 'promptUsed', 'isFallback', 'ugcHook', 'ugcProblem',
+  'ugcSolution', 'ugcCta', 'DataStoryFormats', 'Data_story_stats', 'DataStoryStatCount',
+  'captionOriginal', 'videoGenerated', 'unsplashCredits', 'stylePresetUsed', 'youtube',
+  // AI graphic keys
+  'aiGraphicType', 'aiGraphicQuality', 'headlineUsed',
+];
 const MEDIA_CONTENT_TYPES = ['single_image', 'carousel', 'reel', 'ugc_ad', 'data_story'];
+
+// AI Graphic content type metadata
+const AI_GRAPHIC_TYPES = [
+  {
+    value: 'illustration' as const,
+    label: 'Illustration',
+    sub: 'Branded concept art, flat design',
+  },
+  {
+    value: 'infographic' as const,
+    label: 'Infographic',
+    sub: 'Structured data layouts, guides',
+  },
+  {
+    value: 'typography' as const,
+    label: 'Typography',
+    sub: 'Bold text-dominant editorial',
+  },
+] as const;
+
+type AIGraphicContentType = 'illustration' | 'infographic' | 'typography';
 
 // -----------------------------------------------------------
 // HELPERS
@@ -95,26 +123,16 @@ function isVideoFileUrl(url: string): boolean {
 }
 
 function toVideoSrc(url: string): string {
-  if (/\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(url)) {
-    return url;
-  }
+  if (/\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(url)) return url;
   const base = url.endsWith('/') ? url : `${url}/`;
   return `${base}video.mp4`;
 }
 
 function scoreLabel(score: number): { text: string; color: string } {
-  if (score >= 0.9) {
-    return { text: 'Excellent', color: 'bg-emerald-50 text-emerald-700' };
-  }
-  if (score >= 0.8) {
-    return { text: 'Great', color: 'bg-green-50 text-green-700' };
-  }
-  if (score >= 0.7) {
-    return { text: 'Good', color: 'bg-yellow-50 text-yellow-700' };
-  }
-  if (score >= 0.5) {
-    return { text: 'Needs work', color: 'bg-orange-50 text-orange-700' };
-  }
+  if (score >= 0.9) return { text: 'Excellent', color: 'bg-emerald-50 text-emerald-700' };
+  if (score >= 0.8) return { text: 'Great', color: 'bg-green-50 text-green-700' };
+  if (score >= 0.7) return { text: 'Good', color: 'bg-yellow-50 text-yellow-700' };
+  if (score >= 0.5) return { text: 'Needs work', color: 'bg-orange-50 text-orange-700' };
   return { text: 'Poor', color: 'bg-red-50 text-red-700' };
 }
 
@@ -157,7 +175,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [videoGenError, setVideoGenError] = useState<string | null>(null);
   const [videoPhotoTier, setVideoPhotoTier] = useState<'unsplash' | 'flux'>('unsplash');
-  // Video format: slideshow (photo-backed) or text-motion (branded animation)
   const [videoFormat, setVideoFormat] = useState<'slideshow' | 'text-motion'>('slideshow');
   const [textMotionStyle, setTextMotionStyle] = useState<'dark' | 'light' | 'brand'>('dark');
   const [textMotionHeadlineOverride, setTextMotionHeadlineOverride] = useState('');
@@ -171,8 +188,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [ugcPhotoTier, setUgcPhotoTier] = useState<'unsplash' | 'flux' | 'seedance'>('unsplash');
   const [isGeneratingDataStory, setIsGeneratingDataStory] = useState(false);
   const [dataStoryError, setDataStoryError] = useState<string | null>(null);
+
   // Image engine state
-  const [imageMode, setImageMode] = useState<'template' | 'ai-scene'>('ai-scene');
+  const [imageMode, setImageMode] = useState<'template' | 'ai-scene' | 'ai-graphic'>('ai-scene');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [imageGenError, setImageGenError] = useState<string | null>(null);
   const [imageTemplate, setImageTemplate] = useState<'quote-card' | 'announcement-card' | 'stat-card'>('quote-card');
@@ -181,6 +199,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [imageStatValue, setImageStatValue] = useState('');
   const [imageStatLabel, setImageStatLabel] = useState('');
   const [imageEyebrow, setImageEyebrow] = useState('');
+
   // AI Scene state
   const [sceneStyle, setSceneStyle] = useState<'professional' | 'minimal' | 'vibrant' | 'elegant' | 'bold' | 'cinematic'>('professional');
   const [sceneOverlay, setSceneOverlay] = useState<'standard' | 'minimal' | 'none'>('standard');
@@ -188,11 +207,30 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [sceneHeadlineOverride, setSceneHeadlineOverride] = useState('');
   const [sceneEyebrowOverride, setSceneEyebrowOverride] = useState('');
   const [sceneResult, setSceneResult] = useState<{ promptUsed?: string; modelUsed?: string; fallback?: boolean; headlineUsed?: string } | null>(null);
+
+  // ── AI Graphic state (NEW) ─────────────────────────────────────────────────
+  const [aiGraphicContentType, setAiGraphicContentType] = useState<AIGraphicContentType>('illustration');
+  const [aiGraphicQuality, setAiGraphicQuality] = useState<'standard' | 'premium'>('standard');
+  const [aiGraphicFormat, setAiGraphicFormat] = useState<'square' | 'vertical'>('square');
+  const [aiGraphicPromptOverride, setAiGraphicPromptOverride] = useState('');
+  const [aiGraphicHeadlineOverride, setAiGraphicHeadlineOverride] = useState('');
+  const [aiGraphicEyebrow, setAiGraphicEyebrow] = useState('');
+  const [isGeneratingAiGraphic, setIsGeneratingAiGraphic] = useState(false);
+  const [aiGraphicError, setAiGraphicError] = useState<string | null>(null);
+  const [aiGraphicResult, setAiGraphicResult] = useState<{
+    visualPrompt?: string;
+    overlayHeadline?: string;
+    quality?: string;
+    generationMs?: number;
+    totalMs?: number;
+  } | null>(null);
+
   // Carousel engine state
   const [isGeneratingCarousel, setIsGeneratingCarousel] = useState(false);
   const [carouselError, setCarouselError] = useState<string | null>(null);
   const [carouselStyle, setCarouselStyle] = useState<'dark' | 'light' | 'brand'>('dark');
   const [carouselAspectRatio, setCarouselAspectRatio] = useState<'1:1' | '9:16'>('1:1');
+
   // Data story stats editor
   const [statLabel, setStatLabel] = useState('');
   const [statValue, setStatValue] = useState('');
@@ -222,6 +260,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [youtubeThumbnailError, setYoutubeThumbnailError] = useState<string | null>(null);
   const [isSavingYoutubeSettings, setIsSavingYoutubeSettings] = useState(false);
 
+  // ── Load ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
       const { id } = await params;
@@ -232,7 +271,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           setItem(data.item);
           setEditCaption(data.item.caption);
           setEditTitle((data.item.platformSpecific?.title as string) || '');
-          // Load YouTube thumbnail URL if previously saved
           const yts = (data.item.platformSpecific as Record<string, Record<string, string>>)?.youtube;
           if (yts?.thumbnailUrl) setYoutubeThumbnailUrl(yts.thumbnailUrl);
           if (data.item.scheduledFor) {
@@ -259,10 +297,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     }
   }, [searchParams, isLoading]);
 
+  // ── Status / edit / save actions ──────────────────────────────────────────
   const updateStatus = async (status: string) => {
-    if (!item) {
-      return;
-    }
+    if (!item) return;
     setActionLoading(status);
     try {
       const res = await fetch(`/api/content/${item.id}`, {
@@ -270,18 +307,14 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
       });
-      if (res.ok) {
-        setItem((await res.json()).item);
-      }
+      if (res.ok) setItem((await res.json()).item);
     } finally {
       setActionLoading(null);
     }
   };
 
   const saveEdit = async () => {
-    if (!item) {
-      return;
-    }
+    if (!item) return;
     setActionLoading('save');
     try {
       const res = await fetch(`/api/content/${item.id}`, {
@@ -289,18 +322,14 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ caption: editCaption }),
       });
-      if (res.ok) {
-        setItem((await res.json()).item); setIsEditing(false);
-      }
+      if (res.ok) { setItem((await res.json()).item); setIsEditing(false); }
     } finally {
       setActionLoading(null);
     }
   };
 
   const saveTitle = async () => {
-    if (!item) {
-      return;
-    }
+    if (!item) return;
     setActionLoading('save-title');
     try {
       const res = await fetch(`/api/content/${item.id}`, {
@@ -308,18 +337,14 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ platformSpecific: { title: editTitle.trim() } }),
       });
-      if (res.ok) {
-        setItem((await res.json()).item); setIsEditingTitle(false);
-      }
+      if (res.ok) { setItem((await res.json()).item); setIsEditingTitle(false); }
     } finally {
       setActionLoading(null);
     }
   };
 
   const saveAdaptation = async (platform: string) => {
-    if (!item) {
-      return;
-    }
+    if (!item) return;
     setActionLoading(`adaptation-${platform}`);
     try {
       const res = await fetch(`/api/content/${item.id}`, {
@@ -327,9 +352,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ platformSpecific: { [platform]: editAdaptationText } }),
       });
-      if (res.ok) {
-        setItem((await res.json()).item); setEditingAdaptation(null);
-      }
+      if (res.ok) { setItem((await res.json()).item); setEditingAdaptation(null); }
     } finally {
       setActionLoading(null);
     }
@@ -396,16 +419,11 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         body: JSON.stringify({
           platformSpecific: {
             ...existingPs,
-            youtube: {
-              ...existingYt,
-              ...(youtubeThumbnailUrl ? { thumbnailUrl: youtubeThumbnailUrl } : {}),
-            },
+            youtube: { ...existingYt, ...(youtubeThumbnailUrl ? { thumbnailUrl: youtubeThumbnailUrl } : {}) },
           },
         }),
       });
-      if (res.ok) {
-        setItem((await res.json()).item);
-      }
+      if (res.ok) setItem((await res.json()).item);
     } finally {
       setIsSavingYoutubeSettings(false);
     }
@@ -416,8 +434,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     setIsGeneratingYoutubeThumbnail(true);
     setYoutubeThumbnailError(null);
     try {
-      // Use the dedicated thumbnail endpoint — works for any content type,
-      // unlike generate-image which is restricted to single_image posts.
       const res = await fetch(`/api/content/${item.id}/generate-thumbnail`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -425,9 +441,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       });
       const data = await res.json() as { success?: boolean; thumbnailUrl?: string; error?: string };
       if (res.ok && data.success && data.thumbnailUrl) {
-        // The route already saves thumbnailUrl to platformSpecific.youtube.thumbnailUrl
         setYoutubeThumbnailUrl(data.thumbnailUrl);
-        // Reload item so the saved state is reflected
         const refreshRes = await fetch(`/api/content/${item.id}`);
         if (refreshRes.ok) {
           const refreshData = await refreshRes.json() as { item: ContentItem };
@@ -444,9 +458,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   };
 
   const copyCaption = () => {
-    if (!item) {
-      return;
-    }
+    if (!item) return;
     navigator.clipboard.writeText(item.caption);
     setCopyDone(true);
     setTimeout(() => setCopyDone(false), 1500);
@@ -456,19 +468,13 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
 
   const publishNow = async () => {
     if (!item) return;
-    // If TikTok is a target platform, show the TikTok compliance modal first
-    if (hasTikTok) {
-      setShowTikTokModal(true);
-      return;
-    }
+    if (hasTikTok) { setShowTikTokModal(true); return; }
     setActionLoading('publish');
     try {
       const res = await fetch(`/api/content/${item.id}/publish`, { method: 'POST' });
       if (res.ok) {
         const refreshRes = await fetch(`/api/content/${item.id}`);
-        if (refreshRes.ok) {
-          setItem((await refreshRes.json()).item);
-        }
+        if (refreshRes.ok) setItem((await refreshRes.json()).item);
       }
     } finally {
       setActionLoading(null);
@@ -492,9 +498,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       if (res.ok) {
         setShowTikTokModal(false);
         const refreshRes = await fetch(`/api/content/${item.id}`);
-        if (refreshRes.ok) {
-          setItem((await refreshRes.json()).item);
-        }
+        if (refreshRes.ok) setItem((await refreshRes.json()).item);
       }
     } finally {
       setIsTikTokPublishing(false);
@@ -503,9 +507,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   };
 
   const schedulePost = async () => {
-    if (!item || !scheduleDate || !scheduleTime) {
-      return;
-    }
+    if (!item || !scheduleDate || !scheduleTime) return;
     setActionLoading('schedule');
     try {
       const scheduledFor = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
@@ -514,9 +516,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'scheduled', scheduledFor }),
       });
-      if (res.ok) {
-        setItem((await res.json()).item); setShowScheduler(false);
-      }
+      if (res.ok) { setItem((await res.json()).item); setShowScheduler(false); }
     } finally {
       setActionLoading(null);
     }
@@ -526,7 +526,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     if (!item) return;
     setActionLoading('delete-video');
     try {
-      // Clear graphicUrls and reset video-related platformSpecific flags
       const existingPs = (item.platformSpecific as Record<string, unknown>) || {};
       const res = await fetch(`/api/content/${item.id}`, {
         method: 'PATCH',
@@ -560,13 +559,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       const res = await fetch(`/api/content/${item.id}/generate-video`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          // Always force a fresh photo fetch on generate/regenerate.
-          // When regenerating an existing video, graphicUrls contains the
-          // old video files — not source photos — so we must not use them
-          // as the photo source. Always request new photos from the selected tier.
-          photoTier: videoPhotoTier === 'flux' ? 'flux' : 'unsplash',
-        }),
+        body: JSON.stringify({ photoTier: videoPhotoTier === 'flux' ? 'flux' : 'unsplash' }),
       });
       const data = await res.json() as { success?: boolean; vertical?: string; square?: string; error?: string };
       if (res.ok && data.success && data.vertical && data.square) {
@@ -657,9 +650,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   };
 
   const generateDataStory = async () => {
-    if (!item) {
-      return;
-    }
+    if (!item) return;
     setIsGeneratingDataStory(true);
     setDataStoryError(null);
     try {
@@ -684,9 +675,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   };
 
   const addStatToItem = async () => {
-    if (!item || !statLabel || !statValue) {
-      return;
-    }
+    if (!item || !statLabel || !statValue) return;
     const newStat = {
       label: statLabel,
       value: Number(statValue),
@@ -709,9 +698,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   };
 
   const removeStatFromItem = async (index: number) => {
-    if (!item) {
-      return;
-    }
+    if (!item) return;
     const ps = (item.platformSpecific as Record<string, unknown>) || {};
     const existing = (ps.data_story_stats as object[]) || [];
     const updated = existing.filter((_, i) => i !== index);
@@ -727,9 +714,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   };
 
   const generateImage = async () => {
-    if (!item) {
-      return;
-    }
+    if (!item) return;
     setIsGeneratingImage(true);
     setImageGenError(null);
     try {
@@ -755,9 +740,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       const data = await res.json();
       if (res.ok && data.success) {
         const refreshRes = await fetch(`/api/content/${item.id}`);
-        if (refreshRes.ok) {
-          setItem((await refreshRes.json()).item);
-        }
+        if (refreshRes.ok) setItem((await refreshRes.json()).item);
       } else {
         setImageGenError(data.error || 'Image generation failed. Please try again.');
       }
@@ -792,9 +775,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       if (res.ok && data.success) {
         setSceneResult({ promptUsed: data.promptUsed, modelUsed: data.modelUsed, fallback: data.fallback, headlineUsed: data.headlineUsed });
         const refreshRes = await fetch(`/api/content/${item.id}`);
-        if (refreshRes.ok) {
-          setItem((await refreshRes.json()).item);
-        }
+        if (refreshRes.ok) setItem((await refreshRes.json()).item);
       } else {
         setImageGenError(data.error || 'Scene generation failed. Please try again.');
       }
@@ -806,10 +787,65 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     }
   };
 
-  const generateCarousel = async () => {
-    if (!item) {
-      return;
+  // ── AI Graphic generate (NEW) ─────────────────────────────────────────────
+  const generateAiGraphic = async () => {
+    if (!item) return;
+    setIsGeneratingAiGraphic(true);
+    setAiGraphicError(null);
+    setAiGraphicResult(null);
+    try {
+      const res = await fetch(`/api/content/${item.id}/generate-ai-graphic`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contentType: aiGraphicContentType,
+          format: aiGraphicFormat,
+          quality: aiGraphicQuality,
+          ...(aiGraphicPromptOverride.trim() && aiGraphicHeadlineOverride.trim()
+            ? {
+              visualPrompt: aiGraphicPromptOverride.trim(),
+              overlayHeadline: aiGraphicHeadlineOverride.trim(),
+            }
+            : {}),
+          ...(aiGraphicEyebrow.trim()
+            ? { overlayEyebrow: aiGraphicEyebrow.trim().toUpperCase() }
+            : {}),
+        }),
+      });
+      const data = await res.json() as {
+        success?: boolean;
+        url?: string;
+        visualPrompt?: string;
+        overlayHeadline?: string;
+        quality?: string;
+        generationMs?: number;
+        totalMs?: number;
+        error?: string;
+      };
+      if (res.ok && data.success && data.url) {
+        setAiGraphicResult({
+          visualPrompt: data.visualPrompt,
+          overlayHeadline: data.overlayHeadline,
+          quality: data.quality,
+          generationMs: data.generationMs,
+          totalMs: data.totalMs,
+        });
+        // Refresh item so graphicUrls updates with the new image
+        const refreshRes = await fetch(`/api/content/${item.id}`);
+        if (refreshRes.ok) setItem((await refreshRes.json()).item);
+      } else {
+        setAiGraphicError(data.error || 'AI graphic generation failed. Please try again.');
+      }
+    } catch (err) {
+      console.error('[AI Graphic] error:', err);
+      setAiGraphicError('Network error. Please try again.');
+    } finally {
+      setIsGeneratingAiGraphic(false);
     }
+  };
+
+  const generateCarousel = async () => {
+    if (!item) return;
     setIsGeneratingCarousel(true);
     setCarouselError(null);
     try {
@@ -821,9 +857,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       const data = await res.json();
       if (res.ok && data.success) {
         const refreshRes = await fetch(`/api/content/${item.id}`);
-        if (refreshRes.ok) {
-          setItem((await refreshRes.json()).item);
-        }
+        if (refreshRes.ok) setItem((await refreshRes.json()).item);
       } else {
         setCarouselError(data.error || 'Carousel generation failed. Please try again.');
       }
@@ -836,13 +870,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   };
 
   const deleteItem = async () => {
-    if (!item) {
-      return;
-    }
+    if (!item) return;
     // eslint-disable-next-line no-alert
-    if (!window.confirm('Delete this content? This cannot be undone.')) {
-      return;
-    }
+    if (!window.confirm('Delete this content? This cannot be undone.')) return;
     setActionLoading('delete');
     try {
       await fetch(`/api/content/${item.id}`, { method: 'DELETE' });
@@ -852,6 +882,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     }
   };
 
+  // ── Loading / not found ────────────────────────────────────────────────────
   if (isLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
@@ -871,7 +902,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     );
   }
 
-  // Derived state
+  // ── Derived state ──────────────────────────────────────────────────────────
   const statusConfig = STATUS_CONFIG[item.status] || { label: item.status, color: 'bg-muted' };
   const modeConfig = MODE_CONFIG[item.contentMode || 'normal'] ?? { label: 'Normal', color: 'bg-zinc-100 text-zinc-600' };
   const needsMedia = MEDIA_CONTENT_TYPES.includes(item.contentType);
@@ -895,7 +926,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const uploadedSlideImages = isReel && !hasGeneratedVideo && !hasUploadedVideo ? item.graphicUrls : [];
   const hasVideo = isReel && (hasGeneratedVideo || hasUploadedVideo);
   const hasImages = (isSingleImage || isCarousel) && hasMedia;
-  // UGC Ad and Data Story store generated videos in graphicUrls — enable publish once any media exists
   const hasUGCOrDataStoryVideo = (isUGCAd || isDataStory) && hasMedia;
   const canPublish = item.status === 'approved' && (!needsMedia || hasVideo || hasImages || hasUGCOrDataStoryVideo);
   const platformsWithTitle = (item.targetPlatforms || []).filter(p => TITLE_PLATFORMS.has(p));
@@ -904,33 +934,24 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const isYoutubeTarget = (item.targetPlatforms as string[] || []).includes('youtube');
 
   type EnrichmentShape = {
-    cta_url?: string;
-    cta_label?: string;
-    reference_links?: string[];
-    contact_info?: string;
-    promo_code?: string;
-    event_details?: string;
+    cta_url?: string; cta_label?: string; reference_links?: string[];
+    contact_info?: string; promo_code?: string; event_details?: string;
     custom_mentions?: string[];
   };
   const enrichment = (item.enrichmentData || {}) as EnrichmentShape;
-  const hasEnrichment = !!(enrichment.cta_url || enrichment.promo_code || enrichment.contact_info
+  const hasEnrichment = !!(
+    enrichment.cta_url || enrichment.promo_code || enrichment.contact_info
     || enrichment.event_details || (enrichment.reference_links?.length ?? 0) > 0
-    || (enrichment.custom_mentions?.length ?? 0) > 0);
+    || (enrichment.custom_mentions?.length ?? 0) > 0
+  );
 
-  // Primary action label for mobile sticky bar
   const primaryAction = item.status === 'pending_review' || item.status === 'draft'
     ? 'approve'
-    : item.status === 'approved'
-      ? 'publish'
-      : item.status === 'scheduled'
-        ? 'publish'
+    : item.status === 'approved' ? 'publish'
+      : item.status === 'scheduled' ? 'publish'
         : null;
 
-  // -----------------------------------------------------------
-  // ACTIONS PANEL — rendered both in sidebar (desktop) and
-  // as a sticky bottom bar on mobile
-  // -----------------------------------------------------------
-  // // eslint-disable-next-line react/no-unstable-nested-components
+  // ── Actions Panel ──────────────────────────────────────────────────────────
   const ActionsPanel = ({ compact = false }: { compact?: boolean }) => (
     <div className={`space-y-2.5 ${compact ? '' : 'rounded-xl border bg-card p-5'}`}>
       {!compact && <h3 className="mb-3 text-sm font-semibold">Actions</h3>}
@@ -942,9 +963,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           disabled={!!actionLoading}
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
         >
-          {actionLoading === item.status
-            ? <Loader2 className="size-4 animate-spin" />
-            : <Check className="size-4" />}
+          {actionLoading === item.status ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
           Approve
         </button>
       )}
@@ -958,9 +977,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             title={needsMedia && !hasMedia ? 'Add media before publishing' : undefined}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-foreground px-3 py-2.5 text-sm font-medium text-background transition-colors hover:opacity-90 disabled:opacity-50"
           >
-            {actionLoading === 'publish'
-              ? <Loader2 className="size-4 animate-spin" />
-              : <Send className="size-4" />}
+            {actionLoading === 'publish' ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
             Publish now
           </button>
           <button
@@ -979,11 +996,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         <>
           <div className="rounded-lg border bg-violet-50 px-3 py-2.5">
             <p className="text-center text-xs text-violet-700">
-              Scheduled for
-              {' '}
-              <span className="font-semibold">
-                {new Date(item.scheduledFor!).toLocaleString()}
-              </span>
+              Scheduled for <span className="font-semibold">{new Date(item.scheduledFor!).toLocaleString()}</span>
             </p>
           </div>
           <button
@@ -1000,15 +1013,12 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             disabled={!!actionLoading}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-foreground px-3 py-2.5 text-sm font-medium text-background transition-colors hover:opacity-90 disabled:opacity-50"
           >
-            {actionLoading === 'publish'
-              ? <Loader2 className="size-4 animate-spin" />
-              : <Send className="size-4" />}
+            {actionLoading === 'publish' ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
             Publish now
           </button>
         </>
       )}
 
-      {/* Scheduler inline panel */}
       {showScheduler && (
         <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
           <p className="text-xs font-medium">Date and time</p>
@@ -1032,23 +1042,16 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               disabled={!scheduleDate || !scheduleTime || actionLoading === 'schedule'}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
             >
-              {actionLoading === 'schedule'
-                ? <Loader2 className="size-3 animate-spin" />
-                : <Check className="size-3" />}
+              {actionLoading === 'schedule' ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
               Confirm
             </button>
-            <button
-              type="button"
-              onClick={() => setShowScheduler(false)}
-              className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
-            >
+            <button type="button" onClick={() => setShowScheduler(false)} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">
               Cancel
             </button>
           </div>
         </div>
       )}
 
-      {/* Reject / Delete — only in full panel, not compact mobile bar */}
       {!compact && (
         <>
           {item.status !== 'published' && item.status !== 'rejected' && (
@@ -1073,9 +1076,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           </button>
           {needsMedia && !hasMedia && item.status === 'approved' && (
             <p className="text-center text-[11px] text-amber-600">
-              {isReel
-                ? 'Add images and generate a video, or upload a video directly.'
-                : 'Add an image before publishing.'}
+              {isReel ? 'Add images and generate a video, or upload a video directly.' : 'Add an image before publishing.'}
             </p>
           )}
         </>
@@ -1083,9 +1084,9 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     </div>
   );
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
-      {/* TikTok compliance publish modal — required by TikTok Direct Post API guidelines */}
       <TikTokPublishModal
         open={showTikTokModal}
         onClose={() => setShowTikTokModal(false)}
@@ -1111,10 +1112,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         )}
       />
 
-      {/* ── Mobile sticky action bar ─────────────────────────
-          Shown only when there's a primary action available.
-          Sits above the bottom nav on mobile.
-          Hidden on lg+ where the sidebar is visible. ────── */}
+      {/* Mobile sticky bar */}
       {primaryAction && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 px-4 py-3 backdrop-blur-sm lg:hidden">
           <div className="flex items-center gap-2">
@@ -1125,13 +1123,11 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 disabled={!!actionLoading}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-3 text-sm font-medium text-primary-foreground disabled:opacity-60"
               >
-                {actionLoading === item.status
-                  ? <Loader2 className="size-4 animate-spin" />
-                  : <Check className="size-4" />}
+                {actionLoading === item.status ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
                 Approve
               </button>
             )}
-            {(primaryAction === 'publish') && (
+            {primaryAction === 'publish' && (
               <>
                 <button
                   type="button"
@@ -1139,9 +1135,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   disabled={!!actionLoading || !canPublish}
                   className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-foreground py-3 text-sm font-medium text-background disabled:opacity-50"
                 >
-                  {actionLoading === 'publish'
-                    ? <Loader2 className="size-4 animate-spin" />
-                    : <Send className="size-4" />}
+                  {actionLoading === 'publish' ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
                   Publish now
                 </button>
                 <button
@@ -1165,7 +1159,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               </button>
             )}
           </div>
-          {/* Inline scheduler on mobile */}
           {showScheduler && (
             <div className="mt-3 space-y-2 border-t pt-3">
               <div className="grid grid-cols-2 gap-2">
@@ -1190,16 +1183,10 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   disabled={!scheduleDate || !scheduleTime || actionLoading === 'schedule'}
                   className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground disabled:opacity-60"
                 >
-                  {actionLoading === 'schedule'
-                    ? <Loader2 className="size-3 animate-spin" />
-                    : <Check className="size-3" />}
+                  {actionLoading === 'schedule' ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
                   Confirm schedule
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setShowScheduler(false)}
-                  className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
-                >
+                <button type="button" onClick={() => setShowScheduler(false)} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">
                   Cancel
                 </button>
               </div>
@@ -1208,10 +1195,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         </div>
       )}
 
-      {/* Add bottom padding on mobile so content isn't hidden behind sticky bar */}
       <div className={`grid gap-6 lg:grid-cols-3 ${primaryAction ? 'pb-24 lg:pb-0' : ''}`}>
-
-        {/* ── Main content ─────────────────────────────────── */}
+        {/* ── Main content ────────────────────────────────── */}
         <div className="space-y-4 lg:col-span-2">
 
           {/* Caption */}
@@ -1274,16 +1259,12 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     disabled={actionLoading === 'save'}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
                   >
-                    {actionLoading === 'save'
-                      ? <Loader2 className="size-3 animate-spin" />
-                      : <Check className="size-3" />}
+                    {actionLoading === 'save' ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
                     Save changes
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsEditing(false); setEditCaption(item.caption);
-                    }}
+                    onClick={() => { setIsEditing(false); setEditCaption(item.caption); }}
                     className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
                   >
                     Cancel
@@ -1294,7 +1275,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               <p className="whitespace-pre-wrap text-sm leading-relaxed">{item.caption}</p>
             )}
 
-            {/* AI Edit panel — shown when "Refine with AI" is active */}
+            {/* AI Edit panel */}
             {isAiEditing && !isEditing && (
               <div className="mt-4 space-y-3 rounded-lg border bg-muted/30 p-4">
                 <p className="text-xs font-medium">Describe how to change this content</p>
@@ -1324,8 +1305,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   </button>
                 </div>
                 {aiEditError && <p className="text-xs text-red-500">{aiEditError}</p>}
-
-                {/* Suggested revision */}
                 {aiSuggestedCaption && (
                   <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
                     <p className="text-xs font-medium text-primary">Suggested revision</p>
@@ -1362,25 +1341,20 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             )}
           </div>
 
-          {/* Title field (YouTube / Pinterest only) */}
+          {/* Title field (YouTube / Pinterest) */}
           {showTitleField && (
             <div className="rounded-xl border bg-card p-4 sm:p-5">
               <div className="mb-3 flex items-start justify-between gap-3 border-b pb-3">
                 <div>
                   <h3 className="text-sm font-semibold">Post title</h3>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    Headline on
-                    {' '}
-                    {platformsWithTitle.map(p => PLATFORM_LABELS[p] || p).join(' and ')}
-                    . Max 100 characters.
+                    Headline on {platformsWithTitle.map(p => PLATFORM_LABELS[p] || p).join(' and ')}. Max 100 characters.
                   </p>
                 </div>
                 {!isEditingTitle && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsEditingTitle(true); setEditTitle(currentTitle);
-                    }}
+                    onClick={() => { setIsEditingTitle(true); setEditTitle(currentTitle); }}
                     className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
                   >
                     <Edit3 className="size-3" />
@@ -1399,10 +1373,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     className="w-full rounded-lg border bg-background px-3.5 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
                   <div className="mt-2 flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">
-                      {editTitle.length}
-                      /100
-                    </span>
+                    <span className="text-xs text-muted-foreground">{editTitle.length}/100</span>
                     <div className="flex gap-2">
                       <button
                         type="button"
@@ -1410,16 +1381,10 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                         disabled={actionLoading === 'save-title'}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
                       >
-                        {actionLoading === 'save-title'
-                          ? <Loader2 className="size-3 animate-spin" />
-                          : <Check className="size-3" />}
+                        {actionLoading === 'save-title' ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
                         Save
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsEditingTitle(false)}
-                        className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
-                      >
+                      <button type="button" onClick={() => setIsEditingTitle(false)} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">
                         Cancel
                       </button>
                     </div>
@@ -1427,29 +1392,22 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               ) : (
                 <p className="text-sm">
-                  {currentTitle || (
-                    <span className="italic text-muted-foreground">
-                      No title set. The first 100 characters of the caption will be used as fallback.
-                    </span>
-                  )}
+                  {currentTitle || <span className="italic text-muted-foreground">No title set. The first 100 characters of the caption will be used as fallback.</span>}
                 </p>
               )}
             </div>
           )}
 
-          {/* YouTube settings — thumbnail upload/generation */}
+          {/* YouTube settings */}
           {isYoutubeTarget && (
             <div className="rounded-xl border bg-card p-4 sm:p-5">
               <div className="mb-4 flex items-center gap-2 border-b pb-4">
-                {/* Use existing YoutubeIcon via platform labels — simple SVG inline */}
                 <svg className="size-4 text-muted-foreground" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.546 12 3.546 12 3.546s-7.505 0-9.377.504A3.015 3.015 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.504 9.376.504 9.376.504s7.505 0 9.377-.504a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
                 </svg>
                 <h3 className="text-sm font-semibold">YouTube settings</h3>
                 <p className="ml-auto text-xs text-muted-foreground">Title and thumbnail</p>
               </div>
-
-              {/* Thumbnail */}
               <div className="space-y-3">
                 <div>
                   <p className="mb-2 text-xs font-medium text-muted-foreground">Video thumbnail</p>
@@ -1491,9 +1449,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                       <MediaUploader
                         contentItemId={item.id}
                         existingUrls={[]}
-                        onUpdate={(urls) => {
-                          if (urls[0]) setYoutubeThumbnailUrl(urls[0]);
-                        }}
+                        onUpdate={(urls) => { if (urls[0]) setYoutubeThumbnailUrl(urls[0]); }}
                         mediaType="image"
                         maxFiles={1}
                       />
@@ -1501,7 +1457,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   )}
                   {youtubeThumbnailError && <p className="mt-1 text-xs text-red-500">{youtubeThumbnailError}</p>}
                 </div>
-
                 {youtubeThumbnailUrl && (
                   <button
                     type="button"
@@ -1518,7 +1473,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             </div>
           )}
 
-          {/* Enrichment summary */}
+          {/* Enrichment */}
           {hasEnrichment && (
             <div className="rounded-xl border bg-card p-4 sm:p-5">
               <div className="mb-3 flex items-center gap-2 border-b pb-3">
@@ -1526,9 +1481,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <h3 className="text-sm font-semibold">Post enrichment</h3>
                 {item.enrichmentApplied && item.enrichmentApplied.length > 0 && (
                   <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                    {item.enrichmentApplied.length}
-                    {' '}
-                    applied
+                    {item.enrichmentApplied.length} applied
                   </span>
                 )}
               </div>
@@ -1543,7 +1496,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             </div>
           )}
 
-          {/* Reel / Video */}
+          {/* Reel / Video — unchanged */}
           {isReel && (
             <div className="rounded-xl border bg-card p-4 sm:p-5">
               <div className="mb-4 flex items-center gap-2 border-b pb-4">
@@ -1553,8 +1506,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
 
               {!hasUploadedVideo && !hasGeneratedVideo && (
                 <div className="mb-5">
-
-                  {/* Video format toggle */}
                   <div className="mb-4">
                     <p className="mb-2 text-xs font-medium text-muted-foreground">Video format</p>
                     <div className="grid grid-cols-2 gap-1.5 rounded-lg bg-muted p-1">
@@ -1562,12 +1513,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                         <button
                           key={fmt}
                           type="button"
-                          onClick={() => {
-                            setVideoFormat(fmt);
-                            setVideoGenError(null);
-                            setTextMotionError(null);
-                            setTextMotionResult(null);
-                          }}
+                          onClick={() => { setVideoFormat(fmt); setVideoGenError(null); setTextMotionError(null); setTextMotionResult(null); }}
                           className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${videoFormat === fmt ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                         >
                           {fmt === 'slideshow' ? 'Photo Slideshow' : 'Text Motion'}
@@ -1581,46 +1527,26 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     </p>
                   </div>
 
-                  {/* ── Slideshow options ── */}
                   {videoFormat === 'slideshow' && (
                     <>
                       <div className="mb-4">
                         <p className="mb-2 text-xs font-medium text-muted-foreground">Photo source</p>
                         <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setVideoPhotoTier('unsplash')}
-                            className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${videoPhotoTier === 'unsplash' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
-                          >
+                          <button type="button" onClick={() => setVideoPhotoTier('unsplash')} className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${videoPhotoTier === 'unsplash' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
                             <p className={`text-xs font-semibold ${videoPhotoTier === 'unsplash' ? 'text-primary' : ''}`}>Unsplash</p>
                             <p className="mt-0.5 text-[11px] text-muted-foreground">Free photos</p>
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setVideoPhotoTier('flux')}
-                            className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${videoPhotoTier === 'flux' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
-                          >
+                          <button type="button" onClick={() => setVideoPhotoTier('flux')} className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${videoPhotoTier === 'flux' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
                             <p className={`text-xs font-semibold ${videoPhotoTier === 'flux' ? 'text-primary' : ''}`}>AI Scene</p>
                             <p className="mt-0.5 text-[11px] text-muted-foreground">FLUX Pro</p>
                           </button>
                         </div>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={generateVideo}
-                        disabled={isGeneratingVideo}
-                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                      >
-                        {isGeneratingVideo
-                          ? (<><Loader2 className="size-4 animate-spin" />Generating video (~30–60s)...</>)
-                          : (<><Sparkles className="size-4" />Generate photo slideshow</>)}
+                      <button type="button" onClick={generateVideo} disabled={isGeneratingVideo} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                        {isGeneratingVideo ? <><Loader2 className="size-4 animate-spin" />Generating video (~30–60s)...</> : <><Sparkles className="size-4" />Generate photo slideshow</>}
                       </button>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        Renders 9:16 for Reels/TikTok and 1:1 for LinkedIn. Takes 30–60 seconds.
-                      </p>
+                      <p className="mt-2 text-xs text-muted-foreground">Renders 9:16 for Reels/TikTok and 1:1 for LinkedIn. Takes 30–60 seconds.</p>
                       {videoGenError && <p className="mt-2 text-xs text-red-500">{videoGenError}</p>}
-
                       {uploadedSlideImages.length > 0 && (
                         <div className="mt-4">
                           <p className="mb-2 text-xs font-medium text-muted-foreground">Or use your uploaded images</p>
@@ -1637,93 +1563,38 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                     </>
                   )}
 
-                  {/* ── Text Motion options ── */}
                   {videoFormat === 'text-motion' && (
                     <div className="space-y-3">
-                      {/* Style picker */}
                       <div>
                         <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Visual style</p>
                         <div className="grid grid-cols-3 gap-1.5">
-                          {([
-                            ['dark',  'Dark',  'Dark bg'],
-                            ['light', 'Light', 'Light bg'],
-                            ['brand', 'Brand', 'Brand color'],
-                          ] as const).map(([val, label, sub]) => (
-                            <button
-                              key={val}
-                              type="button"
-                              onClick={() => setTextMotionStyle(val)}
-                              className={`rounded-lg border px-2 py-2 text-left transition-colors ${textMotionStyle === val ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
-                            >
-                              <p className={`text-[11px] font-semibold ${textMotionStyle === val ? 'text-primary' : ''}`}>{label}</p>
-                              <p className="text-[10px] text-muted-foreground">{sub}</p>
+                          {(['dark', 'light', 'brand'] as const).map(val => (
+                            <button key={val} type="button" onClick={() => setTextMotionStyle(val)} className={`rounded-lg border px-2 py-2 text-left transition-colors ${textMotionStyle === val ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
+                              <p className={`text-[11px] font-semibold ${textMotionStyle === val ? 'text-primary' : ''}`}>{val.charAt(0).toUpperCase() + val.slice(1)}</p>
                             </button>
                           ))}
                         </div>
                       </div>
-
-                      {/* Headline override */}
                       <div>
                         <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Headline (optional)</p>
-                        <input
-                          type="text"
-                          value={textMotionHeadlineOverride}
-                          onChange={e => setTextMotionHeadlineOverride(e.target.value)}
-                          placeholder="Auto-extracted from your caption…"
-                          className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                        />
+                        <input type="text" value={textMotionHeadlineOverride} onChange={e => setTextMotionHeadlineOverride(e.target.value)} placeholder="Auto-extracted from your caption…" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                       </div>
-
-                      {/* Eyebrow label */}
                       <div>
                         <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Eyebrow label (optional)</p>
-                        <input
-                          type="text"
-                          value={textMotionEyebrow}
-                          onChange={e => setTextMotionEyebrow(e.target.value)}
-                          placeholder="e.g. HOT TAKE · MILESTONE · PRO TIP"
-                          className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                        />
+                        <input type="text" value={textMotionEyebrow} onChange={e => setTextMotionEyebrow(e.target.value)} placeholder="e.g. HOT TAKE · MILESTONE · PRO TIP" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                       </div>
-
-                      {/* CTA */}
                       <div>
                         <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Outro CTA (optional)</p>
-                        <input
-                          type="text"
-                          value={textMotionCta}
-                          onChange={e => setTextMotionCta(e.target.value)}
-                          placeholder="e.g. Follow for more · nativpost.com"
-                          className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                        />
+                        <input type="text" value={textMotionCta} onChange={e => setTextMotionCta(e.target.value)} placeholder="e.g. Follow for more · nativpost.com" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                       </div>
-
-                      {/* Result feedback */}
                       {textMotionResult && (
                         <div className="rounded-lg bg-muted/50 p-3 space-y-1">
-                          {textMotionResult.headlineUsed && (
-                            <p className="text-[11px] text-muted-foreground">
-                              <span className="font-medium text-foreground">Headline: </span>
-                              {textMotionResult.headlineUsed}
-                            </p>
-                          )}
-                          {textMotionResult.durationSeconds && (
-                            <p className="text-[11px] text-green-600 font-medium">
-                              Generated — {textMotionResult.durationSeconds.toFixed(1)}s video
-                            </p>
-                          )}
+                          {textMotionResult.headlineUsed && <p className="text-[11px] text-muted-foreground"><span className="font-medium text-foreground">Headline: </span>{textMotionResult.headlineUsed}</p>}
+                          {textMotionResult.durationSeconds && <p className="text-[11px] text-green-600 font-medium">Generated — {textMotionResult.durationSeconds.toFixed(1)}s video</p>}
                         </div>
                       )}
-
-                      <button
-                        type="button"
-                        onClick={generateTextMotion}
-                        disabled={isGeneratingTextMotion}
-                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                      >
-                        {isGeneratingTextMotion
-                          ? (<><Loader2 className="size-4 animate-spin" />Generating (~15–30s)...</>)
-                          : (<><Sparkles className="size-4" />Generate text motion video</>)}
+                      <button type="button" onClick={generateTextMotion} disabled={isGeneratingTextMotion} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                        {isGeneratingTextMotion ? <><Loader2 className="size-4 animate-spin" />Generating (~15–30s)...</> : <><Sparkles className="size-4" />Generate text motion video</>}
                       </button>
                       {textMotionError && <p className="mt-2 text-xs text-red-500">{textMotionError}</p>}
                     </div>
@@ -1740,86 +1611,47 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   <div className="grid gap-3 sm:grid-cols-2">
                     {item.graphicUrls[0] && (
                       <div className="overflow-hidden rounded-lg border bg-black">
-                        <div className="border-b px-3 py-2">
-                          <p className="text-[11px] font-medium text-muted-foreground">9:16 — Instagram Reels, TikTok</p>
-                        </div>
+                        <div className="border-b px-3 py-2"><p className="text-[11px] font-medium text-muted-foreground">9:16 — Instagram Reels, TikTok</p></div>
                         {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                         <video src={toVideoSrc(item.graphicUrls[0])} className="w-full" controls preload="metadata" playsInline style={{ maxHeight: 360 }} />
                       </div>
                     )}
                     {item.graphicUrls[1] && (
                       <div className="overflow-hidden rounded-lg border bg-black">
-                        <div className="border-b px-3 py-2">
-                          <p className="text-[11px] font-medium text-muted-foreground">1:1 — LinkedIn, Facebook</p>
-                        </div>
+                        <div className="border-b px-3 py-2"><p className="text-[11px] font-medium text-muted-foreground">1:1 — LinkedIn, Facebook</p></div>
                         {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                         <video src={toVideoSrc(item.graphicUrls[1])} className="w-full" controls preload="metadata" playsInline style={{ maxHeight: 360 }} />
                       </div>
                     )}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={generateVideo}
-                      disabled={isGeneratingVideo || isGeneratingTextMotion}
-                      className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-60"
-                    >
+                    <button type="button" onClick={generateVideo} disabled={isGeneratingVideo || isGeneratingTextMotion} className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-60">
                       {isGeneratingVideo ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
                       Regenerate slideshow
                     </button>
-                    <button
-                      type="button"
-                      onClick={generateTextMotion}
-                      disabled={isGeneratingVideo || isGeneratingTextMotion}
-                      className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-60"
-                    >
+                    <button type="button" onClick={generateTextMotion} disabled={isGeneratingVideo || isGeneratingTextMotion} className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-60">
                       {isGeneratingTextMotion ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
                       Try text motion
                     </button>
-                    <button
-                      type="button"
-                      onClick={deleteVideo}
-                      disabled={actionLoading === 'delete-video' || isGeneratingVideo || isGeneratingTextMotion}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-500 hover:bg-red-50 disabled:opacity-60"
-                    >
+                    <button type="button" onClick={deleteVideo} disabled={actionLoading === 'delete-video' || isGeneratingVideo || isGeneratingTextMotion} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-500 hover:bg-red-50 disabled:opacity-60">
                       {actionLoading === 'delete-video' ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
                       Delete video
                     </button>
                   </div>
                   {videoGenError && <p className="mt-1 text-xs text-red-500">{videoGenError}</p>}
-                  {/* Unsplash attribution — required by Unsplash API guidelines */}
                   {(() => {
                     const rawCredits = (item.platformSpecific?.unsplashCredits as Array<string | { name: string; link: string }>) || [];
                     const tier = item.platformSpecific?.photoTier as string;
                     if (tier !== 'unsplash' || rawCredits.length === 0) return null;
-                    const credits = rawCredits.map(c =>
-                      typeof c === 'string'
-                        ? { name: c, link: `https://unsplash.com/?utm_source=nativpost&utm_medium=referral` }
-                        : c,
-                    );
+                    const credits = rawCredits.map(c => typeof c === 'string' ? { name: c, link: `https://unsplash.com/?utm_source=nativpost&utm_medium=referral` } : c);
                     return (
                       <div className="mt-3 rounded-lg border bg-muted/30 px-3 py-2.5">
                         <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Credits</p>
                         <div className="flex flex-wrap gap-x-3 gap-y-1">
                           {credits.map((c, i) => (
-                            <a
-                              key={i}
-                              href={c.link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[11px] text-foreground underline hover:text-primary"
-                            >
-                              {c.name}
-                            </a>
+                            <a key={i} href={c.link} target="_blank" rel="noopener noreferrer" className="text-[11px] text-foreground underline hover:text-primary">{c.name}</a>
                           ))}
-                          <a
-                            href="https://unsplash.com/?utm_source=nativpost&utm_medium=referral"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[11px] text-muted-foreground underline hover:text-foreground"
-                          >
-                            via Unsplash
-                          </a>
+                          <a href="https://unsplash.com/?utm_source=nativpost&utm_medium=referral" target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground underline hover:text-foreground">via Unsplash</a>
                         </div>
                       </div>
                     );
@@ -1838,17 +1670,11 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               )}
 
               <div className={!hasUploadedVideo && !hasGeneratedVideo && uploadedSlideImages.length === 0 ? '' : 'mt-5 border-t pt-5'}>
-                <p className="mb-3 text-xs font-medium text-muted-foreground">
-                  {hasUploadedVideo ? 'Replace video' : 'Or upload your own video'}
-                </p>
+                <p className="mb-3 text-xs font-medium text-muted-foreground">{hasUploadedVideo ? 'Replace video' : 'Or upload your own video'}</p>
                 <MediaUploader
                   contentItemId={item.id}
                   existingUrls={[]}
-                  onUpdate={(urls) => {
-                    if (urls.length > 0) {
-                      setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev);
-                    }
-                  }}
+                  onUpdate={(urls) => { if (urls.length > 0) setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev); }}
                   mediaType="video"
                   maxFiles={1}
                 />
@@ -1856,220 +1682,78 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             </div>
           )}
 
-          {/* Image / Carousel */}
-          {/* ── UGC Ad video generation ── */}
+          {/* UGC Ad */}
           {isUGCAd && (
             <div className="rounded-xl border bg-card p-4 sm:p-5">
               <div className="mb-4 flex items-center gap-2 border-b pb-4">
                 <Video className="size-4 text-muted-foreground" />
                 <h3 className="text-sm font-semibold">UGC Ad video</h3>
               </div>
-
               {item.graphicUrls && item.graphicUrls.length > 0 && (
                 <div className="mb-4">
                   {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                  <video
-                    src={toVideoSrc(item.graphicUrls[0]!)}
-                    controls
-                    playsInline
-                    className="w-full max-w-[240px] rounded-lg"
-                  />
+                  <video src={toVideoSrc(item.graphicUrls[0]!)} controls playsInline className="w-full max-w-[240px] rounded-lg" />
                 </div>
               )}
-
-              {/* Visual source selector */}
               <div className="mb-4">
                 <p className="mb-2 text-xs font-medium text-muted-foreground">Visual source</p>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  {([
-                    { tier: 'unsplash', label: 'Unsplash', sub: 'Free editorial photos' },
-                    { tier: 'flux',     label: 'AI Scene',  sub: 'FLUX Pro per section' },
-                    { tier: 'seedance', label: 'AI Video',  sub: 'Live clips per section' },
-                  ] as const).map(({ tier, label, sub }) => (
-                    <button
-                      key={tier}
-                      type="button"
-                      onClick={() => setUgcPhotoTier(tier)}
-                      className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${ugcPhotoTier === tier ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
-                    >
+                  {([{ tier: 'unsplash', label: 'Unsplash', sub: 'Free editorial photos' }, { tier: 'flux', label: 'AI Scene', sub: 'FLUX Pro per section' }, { tier: 'seedance', label: 'AI Video', sub: 'Live clips per section' }] as const).map(({ tier, label, sub }) => (
+                    <button key={tier} type="button" onClick={() => setUgcPhotoTier(tier)} className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${ugcPhotoTier === tier ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
                       <p className={`text-xs font-semibold ${ugcPhotoTier === tier ? 'text-primary' : ''}`}>{label}</p>
                       <p className="mt-0.5 text-[11px] text-muted-foreground">{sub}</p>
                     </button>
                   ))}
                 </div>
-                {ugcPhotoTier === 'seedance' && (
-                  <p className="mt-2 text-[11px] text-muted-foreground">
-                    Generates a 5s video clip per section using Seedance 2.0. Requires fal.ai credits (~$0.40/ad). Falls back to Unsplash if unavailable.
-                  </p>
-                )}
-                {ugcPhotoTier === 'flux' && (
-                  <p className="mt-2 text-[11px] text-muted-foreground">
-                    Generates an AI photo scene per section using FLUX Pro. Requires fal.ai credits (~$0.20/ad). Falls back to Unsplash if unavailable.
-                  </p>
-                )}
               </div>
-
-              <button
-                type="button"
-                onClick={generateUGCAd}
-                disabled={isGeneratingUGC}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-              >
-                {isGeneratingUGC
-                  ? (<><Loader2 className="size-4 animate-spin" />Generating UGC Ad...</>)
-                  : (<><Sparkles className="size-4" />Generate UGC Ad</>)}
+              <button type="button" onClick={generateUGCAd} disabled={isGeneratingUGC} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                {isGeneratingUGC ? <><Loader2 className="size-4 animate-spin" />Generating UGC Ad...</> : <><Sparkles className="size-4" />Generate UGC Ad</>}
               </button>
               {ugcError && <p className="mt-2 text-xs text-red-500">{ugcError}</p>}
-              {(() => {
-                const rawCredits = (item.platformSpecific?.unsplashCredits as Array<string | { name: string; link: string }>) || [];
-                const tier = item.platformSpecific?.photoTier as string;
-                const usedSeedance = tier === 'seedance';
-                if (usedSeedance) {
-                  return (
-                    <p className="mt-2 text-[11px] text-muted-foreground">
-                      Generated with Seedance 2.0 video clips per section.
-                    </p>
-                  );
-                }
-                if (tier !== 'unsplash' || rawCredits.length === 0) return null;
-                const credits = rawCredits.map(c =>
-                  typeof c === 'string'
-                    ? { name: c, link: `https://unsplash.com/?utm_source=nativpost&utm_medium=referral` }
-                    : c,
-                );
-                return (
-                  <div className="mt-3 rounded-lg border bg-muted/30 px-3 py-2.5">
-                    <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Credits</p>
-                    <div className="flex flex-wrap gap-x-3 gap-y-1">
-                      {credits.map((c, i) => (
-                        <a
-                          key={i}
-                          href={c.link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[11px] text-foreground underline hover:text-primary"
-                        >
-                          {c.name}
-                        </a>
-                      ))}
-                      <a
-                        href="https://unsplash.com/?utm_source=nativpost&utm_medium=referral"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[11px] text-muted-foreground underline hover:text-foreground"
-                      >
-                        via Unsplash
-                      </a>
-                    </div>
-                  </div>
-                );
-              })()}
             </div>
           )}
 
-          {/* ── Data Story video generation ── */}
+          {/* Data Story */}
           {isDataStory && (
             <div className="rounded-xl border bg-card p-4 sm:p-5">
               <div className="mb-4 flex items-center gap-2 border-b pb-4">
                 <Video className="size-4 text-muted-foreground" />
                 <h3 className="text-sm font-semibold">Data Story video</h3>
               </div>
-              <p className="mb-3 text-xs text-muted-foreground">
-                Add stats below, then generate an animated video where each number counts up to its value.
-              </p>
-
-              {/* Stats list */}
+              <p className="mb-3 text-xs text-muted-foreground">Add stats below, then generate an animated video where each number counts up to its value.</p>
               {((item.platformSpecific as Record<string, unknown>)?.data_story_stats as Array<{ label: string; value: number; unit?: string; prefix?: string }> | undefined)?.map((stat, i) => (
                 <div key={i} className="mb-2 flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-sm">
-                  <span className="font-medium">
-                    {stat.prefix || ''}
-                    {stat.value.toLocaleString()}
-                    {stat.unit || ''}
-                  </span>
+                  <span className="font-medium">{stat.prefix || ''}{stat.value.toLocaleString()}{stat.unit || ''}</span>
                   <span className="ml-2 flex-1 text-muted-foreground">{stat.label}</span>
                   <button type="button" onClick={() => removeStatFromItem(i)} className="ml-2 text-xs opacity-40 hover:opacity-100">×</button>
                 </div>
               ))}
-
-              {/* Add stat form */}
               <div className="mt-3 space-y-2 rounded-lg border p-3">
                 <p className="text-xs font-medium text-muted-foreground">Add a stat</p>
                 <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    value={statLabel}
-                    onChange={e => setStatLabel(e.target.value)}
-                    placeholder="Label (e.g. Happy customers)"
-                    className="col-span-2 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none"
-                  />
-                  <input
-                    type="text"
-                    value={statPrefix}
-                    onChange={e => setStatPrefix(e.target.value)}
-                    placeholder='Prefix (e.g. "$")'
-                    className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none"
-                  />
-                  <input
-                    type="number"
-                    value={statValue}
-                    onChange={e => setStatValue(e.target.value)}
-                    placeholder="Value (e.g. 10000)"
-                    className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none"
-                  />
-                  <input
-                    type="text"
-                    value={statUnit}
-                    onChange={e => setStatUnit(e.target.value)}
-                    placeholder='Unit (e.g. "%" or "K")'
-                    className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={addStatToItem}
-                    disabled={!statLabel || !statValue}
-                    className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
-                  >
-                    Add stat
-                  </button>
+                  <input type="text" value={statLabel} onChange={e => setStatLabel(e.target.value)} placeholder="Label (e.g. Happy customers)" className="col-span-2 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
+                  <input type="text" value={statPrefix} onChange={e => setStatPrefix(e.target.value)} placeholder='Prefix (e.g. "$")' className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
+                  <input type="number" value={statValue} onChange={e => setStatValue(e.target.value)} placeholder="Value (e.g. 10000)" className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
+                  <input type="text" value={statUnit} onChange={e => setStatUnit(e.target.value)} placeholder='Unit (e.g. "%" or "K")' className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
+                  <button type="button" onClick={addStatToItem} disabled={!statLabel || !statValue} className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">Add stat</button>
                 </div>
               </div>
-
               {item.graphicUrls && item.graphicUrls.length > 0 && (
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   {item.graphicUrls.filter(isVideoFileUrl).map((url, i) => (
-                    /* eslint-disable-next-line jsx-a11y/media-has-caption */
+                    // eslint-disable-next-line jsx-a11y/media-has-caption
                     <video key={i} src={toVideoSrc(url)} controls playsInline className="w-full rounded-lg" style={{ maxHeight: 300 }} />
                   ))}
                 </div>
               )}
-
-              <button
-                type="button"
-                onClick={generateDataStory}
-                disabled={isGeneratingDataStory || !((item.platformSpecific as Record<string, unknown>)?.data_story_stats as unknown[] | undefined)?.length}
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-              >
-                {isGeneratingDataStory
-                  ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" />
-                        {' '}
-                        Generating Data Story...
-                      </>
-                    )
-                  : (
-                      <>
-                        <Sparkles className="size-4" />
-                        {' '}
-                        Generate Data Story
-                      </>
-                    )}
+              <button type="button" onClick={generateDataStory} disabled={isGeneratingDataStory || !((item.platformSpecific as Record<string, unknown>)?.data_story_stats as unknown[] | undefined)?.length} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                {isGeneratingDataStory ? <><Loader2 className="size-4 animate-spin" />Generating Data Story...</> : <><Sparkles className="size-4" />Generate Data Story</>}
               </button>
               {dataStoryError && <p className="mt-2 text-xs text-red-500">{dataStoryError}</p>}
             </div>
           )}
 
-          {/* ── Single Image generation ── */}
+          {/* ── Single Image — now with 3 modes ─────────────────────────────────── */}
           {isSingleImage && (
             <div className="rounded-xl border bg-card p-4 sm:p-5">
               <div className="mb-4 flex items-center gap-2 border-b pb-4">
@@ -2105,247 +1789,279 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               )}
 
-              {/* AI Image Generator */}
+              {/* Image generator — 3-tab mode switcher */}
               <div className="mb-5 rounded-lg border bg-muted/30 p-4">
-                <div className="mb-3 flex items-center gap-2">
+                <div className="mb-4 flex items-center gap-2">
                   <Sparkles className="size-4 text-primary" />
                   <p className="text-xs font-semibold">Generate image</p>
                 </div>
 
-                {/* Mode toggle */}
-                <div className="mb-4 grid grid-cols-2 gap-1.5 rounded-lg bg-muted p-1">
-                  {(['ai-scene', 'template'] as const).map(mode => (
+                {/* ── Mode tabs — 3 options ── */}
+                <div className="mb-4 grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
+                  {([
+                    ['ai-graphic', 'AI Graphic'],
+                    ['ai-scene', 'AI Scene'],
+                    ['template', 'Template'],
+                  ] as const).map(([mode, label]) => (
                     <button
                       key={mode}
                       type="button"
-                      onClick={() => { setImageMode(mode); setImageGenError(null); setSceneResult(null); }}
-                      className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${imageMode === mode ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                      onClick={() => { setImageMode(mode); setImageGenError(null); setSceneResult(null); setAiGraphicResult(null); setAiGraphicError(null); }}
+                      className={`rounded-md px-2 py-1.5 text-[11px] font-medium transition-colors ${imageMode === mode ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                     >
-                      {mode === 'ai-scene' ? 'AI Scene' : 'Branded Template'}
+                      {label}
                     </button>
                   ))}
                 </div>
 
-                {imageMode === 'ai-scene' && (
-                  <div>
-                    {/* Visual style */}
-                    <div className="mb-3">
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Visual style</p>
+                {/* ── AI GRAPHIC MODE (NEW) ── */}
+                {imageMode === 'ai-graphic' && (
+                  <div className="space-y-4">
+                    {/* Badge explaining what this is */}
+                    <div className="flex items-start gap-2.5 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                      <Sparkles className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                      <p className="text-[11px] leading-relaxed text-primary/80">
+                        Uses OpenAI gpt-image-1 — the best model for graphic design, crisp typography, infographics, and branded illustrations. Claude auto-generates the visual brief from your brand and post topic.
+                      </p>
+                    </div>
+
+                    {/* Content type */}
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Content type</p>
                       <div className="grid grid-cols-3 gap-1.5">
-                        {(['professional', 'minimal', 'vibrant', 'elegant', 'bold', 'cinematic'] as const).map(s => (
+                        {AI_GRAPHIC_TYPES.map(({ value, label, sub }) => (
                           <button
-                            key={s}
+                            key={value}
                             type="button"
-                            onClick={() => setSceneStyle(s)}
-                            className={`rounded-lg border px-2 py-2 text-[10px] font-medium capitalize transition-colors sm:px-2.5 sm:text-[11px] ${sceneStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
+                            onClick={() => setAiGraphicContentType(value)}
+                            className={`rounded-lg border px-2 py-2.5 text-left transition-colors ${aiGraphicContentType === value ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
                           >
-                            {s}
+                            <p className={`text-[11px] font-semibold ${aiGraphicContentType === value ? 'text-primary' : ''}`}>{label}</p>
+                            <p className="mt-0.5 text-[10px] text-muted-foreground leading-snug">{sub}</p>
                           </button>
                         ))}
                       </div>
                     </div>
 
-                    {/* Brand overlay */}
-                    <div className="mb-3">
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Brand overlay</p>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {([['standard', 'Logo + name'], ['minimal', 'Subtle'], ['none', 'None']] as const).map(([val, label]) => (
+                    {/* Format */}
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Format</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {([['square', '1:1 — Square'], ['vertical', '9:16 — Vertical']] as const).map(([val, label]) => (
                           <button
                             key={val}
                             type="button"
-                            onClick={() => setSceneOverlay(val)}
-                            className={`rounded-lg border px-1.5 py-2 text-[10px] font-medium transition-colors sm:px-2.5 sm:text-[11px] ${sceneOverlay === val ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
+                            onClick={() => setAiGraphicFormat(val)}
+                            className={`rounded-lg border px-3 py-2 text-[11px] font-medium transition-colors ${aiGraphicFormat === val ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
                           >
                             {label}
                           </button>
                         ))}
                       </div>
+                      <p className="mt-1.5 text-[10px] text-muted-foreground">
+                        Generate one format at a time. Run again with a different format to get both.
+                      </p>
                     </div>
 
-                    {/* Formats */}
+                    {/* Quality tier */}
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Quality tier</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setAiGraphicQuality('standard')}
+                          className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${aiGraphicQuality === 'standard' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
+                        >
+                          <p className={`text-[11px] font-semibold ${aiGraphicQuality === 'standard' ? 'text-primary' : ''}`}>Standard</p>
+                          <p className="mt-0.5 text-[10px] text-muted-foreground">~$0.01–0.04 · Fast</p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAiGraphicQuality('premium')}
+                          className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${aiGraphicQuality === 'premium' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
+                        >
+                          <p className={`text-[11px] font-semibold ${aiGraphicQuality === 'premium' ? 'text-primary' : ''}`}>Premium</p>
+                          <p className="mt-0.5 text-[10px] text-muted-foreground">~$0.06–0.21 · Best quality</p>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Optional eyebrow */}
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Eyebrow label on overlay (optional)</p>
+                      <input
+                        type="text"
+                        value={aiGraphicEyebrow}
+                        onChange={e => setAiGraphicEyebrow(e.target.value)}
+                        placeholder="e.g. PRO TIP · NEW LAUNCH · CASE STUDY"
+                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+
+                    {/* Advanced overrides — collapsible feel via opacity */}
+                    <details className="group">
+                      <summary className="cursor-pointer list-none text-[11px] font-medium text-muted-foreground hover:text-foreground">
+                        <span className="group-open:hidden">▸ Advanced: override Claude's prompt</span>
+                        <span className="hidden group-open:inline">▾ Advanced overrides</span>
+                      </summary>
+                      <div className="mt-3 space-y-3">
+                        <div>
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Visual prompt override</p>
+                          <textarea
+                            value={aiGraphicPromptOverride}
+                            onChange={e => setAiGraphicPromptOverride(e.target.value)}
+                            placeholder="Describe the exact image you want. Must also fill in Headline override below to skip Claude."
+                            rows={3}
+                            className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        </div>
+                        <div>
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Headline override (brand overlay)</p>
+                          <input
+                            type="text"
+                            value={aiGraphicHeadlineOverride}
+                            onChange={e => setAiGraphicHeadlineOverride(e.target.value)}
+                            placeholder="The headline shown on the brand overlay (not in the AI image)"
+                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          Both fields must be filled to bypass Claude's auto-generation. Leave blank to let Claude write the prompt.
+                        </p>
+                      </div>
+                    </details>
+
+                    {/* Result feedback */}
+                    {aiGraphicResult && (
+                      <div className="rounded-lg bg-muted/50 p-3 space-y-1.5">
+                        <p className="text-[11px] text-green-600 font-medium">
+                          ✓ Generated — {aiGraphicResult.quality} quality
+                          {aiGraphicResult.generationMs ? ` · ${(aiGraphicResult.generationMs / 1000).toFixed(1)}s` : ''}
+                        </p>
+                        {aiGraphicResult.overlayHeadline && (
+                          <p className="text-[11px] text-muted-foreground">
+                            <span className="font-medium text-foreground">Headline: </span>
+                            {aiGraphicResult.overlayHeadline}
+                          </p>
+                        )}
+                        {aiGraphicResult.visualPrompt && (
+                          <p className="text-[10px] text-muted-foreground line-clamp-2">{aiGraphicResult.visualPrompt}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Generate button */}
+                    <button
+                      type="button"
+                      onClick={generateAiGraphic}
+                      disabled={isGeneratingAiGraphic}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+                    >
+                      {isGeneratingAiGraphic
+                        ? <><Loader2 className="size-4 animate-spin" />Generating {aiGraphicQuality === 'premium' ? '(~60–90s)' : '(~20–40s)'}...</>
+                        : <><Sparkles className="size-4" />{hasMedia ? 'Regenerate AI graphic' : 'Generate AI graphic'}</>}
+                    </button>
+                    {aiGraphicError && <p className="mt-1 text-xs text-red-500">{aiGraphicError}</p>}
+                  </div>
+                )}
+
+                {/* ── AI SCENE MODE ── */}
+                {imageMode === 'ai-scene' && (
+                  <div>
+                    <div className="mb-3">
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Visual style</p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {(['professional', 'minimal', 'vibrant', 'elegant', 'bold', 'cinematic'] as const).map(s => (
+                          <button key={s} type="button" onClick={() => setSceneStyle(s)} className={`rounded-lg border px-2 py-2 text-[10px] font-medium capitalize transition-colors sm:px-2.5 sm:text-[11px] ${sceneStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>{s}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mb-3">
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Brand overlay</p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {([['standard', 'Logo + name'], ['minimal', 'Subtle'], ['none', 'None']] as const).map(([val, label]) => (
+                          <button key={val} type="button" onClick={() => setSceneOverlay(val)} className={`rounded-lg border px-1.5 py-2 text-[10px] font-medium transition-colors sm:px-2.5 sm:text-[11px] ${sceneOverlay === val ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>{label}</button>
+                        ))}
+                      </div>
+                    </div>
                     <div className="mb-3">
                       <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Formats</p>
                       <div className="flex gap-2">
                         {(['square', 'vertical'] as const).map(f => (
-                          <button
-                            key={f}
-                            type="button"
-                            onClick={() => setImageFormats(prev =>
-                              prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f],
-                            )}
-                            className={`rounded-lg border px-3 py-1.5 text-[11px] font-medium capitalize transition-colors ${imageFormats.includes(f) ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
-                          >
+                          <button key={f} type="button" onClick={() => setImageFormats(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f])} className={`rounded-lg border px-3 py-1.5 text-[11px] font-medium capitalize transition-colors ${imageFormats.includes(f) ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>
                             {f === 'square' ? '1:1 Square' : '9:16 Vertical'}
                           </button>
                         ))}
                       </div>
                     </div>
-
-                    {/* Optional prompt override */}
                     <div className="mb-3">
                       <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Scene description (optional)</p>
-                      <input
-                        type="text"
-                        value={scenePromptOverride}
-                        onChange={e => setScenePromptOverride(e.target.value)}
-                        placeholder="Leave blank to auto-generate from your post..."
-                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                      />
+                      <input type="text" value={scenePromptOverride} onChange={e => setScenePromptOverride(e.target.value)} placeholder="Leave blank to auto-generate from your post..." className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                     </div>
-
-                    {/* Optional headline override */}
                     <div className="mb-3">
                       <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Headline on image (optional)</p>
-                      <input
-                        type="text"
-                        value={sceneHeadlineOverride}
-                        onChange={e => setSceneHeadlineOverride(e.target.value)}
-                        placeholder="Auto-extracted from your caption..."
-                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                      />
+                      <input type="text" value={sceneHeadlineOverride} onChange={e => setSceneHeadlineOverride(e.target.value)} placeholder="Auto-extracted from your caption..." className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                     </div>
-
-                    {/* Optional eyebrow */}
                     <div className="mb-4">
                       <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Eyebrow label (optional)</p>
-                      <input
-                        type="text"
-                        value={sceneEyebrowOverride}
-                        onChange={e => setSceneEyebrowOverride(e.target.value)}
-                        placeholder="e.g. NEW LAUNCH · CASE STUDY · PRO TIP"
-                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                      />
+                      <input type="text" value={sceneEyebrowOverride} onChange={e => setSceneEyebrowOverride(e.target.value)} placeholder="e.g. NEW LAUNCH · CASE STUDY · PRO TIP" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                     </div>
-
-                    {/* Scene result info */}
                     {sceneResult && (
                       <div className="mb-3 rounded-lg bg-muted/50 p-3 space-y-1">
-                        {sceneResult.fallback && (
-                          <p className="text-[11px] text-amber-600 font-medium">Template fallback used — top up fal.ai credits to enable AI scenes.</p>
-                        )}
-                        {sceneResult.modelUsed && !sceneResult.fallback && (
-                          <p className="text-[11px] text-green-600 font-medium">Generated with FLUX {sceneResult.modelUsed}</p>
-                        )}
-                        {sceneResult.headlineUsed && (
-                          <p className="text-[11px] text-muted-foreground">
-                            <span className="font-medium text-foreground">Headline: </span>
-                            {sceneResult.headlineUsed}
-                          </p>
-                        )}
-                        {sceneResult.promptUsed && (
-                          <p className="text-[11px] text-muted-foreground line-clamp-2">{sceneResult.promptUsed}</p>
-                        )}
+                        {sceneResult.fallback && <p className="text-[11px] text-amber-600 font-medium">Template fallback used — top up fal.ai credits to enable AI scenes.</p>}
+                        {sceneResult.modelUsed && !sceneResult.fallback && <p className="text-[11px] text-green-600 font-medium">Generated with FLUX {sceneResult.modelUsed}</p>}
+                        {sceneResult.headlineUsed && <p className="text-[11px] text-muted-foreground"><span className="font-medium text-foreground">Headline: </span>{sceneResult.headlineUsed}</p>}
+                        {sceneResult.promptUsed && <p className="text-[11px] text-muted-foreground line-clamp-2">{sceneResult.promptUsed}</p>}
                       </div>
                     )}
-
-                    <button
-                      type="button"
-                      onClick={generateScene}
-                      disabled={isGeneratingImage || imageFormats.length === 0}
-                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-                    >
-                      {isGeneratingImage
-                        ? (<><Loader2 className="size-4 animate-spin" /> Generating...</>)
-                        : (<><Sparkles className="size-4" />{hasMedia ? 'Regenerate scene' : 'Generate scene'}</>)}
+                    <button type="button" onClick={generateScene} disabled={isGeneratingImage || imageFormats.length === 0} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
+                      {isGeneratingImage ? <><Loader2 className="size-4 animate-spin" />Generating...</> : <><Sparkles className="size-4" />{hasMedia ? 'Regenerate scene' : 'Generate scene'}</>}
                     </button>
                   </div>
                 )}
 
+                {/* ── TEMPLATE MODE ── */}
                 {imageMode === 'template' && (
                   <div>
-                    {/* Template selector */}
                     <div className="mb-3">
                       <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Template</p>
                       <div className="grid grid-cols-3 gap-1.5">
                         {(['quote-card', 'announcement-card', 'stat-card'] as const).map(t => (
-                          <button
-                            key={t}
-                            type="button"
-                            onClick={() => setImageTemplate(t)}
-                            className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium transition-colors ${imageTemplate === t ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
-                          >
+                          <button key={t} type="button" onClick={() => setImageTemplate(t)} className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium transition-colors ${imageTemplate === t ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>
                             {t === 'quote-card' ? 'Quote' : t === 'announcement-card' ? 'Announcement' : 'Stat'}
                           </button>
                         ))}
                       </div>
                     </div>
-
-                    {/* Style selector */}
                     <div className="mb-3">
                       <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Style</p>
                       <div className="grid grid-cols-3 gap-1.5">
                         {(['dark', 'light', 'brand'] as const).map(s => (
-                          <button
-                            key={s}
-                            type="button"
-                            onClick={() => setImageStyle(s)}
-                            className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium capitalize transition-colors ${imageStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
-                          >
-                            {s}
-                          </button>
+                          <button key={s} type="button" onClick={() => setImageStyle(s)} className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium capitalize transition-colors ${imageStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>{s}</button>
                         ))}
                       </div>
                     </div>
-
-                    {/* Formats */}
                     <div className="mb-3">
                       <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Formats</p>
                       <div className="flex gap-2">
                         {(['square', 'vertical'] as const).map(f => (
-                          <button
-                            key={f}
-                            type="button"
-                            onClick={() => setImageFormats(prev =>
-                              prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f],
-                            )}
-                            className={`rounded-lg border px-3 py-1.5 text-[11px] font-medium capitalize transition-colors ${imageFormats.includes(f) ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
-                          >
+                          <button key={f} type="button" onClick={() => setImageFormats(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f])} className={`rounded-lg border px-3 py-1.5 text-[11px] font-medium capitalize transition-colors ${imageFormats.includes(f) ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>
                             {f === 'square' ? '1:1 Square' : '9:16 Vertical'}
                           </button>
                         ))}
                       </div>
                     </div>
-
-                    {/* Stat card fields */}
                     {imageTemplate === 'stat-card' && (
                       <div className="mb-3 space-y-2">
-                        <input
-                          type="text"
-                          value={imageStatValue}
-                          onChange={e => setImageStatValue(e.target.value)}
-                          placeholder="Stat value, e.g. 47%"
-                          className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                        />
-                        <input
-                          type="text"
-                          value={imageStatLabel}
-                          onChange={e => setImageStatLabel(e.target.value)}
-                          placeholder="Stat label, e.g. improvement in engagement"
-                          className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                        />
+                        <input type="text" value={imageStatValue} onChange={e => setImageStatValue(e.target.value)} placeholder="Stat value, e.g. 47%" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                        <input type="text" value={imageStatLabel} onChange={e => setImageStatLabel(e.target.value)} placeholder="Stat label, e.g. improvement in engagement" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                       </div>
                     )}
-
-                    {/* Optional eyebrow */}
                     <div className="mb-4">
-                      <input
-                        type="text"
-                        value={imageEyebrow}
-                        onChange={e => setImageEyebrow(e.target.value)}
-                        placeholder="Eyebrow label (optional) e.g. THIS WEEK"
-                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                      />
+                      <input type="text" value={imageEyebrow} onChange={e => setImageEyebrow(e.target.value)} placeholder="Eyebrow label (optional) e.g. THIS WEEK" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={generateImage}
-                      disabled={isGeneratingImage || imageFormats.length === 0}
-                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-                    >
-                      {isGeneratingImage
-                        ? (<><Loader2 className="size-4 animate-spin" /> Generating...</>)
-                        : (<><Sparkles className="size-4" />{hasMedia ? 'Regenerate image' : 'Generate image'}</>)}
+                    <button type="button" onClick={generateImage} disabled={isGeneratingImage || imageFormats.length === 0} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
+                      {isGeneratingImage ? <><Loader2 className="size-4 animate-spin" />Generating...</> : <><Sparkles className="size-4" />{hasMedia ? 'Regenerate image' : 'Generate image'}</>}
                     </button>
                   </div>
                 )}
@@ -2353,7 +2069,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 {imageGenError && <p className="mt-2 text-xs text-red-500">{imageGenError}</p>}
               </div>
 
-              {/* Manual upload fallback */}
+              {/* Manual upload */}
               <div>
                 <p className="mb-3 text-xs font-medium text-muted-foreground">Upload your own</p>
                 <MediaUploader
@@ -2367,7 +2083,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             </div>
           )}
 
-          {/* ── Carousel generation ── */}
+          {/* Carousel */}
           {isCarousel && (
             <div className="rounded-xl border bg-card p-4 sm:p-5">
               <div className="mb-4 flex items-center gap-2 border-b pb-4">
@@ -2379,103 +2095,48 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   </span>
                 )}
               </div>
-
-              {/* Generated slides preview */}
               {hasMedia && (
                 <div className="mb-5">
-                  <p className="mb-3 text-xs font-medium text-muted-foreground">
-                    {item.graphicUrls.length}
-                    {' '}
-                    slide
-                    {item.graphicUrls.length !== 1 ? 's' : ''}
-                    {' '}
-                    generated
-                  </p>
+                  <p className="mb-3 text-xs font-medium text-muted-foreground">{item.graphicUrls.length} slide{item.graphicUrls.length !== 1 ? 's' : ''} generated</p>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {item.graphicUrls.map((url, i) => (
                       <div key={i} className="overflow-hidden rounded-lg border">
-                        <div className="border-b px-2 py-1">
-                          <p className="text-[10px] text-muted-foreground">
-                            Slide
-                            {' '}
-                            {i + 1}
-                          </p>
-                        </div>
+                        <div className="border-b px-2 py-1"><p className="text-[10px] text-muted-foreground">Slide {i + 1}</p></div>
                         <Image src={url} alt={`Carousel slide ${i + 1}`} width={300} height={300} className="w-full object-cover" unoptimized />
                       </div>
                     ))}
                   </div>
                 </div>
               )}
-
-              {/* Carousel generator */}
               <div className="mb-5 rounded-lg border bg-muted/30 p-4">
                 <div className="mb-3 flex items-center gap-2">
                   <Sparkles className="size-4 text-primary" />
                   <p className="text-xs font-semibold">Generate carousel from caption</p>
                 </div>
-                <p className="mb-4 text-[11px] text-muted-foreground">
-                  Each paragraph in your caption becomes a slide. The first becomes the cover, the last gets a CTA slide appended automatically.
-                </p>
-
-                {/* Style */}
+                <p className="mb-4 text-[11px] text-muted-foreground">Each paragraph in your caption becomes a slide. The first becomes the cover, the last gets a CTA slide appended automatically.</p>
                 <div className="mb-3">
                   <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Style</p>
                   <div className="grid grid-cols-3 gap-1.5">
                     {(['dark', 'light', 'brand'] as const).map(s => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => setCarouselStyle(s)}
-                        className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium capitalize transition-colors ${carouselStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
-                      >
-                        {s}
-                      </button>
+                      <button key={s} type="button" onClick={() => setCarouselStyle(s)} className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium capitalize transition-colors ${carouselStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>{s}</button>
                     ))}
                   </div>
                 </div>
-
-                {/* Aspect ratio */}
                 <div className="mb-4">
                   <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Format</p>
                   <div className="grid grid-cols-2 gap-1.5">
                     {(['1:1', '9:16'] as const).map(ar => (
-                      <button
-                        key={ar}
-                        type="button"
-                        onClick={() => setCarouselAspectRatio(ar)}
-                        className={`rounded-lg border px-3 py-2 text-[11px] font-medium transition-colors ${carouselAspectRatio === ar ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
-                      >
+                      <button key={ar} type="button" onClick={() => setCarouselAspectRatio(ar)} className={`rounded-lg border px-3 py-2 text-[11px] font-medium transition-colors ${carouselAspectRatio === ar ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>
                         {ar === '1:1' ? '1:1 — LinkedIn, Facebook' : '9:16 — Instagram, TikTok'}
                       </button>
                     ))}
                   </div>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={generateCarousel}
-                  disabled={isGeneratingCarousel}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                >
-                  {isGeneratingCarousel
-                    ? (
-                        <>
-                          <Loader2 className="size-4 animate-spin" />
-                          Generating slides (~5–10s)...
-                        </>
-                      )
-                    : (
-                        <>
-                          <Sparkles className="size-4" />
-                          {hasMedia ? 'Regenerate carousel' : 'Generate carousel'}
-                        </>
-                      )}
+                <button type="button" onClick={generateCarousel} disabled={isGeneratingCarousel} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                  {isGeneratingCarousel ? <><Loader2 className="size-4 animate-spin" />Generating slides (~5–10s)...</> : <><Sparkles className="size-4" />{hasMedia ? 'Regenerate carousel' : 'Generate carousel'}</>}
                 </button>
                 {carouselError && <p className="mt-2 text-xs text-red-500">{carouselError}</p>}
               </div>
-
-              {/* Manual upload fallback */}
               <div>
                 <p className="mb-3 text-xs font-medium text-muted-foreground">Or upload slides manually</p>
                 <MediaUploader
@@ -2490,67 +2151,47 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
 
           {/* Platform adaptations */}
           {Object.keys(item.platformSpecific || {}).length > 0
-          && Object.entries(item.platformSpecific).some(([k]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k))
-          && (
-            <div className="rounded-xl border bg-card p-4 sm:p-5">
-              <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Platform adaptations</h3>
-              <div className="space-y-3">
-                {Object.entries(item.platformSpecific)
-                  .filter(([k, v]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k) && typeof v === 'string')
-                  .map(([platform, text]) => {
-                    const isEditingThis = editingAdaptation === platform;
-                    const loadingKey = `adaptation-${platform}`;
-                    return (
-                      <div key={platform} className="rounded-lg border bg-muted/30 p-3">
-                        <div className="mb-1.5 flex items-center justify-between">
-                          <span className="text-xs font-semibold capitalize">
-                            {PLATFORM_LABELS[platform] || platform}
-                          </span>
-                          {!isEditingThis && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingAdaptation(platform); setEditAdaptationText(String(text));
-                              }}
-                              className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium transition-colors hover:bg-muted"
-                            >
-                              <Edit3 className="size-3" />
-                              Edit
-                            </button>
+            && Object.entries(item.platformSpecific).some(([k]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k))
+            && (
+              <div className="rounded-xl border bg-card p-4 sm:p-5">
+                <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Platform adaptations</h3>
+                <div className="space-y-3">
+                  {Object.entries(item.platformSpecific)
+                    .filter(([k, v]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k) && typeof v === 'string')
+                    .map(([platform, text]) => {
+                      const isEditingThis = editingAdaptation === platform;
+                      const loadingKey = `adaptation-${platform}`;
+                      return (
+                        <div key={platform} className="rounded-lg border bg-muted/30 p-3">
+                          <div className="mb-1.5 flex items-center justify-between">
+                            <span className="text-xs font-semibold capitalize">{PLATFORM_LABELS[platform] || platform}</span>
+                            {!isEditingThis && (
+                              <button type="button" onClick={() => { setEditingAdaptation(platform); setEditAdaptationText(String(text)); }} className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium transition-colors hover:bg-muted">
+                                <Edit3 className="size-3" />
+                                Edit
+                              </button>
+                            )}
+                          </div>
+                          {isEditingThis ? (
+                            <div>
+                              <textarea value={editAdaptationText} onChange={e => setEditAdaptationText(e.target.value)} rows={5} className="w-full resize-none rounded-lg border bg-background px-3 py-2.5 text-sm leading-relaxed focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                              <div className="mt-2 flex gap-2">
+                                <button type="button" onClick={() => saveAdaptation(platform)} disabled={actionLoading === loadingKey} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                                  {actionLoading === loadingKey ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+                                  Save
+                                </button>
+                                <button type="button" onClick={() => setEditingAdaptation(null)} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">Cancel</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-sm leading-relaxed text-muted-foreground">{String(text)}</p>
                           )}
                         </div>
-                        {isEditingThis ? (
-                          <div>
-                            <textarea
-                              value={editAdaptationText}
-                              onChange={e => setEditAdaptationText(e.target.value)}
-                              rows={5}
-                              className="w-full resize-none rounded-lg border bg-background px-3 py-2.5 text-sm leading-relaxed focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                            />
-                            <div className="mt-2 flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => saveAdaptation(platform)}
-                                disabled={actionLoading === loadingKey}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                              >
-                                {actionLoading === loadingKey ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-                                Save
-                              </button>
-                              <button type="button" onClick={() => setEditingAdaptation(null)} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-sm leading-relaxed text-muted-foreground">{String(text)}</p>
-                        )}
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
           {/* Rejection feedback */}
           {item.rejectionFeedback && (
@@ -2561,119 +2202,98 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           )}
         </div>
 
-        {/* ── Sidebar — hidden on mobile, visible lg+ ────────── */}
+        {/* ── Sidebar ──────────────────────────────────────── */}
         <div className="hidden lg:block">
           <div className="sticky top-6 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 5rem)' }}>
+            <ActionsPanel />
 
-          {/* Actions */}
-          <ActionsPanel />
-
-          {/* Quality Score */}
-          {item.antiSlopScore !== null && (
-            <div className="rounded-xl border bg-card p-5">
-              <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
-              <div className="mb-3 flex items-center gap-3">
-                <div className="relative size-12">
-                  <svg className="size-12 -rotate-90" viewBox="0 0 36 36">
-                    <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
-                    <path
-                      d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeDasharray={`${item.antiSlopScore * 100}, 100`}
-                      className={item.antiSlopScore >= 0.8 ? 'text-emerald-500' : item.antiSlopScore >= 0.7 ? 'text-yellow-500' : item.antiSlopScore >= 0.5 ? 'text-orange-500' : 'text-red-500'}
-                    />
-                  </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">
-                    {Math.round(item.antiSlopScore * 100)}
-                  </span>
+            {item.antiSlopScore !== null && (
+              <div className="rounded-xl border bg-card p-5">
+                <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
+                <div className="mb-3 flex items-center gap-3">
+                  <div className="relative size-12">
+                    <svg className="size-12 -rotate-90" viewBox="0 0 36 36">
+                      <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
+                      <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray={`${item.antiSlopScore * 100}, 100`} className={item.antiSlopScore >= 0.8 ? 'text-emerald-500' : item.antiSlopScore >= 0.7 ? 'text-yellow-500' : item.antiSlopScore >= 0.5 ? 'text-orange-500' : 'text-red-500'} />
+                    </svg>
+                    <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">{Math.round(item.antiSlopScore * 100)}</span>
+                  </div>
+                  <div>
+                    <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>{scoreLabel(item.antiSlopScore).text}</p>
+                    <p className="text-[11px] text-muted-foreground">Quality score</p>
+                  </div>
                 </div>
-                <div>
-                  <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>
-                    {scoreLabel(item.antiSlopScore).text}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">Quality score</p>
-                </div>
-              </div>
-              {item.qualityFlags.length > 0 && (
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setShowQualityFlags(p => !p)}
-                    className="mb-2 text-xs text-muted-foreground underline hover:text-foreground"
-                  >
-                    {showQualityFlags ? 'Hide' : 'Show'}
-                    {' '}
-                    {item.qualityFlags.length}
-                    {' '}
-                    quality
-                    {' '}
-                    {item.qualityFlags.length === 1 ? 'note' : 'notes'}
-                  </button>
-                  {showQualityFlags && (
-                    <div className="space-y-1.5">
-                      {item.qualityFlags.map((flag, i) => (
-                        <p key={i} className="text-[11px] leading-snug text-muted-foreground">{flag}</p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Details */}
-          <div className="rounded-xl border bg-card p-5">
-            <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Details</h3>
-            <div className="space-y-3">
-              <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
-              <DetailRow label="Topic" value={item.topic || 'Auto-selected'} />
-              {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
-              <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
-              {isReel && (item.platformSpecific?.videoDurationSeconds as number) > 0 && (
-                <DetailRow label="Video duration" value={`${item.platformSpecific.videoDurationSeconds}s`} />
-              )}
-              <DetailRow label="Created" value={new Date(item.createdAt).toLocaleString()} />
-              {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
-              {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
-            </div>
-            {item.scheduledFor && (
-              <div className="mt-4 border-t pt-3">
-                <Link
-                  href={`/dashboard/calendar?selected=${item.scheduledFor.split('T')[0]}`}
-                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                >
-                  <Calendar className="size-3.5" />
-                  View on calendar
-                  <ChevronRight className="size-3" />
-                </Link>
+                {item.qualityFlags.length > 0 && (
+                  <div>
+                    <button type="button" onClick={() => setShowQualityFlags(p => !p)} className="mb-2 text-xs text-muted-foreground underline hover:text-foreground">
+                      {showQualityFlags ? 'Hide' : 'Show'} {item.qualityFlags.length} quality {item.qualityFlags.length === 1 ? 'note' : 'notes'}
+                    </button>
+                    {showQualityFlags && (
+                      <div className="space-y-1.5">
+                        {item.qualityFlags.map((flag, i) => <p key={i} className="text-[11px] leading-snug text-muted-foreground">{flag}</p>)}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
-          </div>
 
-          {/* Engagement */}
-          {item.status === 'published' && (
             <div className="rounded-xl border bg-card p-5">
-              <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Engagement</h3>
-              {Object.keys(item.engagementData || {}).length > 0 ? (
-                <div className="space-y-3">
-                  {Object.entries(item.engagementData).map(([key, val]) => (
-                    <DetailRow key={key} label={key} value={String(val)} />
-                  ))}
+              <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Details</h3>
+              <div className="space-y-3">
+                <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
+                <DetailRow label="Topic" value={item.topic || 'Auto-selected'} />
+                {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
+                <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
+                {isReel && (item.platformSpecific?.videoDurationSeconds as number) > 0 && (
+                  <DetailRow label="Video duration" value={`${item.platformSpecific.videoDurationSeconds}s`} />
+                )}
+                {/* Show AI graphic metadata when present */}
+                {item.platformSpecific?.imageTemplate === 'ai-graphic' && (
+                  <>
+                    <DetailRow label="Image engine" value="OpenAI gpt-image-1" />
+                    {item.platformSpecific?.aiGraphicType && (
+                      <DetailRow label="Graphic type" value={String(item.platformSpecific.aiGraphicType)} />
+                    )}
+                    {item.platformSpecific?.aiGraphicQuality && (
+                      <DetailRow label="Quality tier" value={String(item.platformSpecific.aiGraphicQuality)} />
+                    )}
+                  </>
+                )}
+                <DetailRow label="Created" value={new Date(item.createdAt).toLocaleString()} />
+                {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
+                {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
+              </div>
+              {item.scheduledFor && (
+                <div className="mt-4 border-t pt-3">
+                  <Link href={`/dashboard/calendar?selected=${item.scheduledFor.split('T')[0]}`} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+                    <Calendar className="size-3.5" />
+                    View on calendar
+                    <ChevronRight className="size-3" />
+                  </Link>
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Engagement data will appear here once the post has been live for a few hours.
-                </p>
               )}
             </div>
-          )}
+
+            {item.status === 'published' && (
+              <div className="rounded-xl border bg-card p-5">
+                <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Engagement</h3>
+                {Object.keys(item.engagementData || {}).length > 0 ? (
+                  <div className="space-y-3">
+                    {Object.entries(item.engagementData).map(([key, val]) => (
+                      <DetailRow key={key} label={key} value={String(val)} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Engagement data will appear here once the post has been live for a few hours.</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* ── Mobile-only: Details + Quality below main content ─── */}
+      {/* Mobile — Details + Quality */}
       <div className={`mt-4 space-y-4 lg:hidden ${primaryAction ? 'pb-24' : ''}`}>
         {item.antiSlopScore !== null && (
           <div className="rounded-xl border bg-card p-4">
@@ -2682,23 +2302,12 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               <div className="relative size-10">
                 <svg className="size-10 -rotate-90" viewBox="0 0 36 36">
                   <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
-                  <path
-                    d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    strokeDasharray={`${item.antiSlopScore * 100}, 100`}
-                    className={item.antiSlopScore >= 0.8 ? 'text-emerald-500' : item.antiSlopScore >= 0.7 ? 'text-yellow-500' : 'text-orange-500'}
-                  />
+                  <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray={`${item.antiSlopScore * 100}, 100`} className={item.antiSlopScore >= 0.8 ? 'text-emerald-500' : item.antiSlopScore >= 0.7 ? 'text-yellow-500' : 'text-orange-500'} />
                 </svg>
-                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">
-                  {Math.round(item.antiSlopScore * 100)}
-                </span>
+                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">{Math.round(item.antiSlopScore * 100)}</span>
               </div>
               <div>
-                <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>
-                  {scoreLabel(item.antiSlopScore).text}
-                </p>
+                <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>{scoreLabel(item.antiSlopScore).text}</p>
                 <p className="text-[11px] text-muted-foreground">Quality score</p>
               </div>
             </div>
@@ -2711,41 +2320,27 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
             {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
             <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
+            {item.platformSpecific?.imageTemplate === 'ai-graphic' && (
+              <DetailRow label="Image engine" value="OpenAI gpt-image-1" />
+            )}
             <DetailRow label="Created" value={new Date(item.createdAt).toLocaleDateString()} />
-            {item.scheduledFor && (
-              <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />
-            )}
-            {item.publishedAt && (
-              <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />
-            )}
+            {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
+            {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
           </div>
         </div>
 
-        {/* Reject / Delete on mobile — at the very bottom */}
-        {(item.status !== 'published' || true) && (
-          <div className="flex gap-2">
-            {item.status !== 'published' && item.status !== 'rejected' && (
-              <button
-                type="button"
-                onClick={() => updateStatus('rejected')}
-                disabled={!!actionLoading}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-              >
-                <X className="size-4" />
-                Reject
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={deleteItem}
-              disabled={!!actionLoading}
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium text-red-500 hover:bg-red-50 disabled:opacity-50"
-            >
-              <Trash2 className="size-4" />
-              Delete
+        <div className="flex gap-2">
+          {item.status !== 'published' && item.status !== 'rejected' && (
+            <button type="button" onClick={() => updateStatus('rejected')} disabled={!!actionLoading} className="flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium hover:bg-red-50 hover:text-red-600 disabled:opacity-50">
+              <X className="size-4" />
+              Reject
             </button>
-          </div>
-        )}
+          )}
+          <button type="button" onClick={deleteItem} disabled={!!actionLoading} className="flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium text-red-500 hover:bg-red-50 disabled:opacity-50">
+            <Trash2 className="size-4" />
+            Delete
+          </button>
+        </div>
       </div>
     </>
   );
