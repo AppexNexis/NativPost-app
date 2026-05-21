@@ -75,7 +75,15 @@ export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
     name: 'LinkedIn Page',
     authUrl: 'https://www.linkedin.com/oauth/v2/authorization',
     tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
-    scopes: ['openid', 'profile', 'w_member_social', 'w_organization_social', 'r_organization_social'],
+    // scopes: ['openid', 'profile', 'w_member_social', 'w_organization_social', 'r_organization_social'],
+    scopes: [
+      'openid',
+      'profile',
+      'w_member_social',
+      'w_organization_social',
+      'r_organization_social',
+      'r_member_postAnalytics',  // add this
+    ],
     clientIdEnv: 'LINKEDIN_PAGE_CLIENT_ID',
     clientSecretEnv: 'LINKEDIN_PAGE_CLIENT_SECRET',
     scopeSeparator: ' ',

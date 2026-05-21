@@ -181,53 +181,108 @@ async function fetchPlatformMetrics(
   }
 }
 
+// async function fetchLinkedInMetrics_(postUrn: string, accessToken: string): Promise<Metrics | null> {
+//   // LinkedIn Social Metadata API
+//   const encodedUrn = encodeURIComponent(postUrn);
+//   const res = await fetch(
+//     `https://api.linkedin.com/v2/socialMetadata/${encodedUrn}`,
+//     {
+//       headers: {
+//         'Authorization': `Bearer ${accessToken}`,
+//         'X-Restli-Protocol-Version': '2.0.0',
+//       },
+//     },
+//   );
+
+//   if (!res.ok) {
+//     // Fallback: try the UGC post stats endpoint
+//     const statsRes = await fetch(
+//       `https://api.linkedin.com/v2/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=${encodedUrn}`,
+//       {
+//         headers: {
+//           'Authorization': `Bearer ${accessToken}`,
+//           'X-Restli-Protocol-Version': '2.0.0',
+//         },
+//       },
+//     );
+//     if (!statsRes.ok) {
+//       return null;
+//     }
+//     const statsData = await statsRes.json();
+//     const stats = statsData.elements?.[0]?.totalShareStatistics;
+//     if (!stats) {
+//       return null;
+//     }
+//     return {
+//       likes: stats.likeCount || 0,
+//       comments: stats.commentCount || 0,
+//       shares: stats.shareCount || 0,
+//       impressions: stats.impressionCount || 0,
+//       clicks: stats.clickCount || 0,
+//     };
+//   }
+
+//   const data = await res.json();
+//   return {
+//     likes: data.likesSummary?.totalLikes || 0,
+//     comments: data.commentsSummary?.totalFirstLevelComments || 0,
+//     shares: data.sharesSummary?.totalShares || 0,
+//     impressions: data.impressionCount || 0,
+//   };
+// }
+
 async function fetchLinkedInMetrics(postUrn: string, accessToken: string): Promise<Metrics | null> {
-  // LinkedIn Social Metadata API
   const encodedUrn = encodeURIComponent(postUrn);
+
+  // Personal post analytics (requires r_member_postAnalytics scope)
   const res = await fetch(
-    `https://api.linkedin.com/v2/socialMetadata/${encodedUrn}`,
+    `https://api.linkedin.com/rest/memberCreatorPostAnalytics?q=postUrn&postUrn=${encodedUrn}`,
     {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
+        'LinkedIn-Version': '202505',
         'X-Restli-Protocol-Version': '2.0.0',
       },
     },
   );
 
-  if (!res.ok) {
-    // Fallback: try the UGC post stats endpoint
-    const statsRes = await fetch(
-      `https://api.linkedin.com/v2/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=${encodedUrn}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'X-Restli-Protocol-Version': '2.0.0',
-        },
-      },
-    );
-    if (!statsRes.ok) {
-      return null;
+  if (res.ok) {
+    const data = await res.json();
+    const stats = data.elements?.[0];
+    if (stats) {
+      return {
+        impressions: stats.impressionCount || 0,
+        likes: stats.likeCount || 0,
+        comments: stats.commentCount || 0,
+        shares: stats.shareCount || 0,
+        clicks: stats.clickCount || 0,
+      };
     }
-    const statsData = await statsRes.json();
-    const stats = statsData.elements?.[0]?.totalShareStatistics;
-    if (!stats) {
-      return null;
-    }
-    return {
-      likes: stats.likeCount || 0,
-      comments: stats.commentCount || 0,
-      shares: stats.shareCount || 0,
-      impressions: stats.impressionCount || 0,
-      clicks: stats.clickCount || 0,
-    };
   }
 
-  const data = await res.json();
+  // Fallback for org/page posts
+  const statsRes = await fetch(
+    `https://api.linkedin.com/v2/organizationalEntityShareStatistics?q=shares&shares[0]=${encodedUrn}`,
+    {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'LinkedIn-Version': '202505',
+        'X-Restli-Protocol-Version': '2.0.0',
+      },
+    },
+  );
+
+  if (!statsRes.ok) return null;
+  const statsData = await statsRes.json();
+  const orgStats = statsData.elements?.[0]?.totalShareStatistics;
+  if (!orgStats) return null;
+
   return {
-    likes: data.likesSummary?.totalLikes || 0,
-    comments: data.commentsSummary?.totalFirstLevelComments || 0,
-    shares: data.sharesSummary?.totalShares || 0,
-    impressions: data.impressionCount || 0,
+    likes: orgStats.likeCount || 0,
+    comments: orgStats.commentCount || 0,
+    shares: orgStats.shareCount || 0,
+    impressions: orgStats.impressionCount || 0,
+    clicks: orgStats.clickCount || 0,
   };
 }
 

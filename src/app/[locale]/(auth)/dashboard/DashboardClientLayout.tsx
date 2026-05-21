@@ -21,6 +21,8 @@ import {
   Settings,
   ShieldCheck,
   Users,
+  Gift,
+  MessageCircle,
 } from 'lucide-react';
 import NextImage from 'next/image';
 import Link from 'next/link';
@@ -52,6 +54,8 @@ const ICONS: Record<string, typeof Calendar> = {
   PenLine,
   Settings,
   Users,
+  Gift,
+  MessageCircle,
 };
 
 export default function DashboardClientLayout({
@@ -169,9 +173,8 @@ export default function DashboardClientLayout({
     <div className="flex h-screen overflow-hidden bg-muted/30">
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex h-screen w-[220px] flex-col border-r bg-background transition-transform duration-200 lg:static lg:inset-y-auto lg:z-auto lg:translate-x-0 lg:shrink-0 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed inset-y-0 left-0 z-40 flex h-screen w-[220px] flex-col border-r bg-background transition-transform duration-200 lg:static lg:inset-y-auto lg:z-auto lg:translate-x-0 lg:shrink-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
         {/* Logo */}
         <div className="flex h-14 items-center border-b px-4">
