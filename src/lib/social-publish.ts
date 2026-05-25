@@ -1156,6 +1156,133 @@ export async function publishToThreads(
 }
 
 // ============================================================
+// SNAPCHAT
+// ============================================================
+
+// export async function publishToSnapchat(
+//   accessToken: string,
+//   caption: string,
+//   imageUrls: string[] = [],
+//   videoUrl?: string,
+// ): Promise<PublishResult> {
+//   try {
+//     if (imageUrls.length === 0 && !videoUrl) {
+//       return {
+//         success: false,
+//         error: 'Snapchat requires an image or video. Text-only posts are not supported.',
+//       };
+//     }
+
+//     const mediaUrl = videoUrl || imageUrls[0];
+//     const isVideo = !!videoUrl;
+
+//     // Step 1: Get ad account ID
+//     const meRes = await fetch('https://adsapi.snapchat.com/v1/me/organizations', {
+//       headers: { Authorization: `Bearer ${accessToken}` },
+//     });
+//     const meData = await meRes.json();
+//     const orgId = meData.organizations?.[0]?.organization?.id;
+
+//     if (!orgId) {
+//       return { success: false, error: 'Snapchat: could not retrieve organization ID' };
+//     }
+
+//     const adAccountsRes = await fetch(
+//       `https://adsapi.snapchat.com/v1/organizations/${orgId}/adaccounts`,
+//       { headers: { Authorization: `Bearer ${accessToken}` } },
+//     );
+//     const adAccountsData = await adAccountsRes.json();
+//     const adAccountId = adAccountsData.adaccounts?.[0]?.adaccount?.id;
+
+//     if (!adAccountId) {
+//       return { success: false, error: 'Snapchat: no ad account found' };
+//     }
+
+//     // Step 2: Create media object
+//     const mediaCreateRes = await fetch('https://adsapi.snapchat.com/v1/media', {
+//       method: 'POST',
+//       headers: {
+//         Authorization: `Bearer ${accessToken}`,
+//         'Content-Type': 'application/json',
+//       },
+//       body: JSON.stringify({
+//         media: [{
+//           name: `nativpost-${Date.now()}`,
+//           type: isVideo ? 'VIDEO' : 'IMAGE',
+//           ad_account_id: adAccountId,
+//         }],
+//       }),
+//     });
+
+//     const mediaCreateData = await mediaCreateRes.json();
+//     const mediaId = mediaCreateData.media?.[0]?.media?.id;
+
+//     if (!mediaId) {
+//       return {
+//         success: false,
+//         error: mediaCreateData.request_status || 'Snapchat: media creation failed',
+//       };
+//     }
+
+//     // Step 3: Upload the file
+//     const fileRes = await fetch(mediaUrl!);
+//     if (!fileRes.ok) {
+//       return { success: false, error: 'Snapchat: could not fetch media file for upload' };
+//     }
+
+//     const fileBuffer = await fileRes.arrayBuffer();
+//     const contentType = fileRes.headers.get('content-type') || (isVideo ? 'video/mp4' : 'image/jpeg');
+
+//     const uploadRes = await fetch(
+//       `https://adsapi.snapchat.com/v1/media/${mediaId}/upload`,
+//       {
+//         method: 'POST',
+//         headers: {
+//           Authorization: `Bearer ${accessToken}`,
+//           'Content-Type': contentType,
+//         },
+//         body: fileBuffer,
+//       },
+//     );
+
+//     if (!uploadRes.ok) {
+//       const errText = await uploadRes.text();
+//       console.error('[Snapchat] Upload failed:', errText);
+//       return { success: false, error: `Snapchat: media upload failed (${uploadRes.status})` };
+//     }
+
+//     console.log(`[Snapchat] Media uploaded successfully: ${mediaId}`);
+//     return { success: true, platformPostId: mediaId };
+//   } catch (err) {
+//     return { success: false, error: `Snapchat error: ${err}` };
+//   }
+// }
+
+// ============================================================
+// SNAPCHAT — Creative Kit (client-side share, not server publish)
+// ============================================================
+
+export async function publishToSnapchat(
+  imageUrls: string[] = [],
+  videoUrl?: string,
+): Promise<PublishResult> {
+  // Creative Kit sharing is handled client-side via Snap's JS SDK.
+  // This server function should never be called for Snapchat.
+  // The actual share is triggered from the frontend using:
+  // https://developers.snap.com/snap-kit/creative-kit/Tutorials/web
+  if (imageUrls.length === 0 && !videoUrl) {
+    return {
+      success: false,
+      error: 'Snapchat requires an image or video to share.',
+    };
+  }
+  return {
+    success: false,
+    error: 'Snapchat sharing is handled client-side. Use the Share to Snapchat button in the dashboard.',
+  };
+}
+
+// ============================================================
 // PINTEREST
 // ============================================================
 
@@ -1397,6 +1524,19 @@ export async function publishToplatform(
     case 'threads':
       return publishToThreads(accessToken, platformUserId, caption, imageUrls, verticalVideo);
 
+  //   case 'snapchat':
+  // return publishToSnapchat(
+  //   accessToken,
+  //   caption,
+  //   imageUrls,
+  //   squareVideo ?? verticalVideo,
+  // );
+  case 'snapchat':
+  // Snapchat uses Creative Kit — client-side share only
+  return {
+    success: false,
+    error: 'Snapchat content is shared via the Share to Snapchat button, not scheduled publishing.',
+  };
     case 'pinterest':
       return publishToPinterest(
         accessToken,

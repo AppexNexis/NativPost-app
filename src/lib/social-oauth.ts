@@ -14,7 +14,8 @@ export type SocialPlatform =
   | 'tiktok'
   | 'youtube'
   | 'threads'
-  | 'pinterest';
+  | 'pinterest'
+  | 'snapchat';
 
 function generateCodeVerifier(): string {
   return crypto.randomBytes(48).toString('base64url');
@@ -90,6 +91,17 @@ export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
     pkceMethod: 'none',
     accountType: 'organization',
   },
+  snapchat: {
+  name: 'Snapchat',
+  authUrl: 'https://accounts.snapchat.com/accounts/oauth2/auth',
+  tokenUrl: 'https://accounts.snapchat.com/accounts/oauth2/token',
+  scopes: ['snapchat-marketing-api'],
+  clientIdEnv: 'SNAPCHAT_CLIENT_ID',
+  clientSecretEnv: 'SNAPCHAT_CLIENT_SECRET',
+  scopeSeparator: ' ',
+  pkceMethod: 'S256',
+  accountType: 'personal',
+},
   twitter: {
     name: 'X / Twitter',
     authUrl: 'https://twitter.com/i/oauth2/authorize',
