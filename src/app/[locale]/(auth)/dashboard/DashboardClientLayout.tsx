@@ -71,6 +71,8 @@ export default function DashboardClientLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentPlan, setCurrentPlan] = useState<string>(plan || 'starter');
 
+  const [billing, setBilling] = useState<any>(null);
+
   const role = getUserRole(orgRole);
   const navGroups = getNavForRole(role);
   const isTeam = isTeamMember(role);
@@ -90,6 +92,30 @@ export default function DashboardClientLayout({
       .catch(() => null);
   }, [plan]);
 
+  useEffect(() => {
+    fetch('/api/billing/status')
+      .then(r => (r.ok ? r.json() : null))
+      .then(setBilling)
+      .catch(() => null);
+  }, []);
+
+
+
+  useEffect(() => {
+    if (!billing) return;
+
+    const canAccess =
+      billing.isActive ||
+      (billing.isTrialing && !billing.trialExpired);
+
+    const isExempt =
+      pathname.startsWith('/dashboard/billing') ||
+      pathname.startsWith('/dashboard/settings');
+
+    if (!canAccess && !isExempt) {
+      window.location.replace('/subscribe?redirect=/dashboard');
+    }
+  }, [billing, pathname]);
   // Fix: use a proper RegExp literal — avoids the TS7053 index-type error
   // that occurred when the regex was written as a string escape sequence.
   const cleanPath = pathname.replace(/^\/[a-z]{2}(\/|$)/, '/');

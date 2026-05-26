@@ -324,10 +324,17 @@ function SubscribeContent() {
           }
 
           // Past-due / cancelled users with a used trial should NOT see new trial UI
+          // if (billing?.setupFeePaid &&
+          //   (billing?.planStatus === 'past_due' || billing?.planStatus === 'cancelled')) {
+          //   if (mounted) setBillingChecked(true); // ← add this before the redirect
+          //   router.replace('/dashboard/billing?recovery=true');
+          //   return;
+          // }
           if (billing?.setupFeePaid &&
-            (billing?.planStatus === 'past_due' || billing?.planStatus === 'cancelled')) {
-            if (mounted) setBillingChecked(true); // ← add this before the redirect
-            router.replace('/dashboard/billing?recovery=true');
+            (billing?.planStatus === 'past_due' || billing?.planStatus === 'cancelled')
+          ) {
+            setBillingChecked(true);
+            // stay on subscribe page
             return;
           }
         }

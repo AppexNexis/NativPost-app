@@ -1,8 +1,5 @@
 import { auth } from '@clerk/nextjs/server';
-import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-
-import { getOrgBillingState } from '@/lib/billing';
 
 import DashboardLayout from './DashboardClientLayout';
 
@@ -21,39 +18,6 @@ export default async function DashboardLayoutGate({
 
   if (!orgId) {
     redirect('/onboarding/organization-selection');
-  }
-
-  // Get current pathname
-  const pathname =
-    headers().get('x-pathname') ||
-    headers().get('next-url') ||
-    '';
-
-  // Allow these pages even if billing is inactive
-  const isBillingExempt =
-    pathname.startsWith('/dashboard/billing') ||
-    pathname.startsWith('/dashboard/settings');
-
-  let billing;
-
-  try {
-    billing = await getOrgBillingState(orgId);
-  } catch (err) {
-    console.error('[Dashboard Gate] billing fetch failed', err);
-    billing = null;
-  }
-
-  const isActive = billing?.isActive;
-  const isTrialing = billing?.isTrialing;
-  const trialExpired = billing?.trialExpired;
-
-  const canAccess =
-    isActive ||
-    (isTrialing && !trialExpired);
-
-  // Only redirect if NOT exempt
-  if (!canAccess && !isBillingExempt) {
-    redirect(`/subscribe?redirect=/dashboard`);
   }
 
   return <DashboardLayout>{children}</DashboardLayout>;

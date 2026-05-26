@@ -21,6 +21,8 @@ import {
   Settings,
   ShieldCheck,
   Users,
+  Gift,
+  MessageCircle,
 } from 'lucide-react';
 import NextImage from 'next/image';
 import Link from 'next/link';
@@ -52,6 +54,8 @@ const ICONS: Record<string, typeof Calendar> = {
   PenLine,
   Settings,
   Users,
+  Gift,
+  MessageCircle,
 };
 
 export default function DashboardClientLayout({
@@ -169,9 +173,8 @@ export default function DashboardClientLayout({
     <div className="flex h-screen overflow-hidden bg-muted/30">
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[220px] flex-col border-r bg-background transition-transform duration-200 lg:static lg:translate-x-0 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed inset-y-0 left-0 z-40 flex h-screen w-[220px] flex-col border-r bg-background transition-transform duration-200 lg:static lg:inset-y-auto lg:z-auto lg:translate-x-0 lg:shrink-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
         {/* Logo */}
         <div className="flex h-14 items-center border-b px-4">
@@ -286,8 +289,8 @@ export default function DashboardClientLayout({
       )}
 
       {/* Main content */}
-      <main className="flex flex-1 flex-col overflow-hidden">
-        {/* Top bar */}
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Top bar — always visible, never scrolls */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b bg-background px-4 lg:px-6">
           <button
             type="button"
@@ -306,8 +309,8 @@ export default function DashboardClientLayout({
           </div>
         </header>
 
-        {/* Page content */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 lg:p-6">
+        {/* Page content — only this area scrolls */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 lg:p-6">
           {children}
         </div>
       </main>
