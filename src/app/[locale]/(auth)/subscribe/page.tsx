@@ -304,11 +304,30 @@ function SubscribeContent() {
       // Check billing status directly — don't wait for Clerk org hydration
       // which adds 2-3 seconds of unnecessary delay
       try {
+        // const res = await fetch('/api/billing/status', { cache: 'no-store' });
+        // if (res.ok) {
+        //   const billing = await res.json();
+        //   if (billing?.isActive && !billing?.trialExpired) {
+        //     router.replace(redirectPath);
+        //     return;
+        //   }
+        // }
+
         const res = await fetch('/api/billing/status', { cache: 'no-store' });
         if (res.ok) {
           const billing = await res.json();
+
+          // Active users go straight to dashboard
           if (billing?.isActive && !billing?.trialExpired) {
             router.replace(redirectPath);
+            return;
+          }
+
+          // Past-due / cancelled users with a used trial should NOT see new trial UI
+          if (billing?.setupFeePaid &&
+            (billing?.planStatus === 'past_due' || billing?.planStatus === 'cancelled')) {
+            // Redirect to billing page with recovery prompt
+            router.replace('/dashboard/billing?recovery=true');
             return;
           }
         }

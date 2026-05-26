@@ -54,6 +54,7 @@ export const organizationSchema = pgTable(
     ),
     // Billing — Paystack (African markets)
     paystackCustomerCode: text('paystack_customer_code'),
+    paystackCustomerEmail: text('paystack_customer_email'),
     paystackSubscriptionCode: text('paystack_subscription_code'),
     paystackPlanCode: text('paystack_plan_code'),
     paystackAuthorizationCode: text('paystack_authorization_code'),

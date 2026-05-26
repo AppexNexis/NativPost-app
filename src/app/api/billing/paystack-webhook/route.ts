@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-import { getPlanByPaystackCode, PLAN_CONFIGS } from '@/lib/plans';
+import { getPaystackPlanCode, getPlanByPaystackCode, PLAN_CONFIGS } from '@/lib/plans';
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 import { firePlanUpgradedEmail, fireSubscriptionCancelledEmail } from '@/lib/billing';
@@ -114,7 +114,7 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
 
   const authorizationCode = (data.authorization as Record<string, unknown>)?.authorization_code as string | undefined;
   const planCode = (data.plan as Record<string, unknown>)?.plan_code as string | undefined;
-  const subscriptionCode = (data.subscription as Record<string, unknown>)?.subscription_code as string | undefined
+  let subscriptionCode = (data.subscription as Record<string, unknown>)?.subscription_code as string | undefined
     || (data as Record<string, unknown>).subscription_code as string | undefined;
 
   // Retrieve the stored planId from the org record if not in this event
@@ -132,14 +132,43 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
   const isSetupFee = metadataType === 'setup_fee' || (!planCode && !subscriptionCode);
 
   if (isSetupFee) {
-    const metaPlanId = metadata?.planId as string | undefined;
-    const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    // const metaPlanId = metadata?.planId as string | undefined;
+    // const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+     const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const metaPlanId = metadata?.planId as string | undefined;
+  const planCode = getPaystackPlanCode(metaPlanId ?? 'starter');
+
+  // Create subscription starting when trial ends
+  if (planCode && authorizationCode && customerCode) {
+    try {
+      const subRes = await fetch('https://api.paystack.co/subscription', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${PAYSTACK_SECRET}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customer: customerCode,
+          plan: planCode,
+          authorization: authorizationCode,
+          start_date: trialEndsAt.toISOString(),
+        }),
+      });
+      const subData = await subRes.json();
+      subscriptionCode = subData.data?.subscription_code ?? null;
+    } catch (err) {
+      console.warn('[Paystack Webhook] Sub creation failed at setup fee time:', err);
+    }
+  }
 
     await db
       .update(organizationSchema)
       .set({
         paystackCustomerCode: customerCode ?? null,
+        paystackCustomerEmail: customerEmail ?? null, 
         paystackAuthorizationCode: authorizationCode ?? null,
+        paystackSubscriptionCode: subscriptionCode,  // ← store it now
         setupFeePaid: true,
         plan: metaPlanId ?? 'starter',
         planStatus: 'trialing',

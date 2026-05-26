@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
         amount: 750000, // ₦7,500 in kobo = setup fee
         callback_url: `${APP_URL}/subscribe?setup=success&paystack=true&plan=${planId}`,
         channels: ['card'],
-        metadata: {
+        metadata: JSON.stringify({
           orgId: orgId!,
           planId,
           type: 'setup_fee',
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
             { display_name: 'Plan', variable_name: 'plan', value: plan.name },
             { display_name: 'Org ID', variable_name: 'org_id', value: orgId! },
           ],
-        },
+        }),
       }),
     });
 

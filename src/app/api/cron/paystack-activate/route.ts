@@ -96,7 +96,8 @@ export async function GET(request: NextRequest) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            email: org.paystackCustomerCode, // stored email
+            // email: org.paystackCustomerCode, // stored email
+            email: org.paystackCustomerEmail, // stored email
             amount, // full plan amount in kobo
             authorization_code: org.paystackAuthorizationCode,
             metadata: JSON.stringify({

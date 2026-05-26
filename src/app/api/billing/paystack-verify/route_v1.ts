@@ -57,54 +57,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid plan' });
     }
 
-    // paystack-verify.ts — replace the db.update block
-const db = await getDb();
-const { getPaystackPlanCode } = await import('@/lib/plans');
-const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-const planCode = getPaystackPlanCode(resolvedPlanId);
-const customerEmail = txData.customer?.email as string | undefined;
+    const db = await getDb();
 
-// Create subscription at trial end (mirror of webhook logic)
-let subscriptionCode: string | null = null;
-if (planCode && authorizationCode && customerCode) {
-  try {
-    const subRes = await fetch('https://api.paystack.co/subscription', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${PAYSTACK_SECRET}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        customer: customerCode,
-        plan: planCode,
-        authorization: authorizationCode,
-        start_date: trialEndsAt.toISOString(),
-      }),
-    });
-    const subData = await subRes.json();
-    subscriptionCode = subData.data?.subscription_code ?? null;
-  } catch {
-    // non-fatal — webhook will retry
-  }
-}
-
-await db
-  .update(organizationSchema)
-  .set({
-    paystackCustomerCode: customerCode ?? null,
-    paystackCustomerEmail: customerEmail ?? null,     // ← add
-    paystackAuthorizationCode: authorizationCode ?? null,
-    paystackSubscriptionCode: subscriptionCode,        // ← add
-    paystackPlanCode: planCode ?? null,                // ← add
-    setupFeePaid: true,                                // ← add
-    plan: resolvedPlanId,
-    planStatus: 'trialing',
-    trialEndsAt,
-    postsPerMonth: 3,
-    platformsLimit: 2,
-    updatedAt: new Date(),
-  })
-  .where(eq(organizationSchema.id, orgId!));
+    // Update org: store auth code, set trialing
+    await db
+      .update(organizationSchema)
+      .set({
+        paystackCustomerCode: customerCode ?? null,
+        paystackAuthorizationCode: authorizationCode ?? null,
+        plan: resolvedPlanId,
+        planStatus: 'trialing',
+        trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        updatedAt: new Date(),
+      })
+      .where(eq(organizationSchema.id, orgId!));
 
     console.log(`[Paystack Verify] Trial started for org ${orgId} on plan ${resolvedPlanId}`);
 

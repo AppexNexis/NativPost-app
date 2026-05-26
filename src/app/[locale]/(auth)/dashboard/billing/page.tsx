@@ -111,12 +111,12 @@ const FEATURE_ROWS = [
   {
     label: 'Support',
     render: (plan: typeof VISIBLE_PLANS[0]) =>
-      ({
-        email: 'Email',
-        priority_email: 'Priority email',
-        live_chat: 'Live chat',
-        dedicated_slack: 'Dedicated Slack',
-      }[plan.features.supportLevel as string] || 'Email'),
+    ({
+      email: 'Email',
+      priority_email: 'Priority email',
+      live_chat: 'Live chat',
+      dedicated_slack: 'Dedicated Slack',
+    }[plan.features.supportLevel as string] || 'Email'),
   },
 ];
 
@@ -246,11 +246,10 @@ function PaystackPortal({
                   <div className="mb-3 flex items-center justify-between">
                     <p className="text-sm font-semibold">{sub.plan?.name}</p>
                     <span
-                      className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
-                        sub.status === 'active'
+                      className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${sub.status === 'active'
                           ? 'bg-emerald-100 text-emerald-700'
                           : 'bg-muted text-muted-foreground'
-                      }`}
+                        }`}
                     >
                       {sub.status}
                     </span>
@@ -267,10 +266,10 @@ function PaystackPortal({
                       <p className="mt-0.5 font-semibold">
                         {sub.next_payment_date
                           ? new Date(sub.next_payment_date).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric',
-                            })
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })
                           : 'N/A'}
                       </p>
                     </div>
@@ -310,20 +309,19 @@ function PaystackPortal({
                           <p className="mt-0.5 text-[10px] text-muted-foreground">
                             {inv.paid_at
                               ? new Date(inv.paid_at).toLocaleDateString('en-US', {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  year: 'numeric',
-                                })
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                              })
                               : 'N/A'}{' '}
                             · {inv.channel}
                           </p>
                         </div>
                         <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                            inv.status === 'success'
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${inv.status === 'success'
                               ? 'bg-emerald-100 text-emerald-700'
                               : 'bg-muted text-muted-foreground'
-                          }`}
+                            }`}
                         >
                           {inv.status}
                         </span>
@@ -393,6 +391,7 @@ function PaystackPortal({
 function BillingContent() {
   const { user } = useUser();
   const searchParams = useSearchParams();
+  const recovery = searchParams.get('recovery');
 
   const [billing, setBilling] = useState<BillingStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -513,6 +512,35 @@ function BillingContent() {
         </div>
       )}
 
+
+      {recovery && billing?.planStatus === 'past_due' && (
+        <div className="flex flex-col gap-3 rounded-xl border-2 border-red-300 bg-red-50 p-5">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 size-5 shrink-0 text-red-500" />
+            <div>
+              <p className="text-sm font-semibold text-red-700">
+                Your trial ended and the renewal charge didn't go through
+              </p>
+              <p className="mt-1 text-xs text-red-600">
+                To restore access, subscribe to your plan below. Your content and settings are safe.
+              </p>
+            </div>
+          </div>
+          {billing.hasPaystack && (
+            <button
+              type="button"
+              onClick={() => handleCheckout(billing.plan)}
+              disabled={!!checkoutLoading}
+              className="w-fit rounded-xl bg-red-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-60 flex items-center gap-2"
+            >
+              {checkoutLoading && <Loader2 className="size-3.5 animate-spin" />}
+              Reactivate {currentPlan?.name} plan
+              <ChevronRight className="size-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
       {billing?.planStatus === 'past_due' && (
         <div className="flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 p-4 sm:flex-row sm:items-start">
           <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-500" />
@@ -559,10 +587,10 @@ function BillingContent() {
               <p className="mt-1 text-xs text-muted-foreground">
                 {billing?.isTrialing
                   ? `Trial ends ${new Date(billing.trialEndsAt!).toLocaleDateString('en-US', {
-                      month: 'long',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}`
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}`
                   : `${billing?.usage.postsLimit === 999999 ? 'Unlimited' : billing?.usage.postsLimit} posts/mo · ${billing?.usage.platformsLimit === 99 ? 'All' : billing?.usage.platformsLimit} platforms`}
               </p>
             </div>
@@ -706,22 +734,20 @@ function BillingContent() {
                     <button
                       type="button"
                       onClick={() => setPaymentMethod('stripe')}
-                      className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${
-                        paymentMethod === 'stripe'
+                      className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${paymentMethod === 'stripe'
                           ? 'border bg-background text-foreground shadow-sm'
                           : 'text-muted-foreground hover:text-foreground'
-                      }`}
+                        }`}
                     >
                       Stripe
                     </button>
                     <button
                       type="button"
                       onClick={() => setPaymentMethod('paystack')}
-                      className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${
-                        paymentMethod === 'paystack'
+                      className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${paymentMethod === 'paystack'
                           ? 'border bg-background text-foreground shadow-sm'
                           : 'text-muted-foreground hover:text-foreground'
-                      }`}
+                        }`}
                     >
                       Paystack
                     </button>
@@ -755,13 +781,12 @@ function BillingContent() {
             return (
               <div
                 key={plan.id}
-                className={`relative flex flex-col overflow-hidden rounded-2xl border transition-shadow ${
-                  plan.popular
+                className={`relative flex flex-col overflow-hidden rounded-2xl border transition-shadow ${plan.popular
                     ? 'border-foreground shadow-lg'
                     : isTrialingOnThis
                       ? 'border-blue-300 shadow-md'
                       : 'border-border hover:shadow-sm'
-                }`}
+                  }`}
               >
                 {/* Chip labels */}
                 {plan.popular && (
@@ -788,37 +813,32 @@ function BillingContent() {
 
                 {/* Plan header */}
                 <div
-                  className={`px-5 pt-8 pb-4 ${
-                    plan.popular ? 'bg-foreground text-background' : 'bg-muted/30'
-                  }`}
+                  className={`px-5 pt-8 pb-4 ${plan.popular ? 'bg-foreground text-background' : 'bg-muted/30'
+                    }`}
                 >
                   <p
-                    className={`mb-2 text-sm font-semibold ${
-                      plan.popular ? 'text-background' : ''
-                    }`}
+                    className={`mb-2 text-sm font-semibold ${plan.popular ? 'text-background' : ''
+                      }`}
                   >
                     {plan.name}
                   </p>
                   <div className="flex items-baseline gap-1">
                     <span
-                      className={`text-3xl font-bold tracking-tight ${
-                        plan.popular ? 'text-background' : ''
-                      }`}
+                      className={`text-3xl font-bold tracking-tight ${plan.popular ? 'text-background' : ''
+                        }`}
                     >
                       ${plan.priceUsd}
                     </span>
                     <span
-                      className={`text-sm ${
-                        plan.popular ? 'text-background/60' : 'text-muted-foreground'
-                      }`}
+                      className={`text-sm ${plan.popular ? 'text-background/60' : 'text-muted-foreground'
+                        }`}
                     >
                       /mo
                     </span>
                   </div>
                   <p
-                    className={`mt-0.5 text-xs ${
-                      plan.popular ? 'text-background/50' : 'text-muted-foreground'
-                    }`}
+                    className={`mt-0.5 text-xs ${plan.popular ? 'text-background/50' : 'text-muted-foreground'
+                      }`}
                   >
                     + ${SETUP_FEE_USD} one-time setup
                   </p>
@@ -855,13 +875,12 @@ function BillingContent() {
                     type="button"
                     onClick={() => handleCheckout(plan.id)}
                     disabled={isCurrent || !!checkoutLoading}
-                    className={`flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-60 ${
-                      isCurrent
+                    className={`flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-60 ${isCurrent
                         ? 'cursor-default bg-muted text-muted-foreground'
                         : plan.popular
                           ? 'bg-foreground text-background hover:opacity-90 active:scale-[0.98]'
                           : 'border bg-background text-foreground hover:bg-muted active:scale-[0.98]'
-                    }`}
+                      }`}
                   >
                     {isLoadingThis && <Loader2 className="size-3.5 animate-spin" />}
                     {ctaLabel}
