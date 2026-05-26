@@ -326,7 +326,7 @@ function SubscribeContent() {
           // Past-due / cancelled users with a used trial should NOT see new trial UI
           if (billing?.setupFeePaid &&
             (billing?.planStatus === 'past_due' || billing?.planStatus === 'cancelled')) {
-            // Redirect to billing page with recovery prompt
+            if (mounted) setBillingChecked(true); // ← add this before the redirect
             router.replace('/dashboard/billing?recovery=true');
             return;
           }
