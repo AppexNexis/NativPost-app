@@ -1,5 +1,4 @@
 import { auth } from '@clerk/nextjs/server';
-import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 import { getOrgBillingState } from '@/lib/billing';
@@ -23,17 +22,6 @@ export default async function DashboardLayoutGate({
     redirect('/onboarding/organization-selection');
   }
 
-  // Get current pathname
-  const pathname =
-    headers().get('x-pathname') ||
-    headers().get('next-url') ||
-    '';
-
-  // Allow these pages even if billing is inactive
-  const isBillingExempt =
-    pathname.startsWith('/dashboard/billing') ||
-    pathname.startsWith('/dashboard/settings');
-
   let billing;
 
   try {
@@ -47,12 +35,12 @@ export default async function DashboardLayoutGate({
   const isTrialing = billing?.isTrialing;
   const trialExpired = billing?.trialExpired;
 
-  const canAccess =
-    isActive ||
-    (isTrialing && !trialExpired);
+  // Allow through if active OR trialing (trial not yet expired)
+  // This prevents the redirect loop when Paystack webhook hasn't fired yet
+  // but the user has already been sent back to the dashboard
+  const canAccess = isActive || (isTrialing && !trialExpired);
 
-  // Only redirect if NOT exempt
-  if (!canAccess && !isBillingExempt) {
+  if (!canAccess) {
     redirect(`/subscribe?redirect=/dashboard`);
   }
 
