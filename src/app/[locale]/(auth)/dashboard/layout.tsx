@@ -38,11 +38,20 @@ export default async function DashboardLayoutGate({
   // Allow through if active OR trialing (trial not yet expired)
   // This prevents the redirect loop when Paystack webhook hasn't fired yet
   // but the user has already been sent back to the dashboard
-  const canAccess = isActive || (isTrialing && !trialExpired);
+ // Replace the canAccess check and redirect at the bottom:
 
-  if (!canAccess) {
-    redirect(`/subscribe?redirect=/dashboard`);
-  }
+const isPastDueOrCancelled = billing?.planStatus === 'past_due' || billing?.planStatus === 'cancelled';
+
+// Past-due/cancelled users who already paid setup fee go to billing recovery
+if (isPastDueOrCancelled && billing?.setupFeePaid) {
+  redirect('/dashboard/billing?recovery=true');
+}
+
+const canAccess = isActive || (isTrialing && !trialExpired);
+
+if (!canAccess) {
+  redirect('/subscribe?redirect=/dashboard');
+}
 
   return <DashboardLayout>{children}</DashboardLayout>;
 }
