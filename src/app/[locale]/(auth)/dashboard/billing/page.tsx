@@ -405,21 +405,45 @@ function BillingContent() {
   const cancelled = searchParams.get('cancelled');
   const successPlan = searchParams.get('plan');
 
-  const loadBilling = useCallback(async () => {
-    try {
-      const res = await fetch('/api/billing/status');
-      if (res.ok) {
-        const data = await res.json();
-        setBilling(data);
-        const isActuallyPaystack = data.hasPaystackSub || (data.hasPaystack && !data.hasStripe);
-        setPaymentMethod(isActuallyPaystack ? 'paystack' : 'stripe');
-      }
-    } catch (err) {
-      console.error('Failed to load billing:', err);
-    } finally {
-      setIsLoading(false);
+  // const loadBilling = useCallback(async () => {
+  //   try {
+  //     const res = await fetch('/api/billing/status');
+  //     if (res.ok) {
+  //       const data = await res.json();
+  //       setBilling(data);
+  //       const isActuallyPaystack = data.hasPaystackSub || (data.hasPaystack && !data.hasStripe);
+  //       setPaymentMethod(isActuallyPaystack ? 'paystack' : 'stripe');
+  //     }
+  //   } catch (err) {
+  //     console.error('Failed to load billing:', err);
+  //   } finally {
+  //     setIsLoading(false);
+  //   }
+  // }, []);
+  // Remove the IP geo useEffect entirely from BillingContent.
+// Instead, update the existing loadBilling callback to set paymentMethod from payment_type:
+
+const loadBilling = useCallback(async () => {
+  try {
+    const res = await fetch('/api/billing/status');
+    if (res.ok) {
+      const data = await res.json();
+      setBilling(data);
+
+      // Use payment_type from DB as the source of truth.
+      // Fall back to Paystack if they have any Paystack data but no Stripe sub.
+      const isPaystack =
+        data.paymentType === 'paystack' ||
+        data.hasPaystackSub ||
+        (data.hasPaystack && !data.hasStripe);
+      setPaymentMethod(isPaystack ? 'paystack' : 'stripe');
     }
-  }, []);
+  } catch (err) {
+    console.error('Failed to load billing:', err);
+  } finally {
+    setIsLoading(false);
+  }
+}, []);
 
   useEffect(() => {
     loadBilling();
