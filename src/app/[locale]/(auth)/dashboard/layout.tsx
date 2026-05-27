@@ -1,4 +1,5 @@
 import { auth } from '@clerk/nextjs/server';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 import { getOrgBillingState } from '@/lib/billing';
@@ -14,16 +15,17 @@ export default async function DashboardLayoutGate({
 }) {
   const { userId, orgId } = await auth();
 
-  if (!userId) {
-    redirect('/sign-in');
-  }
+  if (!userId) redirect('/sign-in');
+  if (!orgId) redirect('/onboarding/organization-selection');
 
-  if (!orgId) {
-    redirect('/onboarding/organization-selection');
-  }
+  // Get the current path to avoid redirect loops
+  const headersList = await headers();
+  const pathname = headersList.get('x-invoke-path') 
+    || headersList.get('x-pathname') 
+    || '';
+  const isOnBillingPage = pathname.includes('/billing');
 
   let billing;
-
   try {
     billing = await getOrgBillingState(orgId);
   } catch (err) {
@@ -31,27 +33,23 @@ export default async function DashboardLayoutGate({
     billing = null;
   }
 
+  const isPastDueOrCancelled =
+    billing?.planStatus === 'past_due' || billing?.planStatus === 'cancelled';
+
+  // Send past_due/cancelled to billing recovery — but not if already there
+  if (isPastDueOrCancelled && billing?.setupFeePaid && !isOnBillingPage) {
+    redirect('/dashboard/billing?recovery=true');
+  }
+
   const isActive = billing?.isActive;
   const isTrialing = billing?.isTrialing;
   const trialExpired = billing?.trialExpired;
+  const canAccess = isActive || (isTrialing && !trialExpired) || isPastDueOrCancelled;
+  //                                                              ^^^ allow past_due through to billing
 
-  // Allow through if active OR trialing (trial not yet expired)
-  // This prevents the redirect loop when Paystack webhook hasn't fired yet
-  // but the user has already been sent back to the dashboard
- // Replace the canAccess check and redirect at the bottom:
-
-const isPastDueOrCancelled = billing?.planStatus === 'past_due' || billing?.planStatus === 'cancelled';
-
-// Past-due/cancelled users who already paid setup fee go to billing recovery
-if (isPastDueOrCancelled && billing?.setupFeePaid) {
-  redirect('/dashboard/billing?recovery=true');
-}
-
-const canAccess = isActive || (isTrialing && !trialExpired);
-
-if (!canAccess) {
-  redirect('/subscribe?redirect=/dashboard');
-}
+  if (!canAccess) {
+    redirect('/subscribe?redirect=/dashboard');
+  }
 
   return <DashboardLayout>{children}</DashboardLayout>;
 }
