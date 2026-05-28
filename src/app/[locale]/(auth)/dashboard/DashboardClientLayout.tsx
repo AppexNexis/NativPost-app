@@ -37,6 +37,7 @@ import SupportWidget from '@/components/support/SupportWidget';
 import { getNavForRole, getUserRole, isTeamMember } from '@/lib/roles';
 import type { NavItem } from '@/lib/roles';
 import { BillingGate } from '@/features/dashboard/BillingGate';
+import { useOrgSync } from '@/hooks/useOrgSync';
 
 const ICONS: Record<string, typeof Calendar> = {
   BarChart3,
@@ -81,6 +82,8 @@ export default function DashboardClientLayout({
   const orgId = organization?.id;
   const teamOrgId = process.env.NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID;
   const isNativPostStaff = !!(teamOrgId && orgId === teamOrgId && role === 'admin');
+
+  useOrgSync();
 
   // Fetch current plan if not passed from server (fallback)
   // useEffect(() => {
