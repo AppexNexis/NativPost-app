@@ -223,8 +223,20 @@ export default function DashboardClientLayout({
 
         {/* Org switcher */}
         <div className="border-b px-3 py-2.5">
+          {/* <OrganizationSwitcher
+            hidePersonal
+            appearance={{
+              elements: {
+                rootBox: 'w-full',
+                organizationSwitcherTrigger:
+                  'w-full justify-between rounded-lg border px-3 py-2 text-sm hover:bg-muted',
+              },
+            }}
+          /> */}
           <OrganizationSwitcher
             hidePersonal
+            afterSelectOrganizationUrl={pathname}
+            afterCreateOrganizationUrl={pathname}
             appearance={{
               elements: {
                 rootBox: 'w-full',
