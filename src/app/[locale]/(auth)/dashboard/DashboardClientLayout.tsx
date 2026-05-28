@@ -223,7 +223,7 @@ export default function DashboardClientLayout({
 
         {/* Org switcher */}
         <div className="border-b px-3 py-2.5">
-          {/* <OrganizationSwitcher
+          <OrganizationSwitcher
             hidePersonal
             appearance={{
               elements: {
@@ -232,8 +232,8 @@ export default function DashboardClientLayout({
                   'w-full justify-between rounded-lg border px-3 py-2 text-sm hover:bg-muted',
               },
             }}
-          /> */}
-          <OrganizationSwitcher
+          />
+          {/* <OrganizationSwitcher
             hidePersonal
             afterSelectOrganizationUrl={pathname}
             afterCreateOrganizationUrl={pathname}
@@ -244,7 +244,7 @@ export default function DashboardClientLayout({
                   'w-full justify-between rounded-lg border px-3 py-2 text-sm hover:bg-muted',
               },
             }}
-          />
+          /> */}
         </div>
 
         {/* Create post button — team only */}
