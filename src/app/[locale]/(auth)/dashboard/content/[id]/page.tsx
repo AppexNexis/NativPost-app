@@ -252,7 +252,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
 
   // TikTok publish modal
   const [showTikTokModal, setShowTikTokModal] = useState(false);
-  const [isTikTokPublishing, setIsTikTokPublishing] = useState(false);
+  // const [isTikTokPublishing, setIsTikTokPublishing] = useState(false);
 
   // YouTube thumbnail state
   const [youtubeThumbnailUrl, setYoutubeThumbnailUrl] = useState<string | null>(null);
@@ -487,7 +487,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     brandOrganicToggle: boolean; brandContentToggle: boolean;
   }) => {
     if (!item) return;
-    setIsTikTokPublishing(true);
+    // setIsTikTokPublishing(true);
     setActionLoading('publish');
     try {
       const res = await fetch(`/api/content/${item.id}/publish`, {
@@ -501,7 +501,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         if (refreshRes.ok) setItem((await refreshRes.json()).item);
       }
     } finally {
-      setIsTikTokPublishing(false);
+      // setIsTikTokPublishing(false);
       setActionLoading(null);
     }
   };
@@ -1087,7 +1087,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
-      <TikTokPublishModal
+      {/* <TikTokPublishModal
         open={showTikTokModal}
         onClose={() => setShowTikTokModal(false)}
         onConfirm={handleTikTokPublish}
@@ -1096,8 +1096,19 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         videoUrl={item.graphicUrls?.[0]}
         videoDurationSec={(item.platformSpecific?.videoDurationSeconds as number) || 0}
         loading={isTikTokPublishing}
+      /> */}
+      {/*  AUDIT-COMPLIANT IMPLEMENTATION */}
+      <TikTokPublishModal
+        isOpen={showTikTokModal}
+        onClose={() => setShowTikTokModal(false)}
+        onPublish={handleTikTokPublish}
+        contentItem={{
+          id: item.id,
+          caption: item.caption || '',
+          contentType: item.contentType || 'video', // 'video' or 'image'
+          videoDuration: (item.platformSpecific?.videoDurationSeconds as number) || 0,
+        }}
       />
-
       <PageHeader
         title="Content detail"
         actions={(
