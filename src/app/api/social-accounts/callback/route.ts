@@ -461,9 +461,13 @@ async function fetchPlatformProfile(
           'https://businessapi.snapchat.com/v1/me/public_profiles',
           { headers: { Authorization: `Bearer ${accessToken}` } },
         );
+        console.log('[Snapchat] Public profile status:', profileRes.status);
+        const profileData = await profileRes.json();
+        console.log('[Snapchat] Public profile data:', JSON.stringify(profileData));
         if (profileRes.ok) {
           const profileData = await profileRes.json();
           const profileId = profileData.public_profiles?.[0]?.public_profile?.id;
+          console.log('[Snapchat] Extracted profile ID:', profileId);
           if (profileId) {
             return {
               id: profileId,          // ← real Public Profile UUID
