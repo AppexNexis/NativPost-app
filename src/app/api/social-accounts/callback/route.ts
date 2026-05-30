@@ -428,6 +428,25 @@ async function fetchPlatformProfile(
         };
       }
 
+      case 'snapchat': {
+        const res = await fetch(
+          'https://kit.snapchat.com/v1/me?query={me{externalId,displayName,bitmoji{selfie}}}',
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+        if (!res.ok) {
+          console.error('[Snapchat] Profile fetch failed:', res.status);
+          return null;
+        }
+        const data = await res.json();
+        const me = data.data?.me;
+        return {
+          id: me?.externalId ?? '',
+          username: me?.displayName ?? '',
+          type: 'personal',
+          imageUrl: me?.bitmoji?.selfie ?? undefined,
+        };
+      }
+
       default:
         return null;
     }
