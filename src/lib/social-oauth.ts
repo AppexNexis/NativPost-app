@@ -106,7 +106,11 @@ export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
     name: 'Snapchat',
     authUrl: 'https://accounts.snapchat.com/accounts/oauth2/auth',
     tokenUrl: 'https://accounts.snapchat.com/accounts/oauth2/token',
-    scopes: ['snapchat-login-kit', 'snapchat-story-studio-api'],
+    // scopes: ['snapchat-login-kit', 'snapchat-story-studio-api'],
+      scopes: [
+    'https://auth.snapchat.com/oauth2/api/user.display_name',
+    'https://auth.snapchat.com/oauth2/api/user.external_id',
+  ],
     clientIdEnv: 'SNAPCHAT_CLIENT_ID',
     clientSecretEnv: 'SNAPCHAT_CLIENT_SECRET',
     scopeSeparator: ' ',
