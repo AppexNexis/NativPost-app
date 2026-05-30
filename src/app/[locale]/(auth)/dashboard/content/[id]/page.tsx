@@ -80,6 +80,7 @@ const PLATFORM_LABELS: Record<string, string> = {
   youtube: 'YouTube',
   threads: 'Threads',
   pinterest: 'Pinterest',
+   snapchat: 'Snapchat',
 };
 
 const TITLE_PLATFORMS = new Set(['youtube', 'pinterest']);

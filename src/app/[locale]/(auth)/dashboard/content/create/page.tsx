@@ -454,15 +454,25 @@ export default function ContentCreatePage() {
           <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
             {CONTENT_TYPES.map((type) => {
               const Icon = type.icon;
+              // const supported = type.id === 'text_only'
+              //   ? ['facebook', 'twitter', 'linkedin']
+              //   : type.id === 'reel'
+              //     ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube']
+              //     : type.id === 'ugc_ad'
+              //       ? ['instagram', 'tiktok']
+              //       : type.id === 'data_story'
+              //         ? ['linkedin', 'instagram', 'youtube']
+              //         : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok'];
+
               const supported = type.id === 'text_only'
                 ? ['facebook', 'twitter', 'linkedin']
                 : type.id === 'reel'
-                  ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube']
+                  ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube', 'snapchat']
                   : type.id === 'ugc_ad'
                     ? ['instagram', 'tiktok']
                     : type.id === 'data_story'
                       ? ['linkedin', 'instagram', 'youtube']
-                      : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok'];
+                      : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'snapchat']; // single_image + carousel
 
               return (
                 <button
@@ -539,16 +549,14 @@ export default function ContentCreatePage() {
                   key={mode.id}
                   type="button"
                   onClick={() => setContentMode(mode.id)}
-                  className={`flex-1 rounded-md px-3 py-2 text-left transition-colors ${
-                    contentMode === mode.id
+                  className={`flex-1 rounded-md px-3 py-2 text-left transition-colors ${contentMode === mode.id
                       ? 'bg-foreground text-background'
                       : 'text-muted-foreground hover:text-foreground'
-                  }`}
+                    }`}
                 >
                   <span className="block text-xs font-semibold">{mode.label}</span>
-                  <span className={`mt-0.5 block text-[10px] leading-tight ${
-                    contentMode === mode.id ? 'opacity-70' : 'opacity-60'
-                  }`}
+                  <span className={`mt-0.5 block text-[10px] leading-tight ${contentMode === mode.id ? 'opacity-70' : 'opacity-60'
+                    }`}
                   >
                     {mode.description}
                   </span>
@@ -590,9 +598,8 @@ export default function ContentCreatePage() {
                     type="button"
                     onClick={() => togglePlatform(platform.id)}
                     disabled={!isConnected}
-                    className={`flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left text-sm transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
-                      isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted'
-                    }`}
+                    className={`flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left text-sm transition-all disabled:cursor-not-allowed disabled:opacity-40 ${isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted'
+                      }`}
                   >
                     <PIcon className={`size-4 shrink-0 sm:size-5 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
                     <span className={`flex-1 ${isSelected ? 'font-medium' : ''}`}>{platform.name}</span>
@@ -861,11 +868,10 @@ export default function ContentCreatePage() {
               key={variant.id}
               type="button"
               onClick={() => setSelectedVariant(variant.id)}
-              className={`w-full rounded-xl border bg-card p-5 text-left transition-all ${
-                selectedVariant === variant.id
+              className={`w-full rounded-xl border bg-card p-5 text-left transition-all ${selectedVariant === variant.id
                   ? 'border-primary ring-2 ring-primary/15'
                   : 'hover:border-muted-foreground/20'
-              }`}
+                }`}
             >
               {/* Variant header */}
               <div className="mb-3 flex items-center justify-between gap-2">
