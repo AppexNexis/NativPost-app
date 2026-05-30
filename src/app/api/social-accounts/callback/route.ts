@@ -428,22 +428,56 @@ async function fetchPlatformProfile(
         };
       }
 
+      // case 'snapchat': {
+      //   const res = await fetch(
+      //     'https://kit.snapchat.com/v1/me?query={me{externalId,displayName,bitmoji{selfie}}}',
+      //     { headers: { Authorization: `Bearer ${accessToken}` } },
+      //   );
+      //   if (!res.ok) {
+      //     console.error('[Snapchat] Profile fetch failed:', res.status);
+      //     return null;
+      //   }
+      //   const data = await res.json();
+      //   const me = data.data?.me;
+      //   return {
+      //     id: me?.externalId ?? '',
+      //     username: me?.displayName ?? '',
+      //     type: 'personal',
+      //     imageUrl: me?.bitmoji?.selfie ?? undefined,
+      //   };
+      // }
+
       case 'snapchat': {
-        const res = await fetch(
-          'https://kit.snapchat.com/v1/me?query={me{externalId,displayName,bitmoji{selfie}}}',
+        // First get display name from Login Kit
+        const meRes = await fetch(
+          'https://kit.snapchat.com/v1/me?query={me{externalId,displayName}}',
           { headers: { Authorization: `Bearer ${accessToken}` } },
         );
-        if (!res.ok) {
-          console.error('[Snapchat] Profile fetch failed:', res.status);
-          return null;
+        const meData = await meRes.json();
+        const displayName = meData.data?.me?.displayName ?? '';
+
+        // Then get the Public Profile ID from the Business API
+        const profileRes = await fetch(
+          'https://businessapi.snapchat.com/v1/me/public_profiles',
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+        if (profileRes.ok) {
+          const profileData = await profileRes.json();
+          const profileId = profileData.public_profiles?.[0]?.public_profile?.id;
+          if (profileId) {
+            return {
+              id: profileId,          // ← real Public Profile UUID
+              username: displayName,
+              type: 'personal',
+            };
+          }
         }
-        const data = await res.json();
-        const me = data.data?.me;
+
+        // Fallback to externalId if no public profile yet
         return {
-          id: me?.externalId ?? '',
-          username: me?.displayName ?? '',
+          id: meData.data?.me?.externalId ?? '',
+          username: displayName,
           type: 'personal',
-          imageUrl: me?.bitmoji?.selfie ?? undefined,
         };
       }
 

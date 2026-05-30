@@ -8,6 +8,7 @@
 
 import { Buffer } from 'node:buffer';
 import { publishToTwitter } from './twitter-publisher';
+import { publishToSnapchat } from './snapchat-publisher';
 
 export type PublishResult = {
   success: boolean;
@@ -1159,9 +1160,10 @@ export async function publishToThreads(
 // SNAPCHAT
 // ============================================================
 
+
+
 // export async function publishToSnapchat(
 //   accessToken: string,
-//   // caption: string,
 //   imageUrls: string[] = [],
 //   videoUrl?: string,
 // ): Promise<PublishResult> {
@@ -1169,202 +1171,81 @@ export async function publishToThreads(
 //     if (imageUrls.length === 0 && !videoUrl) {
 //       return {
 //         success: false,
-//         error: 'Snapchat requires an image or video. Text-only posts are not supported.',
+//         error: 'Snapchat requires an image or video.',
 //       };
 //     }
 
-//     const mediaUrl = videoUrl || imageUrls[0];
 //     const isVideo = !!videoUrl;
+//     const mediaUrl = videoUrl || imageUrls[0];
 
-//     // Step 1: Get ad account ID
-//     const meRes = await fetch('https://adsapi.snapchat.com/v1/me/organizations', {
-//       headers: { Authorization: `Bearer ${accessToken}` },
+//     // Step 1: Fetch the media as a buffer
+//     const mediaRes = await fetch(mediaUrl!);
+//     if (!mediaRes.ok) {
+//       return { success: false, error: 'Snapchat: could not fetch media file' };
+//     }
+//     const mediaBuffer = await mediaRes.arrayBuffer();
+//     const contentType = mediaRes.headers.get('content-type')
+//       || (isVideo ? 'video/mp4' : 'image/jpeg');
+
+//     // Step 2: Upload media to Story Studio
+//     const uploadRes = await fetch('https://storage.snapchat.com/v1/media', {
+//       method: 'POST',
+//       headers: {
+//         Authorization: `Bearer ${accessToken}`,
+//         'Content-Type': contentType,
+//       },
+//       body: mediaBuffer,
 //     });
-//     const meData = await meRes.json();
-//     const orgId = meData.organizations?.[0]?.organization?.id;
 
-//     if (!orgId) {
-//       return { success: false, error: 'Snapchat: could not retrieve organization ID' };
+//     if (!uploadRes.ok) {
+//       const errText = await uploadRes.text();
+//       console.error('[Snapchat] Media upload failed:', errText);
+//       return { success: false, error: `Snapchat media upload failed (${uploadRes.status})` };
 //     }
 
-//     const adAccountsRes = await fetch(
-//       `https://adsapi.snapchat.com/v1/organizations/${orgId}/adaccounts`,
-//       { headers: { Authorization: `Bearer ${accessToken}` } },
-//     );
-//     const adAccountsData = await adAccountsRes.json();
-//     const adAccountId = adAccountsData.adaccounts?.[0]?.adaccount?.id;
+//     const uploadData = await uploadRes.json();
+//     const mediaId = uploadData.media_id || uploadData.id;
 
-//     if (!adAccountId) {
-//       return { success: false, error: 'Snapchat: no ad account found' };
+//     if (!mediaId) {
+//       console.error('[Snapchat] No media ID returned:', JSON.stringify(uploadData));
+//       return { success: false, error: 'Snapchat: media upload returned no ID' };
 //     }
 
-//     // Step 2: Create media object
-//     const mediaCreateRes = await fetch('https://adsapi.snapchat.com/v1/media', {
+//     console.log('[Snapchat] Media uploaded, media_id:', mediaId);
+
+//     // Step 3: Publish as a Story Snap
+//     const storyRes = await fetch('https://kit.snapchat.com/v1/story/snaps', {
 //       method: 'POST',
 //       headers: {
 //         Authorization: `Bearer ${accessToken}`,
 //         'Content-Type': 'application/json',
 //       },
 //       body: JSON.stringify({
-//         media: [{
-//           name: `nativpost-${Date.now()}`,
-//           type: isVideo ? 'VIDEO' : 'IMAGE',
-//           ad_account_id: adAccountId,
-//         }],
+//         media: {
+//           media_id: mediaId,
+//           media_type: isVideo ? 'VIDEO' : 'IMAGE',
+//         },
+//         caption: '',   // Story Studio API doesn't support captions on Snaps
 //       }),
 //     });
 
-//     const mediaCreateData = await mediaCreateRes.json();
-//     const mediaId = mediaCreateData.media?.[0]?.media?.id;
-
-//     if (!mediaId) {
-//       return {
-//         success: false,
-//         error: mediaCreateData.request_status || 'Snapchat: media creation failed',
-//       };
+//     if (!storyRes.ok) {
+//       const errText = await storyRes.text();
+//       console.error('[Snapchat] Story publish failed:', errText);
+//       return { success: false, error: `Snapchat story publish failed (${storyRes.status})` };
 //     }
 
-//     // Step 3: Upload the file
-//     const fileRes = await fetch(mediaUrl!);
-//     if (!fileRes.ok) {
-//       return { success: false, error: 'Snapchat: could not fetch media file for upload' };
-//     }
+//     const storyData = await storyRes.json();
+//     const snapId = storyData.snap_id || storyData.id;
 
-//     const fileBuffer = await fileRes.arrayBuffer();
-//     const contentType = fileRes.headers.get('content-type') || (isVideo ? 'video/mp4' : 'image/jpeg');
+//     console.log('[Snapchat] Story published, snap_id:', snapId);
+//     return { success: true, platformPostId: snapId || 'snapchat-published' };
 
-//     const uploadRes = await fetch(
-//       `https://adsapi.snapchat.com/v1/media/${mediaId}/upload`,
-//       {
-//         method: 'POST',
-//         headers: {
-//           Authorization: `Bearer ${accessToken}`,
-//           'Content-Type': contentType,
-//         },
-//         body: fileBuffer,
-//       },
-//     );
-
-//     if (!uploadRes.ok) {
-//       const errText = await uploadRes.text();
-//       console.error('[Snapchat] Upload failed:', errText);
-//       return { success: false, error: `Snapchat: media upload failed (${uploadRes.status})` };
-//     }
-
-//     console.log(`[Snapchat] Media uploaded successfully: ${mediaId}`);
-//     return { success: true, platformPostId: mediaId };
 //   } catch (err) {
 //     return { success: false, error: `Snapchat error: ${err}` };
 //   }
 // }
 
-export async function publishToSnapchat(
-  accessToken: string,
-  imageUrls: string[] = [],
-  videoUrl?: string,
-): Promise<PublishResult> {
-  try {
-    if (imageUrls.length === 0 && !videoUrl) {
-      return {
-        success: false,
-        error: 'Snapchat requires an image or video.',
-      };
-    }
-
-    const isVideo = !!videoUrl;
-    const mediaUrl = videoUrl || imageUrls[0];
-
-    // Step 1: Fetch the media as a buffer
-    const mediaRes = await fetch(mediaUrl!);
-    if (!mediaRes.ok) {
-      return { success: false, error: 'Snapchat: could not fetch media file' };
-    }
-    const mediaBuffer = await mediaRes.arrayBuffer();
-    const contentType = mediaRes.headers.get('content-type')
-      || (isVideo ? 'video/mp4' : 'image/jpeg');
-
-    // Step 2: Upload media to Story Studio
-    const uploadRes = await fetch('https://storage.snapchat.com/v1/media', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': contentType,
-      },
-      body: mediaBuffer,
-    });
-
-    if (!uploadRes.ok) {
-      const errText = await uploadRes.text();
-      console.error('[Snapchat] Media upload failed:', errText);
-      return { success: false, error: `Snapchat media upload failed (${uploadRes.status})` };
-    }
-
-    const uploadData = await uploadRes.json();
-    const mediaId = uploadData.media_id || uploadData.id;
-
-    if (!mediaId) {
-      console.error('[Snapchat] No media ID returned:', JSON.stringify(uploadData));
-      return { success: false, error: 'Snapchat: media upload returned no ID' };
-    }
-
-    console.log('[Snapchat] Media uploaded, media_id:', mediaId);
-
-    // Step 3: Publish as a Story Snap
-    const storyRes = await fetch('https://kit.snapchat.com/v1/story/snaps', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        media: {
-          media_id: mediaId,
-          media_type: isVideo ? 'VIDEO' : 'IMAGE',
-        },
-        caption: '',   // Story Studio API doesn't support captions on Snaps
-      }),
-    });
-
-    if (!storyRes.ok) {
-      const errText = await storyRes.text();
-      console.error('[Snapchat] Story publish failed:', errText);
-      return { success: false, error: `Snapchat story publish failed (${storyRes.status})` };
-    }
-
-    const storyData = await storyRes.json();
-    const snapId = storyData.snap_id || storyData.id;
-
-    console.log('[Snapchat] Story published, snap_id:', snapId);
-    return { success: true, platformPostId: snapId || 'snapchat-published' };
-
-  } catch (err) {
-    return { success: false, error: `Snapchat error: ${err}` };
-  }
-}
-
-// ============================================================
-// SNAPCHAT — Creative Kit (client-side share, not server publish)
-// ============================================================
-
-// export async function publishToSnapchat(
-//   imageUrls: string[] = [],
-//   videoUrl?: string,
-// ): Promise<PublishResult> {
-//   // Creative Kit sharing is handled client-side via Snap's JS SDK.
-//   // This server function should never be called for Snapchat.
-//   // The actual share is triggered from the frontend using:
-//   // https://developers.snap.com/snap-kit/creative-kit/Tutorials/web
-//   if (imageUrls.length === 0 && !videoUrl) {
-//     return {
-//       success: false,
-//       error: 'Snapchat requires an image or video to share.',
-//     };
-//   }
-//   return {
-//     success: false,
-//     error: 'Snapchat sharing is handled client-side. Use the Share to Snapchat button in the dashboard.',
-//   };
-// }
 
 // ============================================================
 // PINTEREST
@@ -1614,6 +1495,7 @@ export async function publishToplatform(
     // caption,
     imageUrls,
     squareVideo ?? verticalVideo,
+     platformUserId,
   );
   // case 'snapchat':
   // // Snapchat uses Creative Kit — client-side share only
