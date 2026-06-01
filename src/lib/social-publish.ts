@@ -1358,6 +1358,44 @@ async function refreshPinterestToken(
   }
 }
 
+// async function publishPinToBoard(
+//   accessToken: string,
+//   boardId: string,
+//   caption: string,
+//   imageUrls: string[],
+//   videoUrl?: string,
+// ): Promise<PublishResult> {
+//   const pinBody: Record<string, unknown> = {
+//     title: caption.slice(0, 100),
+//     // description: caption,
+//     description: caption.slice(0, 800),  // ← add this truncation
+//     board_id: boardId,
+//   };
+
+//   if (imageUrls.length > 0) {
+//     pinBody.media_source = { source_type: 'image_url', url: imageUrls[0] };
+//   } else if (videoUrl) {
+//     pinBody.media_source = { source_type: 'image_url', url: videoUrl };
+//   }
+
+//   const pinRes = await fetch('https://api.pinterest.com/v5/pins', {
+//     method: 'POST',
+//     headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+//     body: JSON.stringify(pinBody),
+//   });
+//   const pinData = await pinRes.json();
+
+//   console.log('[Pinterest] Create pin response:', JSON.stringify(pinData).slice(0, 300));
+
+//   if (pinData.id) {
+//     return { success: true, platformPostId: pinData.id };
+//   }
+//   return {
+//     success: false,
+//     error: pinData.message || pinData.code?.toString() || 'Pinterest pin creation failed',
+//   };
+// }
+
 async function publishPinToBoard(
   accessToken: string,
   boardId: string,
@@ -1365,34 +1403,40 @@ async function publishPinToBoard(
   imageUrls: string[],
   videoUrl?: string,
 ): Promise<PublishResult> {
-  const pinBody: Record<string, unknown> = {
-    title: caption.slice(0, 100),
-    description: caption,
-    board_id: boardId,
-  };
-
-  if (imageUrls.length > 0) {
-    pinBody.media_source = { source_type: 'image_url', url: imageUrls[0] };
-  } else if (videoUrl) {
-    pinBody.media_source = { source_type: 'image_url', url: videoUrl };
+  const urls = imageUrls.length > 0 ? imageUrls : videoUrl ? [videoUrl] : [];
+  
+  if (urls.length === 0) {
+    return { success: false, error: 'Pinterest requires at least one image.' };
   }
 
-  const pinRes = await fetch('https://api.pinterest.com/v5/pins', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(pinBody),
-  });
-  const pinData = await pinRes.json();
+  // Publish each slide as a separate pin
+  let firstPinId: string | undefined;
+  for (const [index, url] of urls.entries()) {
+    const pinBody: Record<string, unknown> = {
+      title: caption.slice(0, 100),
+      description: caption.slice(0, 800),
+      board_id: boardId,
+      media_source: { source_type: 'image_url', url },
+    };
 
-  console.log('[Pinterest] Create pin response:', JSON.stringify(pinData).slice(0, 300));
-
-  if (pinData.id) {
-    return { success: true, platformPostId: pinData.id };
+    const pinRes = await fetch('https://api.pinterest.com/v5/pins', {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${accessToken}`, 
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify(pinBody),
+    });
+    const pinData = await pinRes.json();
+    console.log(`[Pinterest] Pin ${index + 1} response:`, JSON.stringify(pinData).slice(0, 300));
+    
+    if (index === 0) firstPinId = pinData.id;
   }
-  return {
-    success: false,
-    error: pinData.message || pinData.code?.toString() || 'Pinterest pin creation failed',
-  };
+
+  if (firstPinId) {
+    return { success: true, platformPostId: firstPinId };
+  }
+  return { success: false, error: 'Pinterest: all pin creations failed' };
 }
 
 // ============================================================
