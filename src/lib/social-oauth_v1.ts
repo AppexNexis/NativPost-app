@@ -14,12 +14,8 @@ export type SocialPlatform =
   | 'tiktok'
   | 'youtube'
   | 'threads'
-  | 'pinterest';
-
-// -----------------------------------------------------------
-// PKCE storage (in-memory, per-server-instance)
-// -----------------------------------------------------------
-const pkceStore = new Map<string, string>();
+  | 'pinterest'
+  | 'snapchat';
 
 function generateCodeVerifier(): string {
   return crypto.randomBytes(48).toString('base64url');
@@ -30,9 +26,6 @@ async function generateCodeChallengeS256(verifier: string): Promise<string> {
   return hash.toString('base64url');
 }
 
-// -----------------------------------------------------------
-// PLATFORM CONFIGS
-// -----------------------------------------------------------
 type PlatformConfig = {
   name: string;
   authUrl: string;
@@ -83,13 +76,58 @@ export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
     name: 'LinkedIn Page',
     authUrl: 'https://www.linkedin.com/oauth/v2/authorization',
     tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
-    scopes: ['openid', 'profile', 'w_member_social', 'w_organization_social', 'r_organization_social'],
+    // scopes: ['openid', 'profile', 'w_member_social', 'w_organization_social', 'r_organization_social'],
+    scopes: [
+      'openid',
+      'profile',
+      'w_member_social',
+      'w_organization_social',
+      'r_organization_social',
+      'r_member_postAnalytics',  // add this
+    ],
     clientIdEnv: 'LINKEDIN_PAGE_CLIENT_ID',
     clientSecretEnv: 'LINKEDIN_PAGE_CLIENT_SECRET',
     scopeSeparator: ' ',
     pkceMethod: 'none',
     accountType: 'organization',
   },
+  //   snapchat: {
+  //   name: 'Snapchat',
+  //   authUrl: 'https://accounts.snapchat.com/accounts/oauth2/auth',
+  //   tokenUrl: 'https://accounts.snapchat.com/accounts/oauth2/token',
+  //   scopes: ['snapchat-marketing-api'],
+  //   clientIdEnv: 'SNAPCHAT_CLIENT_ID',
+  //   clientSecretEnv: 'SNAPCHAT_CLIENT_SECRET',
+  //   scopeSeparator: ' ',
+  //   pkceMethod: 'S256',
+  //   accountType: 'personal',
+  // },
+  snapchat: {
+    name: 'Snapchat',
+    authUrl: 'https://accounts.snapchat.com/accounts/oauth2/auth',
+    tokenUrl: 'https://accounts.snapchat.com/accounts/oauth2/token',
+    // scopes: ['snapchat-login-kit', 'snapchat-story-studio-api'],
+      scopes: [
+    'https://auth.snapchat.com/oauth2/api/user.display_name',
+    'https://auth.snapchat.com/oauth2/api/user.external_id',
+  ],
+    clientIdEnv: 'SNAPCHAT_CLIENT_ID',
+    clientSecretEnv: 'SNAPCHAT_CLIENT_SECRET',
+    scopeSeparator: ' ',
+    pkceMethod: 'S256',
+    accountType: 'personal',
+  },
+//   snapchat: {
+//   name: 'Snapchat',
+//   authUrl: 'https://accounts.snapchat.com/login/oauth2/authorize', // ← different URL
+//   tokenUrl: 'https://accounts.snapchat.com/login/oauth2/access_token', // ← different URL
+//   scopes: ['snapchat-profile-api'],
+//   clientIdEnv: 'SNAPCHAT_MARKETING_CLIENT_ID',   // ← new env var
+//   clientSecretEnv: 'SNAPCHAT_MARKETING_CLIENT_SECRET',
+//   scopeSeparator: ' ',
+//   pkceMethod: 'none',  // ← Marketing API doesn't use PKCE
+//   accountType: 'personal',
+// },
   twitter: {
     name: 'X / Twitter',
     authUrl: 'https://twitter.com/i/oauth2/authorize',
@@ -112,6 +150,23 @@ export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
     pkceMethod: 'S256',
     accountType: 'personal',
   },
+  //   youtube: {
+  //     name: 'YouTube',
+  //     authUrl: 'google.com',
+  //     tokenUrl: 'googleapis.com',
+  //     scopes: [
+  //       'googleapis.com',
+  //       'googleapis.com',
+  //       'https://www.googleapis.com/auth/yt-analytics.readonly', // Added for tracking likes/impressions
+  //       'googleapis.com',
+  //     ],
+  //     clientIdEnv: 'GOOGLE_CLIENT_ID',
+  //     clientSecretEnv: 'GOOGLE_CLIENT_SECRET',
+  //     scopeSeparator: ' ',
+  //     pkceMethod: 'S256',
+  //     accountType: 'personal',
+  // },
+
   youtube: {
     name: 'YouTube',
     authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -158,17 +213,28 @@ const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 // -----------------------------------------------------------
 export async function getOAuthUrl(platform: SocialPlatform): Promise<string | null> {
   const config = PLATFORM_CONFIGS[platform];
-  if (!config) {
-    return null;
-  }
+  if (!config) return null;
 
   const clientId = process.env[config.clientIdEnv];
-  if (!clientId) {
-    return null;
-  }
+  if (!clientId) return null;
 
   const callbackUrl = `${BASE_URL}/api/social-accounts/callback`;
-  const state = `${platform}:${crypto.randomUUID()}`;
+
+  let verifier: string | undefined;
+  if (config.pkceMethod === 'S256' || config.pkceMethod === 'plain') {
+    verifier = generateCodeVerifier();
+  }
+
+  // Encode platform + nonce + verifier into state so it survives across
+  // serverless instances (in-memory Map is not reliable on Vercel)
+  const statePayload: Record<string, string> = {
+    platform,
+    nonce: crypto.randomUUID(),
+  };
+  if (verifier) {
+    statePayload.cv = verifier;
+  }
+  const state = Buffer.from(JSON.stringify(statePayload)).toString('base64url');
 
   const params = new URLSearchParams({
     response_type: 'code',
@@ -183,21 +249,16 @@ export async function getOAuthUrl(platform: SocialPlatform): Promise<string | nu
     params.set('client_id', clientId);
   }
 
-  // YouTube needs access_type=offline for refresh tokens
   if (platform === 'youtube') {
     params.set('access_type', 'offline');
     params.set('prompt', 'consent');
   }
 
-  if (config.pkceMethod === 'S256') {
-    const verifier = generateCodeVerifier();
+  if (config.pkceMethod === 'S256' && verifier) {
     const challenge = await generateCodeChallengeS256(verifier);
-    pkceStore.set(state, verifier);
     params.set('code_challenge', challenge);
     params.set('code_challenge_method', 'S256');
-  } else if (config.pkceMethod === 'plain') {
-    const verifier = generateCodeVerifier();
-    pkceStore.set(state, verifier);
+  } else if (config.pkceMethod === 'plain' && verifier) {
     params.set('code_challenge', verifier);
     params.set('code_challenge_method', 'plain');
   }
@@ -217,9 +278,7 @@ export async function exchangeCodeForTokens(
   const clientId = process.env[config.clientIdEnv];
   const clientSecret = process.env[config.clientSecretEnv];
 
-  if (!clientId || !clientSecret) {
-    return null;
-  }
+  if (!clientId || !clientSecret) return null;
 
   const callbackUrl = `${BASE_URL}/api/social-accounts/callback`;
 
@@ -239,18 +298,21 @@ export async function exchangeCodeForTokens(
     body.client_key = clientId;
     body.client_secret = clientSecret;
   } else if (platform === 'pinterest') {
-    // Pinterest uses HTTP Basic Auth
     headers.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
   } else {
     body.client_id = clientId;
     body.client_secret = clientSecret;
   }
 
+  // Decode code_verifier from state (replaces unreliable in-memory pkceStore)
   if (config.pkceMethod !== 'none' && state) {
-    const verifier = pkceStore.get(state);
-    if (verifier) {
-      body.code_verifier = verifier;
-      pkceStore.delete(state);
+    try {
+      const decoded = JSON.parse(Buffer.from(state, 'base64url').toString());
+      if (decoded.cv) {
+        body.code_verifier = decoded.cv;
+      }
+    } catch {
+      console.error(`[OAuth] Failed to decode PKCE verifier from state for ${platform}`);
     }
   }
 
@@ -276,6 +338,19 @@ export async function exchangeCodeForTokens(
     };
   } catch (err) {
     console.error(`Token exchange error for ${platform}:`, err);
+    return null;
+  }
+}
+
+// -----------------------------------------------------------
+// DECODE PLATFORM FROM STATE
+// Replaces the old `state.split(':')[0]` pattern
+// -----------------------------------------------------------
+export function decodePlatformFromState(state: string): SocialPlatform | null {
+  try {
+    const decoded = JSON.parse(Buffer.from(state, 'base64url').toString());
+    return decoded.platform as SocialPlatform ?? null;
+  } catch {
     return null;
   }
 }

@@ -117,6 +117,17 @@ export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
     pkceMethod: 'S256',
     accountType: 'personal',
   },
+//   snapchat: {
+//   name: 'Snapchat',
+//   authUrl: 'https://accounts.snapchat.com/login/oauth2/authorize', // ← different URL
+//   tokenUrl: 'https://accounts.snapchat.com/login/oauth2/access_token', // ← different URL
+//   scopes: ['snapchat-profile-api'],
+//   clientIdEnv: 'SNAPCHAT_MARKETING_CLIENT_ID',   // ← new env var
+//   clientSecretEnv: 'SNAPCHAT_MARKETING_CLIENT_SECRET',
+//   scopeSeparator: ' ',
+//   pkceMethod: 'none',  // ← Marketing API doesn't use PKCE
+//   accountType: 'personal',
+// },
   twitter: {
     name: 'X / Twitter',
     authUrl: 'https://twitter.com/i/oauth2/authorize',
@@ -186,7 +197,7 @@ export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
     name: 'Pinterest',
     authUrl: 'https://www.pinterest.com/oauth/',
     tokenUrl: 'https://api.pinterest.com/v5/oauth/token',
-    scopes: ['boards:read', 'pins:read', 'pins:write', 'user_accounts:read'],
+    scopes: ['boards:read',  'boards:write', 'pins:read', 'pins:write', 'user_accounts:read'],
     clientIdEnv: 'PINTEREST_CLIENT_ID',
     clientSecretEnv: 'PINTEREST_CLIENT_SECRET',
     scopeSeparator: ',',
