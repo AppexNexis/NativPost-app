@@ -7,6 +7,7 @@
 
 import {
   AlertCircle,
+  Check,
   ChevronDown,
   Loader2,
   Music,
@@ -20,13 +21,13 @@ import { useEffect, useState } from 'react';
 
 export type TikTokPublishSettings = {
   title: string;
-  privacyLevel: string; // Left empty initially to force manual selection
+  privacyLevel: string;
   allowComment: boolean;
   allowDuet: boolean;
   allowStitch: boolean;
   brandOrganicToggle: boolean;
   brandContentToggle: boolean;
-  commercialDisclosure: boolean; // Main toggle container
+  commercialDisclosure: boolean;
 };
 
 type CreatorInfo = {
@@ -37,8 +38,7 @@ type CreatorInfo = {
   duetDisabled: boolean;
   stitchDisabled: boolean;
   maxVideoDurationSec: number;
-  // Included to support Section 1b caps
-  canPost?: boolean; 
+  canPost?: boolean;
 };
 
 const PRIVACY_LABELS: Record<string, string> = {
@@ -51,12 +51,13 @@ const PRIVACY_LABELS: Record<string, string> = {
 interface TikTokPublishModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onPublish: (settings: TikTokPublishSettings) => Promise<void>;
+  onPublish: (settings: TikTokPublishSettings) => Promise<{ publishId?: string } | void>;
   contentItem: {
     id: string;
     caption: string;
-    contentType: string; // 'video' or 'image'
-    videoDuration?: number; // duration in seconds if video
+    contentType: string;
+    videoDuration?: number;
+    videoUrl?: string;
   };
 }
 
@@ -71,13 +72,12 @@ export function TikTokPublishModal({
   const [creatorInfo, setCreatorInfo] = useState<CreatorInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Form State - strictly following rules (No defaults for interactive settings)
   const [settings, setSettings] = useState<TikTokPublishSettings>({
     title: '',
-    privacyLevel: '', // Guideline 2b: NO DEFAULT VALUE
-    allowComment: false, // Guideline 2c: NOT CHECKED BY DEFAULT
-    allowDuet: false,    // Guideline 2c: NOT CHECKED BY DEFAULT
-    allowStitch: false,  // Guideline 2c: NOT CHECKED BY DEFAULT
+    privacyLevel: '',        // Guideline 2b: NO DEFAULT VALUE
+    allowComment: false,     // Guideline 2c: NOT CHECKED BY DEFAULT
+    allowDuet: false,        // Guideline 2c: NOT CHECKED BY DEFAULT
+    allowStitch: false,      // Guideline 2c: NOT CHECKED BY DEFAULT
     commercialDisclosure: false, // Guideline 3a: OFF BY DEFAULT
     brandOrganicToggle: false,
     brandContentToggle: false,
@@ -85,13 +85,68 @@ export function TikTokPublishModal({
 
   const isPhotoPost = contentItem.contentType === 'image';
 
-  // Fetch AI title and Creator info on open
+  const [publishStatus, setPublishStatus] = useState<
+    'idle' | 'uploading' | 'processing' | 'success' | 'failed'
+  >('idle');
+  const [publishId, setPublishId] = useState<string | null>(null);
+
+  // ── Poll for publish status after getting a publishId (Guideline 5e) ───────
+  useEffect(() => {
+    if (!publishId) return;
+    let attempts = 0;
+    const maxAttempts = 20; // ~60s total
+
+    const poll = async () => {
+      attempts++;
+      try {
+        const res = await fetch('/api/social-accounts/tiktok/publish-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ publishId }),
+        });
+        const data = await res.json() as { status?: string; failReason?: string };
+
+        if (data.status === 'PUBLISH_COMPLETE') {
+          setPublishStatus('success');
+          return;
+        }
+        if (data.status === 'FAILED') {
+          setPublishStatus('failed');
+          setError(data.failReason || 'TikTok processing failed.');
+          return;
+        }
+      } catch { /* keep polling */ }
+
+      if (attempts < maxAttempts) {
+        setTimeout(poll, 3000);
+      }
+    };
+
+    setPublishStatus('processing');
+    setTimeout(poll, 3000);
+  }, [publishId]);
+
+  // ── Fetch AI title + creator info on open ─────────────────────────────────
   useEffect(() => {
     if (!isOpen) return;
 
+    // Reset state on every open
+    setPublishStatus('idle');
+    setPublishId(null);
+    setError(null);
+    setSettings({
+      title: '',
+      privacyLevel: '',
+      allowComment: false,
+      allowDuet: false,
+      allowStitch: false,
+      commercialDisclosure: false,
+      brandOrganicToggle: false,
+      brandContentToggle: false,
+    });
+
     async function initModal() {
       setLoading(true);
-      setError(null);
       try {
         // 1. Fetch TikTok Title
         const titleRes = await fetch(`/api/content/${contentItem.id}/tiktok-title`, { method: 'POST' });
@@ -103,24 +158,24 @@ export function TikTokPublishModal({
         // 2. Fetch Creator Info
         const creatorRes = await fetch('/api/social-accounts/tiktok/creator-info');
         if (!creatorRes.ok) throw new Error('Failed to retrieve fresh creator profile info.');
-        
+
         const creatorData: CreatorInfo = await creatorRes.json();
         setCreatorInfo(creatorData);
 
-        // Guideline 1c: Check video duration limits immediately
+        // Guideline 1c: Check video duration limits
         if (contentItem.contentType === 'video' && contentItem.videoDuration && creatorData.maxVideoDurationSec) {
           if (contentItem.videoDuration > creatorData.maxVideoDurationSec) {
-            setError(`Your video duration (${contentItem.videoDuration}s) exceeds your TikTok account's current maximum allowed limit of ${creatorData.maxVideoDurationSec}s.`);
+            setError(`Your video duration (${contentItem.videoDuration}s) exceeds your TikTok account's maximum allowed limit of ${creatorData.maxVideoDurationSec}s.`);
           }
         }
 
-        // Guideline 1b: If API signals creator cap hit
+        // Guideline 1b: Creator posting cap
         if (creatorData.canPost === false) {
           setError('Your TikTok account has reached its maximum posting capacity for the next 24 hours. Please try again later.');
         }
-
-      } catch (err: any) {
-        setError(err.message || 'An unexpected validation error occurred.');
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'An unexpected validation error occurred.';
+        setError(message);
       } finally {
         setLoading(false);
       }
@@ -131,61 +186,79 @@ export function TikTokPublishModal({
 
   if (!isOpen) return null;
 
-  // ── Validation Helpers (Guideline Section 3 & 4) ───────────────────────────
+  // ── Validation helpers ─────────────────────────────────────────────────────
   const brandTogglesActive = settings.commercialDisclosure;
   const standardDeclaration = "By posting, you agree to TikTok's Music Usage Confirmation.";
-  const brandedDeclaration = "By posting, you agree to TikTok's Branded Content Policy and Music Usage Confirmation.";
+  const brandedDeclaration  = "By posting, you agree to TikTok's Branded Content Policy and Music Usage Confirmation.";
 
-  // Determine what consent declaration to render dynamically (Guideline 4)
-  let consentText = standardDeclaration;
-  if (brandTogglesActive && settings.brandContentToggle) {
-    consentText = brandedDeclaration;
-  }
+  const consentText = (brandTogglesActive && settings.brandContentToggle)
+    ? brandedDeclaration
+    : standardDeclaration;
 
-  // Check if publishing should be locked (Guideline 3a rules)
   const commercialDisclosureIncomplete = brandTogglesActive && !settings.brandOrganicToggle && !settings.brandContentToggle;
-  const privacyIsPrivate = settings.privacyLevel === 'SELF_ONLY';
+  const privacyIsPrivate               = settings.privacyLevel === 'SELF_ONLY';
   const brandedContentPrivacyViolation = brandTogglesActive && settings.brandContentToggle && privacyIsPrivate;
-  
-  const isPublishDisabled = 
-    !settings.privacyLevel || 
-    commercialDisclosureIncomplete || 
-    brandedContentPrivacyViolation || 
-    !!error || 
-    publishing;
 
+  const isPublishDisabled =
+    !settings.privacyLevel ||
+    commercialDisclosureIncomplete ||
+    brandedContentPrivacyViolation ||
+    !!error ||
+    publishing ||
+    publishStatus === 'processing' ||
+    publishStatus === 'success';
+
+  // ── Resolve playable video URL ─────────────────────────────────────────────
+  const resolvedVideoUrl = contentItem.videoUrl
+    ? (/\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(contentItem.videoUrl)
+        ? contentItem.videoUrl
+        : `${contentItem.videoUrl.endsWith('/') ? contentItem.videoUrl : `${contentItem.videoUrl}/`}video.mp4`)
+    : null;
+
+  // ── Handle publish ─────────────────────────────────────────────────────────
   const handlePublish = async () => {
     if (isPublishDisabled) return;
     setPublishing(true);
     try {
-      await onPublish(settings);
-      onClose();
-    } catch (err: any) {
-      setError(err.message || 'Failed to submit post to TikTok');
+      const result = await onPublish(settings);
+      const pid = result?.publishId;
+      if (pid && pid !== 'tiktok-pending') {
+        setPublishId(pid);
+        // Keep modal open to show polling status
+      } else {
+        onClose();
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to submit post to TikTok';
+      setError(message);
     } finally {
       setPublishing(false);
     }
   };
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in-30">
       <div className="relative flex h-full max-h-[85vh] w-full max-w-2xl flex-col rounded-xl bg-background shadow-2xl overflow-hidden border">
-        
+
         {/* Header */}
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-2">
             <Video className="h-5 w-5 text-[#FE2C55]" />
             <h2 className="text-lg font-semibold tracking-tight">Publish to TikTok</h2>
           </div>
-          <button onClick={onClose} className="rounded-md p-1.5 hover:bg-muted cursor-pointer text-muted-foreground transition">
+          <button
+            onClick={onClose}
+            className="rounded-md p-1.5 hover:bg-muted cursor-pointer text-muted-foreground transition"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Scrollable Content Container */}
+        {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          
-          {/* Error banner / Constraint violations */}
+
+          {/* Error banner */}
           {error && (
             <div className="flex items-start gap-3 rounded-lg bg-destructive/10 p-4 text-sm text-destructive">
               <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
@@ -204,7 +277,12 @@ export function TikTokPublishModal({
               {creatorInfo && (
                 <div className="flex items-center gap-3 rounded-lg border bg-muted/40 p-4">
                   {creatorInfo.avatarUrl ? (
-                    <img src={creatorInfo.avatarUrl} alt="Avatar" className="h-10 w-10 rounded-full border border-neutral-200 object-cover" />
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={creatorInfo.avatarUrl}
+                      alt="Avatar"
+                      className="h-10 w-10 rounded-full border border-neutral-200 object-cover"
+                    />
                   ) : (
                     <div className="h-10 w-10 rounded-full bg-[#FE2C55]/10 flex items-center justify-center text-[#FE2C55] font-bold">
                       {creatorInfo.nickname.charAt(0).toUpperCase()}
@@ -217,9 +295,29 @@ export function TikTokPublishModal({
                 </div>
               )}
 
-              {/* 2. Text / Title Input Field (Guideline 5b) */}
+              {/* Content Preview — Guideline 5a */}
+              {resolvedVideoUrl && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Content preview</label>
+                  <div className="overflow-hidden rounded-lg border bg-black">
+                    {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                    <video
+                      src={resolvedVideoUrl}
+                      className="w-full"
+                      controls
+                      preload="metadata"
+                      playsInline
+                      style={{ maxHeight: 280 }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 2. Title Input (Guideline 5b) */}
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">TikTok Title (Editable)</label>
+                <label className="text-sm font-medium text-foreground">
+                  TikTok Title <span className="text-xs font-normal text-muted-foreground">(editable)</span>
+                </label>
                 <textarea
                   value={settings.title}
                   maxLength={100}
@@ -232,9 +330,11 @@ export function TikTokPublishModal({
                 </div>
               </div>
 
-              {/* 3. Privacy Status - Mandated Manual Dropdown Select (Guideline 2b) */}
+              {/* 3. Privacy Status (Guideline 2b) */}
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Visibility Status <span className="text-destructive">*</span></label>
+                <label className="text-sm font-medium text-foreground">
+                  Visibility Status <span className="text-destructive">*</span>
+                </label>
                 <div className="relative">
                   <select
                     value={settings.privacyLevel}
@@ -243,12 +343,12 @@ export function TikTokPublishModal({
                   >
                     <option value="" disabled>-- Select target audience (Required) --</option>
                     {creatorInfo?.privacyLevelOptions.map((opt) => {
-                      // Disallow private option proactively if Branded Content checked (Guideline 3b)
-                      const isPrivateOption = opt === 'SELF_ONLY';
+                      const isPrivateOption  = opt === 'SELF_ONLY';
                       const isOptionDisabled = isPrivateOption && brandTogglesActive && settings.brandContentToggle;
                       return (
                         <option key={opt} value={opt} disabled={isOptionDisabled}>
-                          {PRIVACY_LABELS[opt] || opt} {isOptionDisabled ? '(Unavailable for Branded Content)' : ''}
+                          {PRIVACY_LABELS[opt] || opt}
+                          {isOptionDisabled ? ' (Unavailable for Branded Content)' : ''}
                         </option>
                       );
                     })}
@@ -262,12 +362,12 @@ export function TikTokPublishModal({
                 )}
               </div>
 
-              {/* 4. Interactive Permissions (Guideline 2c) */}
+              {/* 4. Interaction Settings (Guideline 2c) */}
               <div className="space-y-3">
                 <label className="text-sm font-medium text-foreground">Interaction Settings</label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  
-                  {/* Comments Option */}
+
+                  {/* Allow Comments */}
                   <label className={`flex items-center gap-3 rounded-lg border p-3 text-sm transition select-none ${creatorInfo?.commentDisabled ? 'opacity-40 bg-muted cursor-not-allowed' : 'hover:bg-muted/30 cursor-pointer'}`}>
                     <input
                       type="checkbox"
@@ -278,11 +378,13 @@ export function TikTokPublishModal({
                     />
                     <div>
                       <p className="font-medium">Allow Comments</p>
-                      {creatorInfo?.commentDisabled && <p className="text-[11px] text-destructive">Disabled in app settings</p>}
+                      {creatorInfo?.commentDisabled && (
+                        <p className="text-[11px] text-destructive">Disabled in app settings</p>
+                      )}
                     </div>
                   </label>
 
-                  {/* Duet Option - Hidden or Blocked on Photo Posts */}
+                  {/* Allow Duet — video only (Guideline 2c) */}
                   {!isPhotoPost && (
                     <label className={`flex items-center gap-3 rounded-lg border p-3 text-sm transition select-none ${creatorInfo?.duetDisabled ? 'opacity-40 bg-muted cursor-not-allowed' : 'hover:bg-muted/30 cursor-pointer'}`}>
                       <input
@@ -294,12 +396,14 @@ export function TikTokPublishModal({
                       />
                       <div>
                         <p className="font-medium">Allow Duet</p>
-                        {creatorInfo?.duetDisabled && <p className="text-[11px] text-destructive">Disabled in app settings</p>}
+                        {creatorInfo?.duetDisabled && (
+                          <p className="text-[11px] text-destructive">Disabled in app settings</p>
+                        )}
                       </div>
                     </label>
                   )}
 
-                  {/* Stitch Option - Hidden or Blocked on Photo Posts */}
+                  {/* Allow Stitch — video only (Guideline 2c) */}
                   {!isPhotoPost && (
                     <label className={`flex items-center gap-3 rounded-lg border p-3 text-sm transition select-none ${creatorInfo?.stitchDisabled ? 'opacity-40 bg-muted cursor-not-allowed' : 'hover:bg-muted/30 cursor-pointer'}`}>
                       <input
@@ -311,14 +415,16 @@ export function TikTokPublishModal({
                       />
                       <div>
                         <p className="font-medium">Allow Stitch</p>
-                        {creatorInfo?.stitchDisabled && <p className="text-[11px] text-destructive">Disabled in app settings</p>}
+                        {creatorInfo?.stitchDisabled && (
+                          <p className="text-[11px] text-destructive">Disabled in app settings</p>
+                        )}
                       </div>
                     </label>
                   )}
                 </div>
               </div>
 
-              {/* 5. Commercial Disclosure Settings (Guideline 3a & 3b) */}
+              {/* 5. Commercial Disclosure (Guideline 3a & 3b) */}
               <div className="rounded-lg border bg-muted/20 p-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
@@ -326,16 +432,18 @@ export function TikTokPublishModal({
                       <Shield className="h-4 w-4 text-[#FE2C55]" />
                       Commercial Content Disclosure
                     </span>
-                    <p className="text-xs text-muted-foreground">Indicate whether this content promotes yourself, a brand, product or service.</p>
+                    <p className="text-xs text-muted-foreground">
+                      Indicate whether this content promotes yourself, a brand, product or service.
+                    </p>
                   </div>
                   <input
                     type="checkbox"
                     checked={settings.commercialDisclosure}
-                    onChange={(e) => setSettings(s => ({ 
-                      ...s, 
+                    onChange={(e) => setSettings(s => ({
+                      ...s,
                       commercialDisclosure: e.target.checked,
-                      brandOrganicToggle: false, // Reset internal choices if main container toggled
-                      brandContentToggle: false 
+                      brandOrganicToggle: false,
+                      brandContentToggle: false,
                     }))}
                     className="accent-[#FE2C55] h-4 w-4 cursor-pointer"
                   />
@@ -343,8 +451,8 @@ export function TikTokPublishModal({
 
                 {brandTogglesActive && (
                   <div className="pt-3 border-t grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in slide-in-from-top-2 duration-150">
-                    
-                    {/* Your Brand Toggle */}
+
+                    {/* Your Brand */}
                     <div className="space-y-2">
                       <label className="flex items-center gap-2 text-xs font-semibold text-foreground cursor-pointer select-none">
                         <input
@@ -357,12 +465,12 @@ export function TikTokPublishModal({
                       </label>
                       {settings.brandOrganicToggle && (
                         <p className="text-[11px] text-amber-600 font-medium bg-amber-50 rounded px-2 py-1 border border-amber-200">
-                          Your asset will be labeled as "Promotional content"
+                          Your asset will be labeled as &quot;Promotional content&quot;
                         </p>
                       )}
                     </div>
 
-                    {/* Branded Content Toggle */}
+                    {/* Branded Content */}
                     <div className="space-y-2">
                       <label className="flex items-center gap-2 text-xs font-semibold text-foreground cursor-pointer select-none">
                         <input
@@ -376,12 +484,11 @@ export function TikTokPublishModal({
                       </label>
                       {settings.brandContentToggle && (
                         <p className="text-[11px] text-amber-600 font-medium bg-amber-50 rounded px-2 py-1 border border-amber-200">
-                          Your asset will be labeled as "Paid partnership"
+                          Your asset will be labeled as &quot;Paid partnership&quot;
                         </p>
                       )}
                     </div>
 
-                    {/* Fallback Tooltip Error if container on but selections missing */}
                     {commercialDisclosureIncomplete && (
                       <p className="sm:col-span-2 text-xs text-destructive font-medium bg-destructive/5 p-2 rounded border border-destructive/10">
                         ℹ️ You need to indicate if your content promotes yourself, a third party, or both to proceed.
@@ -394,10 +501,30 @@ export function TikTokPublishModal({
           )}
         </div>
 
-        {/* Footer Area with Explicit Consent Declaration & Sticky Controls */}
+        {/* Footer */}
         <div className="border-t bg-muted/40 px-6 py-4 flex flex-col items-center">
-          
-          {/* Dynamic Legal Consent Declaration (Guideline 2 & 4) */}
+
+          {/* Publish status feedback (Guideline 5e) */}
+          {publishStatus === 'processing' && (
+            <div className="flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-700 w-full mb-3">
+              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              Your video is processing on TikTok. This may take a few minutes...
+            </div>
+          )}
+          {publishStatus === 'success' && (
+            <div className="flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-700 w-full mb-3">
+              <Check className="h-4 w-4 shrink-0" />
+              Published successfully! It may take a few minutes to appear on your profile.
+            </div>
+          )}
+          {publishStatus === 'failed' && (
+            <div className="flex items-center gap-2 rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive w-full mb-3">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {error || 'TikTok processing failed. Please try again.'}
+            </div>
+          )}
+
+          {/* Consent Declaration (Guideline 2 & 4) */}
           <div className="flex items-center gap-2 mb-3 bg-background border rounded px-3 py-1.5 w-full">
             <Music className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             <p className="text-[11px] font-medium text-muted-foreground">
@@ -411,13 +538,15 @@ export function TikTokPublishModal({
               onClick={onClose}
               className="flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium hover:bg-muted cursor-pointer text-foreground transition"
             >
-              Cancel
+              {publishStatus === 'success' ? 'Close' : 'Cancel'}
             </button>
             <button
               type="button"
               disabled={isPublishDisabled}
               onClick={handlePublish}
-              title={commercialDisclosureIncomplete ? "You need to indicate if your content promotes yourself, a third party, or both." : undefined}
+              title={commercialDisclosureIncomplete
+                ? 'You need to indicate if your content promotes yourself, a third party, or both.'
+                : undefined}
               className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-[#FE2C55] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#E11D48] transition disabled:opacity-40 disabled:hover:bg-[#FE2C55] disabled:cursor-not-allowed cursor-pointer"
             >
               {publishing ? (
@@ -430,8 +559,8 @@ export function TikTokPublishModal({
               )}
             </button>
           </div>
-          
-          {/* Processing Warning Note (Guideline 5d) */}
+
+          {/* Processing warning (Guideline 5d) */}
           <p className="mt-2 text-center text-[11px] text-muted-foreground leading-relaxed">
             Note: After finishing deployment, it can take up to a few minutes for background asset processing to execute before content reflects publicly on your TikTok profile layout.
           </p>

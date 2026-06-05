@@ -1108,6 +1108,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           caption: item.caption || '',
           contentType: item.contentType || 'video', // 'video' or 'image'
           videoDuration: (item.platformSpecific?.videoDurationSeconds as number) || 0,
+           videoUrl: item.graphicUrls?.[0], 
         }}
       />
       <PageHeader

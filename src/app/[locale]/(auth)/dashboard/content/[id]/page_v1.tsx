@@ -24,7 +24,7 @@ import { useEffect, useState } from 'react';
 
 import { MediaUploader } from '@/components/media/MediaUploader';
 import { PageHeader } from '@/features/dashboard/PageHeader';
-import { TikTokPublishModal } from '@/components/tiktok/TikTokPublishModal';
+import { TikTokPublishModal } from '@/components/tiktok/TikTokPublishModal_v1';
 
 // -----------------------------------------------------------
 // TYPES
@@ -80,6 +80,7 @@ const PLATFORM_LABELS: Record<string, string> = {
   youtube: 'YouTube',
   threads: 'Threads',
   pinterest: 'Pinterest',
+   snapchat: 'Snapchat',
 };
 
 const TITLE_PLATFORMS = new Set(['youtube', 'pinterest']);
