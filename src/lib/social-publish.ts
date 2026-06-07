@@ -740,16 +740,16 @@ export async function publishToTikTok(
       },
       body: JSON.stringify({
         post_info: {
-          title:                (tiktokSettings?.title || caption).slice(0, 2200),
-          privacy_level:        privacyLevel,
-          disable_comment:      tiktokSettings?.allowComment === true ? false : creatorInfo.commentDisabled,
-          disable_duet:         tiktokSettings?.allowDuet    === true ? false : creatorInfo.duetDisabled,
-          disable_stitch:       tiktokSettings?.allowStitch  === true ? false : creatorInfo.stitchDisabled,
+          title: (tiktokSettings?.title || caption).slice(0, 2200),
+          privacy_level: privacyLevel,
+          disable_comment: tiktokSettings?.allowComment === true ? false : creatorInfo.commentDisabled,
+          disable_duet: tiktokSettings?.allowDuet === true ? false : creatorInfo.duetDisabled,
+          disable_stitch: tiktokSettings?.allowStitch === true ? false : creatorInfo.stitchDisabled,
           brand_organic_toggle: tiktokSettings?.brandOrganicToggle ?? false,
           brand_content_toggle: tiktokSettings?.brandContentToggle ?? false,
         },
         source_info: {
-          source:    'PULL_FROM_URL',
+          source: 'PULL_FROM_URL',
           video_url: tiktokVideoUrl,
         },
       }),
@@ -764,8 +764,8 @@ export async function publishToTikTok(
     // app hasn't been audited yet. The post still goes through as SELF_ONLY (private).
     // Treat this as a success — check for publish_id even when there's an error code.
     const publishId = initData.data?.publish_id;
-    const errCode   = initData.error?.code   || '';
-    const errMsg    = initData.error?.message || '';
+    const errCode = initData.error?.code || '';
+    const errMsg = initData.error?.message || '';
 
     const isUnauditedWarning = errCode === 'unaudited_client_can_only_post_to_private_accounts';
 
@@ -1492,14 +1492,25 @@ async function publishPinToBoard(
       return { success: false, error: 'Pinterest: video upload or processing failed.' };
     }
 
+    // const pinBody = {
+    //   title: caption.slice(0, 100),
+    //   description: caption.slice(0, 800),
+    //   board_id: boardId,
+    //   media_source: {
+    //     source_type: 'video_id',
+    //     cover_image_url: undefined, // optional — omit to let Pinterest auto-generate
+    //     media_id: mediaId,
+    //   },
+    // };
+
     const pinBody = {
       title: caption.slice(0, 100),
       description: caption.slice(0, 800),
       board_id: boardId,
       media_source: {
         source_type: 'video_id',
-        cover_image_url: undefined, // optional — omit to let Pinterest auto-generate
         media_id: mediaId,
+        cover_image_key_frame_time: '00:00:01.000', // auto-generate cover from 1s mark
       },
     };
 
@@ -1656,19 +1667,19 @@ export async function publishToplatform(
       return publishToThreads(accessToken, platformUserId, caption, imageUrls, verticalVideo);
 
     case 'snapchat':
-  return publishToSnapchat(
-    accessToken,
-    // caption,
-    imageUrls,
-    squareVideo ?? verticalVideo,
-     platformUserId,
-  );
-  // case 'snapchat':
-  // // Snapchat uses Creative Kit — client-side share only
-  // return {
-  //   success: false,
-  //   error: 'Snapchat content is shared via the Share to Snapchat button, not scheduled publishing.',
-  // };
+      return publishToSnapchat(
+        accessToken,
+        // caption,
+        imageUrls,
+        squareVideo ?? verticalVideo,
+        platformUserId,
+      );
+    // case 'snapchat':
+    // // Snapchat uses Creative Kit — client-side share only
+    // return {
+    //   success: false,
+    //   error: 'Snapchat content is shared via the Share to Snapchat button, not scheduled publishing.',
+    // };
     case 'pinterest':
       return publishToPinterest(
         accessToken,
