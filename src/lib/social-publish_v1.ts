@@ -8,6 +8,7 @@
 
 import { Buffer } from 'node:buffer';
 import { publishToTwitter } from './twitter-publisher';
+import { publishToSnapchat } from './snapchat-publisher';
 
 export type PublishResult = {
   success: boolean;
@@ -754,12 +755,22 @@ export async function publishToTikTok(
       }),
     });
 
-    const initData = await initRes.json();
+    const initData = await initRes.json() as {
+      data?: { publish_id?: string };
+      error?: { code?: string; message?: string };
+    };
 
-    if (!initData.data?.publish_id) {
+    // TikTok returns unaudited_client_can_only_post_to_private_accounts when the
+    // app hasn't been audited yet. The post still goes through as SELF_ONLY (private).
+    // Treat this as a success — check for publish_id even when there's an error code.
+    const publishId = initData.data?.publish_id;
+    const errCode   = initData.error?.code   || '';
+    const errMsg    = initData.error?.message || '';
+
+    const isUnauditedWarning = errCode === 'unaudited_client_can_only_post_to_private_accounts';
+
+    if (!publishId && !isUnauditedWarning) {
       console.error('[TikTok] Init failed:', JSON.stringify(initData));
-      const errCode = initData.error?.code || '';
-      const errMsg = initData.error?.message || '';
 
       if (errCode === 'spam_risk_too_many_posts' || errMsg.includes('cap')) {
         return { success: false, error: 'TikTok posting limit reached for today. Please try again tomorrow.' };
@@ -774,12 +785,17 @@ export async function publishToTikTok(
       };
     }
 
-    console.log(`[TikTok] Published (privacy: ${privacyLevel}), publish_id: ${initData.data.publish_id}`);
-    if (privacyLevel === 'SELF_ONLY') {
-      console.log('[TikTok] Post is private (SELF_ONLY) — app not yet audited. User can change visibility on TikTok manually.');
+    if (isUnauditedWarning) {
+      console.log('[TikTok] Unaudited app — post submitted as private (SELF_ONLY). publish_id:', publishId || 'pending');
+    } else {
+      console.log(`[TikTok] Published (privacy: ${privacyLevel}), publish_id: ${publishId}`);
     }
 
-    return { success: true, platformPostId: initData.data.publish_id };
+    if (privacyLevel === 'SELF_ONLY') {
+      console.log('[TikTok] Post is private (SELF_ONLY) — user can change visibility on TikTok manually.');
+    }
+
+    return { success: true, platformPostId: publishId || 'tiktok-pending' };
   } catch (err) {
     return { success: false, error: `TikTok error: ${err}` };
   }
@@ -1141,6 +1157,97 @@ export async function publishToThreads(
 }
 
 // ============================================================
+// SNAPCHAT
+// ============================================================
+
+
+
+// export async function publishToSnapchat(
+//   accessToken: string,
+//   imageUrls: string[] = [],
+//   videoUrl?: string,
+// ): Promise<PublishResult> {
+//   try {
+//     if (imageUrls.length === 0 && !videoUrl) {
+//       return {
+//         success: false,
+//         error: 'Snapchat requires an image or video.',
+//       };
+//     }
+
+//     const isVideo = !!videoUrl;
+//     const mediaUrl = videoUrl || imageUrls[0];
+
+//     // Step 1: Fetch the media as a buffer
+//     const mediaRes = await fetch(mediaUrl!);
+//     if (!mediaRes.ok) {
+//       return { success: false, error: 'Snapchat: could not fetch media file' };
+//     }
+//     const mediaBuffer = await mediaRes.arrayBuffer();
+//     const contentType = mediaRes.headers.get('content-type')
+//       || (isVideo ? 'video/mp4' : 'image/jpeg');
+
+//     // Step 2: Upload media to Story Studio
+//     const uploadRes = await fetch('https://storage.snapchat.com/v1/media', {
+//       method: 'POST',
+//       headers: {
+//         Authorization: `Bearer ${accessToken}`,
+//         'Content-Type': contentType,
+//       },
+//       body: mediaBuffer,
+//     });
+
+//     if (!uploadRes.ok) {
+//       const errText = await uploadRes.text();
+//       console.error('[Snapchat] Media upload failed:', errText);
+//       return { success: false, error: `Snapchat media upload failed (${uploadRes.status})` };
+//     }
+
+//     const uploadData = await uploadRes.json();
+//     const mediaId = uploadData.media_id || uploadData.id;
+
+//     if (!mediaId) {
+//       console.error('[Snapchat] No media ID returned:', JSON.stringify(uploadData));
+//       return { success: false, error: 'Snapchat: media upload returned no ID' };
+//     }
+
+//     console.log('[Snapchat] Media uploaded, media_id:', mediaId);
+
+//     // Step 3: Publish as a Story Snap
+//     const storyRes = await fetch('https://kit.snapchat.com/v1/story/snaps', {
+//       method: 'POST',
+//       headers: {
+//         Authorization: `Bearer ${accessToken}`,
+//         'Content-Type': 'application/json',
+//       },
+//       body: JSON.stringify({
+//         media: {
+//           media_id: mediaId,
+//           media_type: isVideo ? 'VIDEO' : 'IMAGE',
+//         },
+//         caption: '',   // Story Studio API doesn't support captions on Snaps
+//       }),
+//     });
+
+//     if (!storyRes.ok) {
+//       const errText = await storyRes.text();
+//       console.error('[Snapchat] Story publish failed:', errText);
+//       return { success: false, error: `Snapchat story publish failed (${storyRes.status})` };
+//     }
+
+//     const storyData = await storyRes.json();
+//     const snapId = storyData.snap_id || storyData.id;
+
+//     console.log('[Snapchat] Story published, snap_id:', snapId);
+//     return { success: true, platformPostId: snapId || 'snapchat-published' };
+
+//   } catch (err) {
+//     return { success: false, error: `Snapchat error: ${err}` };
+//   }
+// }
+
+
+// ============================================================
 // PINTEREST
 // ============================================================
 
@@ -1251,6 +1358,44 @@ async function refreshPinterestToken(
   }
 }
 
+// async function publishPinToBoard(
+//   accessToken: string,
+//   boardId: string,
+//   caption: string,
+//   imageUrls: string[],
+//   videoUrl?: string,
+// ): Promise<PublishResult> {
+//   const pinBody: Record<string, unknown> = {
+//     title: caption.slice(0, 100),
+//     // description: caption,
+//     description: caption.slice(0, 800),  // ← add this truncation
+//     board_id: boardId,
+//   };
+
+//   if (imageUrls.length > 0) {
+//     pinBody.media_source = { source_type: 'image_url', url: imageUrls[0] };
+//   } else if (videoUrl) {
+//     pinBody.media_source = { source_type: 'image_url', url: videoUrl };
+//   }
+
+//   const pinRes = await fetch('https://api.pinterest.com/v5/pins', {
+//     method: 'POST',
+//     headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+//     body: JSON.stringify(pinBody),
+//   });
+//   const pinData = await pinRes.json();
+
+//   console.log('[Pinterest] Create pin response:', JSON.stringify(pinData).slice(0, 300));
+
+//   if (pinData.id) {
+//     return { success: true, platformPostId: pinData.id };
+//   }
+//   return {
+//     success: false,
+//     error: pinData.message || pinData.code?.toString() || 'Pinterest pin creation failed',
+//   };
+// }
+
 async function publishPinToBoard(
   accessToken: string,
   boardId: string,
@@ -1258,34 +1403,40 @@ async function publishPinToBoard(
   imageUrls: string[],
   videoUrl?: string,
 ): Promise<PublishResult> {
-  const pinBody: Record<string, unknown> = {
-    title: caption.slice(0, 100),
-    description: caption,
-    board_id: boardId,
-  };
-
-  if (imageUrls.length > 0) {
-    pinBody.media_source = { source_type: 'image_url', url: imageUrls[0] };
-  } else if (videoUrl) {
-    pinBody.media_source = { source_type: 'image_url', url: videoUrl };
+  const urls = imageUrls.length > 0 ? imageUrls : videoUrl ? [videoUrl] : [];
+  
+  if (urls.length === 0) {
+    return { success: false, error: 'Pinterest requires at least one image.' };
   }
 
-  const pinRes = await fetch('https://api.pinterest.com/v5/pins', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(pinBody),
-  });
-  const pinData = await pinRes.json();
+  // Publish each slide as a separate pin
+  let firstPinId: string | undefined;
+  for (const [index, url] of urls.entries()) {
+    const pinBody: Record<string, unknown> = {
+      title: caption.slice(0, 100),
+      description: caption.slice(0, 800),
+      board_id: boardId,
+      media_source: { source_type: 'image_url', url },
+    };
 
-  console.log('[Pinterest] Create pin response:', JSON.stringify(pinData).slice(0, 300));
-
-  if (pinData.id) {
-    return { success: true, platformPostId: pinData.id };
+    const pinRes = await fetch('https://api.pinterest.com/v5/pins', {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${accessToken}`, 
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify(pinBody),
+    });
+    const pinData = await pinRes.json();
+    console.log(`[Pinterest] Pin ${index + 1} response:`, JSON.stringify(pinData).slice(0, 300));
+    
+    if (index === 0) firstPinId = pinData.id;
   }
-  return {
-    success: false,
-    error: pinData.message || pinData.code?.toString() || 'Pinterest pin creation failed',
-  };
+
+  if (firstPinId) {
+    return { success: true, platformPostId: firstPinId };
+  }
+  return { success: false, error: 'Pinterest: all pin creations failed' };
 }
 
 // ============================================================
@@ -1382,6 +1533,20 @@ export async function publishToplatform(
     case 'threads':
       return publishToThreads(accessToken, platformUserId, caption, imageUrls, verticalVideo);
 
+    case 'snapchat':
+  return publishToSnapchat(
+    accessToken,
+    // caption,
+    imageUrls,
+    squareVideo ?? verticalVideo,
+     platformUserId,
+  );
+  // case 'snapchat':
+  // // Snapchat uses Creative Kit — client-side share only
+  // return {
+  //   success: false,
+  //   error: 'Snapchat content is shared via the Share to Snapchat button, not scheduled publishing.',
+  // };
     case 'pinterest':
       return publishToPinterest(
         accessToken,

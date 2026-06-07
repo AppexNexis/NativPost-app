@@ -1358,43 +1358,123 @@ async function refreshPinterestToken(
   }
 }
 
-// async function publishPinToBoard(
-//   accessToken: string,
-//   boardId: string,
-//   caption: string,
-//   imageUrls: string[],
-//   videoUrl?: string,
-// ): Promise<PublishResult> {
-//   const pinBody: Record<string, unknown> = {
-//     title: caption.slice(0, 100),
-//     // description: caption,
-//     description: caption.slice(0, 800),  // ← add this truncation
-//     board_id: boardId,
-//   };
 
-//   if (imageUrls.length > 0) {
-//     pinBody.media_source = { source_type: 'image_url', url: imageUrls[0] };
-//   } else if (videoUrl) {
-//     pinBody.media_source = { source_type: 'image_url', url: videoUrl };
-//   }
+// ─── Pinterest helpers ────────────────────────────────────────────────────────
 
-//   const pinRes = await fetch('https://api.pinterest.com/v5/pins', {
-//     method: 'POST',
-//     headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-//     body: JSON.stringify(pinBody),
-//   });
-//   const pinData = await pinRes.json();
+/**
+ * Upload a video to Pinterest's media endpoint, poll until processing
+ * is complete, then return the media_id.
+ */
+async function uploadVideoToPinterest(
+  accessToken: string,
+  videoUrl: string,
+): Promise<string | null> {
+  // Step 1 — register the upload
+  const registerRes = await fetch('https://api.pinterest.com/v5/media', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ media_type: 'video' }),
+  });
 
-//   console.log('[Pinterest] Create pin response:', JSON.stringify(pinData).slice(0, 300));
+  if (!registerRes.ok) {
+    const err = await registerRes.text();
+    console.error('[Pinterest] Video register failed:', registerRes.status, err);
+    return null;
+  }
 
-//   if (pinData.id) {
-//     return { success: true, platformPostId: pinData.id };
-//   }
-//   return {
-//     success: false,
-//     error: pinData.message || pinData.code?.toString() || 'Pinterest pin creation failed',
-//   };
-// }
+  const registerData = await registerRes.json();
+  const mediaId: string | undefined = registerData.media_id;
+  const uploadUrl: string | undefined = registerData.upload_url;
+  const uploadParameters: Record<string, string> | undefined =
+    registerData.upload_parameters;
+
+  if (!mediaId || !uploadUrl) {
+    console.error('[Pinterest] Video register missing media_id/upload_url:', registerData);
+    return null;
+  }
+
+  console.log('[Pinterest] Video registered, media_id:', mediaId);
+
+  // Step 2 — fetch the video buffer from Uploadcare/CDN
+  // Bare Uploadcare URLs need /video.mp4 appended to be directly downloadable
+  const playableUrl = /\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(videoUrl)
+    ? videoUrl
+    : `${videoUrl.endsWith('/') ? videoUrl : `${videoUrl}/`}video.mp4`;
+
+  const videoRes = await fetch(playableUrl);
+  if (!videoRes.ok) {
+    console.error('[Pinterest] Could not fetch video for upload:', videoRes.status);
+    return null;
+  }
+  const videoBuffer = await videoRes.arrayBuffer();
+  const contentType = videoRes.headers.get('content-type') || 'video/mp4';
+
+  // Step 3 — PUT the video to the S3 pre-signed URL
+  // Pinterest returns upload_parameters that must be sent as form fields
+  // when upload_url is an S3 multipart URL. If upload_parameters is present,
+  // use multipart/form-data; otherwise send the raw buffer.
+  let uploadRes: Response;
+
+  if (uploadParameters && Object.keys(uploadParameters).length > 0) {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(uploadParameters)) {
+      form.append(key, value);
+    }
+    form.append('file', new Blob([videoBuffer], { type: contentType }), 'video.mp4');
+
+    uploadRes = await fetch(uploadUrl, {
+      method: 'POST', // S3 pre-signed multipart uses POST
+      body: form,
+    });
+  } else {
+    uploadRes = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType },
+      body: videoBuffer,
+    });
+  }
+
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text();
+    console.error('[Pinterest] Video PUT failed:', uploadRes.status, errText.slice(0, 300));
+    return null;
+  }
+
+  console.log('[Pinterest] Video uploaded to S3, polling for processing...');
+
+  // Step 4 — poll GET /v5/media/{media_id} until status === 'succeeded'
+  for (let attempt = 1; attempt <= 30; attempt++) {
+    await new Promise(r => setTimeout(r, 3000)); // 3 s between checks
+
+    const statusRes = await fetch(`https://api.pinterest.com/v5/media/${mediaId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!statusRes.ok) {
+      console.warn(`[Pinterest] Media status check failed (attempt ${attempt}):`, statusRes.status);
+      continue;
+    }
+
+    const statusData = await statusRes.json();
+    const status: string = statusData.status || '';
+    console.log(`[Pinterest] Media ${mediaId} status attempt ${attempt}: ${status}`);
+
+    if (status === 'succeeded') {
+      return mediaId;
+    }
+    if (status === 'failed') {
+      console.error('[Pinterest] Video processing failed:', JSON.stringify(statusData));
+      return null;
+    }
+    // 'processing' or 'registered' — keep polling
+  }
+
+  console.error('[Pinterest] Video processing timed out after 90 s');
+  return null;
+}
 
 async function publishPinToBoard(
   accessToken: string,
@@ -1403,13 +1483,53 @@ async function publishPinToBoard(
   imageUrls: string[],
   videoUrl?: string,
 ): Promise<PublishResult> {
-  const urls = imageUrls.length > 0 ? imageUrls : videoUrl ? [videoUrl] : [];
-  
-  if (urls.length === 0) {
-    return { success: false, error: 'Pinterest requires at least one image.' };
+  // ── VIDEO PIN ──────────────────────────────────────────────────────────────
+  if (videoUrl && imageUrls.length === 0) {
+    console.log('[Pinterest] Publishing video pin...');
+
+    const mediaId = await uploadVideoToPinterest(accessToken, videoUrl);
+    if (!mediaId) {
+      return { success: false, error: 'Pinterest: video upload or processing failed.' };
+    }
+
+    const pinBody = {
+      title: caption.slice(0, 100),
+      description: caption.slice(0, 800),
+      board_id: boardId,
+      media_source: {
+        source_type: 'video_id',
+        cover_image_url: undefined, // optional — omit to let Pinterest auto-generate
+        media_id: mediaId,
+      },
+    };
+
+    const pinRes = await fetch('https://api.pinterest.com/v5/pins', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(pinBody),
+    });
+    const pinData = await pinRes.json();
+    console.log('[Pinterest] Video pin response:', JSON.stringify(pinData).slice(0, 300));
+
+    if (pinData.id) {
+      return { success: true, platformPostId: pinData.id };
+    }
+    return {
+      success: false,
+      error: pinData.message || pinData.code?.toString() || 'Pinterest video pin creation failed',
+    };
   }
 
-  // Publish each slide as a separate pin
+  // ── IMAGE PIN(S) ───────────────────────────────────────────────────────────
+  const urls = imageUrls.length > 0 ? imageUrls : [];
+
+  if (urls.length === 0) {
+    return { success: false, error: 'Pinterest requires at least one image or a video.' };
+  }
+
   let firstPinId: string | undefined;
   for (const [index, url] of urls.entries()) {
     const pinBody: Record<string, unknown> = {
@@ -1421,15 +1541,15 @@ async function publishPinToBoard(
 
     const pinRes = await fetch('https://api.pinterest.com/v5/pins', {
       method: 'POST',
-      headers: { 
-        'Authorization': `Bearer ${accessToken}`, 
-        'Content-Type': 'application/json' 
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify(pinBody),
     });
     const pinData = await pinRes.json();
     console.log(`[Pinterest] Pin ${index + 1} response:`, JSON.stringify(pinData).slice(0, 300));
-    
+
     if (index === 0) firstPinId = pinData.id;
   }
 
@@ -1438,6 +1558,8 @@ async function publishPinToBoard(
   }
   return { success: false, error: 'Pinterest: all pin creations failed' };
 }
+
+
 
 // ============================================================
 // DISPATCHER
