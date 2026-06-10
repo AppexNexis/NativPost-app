@@ -1,0 +1,1 @@
+ALTER TABLE "social_account" ADD COLUMN "metadata" jsonb DEFAULT 'null'::jsonb;
