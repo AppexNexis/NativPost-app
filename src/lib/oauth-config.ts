@@ -1,0 +1,402 @@
+/**
+ * Social Platform OAuth Configuration
+ * Updated: WhatsApp Cloud API OAuth added
+ */
+
+import { Buffer } from 'node:buffer';
+import crypto from 'node:crypto';
+
+export type SocialPlatform =
+  | 'instagram'
+  | 'facebook'
+  | 'linkedin'
+  | 'linkedin_page'
+  | 'twitter'
+  | 'tiktok'
+  | 'youtube'
+  | 'threads'
+  | 'pinterest'
+  | 'snapchat'
+  | 'whatsapp';
+
+function generateCodeVerifier(): string {
+  return crypto.randomBytes(48).toString('base64url');
+}
+
+async function generateCodeChallengeS256(verifier: string): Promise<string> {
+  const hash = crypto.createHash('sha256').update(verifier).digest();
+  return hash.toString('base64url');
+}
+
+type PlatformConfig = {
+  name: string;
+  authUrl: string;
+  tokenUrl: string;
+  scopes: string[];
+  clientIdEnv: string;
+  clientSecretEnv: string;
+  scopeSeparator: string;
+  pkceMethod: 'none' | 'plain' | 'S256';
+  accountType: 'personal' | 'page' | 'organization' | 'business';
+};
+
+export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
+  facebook: {
+    name: 'Facebook',
+    authUrl: 'https://www.facebook.com/v21.0/dialog/oauth',
+    tokenUrl: 'https://graph.facebook.com/v21.0/oauth/access_token',
+    scopes: ['pages_manage_posts', 'pages_read_engagement', 'pages_show_list', 'pages_read_user_content'],
+    clientIdEnv: 'META_APP_ID',
+    clientSecretEnv: 'META_APP_SECRET',
+    scopeSeparator: ',',
+    pkceMethod: 'none',
+    accountType: 'page',
+  },
+  instagram: {
+    name: 'Instagram',
+    authUrl: 'https://www.facebook.com/v21.0/dialog/oauth',
+    tokenUrl: 'https://graph.facebook.com/v21.0/oauth/access_token',
+    scopes: ['instagram_basic', 'instagram_content_publish', 'instagram_manage_insights', 'pages_show_list'],
+    clientIdEnv: 'META_APP_ID',
+    clientSecretEnv: 'META_APP_SECRET',
+    scopeSeparator: ',',
+    pkceMethod: 'none',
+    accountType: 'personal',
+  },
+  /**
+   * WhatsApp — OAuth via Meta's Facebook Login flow.
+   *
+   * Scopes:
+   *  - whatsapp_business_messaging  → send messages via Cloud API
+   *  - whatsapp_business_management → read/manage WABA assets (phone numbers, channels)
+   *
+   * After token exchange, we additionally call the Graph API to:
+   *  1. Resolve the WABA ID: GET /me/whatsapp_business_accounts
+   *  2. Resolve the phone number ID: GET /{waba_id}/phone_numbers
+   *  3. Resolve the Channel ID (if any): GET /{waba_id}/channels
+   *
+   * The phone number ID is stored in platformSpecific.whatsapp.phoneNumberId
+   * The Channel ID is stored as platformUserId
+   */
+  whatsapp: {
+    name: 'WhatsApp',
+    authUrl: 'https://www.facebook.com/v21.0/dialog/oauth',
+    tokenUrl: 'https://graph.facebook.com/v21.0/oauth/access_token',
+    scopes: [
+      'whatsapp_business_messaging',
+      'whatsapp_business_management',
+      'business_management',        // needed to list WABAs
+    ],
+    clientIdEnv: 'META_APP_ID',
+    clientSecretEnv: 'META_APP_SECRET',
+    scopeSeparator: ',',
+    pkceMethod: 'none',
+    accountType: 'business',
+  },
+  linkedin: {
+    name: 'LinkedIn',
+    authUrl: 'https://www.linkedin.com/oauth/v2/authorization',
+    tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
+    scopes: ['openid', 'profile', 'w_member_social'],
+    clientIdEnv: 'LINKEDIN_CLIENT_ID',
+    clientSecretEnv: 'LINKEDIN_CLIENT_SECRET',
+    scopeSeparator: ' ',
+    pkceMethod: 'none',
+    accountType: 'personal',
+  },
+  linkedin_page: {
+    name: 'LinkedIn Page',
+    authUrl: 'https://www.linkedin.com/oauth/v2/authorization',
+    tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
+    scopes: [
+      'openid',
+      'profile',
+      'w_member_social',
+      'w_organization_social',
+      'r_organization_social',
+      'r_member_postAnalytics',
+    ],
+    clientIdEnv: 'LINKEDIN_PAGE_CLIENT_ID',
+    clientSecretEnv: 'LINKEDIN_PAGE_CLIENT_SECRET',
+    scopeSeparator: ' ',
+    pkceMethod: 'none',
+    accountType: 'organization',
+  },
+  snapchat: {
+    name: 'Snapchat',
+    authUrl: 'https://accounts.snapchat.com/accounts/oauth2/auth',
+    tokenUrl: 'https://accounts.snapchat.com/accounts/oauth2/token',
+    scopes: [
+      'https://auth.snapchat.com/oauth2/api/user.display_name',
+      'https://auth.snapchat.com/oauth2/api/user.external_id',
+    ],
+    clientIdEnv: 'SNAPCHAT_CLIENT_ID',
+    clientSecretEnv: 'SNAPCHAT_CLIENT_SECRET',
+    scopeSeparator: ' ',
+    pkceMethod: 'S256',
+    accountType: 'personal',
+  },
+  twitter: {
+    name: 'X / Twitter',
+    authUrl: 'https://twitter.com/i/oauth2/authorize',
+    tokenUrl: 'https://api.x.com/2/oauth2/token',
+    scopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'],
+    clientIdEnv: 'TWITTER_CLIENT_ID',
+    clientSecretEnv: 'TWITTER_CLIENT_SECRET',
+    scopeSeparator: ' ',
+    pkceMethod: 'S256',
+    accountType: 'personal',
+  },
+  tiktok: {
+    name: 'TikTok',
+    authUrl: 'https://www.tiktok.com/v2/auth/authorize/',
+    tokenUrl: 'https://open.tiktokapis.com/v2/oauth/token/',
+    scopes: ['user.info.basic', 'video.publish', 'video.upload'],
+    clientIdEnv: 'TIKTOK_CLIENT_KEY',
+    clientSecretEnv: 'TIKTOK_CLIENT_SECRET',
+    scopeSeparator: ',',
+    pkceMethod: 'S256',
+    accountType: 'personal',
+  },
+  youtube: {
+    name: 'YouTube',
+    authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    scopes: [
+      'https://www.googleapis.com/auth/youtube.upload',
+      'https://www.googleapis.com/auth/youtube.readonly',
+      'https://www.googleapis.com/auth/userinfo.profile',
+    ],
+    clientIdEnv: 'GOOGLE_CLIENT_ID',
+    clientSecretEnv: 'GOOGLE_CLIENT_SECRET',
+    scopeSeparator: ' ',
+    pkceMethod: 'S256',
+    accountType: 'personal',
+  },
+  threads: {
+    name: 'Threads',
+    authUrl: 'https://threads.net/oauth/authorize',
+    tokenUrl: 'https://graph.threads.net/oauth/access_token',
+    scopes: ['threads_basic', 'threads_content_publish'],
+    clientIdEnv: 'THREADS_APP_ID',
+    clientSecretEnv: 'THREADS_APP_SECRET',
+    scopeSeparator: ',',
+    pkceMethod: 'none',
+    accountType: 'personal',
+  },
+  pinterest: {
+    name: 'Pinterest',
+    authUrl: 'https://www.pinterest.com/oauth/',
+    tokenUrl: 'https://api.pinterest.com/v5/oauth/token',
+    scopes: ['boards:read', 'boards:write', 'pins:read', 'pins:write', 'user_accounts:read'],
+    clientIdEnv: 'PINTEREST_CLIENT_ID',
+    clientSecretEnv: 'PINTEREST_CLIENT_SECRET',
+    scopeSeparator: ',',
+    pkceMethod: 'none',
+    accountType: 'personal',
+  },
+};
+
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+// -----------------------------------------------------------
+// GENERATE OAUTH URL
+// -----------------------------------------------------------
+export async function getOAuthUrl(platform: SocialPlatform): Promise<string | null> {
+  const config = PLATFORM_CONFIGS[platform];
+  if (!config) return null;
+
+  const clientId = process.env[config.clientIdEnv];
+  if (!clientId) return null;
+
+  const callbackUrl = `${BASE_URL}/api/social-accounts/callback`;
+
+  let verifier: string | undefined;
+  if (config.pkceMethod === 'S256' || config.pkceMethod === 'plain') {
+    verifier = generateCodeVerifier();
+  }
+
+  const statePayload: Record<string, string> = {
+    platform,
+    nonce: crypto.randomUUID(),
+  };
+  if (verifier) statePayload.cv = verifier;
+  const state = Buffer.from(JSON.stringify(statePayload)).toString('base64url');
+
+  const params = new URLSearchParams({
+    response_type: 'code',
+    redirect_uri: callbackUrl,
+    scope: config.scopes.join(config.scopeSeparator),
+    state,
+  });
+
+  if (platform === 'tiktok') {
+    params.set('client_key', clientId);
+  } else {
+    params.set('client_id', clientId);
+  }
+
+  if (platform === 'youtube') {
+    params.set('access_type', 'offline');
+    params.set('prompt', 'consent');
+  }
+
+  if (config.pkceMethod === 'S256' && verifier) {
+    const challenge = await generateCodeChallengeS256(verifier);
+    params.set('code_challenge', challenge);
+    params.set('code_challenge_method', 'S256');
+  } else if (config.pkceMethod === 'plain' && verifier) {
+    params.set('code_challenge', verifier);
+    params.set('code_challenge_method', 'plain');
+  }
+
+  return `${config.authUrl}?${params.toString()}`;
+}
+
+// -----------------------------------------------------------
+// EXCHANGE CODE FOR TOKENS
+// -----------------------------------------------------------
+export async function exchangeCodeForTokens(
+  platform: SocialPlatform,
+  code: string,
+  state?: string,
+): Promise<{ accessToken: string; refreshToken?: string; expiresIn?: number } | null> {
+  const config = PLATFORM_CONFIGS[platform];
+  const clientId = process.env[config.clientIdEnv];
+  const clientSecret = process.env[config.clientSecretEnv];
+  if (!clientId || !clientSecret) return null;
+
+  const callbackUrl = `${BASE_URL}/api/social-accounts/callback`;
+
+  const body: Record<string, string> = {
+    code,
+    redirect_uri: callbackUrl,
+    grant_type: 'authorization_code',
+  };
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+  };
+
+  if (platform === 'twitter') {
+    headers.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
+  } else if (platform === 'tiktok') {
+    body.client_key = clientId;
+    body.client_secret = clientSecret;
+  } else if (platform === 'pinterest') {
+    headers.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
+  } else {
+    body.client_id = clientId;
+    body.client_secret = clientSecret;
+  }
+
+  if (config.pkceMethod !== 'none' && state) {
+    try {
+      const decoded = JSON.parse(Buffer.from(state, 'base64url').toString());
+      if (decoded.cv) body.code_verifier = decoded.cv;
+    } catch {
+      console.error(`[OAuth] Failed to decode PKCE verifier from state for ${platform}`);
+    }
+  }
+
+  try {
+    const res = await fetch(config.tokenUrl, {
+      method: 'POST',
+      headers,
+      body: new URLSearchParams(body).toString(),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`Token exchange failed for ${platform}:`, errorText);
+      return null;
+    }
+
+    const data = await res.json();
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      expiresIn: data.expires_in,
+    };
+  } catch (err) {
+    console.error(`Token exchange error for ${platform}:`, err);
+    return null;
+  }
+}
+
+// -----------------------------------------------------------
+// RESOLVE WHATSAPP ACCOUNT DETAILS
+// After token exchange, resolve the WABA ID, phone number ID,
+// and channel ID so we can store them for publishing.
+// -----------------------------------------------------------
+export async function resolveWhatsAppAccount(
+  accessToken: string,
+): Promise<{
+  wabaId: string;
+  phoneNumberId: string;
+  phoneNumber: string;
+  channelId: string | null;
+  displayName: string;
+} | null> {
+  try {
+    // Step 1: Get user's WABA IDs
+    const wabaRes = await fetch(
+      'https://graph.facebook.com/v21.0/me/whatsapp_business_accounts?fields=id,name',
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    const wabaData = await wabaRes.json();
+    const wabaId: string | undefined = wabaData.data?.[0]?.id;
+    if (!wabaId) {
+      console.error('[WhatsApp OAuth] No WABA found:', JSON.stringify(wabaData));
+      return null;
+    }
+
+    // Step 2: Get phone numbers for this WABA
+    const phoneRes = await fetch(
+      `https://graph.facebook.com/v21.0/${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    const phoneData = await phoneRes.json();
+    const phone = phoneData.data?.[0];
+    if (!phone) {
+      console.error('[WhatsApp OAuth] No phone numbers found:', JSON.stringify(phoneData));
+      return null;
+    }
+
+    // Step 3: Try to get Channel ID (may not exist yet — that's OK)
+    let channelId: string | null = null;
+    try {
+      const channelRes = await fetch(
+        `https://graph.facebook.com/v21.0/${wabaId}/channels?fields=id,name`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      const channelData = await channelRes.json();
+      channelId = channelData.data?.[0]?.id || null;
+    } catch {
+      // Channels are optional — swallow error
+    }
+
+    return {
+      wabaId,
+      phoneNumberId: phone.id,
+      phoneNumber: phone.display_phone_number,
+      channelId,
+      displayName: phone.verified_name || phone.display_phone_number,
+    };
+  } catch (err) {
+    console.error('[WhatsApp OAuth] resolveWhatsAppAccount error:', err);
+    return null;
+  }
+}
+
+// -----------------------------------------------------------
+// DECODE PLATFORM FROM STATE
+// -----------------------------------------------------------
+export function decodePlatformFromState(state: string): SocialPlatform | null {
+  try {
+    const decoded = JSON.parse(Buffer.from(state, 'base64url').toString());
+    return decoded.platform as SocialPlatform ?? null;
+  } catch {
+    return null;
+  }
+}

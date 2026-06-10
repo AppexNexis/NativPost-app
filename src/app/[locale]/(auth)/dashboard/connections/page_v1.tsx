@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertCircle, Check, Image, Loader2, Type } from 'lucide-react';
+import { AlertCircle, Check, Clock, Image, Loader2, Type } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 
@@ -9,7 +9,6 @@ import { type PlatformInfo, PLATFORMS } from '@/components/icons/PlatformIcons';
 // -----------------------------------------------------------
 // TYPES
 // -----------------------------------------------------------
-// 1. Add to the type at the top
 type SocialAccount = {
   id: string;
   platform: string;
@@ -19,25 +18,41 @@ type SocialAccount = {
   isActive: boolean;
   connectedAt: string;
   oauthToken?: string | null;
-  accessToken?: string | null; // ← add this
+  accessToken?: string | null;
 };
 
-// A "virtual" platform entry for the X media (OAuth 1.0a) row
 type PlatformEntry = (PlatformInfo | { id: string; name: string; description: string; icon: PlatformInfo['icon'] }) & {
-  _connectHref?: string; // custom connect URL
-  _accountKey?: string;  // which platform key to look up in accounts
+  _connectHref?: string;
+  _accountKey?: string;
   _badge?: string;
   _badgeVariant?: 'default' | 'highlight';
+  _pending?: boolean;       // shows "coming soon" state — API approval in progress
+  _pendingLabel?: string;   // e.g. "Awaiting Meta API approval"
 };
+
+// -----------------------------------------------------------
+// Inline SVG icons for platforms not yet in PlatformIcons
+// -----------------------------------------------------------
+function WhatsAppIcon({ className = 'size-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+      <path d="M12 0C5.373 0 0 5.373 0 12c0 2.125.553 4.118 1.522 5.85L0 24l6.313-1.496A11.955 11.955 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.796 9.796 0 01-5.007-1.374l-.36-.213-3.727.883.944-3.623-.234-.372A9.796 9.796 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182S21.818 6.57 21.818 12 17.43 21.818 12 21.818z" />
+    </svg>
+  );
+}
+
+function SnapchatIcon({ className = 'size-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12.004 2c-1.3 0-4.243.37-5.823 3.455-.518 1.007-.394 2.694-.33 3.73l-.003.003c-.007.111-.014.222-.02.333-.106.12-.37.264-.818.264-.22 0-.47-.043-.734-.128l-.009-.003c-.047-.015-.098-.024-.155-.024-.285 0-.536.208-.536.494 0 .252.176.454.426.52.016.005 1.655.425 1.875 1.657.008.047.024.09.046.13.388.71 1.022 1.174 1.782 1.174.17 0 .34-.02.506-.059.534-.124 1.064-.074 1.518.14.618.292 1.03.914 1.01 1.558-.007.218-.035.424-.084.616-.16.634-.604 1.047-1.14 1.047-.065 0-.13-.007-.193-.022-.16-.037-.31-.06-.456-.06-.24 0-.465.056-.65.162C8.6 17.2 8.327 17.77 8.327 18.46c0 .095.007.187.022.278.13.776.99 1.165 2.137 1.358.08.356.19.796.23.937.063.22.245.363.47.363h.033c.12-.007.242-.043.367-.107.387-.197.834-.3 1.414-.3.58 0 1.027.1 1.414.3.126.064.247.1.367.107h.033c.225 0 .407-.143.47-.363.04-.14.15-.58.23-.937 1.147-.193 2.007-.582 2.137-1.358.015-.09.022-.183.022-.278 0-.69-.274-1.26-.69-1.587-.185-.106-.41-.162-.65-.162-.147 0-.296.023-.456.06-.063.015-.128.022-.193.022-.537 0-.98-.413-1.14-1.047-.05-.192-.077-.398-.084-.616-.02-.644.392-1.266 1.01-1.558.454-.214.984-.264 1.518-.14.166.039.337.059.506.059.76 0 1.394-.464 1.782-1.174.022-.04.038-.083.046-.13.22-1.232 1.86-1.652 1.875-1.657.25-.066.426-.268.426-.52 0-.286-.251-.494-.536-.494-.057 0-.108.009-.155.024l-.009.003c-.264.085-.514.128-.734.128-.448 0-.712-.145-.818-.264-.006-.111-.013-.222-.02-.333l-.003-.003c.064-1.036.188-2.723-.33-3.73C16.247 2.37 13.304 2 12.004 2z" />
+    </svg>
+  );
+}
 
 // -----------------------------------------------------------
 // PLATFORM GROUPS
 // -----------------------------------------------------------
-
-// We split Twitter into two rows: text-only (OAuth 2) and media (OAuth 1.0a)
-// The media row uses platform id "twitter_v1" but resolves to the same "twitter"
-// account record — we check oauthToken presence to show it as connected.
-
 function buildGroups(platforms: PlatformInfo[]): { label: string; platforms: PlatformEntry[] }[] {
   const twitterPlatform = platforms.find(p => p.id === 'twitter');
 
@@ -53,7 +68,6 @@ function buildGroups(platforms: PlatformInfo[]): { label: string; platforms: Pla
     {
       label: 'Social',
       platforms: [
-        // Text-only row (OAuth 2.0)
         ...(twitterPlatform
           ? [{
             ...twitterPlatform,
@@ -62,7 +76,6 @@ function buildGroups(platforms: PlatformInfo[]): { label: string; platforms: Pla
             _badgeVariant: 'default' as const,
           }]
           : []),
-        // Media row (OAuth 1.0a)
         ...(twitterPlatform
           ? [{
             ...twitterPlatform,
@@ -81,6 +94,37 @@ function buildGroups(platforms: PlatformInfo[]): { label: string; platforms: Pla
     {
       label: 'Video and visual',
       platforms: platforms.filter(p => ['youtube', 'pinterest'].includes(p.id)),
+    },
+    {
+      label: 'Messaging',
+      platforms: [
+        {
+          id: 'whatsapp',
+          name: 'WhatsApp',
+          icon: WhatsAppIcon as PlatformInfo['icon'],
+          color: '#25D366',
+          description: 'Channel publishing',
+          _pending: true,
+          _pendingLabel: 'Meta Business API approval in progress',
+        },
+        // {
+        //   id: 'snapchat',
+        //   name: 'Snapchat',
+        //   icon: SnapchatIcon as PlatformInfo['icon'],
+        //   color: '#FFFC00',
+        //   description: 'Story publishing',
+        //   _pending: true,
+        //   _pendingLabel: 'Snap Marketing API approval in progress',
+        // },
+        {
+          id: 'snapchat',
+          name: 'Snapchat',
+          icon: SnapchatIcon as PlatformInfo['icon'],
+          color: '#FFFC00',
+          description: 'Story publishing',
+          // _pending and _pendingLabel removed — now live
+        },
+      ],
     },
   ];
 }
@@ -213,6 +257,37 @@ function ConnectionsContent() {
                   const connected = !!account;
                   const isLast = i === group.platforms.length - 1;
                   const isTwitterMediaRow = platform.id === 'twitter_v1';
+                  const isPending = '_pending' in platform && platform._pending === true;
+
+                  // Pending platforms (API approval in progress) — show differently
+                  if (isPending) {
+                    const PendingIcon = platform.icon;
+                    return (
+                      <div
+                        key={`${platform.id}-${i}`}
+                        className={`flex items-center gap-3 p-4 sm:gap-4 sm:px-5 ${!isLast ? 'border-b' : ''} bg-muted/20`}
+                      >
+                        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 sm:size-10">
+                          <PendingIcon className="size-4 text-muted-foreground/60 sm:size-5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="text-sm font-medium text-muted-foreground">{platform.name}</p>
+                            <span className="rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                              Coming soon
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-xs text-muted-foreground/70">
+                            {'_pendingLabel' in platform ? platform._pendingLabel as string : 'API approval in progress'}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground/50">
+                          <Clock className="size-3.5" />
+                          <span className="hidden text-xs sm:inline">Pending</span>
+                        </div>
+                      </div>
+                    );
+                  }
 
                   return (
                     <div
