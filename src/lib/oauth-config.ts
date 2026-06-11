@@ -329,6 +329,83 @@ export async function exchangeCodeForTokens(
 // After token exchange, resolve the WABA ID, phone number ID,
 // and channel ID so we can store them for publishing.
 // -----------------------------------------------------------
+// export async function resolveWhatsAppAccount(
+//   accessToken: string,
+// ): Promise<{
+//   wabaId: string;
+//   phoneNumberId: string;
+//   phoneNumber: string;
+//   channelId: string | null;
+//   displayName: string;
+// } | null> {
+//   try {
+//     // Step 1: Get user's WABA IDs
+//     const wabaRes = await fetch(
+//       'https://graph.facebook.com/v21.0/me/whatsapp_business_accounts?fields=id,name',
+//       { headers: { Authorization: `Bearer ${accessToken}` } },
+//     );
+//     const wabaData = await wabaRes.json();
+//     const wabaId: string | undefined = wabaData.data?.[0]?.id;
+//     if (!wabaId) {
+//       console.error('[WhatsApp OAuth] No WABA found:', JSON.stringify(wabaData));
+//       return null;
+//     }
+
+//     // Step 2: Get phone numbers for this WABA
+//     const phoneRes = await fetch(
+//       `https://graph.facebook.com/v21.0/${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name`,
+//       { headers: { Authorization: `Bearer ${accessToken}` } },
+//     );
+//     const phoneData = await phoneRes.json();
+//     const phone = phoneData.data?.[0];
+//     if (!phone) {
+//       console.error('[WhatsApp OAuth] No phone numbers found:', JSON.stringify(phoneData));
+//       return null;
+//     }
+
+//     // Step 3: Try to get Channel ID (may not exist yet — that's OK)
+//     let channelId: string | null = null;
+//     try {
+//       const channelRes = await fetch(
+//         `https://graph.facebook.com/v21.0/${wabaId}/channels?fields=id,name`,
+//         { headers: { Authorization: `Bearer ${accessToken}` } },
+//       );
+//       const channelData = await channelRes.json();
+//       channelId = channelData.data?.[0]?.id || null;
+//     } catch {
+//       // Channels are optional — swallow error
+//     }
+
+//     return {
+//       wabaId,
+//       phoneNumberId: phone.id,
+//       phoneNumber: phone.display_phone_number,
+//       channelId,
+//       displayName: phone.verified_name || phone.display_phone_number,
+//     };
+//   } catch (err) {
+//     console.error('[WhatsApp OAuth] resolveWhatsAppAccount error:', err);
+//     return null;
+//   }
+// }
+
+/**
+ * Paste this function into your oauth-config.ts (or social-oauth.ts),
+ * replacing the existing resolveWhatsAppAccount() function entirely.
+ *
+ * The fix: instead of GET /me/whatsapp_business_accounts (which requires
+ * a System User token or WABA-level token), we use the WhatsApp Cloud API
+ * phone_numbers endpoint directly, since the OAuth token already has
+ * whatsapp_business_messaging scope and the phone number ID is what we
+ * actually need for publishing.
+ *
+ * Flow:
+ *  1. GET /me?fields=id — confirm token is valid, get user ID
+ *  2. GET /{user_id}/businesses — list businesses this user manages
+ *  3. GET /{business_id}/owned_whatsapp_business_accounts — get WABAs
+ *  4. GET /{waba_id}/phone_numbers — get phone number ID
+ *  5. GET /{waba_id}/channels — try to get channel ID (optional)
+ */
 export async function resolveWhatsAppAccount(
   accessToken: string,
 ): Promise<{
@@ -339,31 +416,74 @@ export async function resolveWhatsAppAccount(
   displayName: string;
 } | null> {
   try {
-    // Step 1: Get user's WABA IDs
-    const wabaRes = await fetch(
-      'https://graph.facebook.com/v21.0/me/whatsapp_business_accounts?fields=id,name',
+    // Step 1: Confirm token is valid
+    const meRes = await fetch(
+      'https://graph.facebook.com/v21.0/me?fields=id,name',
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
-    const wabaData = await wabaRes.json();
-    const wabaId: string | undefined = wabaData.data?.[0]?.id;
-    if (!wabaId) {
-      console.error('[WhatsApp OAuth] No WABA found:', JSON.stringify(wabaData));
+    const meData = await meRes.json();
+    if (!meData.id) {
+      console.error('[WhatsApp OAuth] Token invalid — /me failed:', JSON.stringify(meData));
+      return null;
+    }
+    const userId = meData.id as string;
+    console.log('[WhatsApp OAuth] User ID:', userId);
+
+    // Step 2: Get businesses this user manages
+    const bizRes = await fetch(
+      `https://graph.facebook.com/v21.0/${userId}/businesses?fields=id,name`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    const bizData = await bizRes.json();
+    console.log('[WhatsApp OAuth] Businesses:', JSON.stringify(bizData));
+
+    const businessId: string | undefined = bizData.data?.[0]?.id;
+    if (!businessId) {
+      console.error('[WhatsApp OAuth] No businesses found for user');
       return null;
     }
 
-    // Step 2: Get phone numbers for this WABA
+    // Step 3: Get WABAs owned by this business
+    const wabaRes = await fetch(
+      `https://graph.facebook.com/v21.0/${businessId}/owned_whatsapp_business_accounts?fields=id,name`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    const wabaData = await wabaRes.json();
+    console.log('[WhatsApp OAuth] WABAs:', JSON.stringify(wabaData));
+
+    let wabaId: string | undefined = wabaData.data?.[0]?.id;
+
+    // Fallback: try client WABAs if no owned ones found
+    if (!wabaId) {
+      const clientWabaRes = await fetch(
+        `https://graph.facebook.com/v21.0/${businessId}/client_whatsapp_business_accounts?fields=id,name`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      const clientWabaData = await clientWabaRes.json();
+      console.log('[WhatsApp OAuth] Client WABAs:', JSON.stringify(clientWabaData));
+      wabaId = clientWabaData.data?.[0]?.id;
+    }
+
+    if (!wabaId) {
+      console.error('[WhatsApp OAuth] No WABAs found under business', businessId);
+      return null;
+    }
+
+    // Step 4: Get phone numbers for this WABA
     const phoneRes = await fetch(
       `https://graph.facebook.com/v21.0/${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
     const phoneData = await phoneRes.json();
+    console.log('[WhatsApp OAuth] Phone numbers:', JSON.stringify(phoneData));
+
     const phone = phoneData.data?.[0];
     if (!phone) {
-      console.error('[WhatsApp OAuth] No phone numbers found:', JSON.stringify(phoneData));
+      console.error('[WhatsApp OAuth] No phone numbers found for WABA', wabaId);
       return null;
     }
 
-    // Step 3: Try to get Channel ID (may not exist yet — that's OK)
+    // Step 5: Try to get Channel ID (optional — not all WABAs have channels)
     let channelId: string | null = null;
     try {
       const channelRes = await fetch(
@@ -372,16 +492,17 @@ export async function resolveWhatsAppAccount(
       );
       const channelData = await channelRes.json();
       channelId = channelData.data?.[0]?.id || null;
+      console.log('[WhatsApp OAuth] Channel ID:', channelId);
     } catch {
-      // Channels are optional — swallow error
+      console.log('[WhatsApp OAuth] No channels found — using phone number ID as recipient');
     }
 
     return {
       wabaId,
-      phoneNumberId: phone.id,
-      phoneNumber: phone.display_phone_number,
+      phoneNumberId: phone.id as string,
+      phoneNumber: phone.display_phone_number as string,
       channelId,
-      displayName: phone.verified_name || phone.display_phone_number,
+      displayName: (phone.verified_name || phone.display_phone_number) as string,
     };
   } catch (err) {
     console.error('[WhatsApp OAuth] resolveWhatsAppAccount error:', err);
