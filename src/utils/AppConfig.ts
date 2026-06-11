@@ -2,7 +2,8 @@ import type { LocalePrefix } from 'node_modules/next-intl/dist/types/src/routing
 
 import { BILLING_INTERVAL, type PricingPlan } from '@/types/Subscription';
 
-const localePrefix: LocalePrefix = 'as-needed';
+// const localePrefix: LocalePrefix = 'as-needed';
+const localePrefix: LocalePrefix = 'as-needed' as LocalePrefix;
 
 // FIXME: Update this configuration file based on your project information
 export const AppConfig = {
