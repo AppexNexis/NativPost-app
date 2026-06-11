@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { exchangeCodeForTokens, PLATFORM_CONFIGS, type SocialPlatform } from '@/lib/social-oauth';
+import { decodePlatformFromState, exchangeCodeForTokens, PLATFORM_CONFIGS, type SocialPlatform } from '@/lib/social-oauth';
 // import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import { organizationSchema, socialAccountSchema } from '@/models/Schema';
@@ -33,7 +33,14 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const platform = state.split(':')[0] as SocialPlatform;
+  // const platform = state.split(':')[0] as SocialPlatform;
+  const platform = decodePlatformFromState(state);
+
+  if (!platform) {
+    return NextResponse.redirect(
+      new URL('/dashboard/connections?error=invalid_state', request.url),
+    );
+  }
 
   // Safety net: ensure org row exists before FK-dependent insert
   await db
@@ -58,7 +65,13 @@ export async function GET(request: NextRequest) {
 
   try {
     const profile = await fetchPlatformProfile(platform, tokens.accessToken);
+    // const config = PLATFORM_CONFIGS[platform];
     const config = PLATFORM_CONFIGS[platform];
+    if (!config) {
+      return NextResponse.redirect(
+        new URL('/dashboard/connections?error=invalid_platform', request.url),
+      );
+    }
     const accountType = profile?.type ?? config?.accountType ?? 'personal';
 
     // Use page token if available (Facebook), otherwise use the OAuth token
@@ -413,6 +426,102 @@ async function fetchPlatformProfile(
           type: 'personal',
           imageUrl: data.profile_image,
         };
+      }
+
+      // case 'snapchat': {
+      //   const res = await fetch(
+      //     'https://kit.snapchat.com/v1/me?query={me{externalId,displayName,bitmoji{selfie}}}',
+      //     { headers: { Authorization: `Bearer ${accessToken}` } },
+      //   );
+      //   if (!res.ok) {
+      //     console.error('[Snapchat] Profile fetch failed:', res.status);
+      //     return null;
+      //   }
+      //   const data = await res.json();
+      //   const me = data.data?.me;
+      //   return {
+      //     id: me?.externalId ?? '',
+      //     username: me?.displayName ?? '',
+      //     type: 'personal',
+      //     imageUrl: me?.bitmoji?.selfie ?? undefined,
+      //   };
+      // }
+
+      // case 'snapchat': {
+      //   // First get display name from Login Kit
+      //   const meRes = await fetch(
+      //     'https://kit.snapchat.com/v1/me?query={me{externalId,displayName}}',
+      //     { headers: { Authorization: `Bearer ${accessToken}` } },
+      //   );
+      //   const meData = await meRes.json();
+      //   const displayName = meData.data?.me?.displayName ?? '';
+
+      //   // Then get the Public Profile ID from the Business API
+      //   const profileRes = await fetch(
+      //     'https://businessapi.snapchat.com/v1/me/public_profiles',
+      //     { headers: { Authorization: `Bearer ${accessToken}` } },
+      //   );
+      //   if (profileRes.ok) {
+      //     const profileData = await profileRes.json();
+      //     const profileId = profileData.public_profiles?.[0]?.public_profile?.id;
+      //     if (profileId) {
+      //       return {
+      //         id: profileId,          // ← real Public Profile UUID
+      //         username: displayName,
+      //         type: 'personal',
+      //       };
+      //     }
+      //   }
+
+      //   // Fallback to externalId if no public profile yet
+      //   return {
+      //     id: meData.data?.me?.externalId ?? '',
+      //     username: displayName,
+      //     type: 'personal',
+      //   };
+      // }
+
+      case 'snapchat': {
+        const meRes = await fetch(
+          'https://kit.snapchat.com/v1/me?query={me{externalId,displayName}}',
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+        const meData = await meRes.json();
+        const displayName = meData.data?.me?.displayName ?? '';
+        const externalId = meData.data?.me?.externalId ?? '';
+
+        // Try the correct Business API endpoint
+        const profileRes = await fetch(
+          'https://businessapi.snapchat.com/v1/me/organizations',
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+        console.log('[Snapchat] Orgs status:', profileRes.status);
+
+        if (profileRes.ok) {
+          const profileData = await profileRes.json();
+          console.log('[Snapchat] Orgs data:', JSON.stringify(profileData));
+          const orgId = profileData.organizations?.[0]?.organization?.id;
+
+          if (orgId) {
+            // Get public profiles under this org
+            const pubRes = await fetch(
+              `https://businessapi.snapchat.com/v1/organizations/${orgId}/public_profiles`,
+              { headers: { Authorization: `Bearer ${accessToken}` } },
+            );
+            console.log('[Snapchat] Public profiles status:', pubRes.status);
+            if (pubRes.ok) {
+              const pubData = await pubRes.json();
+              console.log('[Snapchat] Public profiles data:', JSON.stringify(pubData));
+              const profileId = pubData.public_profiles?.[0]?.public_profile?.id;
+              if (profileId) {
+                return { id: profileId, username: displayName, type: 'personal' };
+              }
+            }
+          }
+        }
+
+        // Fallback to externalId
+        return { id: externalId, username: displayName, type: 'personal' };
       }
 
       default:

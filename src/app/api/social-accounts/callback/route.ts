@@ -4,9 +4,11 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { decodePlatformFromState, exchangeCodeForTokens, PLATFORM_CONFIGS, type SocialPlatform } from '@/lib/social-oauth';
-// import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import { organizationSchema, socialAccountSchema } from '@/models/Schema';
+import { resolveAndSaveWhatsAppAccount } from '@/lib/whatsapp-callback';
+
+// const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 export async function GET(request: NextRequest) {
   const db = await getDb();
@@ -33,7 +35,6 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // const platform = state.split(':')[0] as SocialPlatform;
   const platform = decodePlatformFromState(state);
 
   if (!platform) {
@@ -63,9 +64,29 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // ── WhatsApp: special handling ─────────────────────────────────────────────
+  // WhatsApp requires resolving the WABA ID and phone number ID after token
+  // exchange. resolveAndSaveWhatsAppAccount() handles the full DB write
+  // (including metadata.phoneNumberId) so we return early here.
+  if (platform === 'whatsapp') {
+    const saved = await resolveAndSaveWhatsAppAccount(
+      orgId!,
+      tokens.accessToken,
+      tokens.refreshToken,
+    );
+    if (!saved) {
+      return NextResponse.redirect(
+        new URL('/dashboard/connections?error=whatsapp_resolve_failed', request.url),
+      );
+    }
+    return NextResponse.redirect(
+      new URL('/dashboard/connections?success=whatsapp', request.url),
+    );
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   try {
     const profile = await fetchPlatformProfile(platform, tokens.accessToken);
-    // const config = PLATFORM_CONFIGS[platform];
     const config = PLATFORM_CONFIGS[platform];
     if (!config) {
       return NextResponse.redirect(
@@ -74,10 +95,9 @@ export async function GET(request: NextRequest) {
     }
     const accountType = profile?.type ?? config?.accountType ?? 'personal';
 
-    // Use page token if available (Facebook), otherwise use the OAuth token
+    // Use page token if available (Facebook/Instagram), otherwise use the OAuth token
     const effectiveAccessToken = profile?.pageAccessToken ?? tokens.accessToken;
-    // For platforms that support multiple accounts (e.g. linkedin + linkedin_page),
-    // match on both platform name AND account type to allow both to coexist.
+
     const existing = await db
       .select({ id: socialAccountSchema.id })
       .from(socialAccountSchema)
@@ -105,6 +125,7 @@ export async function GET(request: NextRequest) {
           profileImageUrl: profile?.imageUrl ?? null,
           accountType,
           isActive: true,
+          // metadata is not set here — only WhatsApp uses it, handled above
         })
         .where(eq(socialAccountSchema.id, existing[0].id));
     } else {
@@ -119,6 +140,8 @@ export async function GET(request: NextRequest) {
         accountType,
         profileImageUrl: profile?.imageUrl ?? null,
         isActive: true,
+        // metadata is null for all non-WhatsApp platforms
+        metadata: null,
       });
     }
 
@@ -150,61 +173,21 @@ async function fetchPlatformProfile(
 ): Promise<PlatformProfile | null> {
   try {
     switch (platform) {
-      // case 'facebook':
-      // case 'instagram': {
-      //   // Step 1: Get the user's managed pages
-      //   const accountsRes = await fetch(
-      //     `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,picture&access_token=${accessToken}`,
-      //   );
-      //   const accountsData = await accountsRes.json();
-      //   const page = accountsData.data?.[0];
-
-      //   if (page) {
-      //     // ✅ Store the PAGE token and PAGE id — this is what allows publishing
-      //     // We mutate accessToken here so the caller saves the page token, not user token
-      //     // We do this by returning a special marker and handling it in the outer function
-      //     return {
-      //       id: page.id,
-      //       username: page.name,
-      //       type: platform === 'facebook' ? 'page' : 'personal',
-      //       imageUrl: page.picture?.data?.url,
-      //       // Pass page token back via a custom field
-      //       pageAccessToken: page.access_token,
-      //     };
-      //   }
-
-      //   // Fallback to user profile if no pages found
-      //   const res = await fetch(
-      //     `https://graph.facebook.com/v21.0/me?fields=id,name,picture&access_token=${accessToken}`,
-      //   );
-      //   const data = await res.json();
-      //   return {
-      //     id: data.id,
-      //     username: data.name,
-      //     type: platform === 'facebook' ? 'page' : 'personal',
-      //     imageUrl: data.picture?.data?.url,
-      //   };
-      // }
-
       case 'facebook': {
-        // Step 1: Get the user's managed pages
         const accountsRes = await fetch(
           `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,picture&access_token=${accessToken}`,
         );
         const accountsData = await accountsRes.json();
         let page = accountsData.data?.[0];
 
-        // Temporary fallback: if no pages returned (Development mode limitation),
-        // fetch the page token directly using the known page ID
         if (!page) {
           console.log('[Facebook] /me/accounts returned empty — fetching page token directly');
-          const pageId = '1094955300358244'; // Nativpost page ID
+          const pageId = '1094955300358244';
           const pageRes = await fetch(
             `https://graph.facebook.com/v21.0/${pageId}?fields=id,name,access_token,picture&access_token=${accessToken}`,
           );
           const pageData = await pageRes.json();
           console.log('[Facebook] Direct page fetch:', JSON.stringify(pageData));
-
           if (pageData.access_token) {
             page = {
               id: pageData.id,
@@ -225,7 +208,6 @@ async function fetchPlatformProfile(
           };
         }
 
-        // Final fallback
         const res = await fetch(
           `https://graph.facebook.com/v21.0/me?fields=id,name,picture&access_token=${accessToken}`,
         );
@@ -239,23 +221,20 @@ async function fetchPlatformProfile(
       }
 
       case 'instagram': {
-        // Step 1: Get the Facebook Page with instagram_business_account field
         const accountsRes = await fetch(
           `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,instagram_business_account&access_token=${accessToken}`,
         );
         const accountsData = await accountsRes.json();
         let page = accountsData.data?.[0];
 
-        // Fallback: fetch page directly if /me/accounts returns empty
         if (!page) {
           console.log('[Instagram] /me/accounts returned empty — fetching page directly');
-          const pageId = '1094955300358244'; // Nativpost page ID
+          const pageId = '1094955300358244';
           const pageRes = await fetch(
             `https://graph.facebook.com/v21.0/${pageId}?fields=id,name,access_token,instagram_business_account&access_token=${accessToken}`,
           );
           const pageData = await pageRes.json();
           console.log('[Instagram] Direct page fetch:', JSON.stringify(pageData));
-
           if (pageData.access_token) {
             page = {
               id: pageData.id,
@@ -267,24 +246,21 @@ async function fetchPlatformProfile(
         }
 
         if (page?.instagram_business_account?.id) {
-          // Step 2: Fetch the Instagram Business Account details
           const igId = page.instagram_business_account.id;
           const igRes = await fetch(
             `https://graph.facebook.com/v21.0/${igId}?fields=id,name,username,profile_picture_url&access_token=${page.access_token}`,
           );
           const igData = await igRes.json();
           console.log('[Instagram] IG Business Account:', JSON.stringify(igData));
-
           return {
-            id: igData.id,                           // ← real Instagram Business Account ID
+            id: igData.id,
             username: igData.username ?? igData.name,
             type: 'personal',
             imageUrl: igData.profile_picture_url,
-            pageAccessToken: page.access_token,      // ← Page token needed for publishing
+            pageAccessToken: page.access_token,
           };
         }
 
-        // Final fallback
         console.warn('[Instagram] No instagram_business_account found on page');
         const res = await fetch(
           `https://graph.facebook.com/v21.0/me?fields=id,name,picture&access_token=${accessToken}`,
@@ -297,6 +273,7 @@ async function fetchPlatformProfile(
           imageUrl: data.picture?.data?.url,
         };
       }
+
       case 'linkedin': {
         const res = await fetch('https://api.linkedin.com/v2/userinfo', {
           headers: { Authorization: `Bearer ${accessToken}` },
@@ -311,15 +288,13 @@ async function fetchPlatformProfile(
       }
 
       case 'linkedin_page': {
-        // First get the member's URN, then list their admin organizations
         const meRes = await fetch('https://api.linkedin.com/v2/userinfo', {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
         const meData = await meRes.json();
 
-        // Fetch organizations the user administers
         const orgsRes = await fetch(
-          `https://api.linkedin.com/v2/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED`,
+          'https://api.linkedin.com/v2/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED',
           {
             headers: {
               'Authorization': `Bearer ${accessToken}`,
@@ -331,7 +306,6 @@ async function fetchPlatformProfile(
         const firstOrgUrn = orgsData?.elements?.[0]?.organization;
 
         if (firstOrgUrn) {
-          // Fetch the organization details
           const orgId = firstOrgUrn.replace('urn:li:organization:', '');
           const orgRes = await fetch(
             `https://api.linkedin.com/v2/organizations/${orgId}?projection=(id,localizedName,logoV2)`,
@@ -351,7 +325,6 @@ async function fetchPlatformProfile(
           };
         }
 
-        // Fall back to the member's own profile if no org found
         return {
           id: meData.sub,
           username: `${meData.name} (no admin orgs found)`,
@@ -428,59 +401,6 @@ async function fetchPlatformProfile(
         };
       }
 
-      // case 'snapchat': {
-      //   const res = await fetch(
-      //     'https://kit.snapchat.com/v1/me?query={me{externalId,displayName,bitmoji{selfie}}}',
-      //     { headers: { Authorization: `Bearer ${accessToken}` } },
-      //   );
-      //   if (!res.ok) {
-      //     console.error('[Snapchat] Profile fetch failed:', res.status);
-      //     return null;
-      //   }
-      //   const data = await res.json();
-      //   const me = data.data?.me;
-      //   return {
-      //     id: me?.externalId ?? '',
-      //     username: me?.displayName ?? '',
-      //     type: 'personal',
-      //     imageUrl: me?.bitmoji?.selfie ?? undefined,
-      //   };
-      // }
-
-      // case 'snapchat': {
-      //   // First get display name from Login Kit
-      //   const meRes = await fetch(
-      //     'https://kit.snapchat.com/v1/me?query={me{externalId,displayName}}',
-      //     { headers: { Authorization: `Bearer ${accessToken}` } },
-      //   );
-      //   const meData = await meRes.json();
-      //   const displayName = meData.data?.me?.displayName ?? '';
-
-      //   // Then get the Public Profile ID from the Business API
-      //   const profileRes = await fetch(
-      //     'https://businessapi.snapchat.com/v1/me/public_profiles',
-      //     { headers: { Authorization: `Bearer ${accessToken}` } },
-      //   );
-      //   if (profileRes.ok) {
-      //     const profileData = await profileRes.json();
-      //     const profileId = profileData.public_profiles?.[0]?.public_profile?.id;
-      //     if (profileId) {
-      //       return {
-      //         id: profileId,          // ← real Public Profile UUID
-      //         username: displayName,
-      //         type: 'personal',
-      //       };
-      //     }
-      //   }
-
-      //   // Fallback to externalId if no public profile yet
-      //   return {
-      //     id: meData.data?.me?.externalId ?? '',
-      //     username: displayName,
-      //     type: 'personal',
-      //   };
-      // }
-
       case 'snapchat': {
         const meRes = await fetch(
           'https://kit.snapchat.com/v1/me?query={me{externalId,displayName}}',
@@ -490,7 +410,6 @@ async function fetchPlatformProfile(
         const displayName = meData.data?.me?.displayName ?? '';
         const externalId = meData.data?.me?.externalId ?? '';
 
-        // Try the correct Business API endpoint
         const profileRes = await fetch(
           'https://businessapi.snapchat.com/v1/me/organizations',
           { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -503,7 +422,6 @@ async function fetchPlatformProfile(
           const orgId = profileData.organizations?.[0]?.organization?.id;
 
           if (orgId) {
-            // Get public profiles under this org
             const pubRes = await fetch(
               `https://businessapi.snapchat.com/v1/organizations/${orgId}/public_profiles`,
               { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -520,10 +438,10 @@ async function fetchPlatformProfile(
           }
         }
 
-        // Fallback to externalId
         return { id: externalId, username: displayName, type: 'personal' };
       }
 
+      // WhatsApp is handled before this function is called — never reaches here
       default:
         return null;
     }

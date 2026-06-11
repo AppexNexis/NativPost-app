@@ -15,7 +15,8 @@ export type SocialPlatform =
   | 'youtube'
   | 'threads'
   | 'pinterest'
-  | 'snapchat';
+  | 'snapchat'
+  | 'whatsapp';
 
 function generateCodeVerifier(): string {
   return crypto.randomBytes(48).toString('base64url');
@@ -35,7 +36,8 @@ type PlatformConfig = {
   clientSecretEnv: string;
   scopeSeparator: string;
   pkceMethod: 'none' | 'plain' | 'S256';
-  accountType: 'personal' | 'page' | 'organization';
+  // accountType: 'personal' | 'page' | 'organization';
+  accountType: 'personal' | 'page' | 'organization' | 'business';
 };
 
 export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
@@ -60,6 +62,21 @@ export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
     scopeSeparator: ',',
     pkceMethod: 'none',
     accountType: 'personal',
+  },
+  whatsapp: {
+    name: 'WhatsApp',
+    authUrl: 'https://www.facebook.com/v21.0/dialog/oauth',
+    tokenUrl: 'https://graph.facebook.com/v21.0/oauth/access_token',
+    scopes: [
+      'whatsapp_business_messaging',
+      'whatsapp_business_management',
+      'business_management',
+    ],
+    clientIdEnv: 'META_APP_ID',
+    clientSecretEnv: 'META_APP_SECRET',
+    scopeSeparator: ',',
+    pkceMethod: 'none',
+    accountType: 'business',
   },
   linkedin: {
     name: 'LinkedIn',
@@ -107,27 +124,27 @@ export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
     authUrl: 'https://accounts.snapchat.com/accounts/oauth2/auth',
     tokenUrl: 'https://accounts.snapchat.com/accounts/oauth2/token',
     // scopes: ['snapchat-login-kit', 'snapchat-story-studio-api'],
-      scopes: [
-    'https://auth.snapchat.com/oauth2/api/user.display_name',
-    'https://auth.snapchat.com/oauth2/api/user.external_id',
-  ],
+    scopes: [
+      'https://auth.snapchat.com/oauth2/api/user.display_name',
+      'https://auth.snapchat.com/oauth2/api/user.external_id',
+    ],
     clientIdEnv: 'SNAPCHAT_CLIENT_ID',
     clientSecretEnv: 'SNAPCHAT_CLIENT_SECRET',
     scopeSeparator: ' ',
     pkceMethod: 'S256',
     accountType: 'personal',
   },
-//   snapchat: {
-//   name: 'Snapchat',
-//   authUrl: 'https://accounts.snapchat.com/login/oauth2/authorize', // ← different URL
-//   tokenUrl: 'https://accounts.snapchat.com/login/oauth2/access_token', // ← different URL
-//   scopes: ['snapchat-profile-api'],
-//   clientIdEnv: 'SNAPCHAT_MARKETING_CLIENT_ID',   // ← new env var
-//   clientSecretEnv: 'SNAPCHAT_MARKETING_CLIENT_SECRET',
-//   scopeSeparator: ' ',
-//   pkceMethod: 'none',  // ← Marketing API doesn't use PKCE
-//   accountType: 'personal',
-// },
+  //   snapchat: {
+  //   name: 'Snapchat',
+  //   authUrl: 'https://accounts.snapchat.com/login/oauth2/authorize', // ← different URL
+  //   tokenUrl: 'https://accounts.snapchat.com/login/oauth2/access_token', // ← different URL
+  //   scopes: ['snapchat-profile-api'],
+  //   clientIdEnv: 'SNAPCHAT_MARKETING_CLIENT_ID',   // ← new env var
+  //   clientSecretEnv: 'SNAPCHAT_MARKETING_CLIENT_SECRET',
+  //   scopeSeparator: ' ',
+  //   pkceMethod: 'none',  // ← Marketing API doesn't use PKCE
+  //   accountType: 'personal',
+  // },
   twitter: {
     name: 'X / Twitter',
     authUrl: 'https://twitter.com/i/oauth2/authorize',
@@ -197,7 +214,7 @@ export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
     name: 'Pinterest',
     authUrl: 'https://www.pinterest.com/oauth/',
     tokenUrl: 'https://api.pinterest.com/v5/oauth/token',
-    scopes: ['boards:read',  'boards:write', 'pins:read', 'pins:write', 'user_accounts:read'],
+    scopes: ['boards:read', 'boards:write', 'pins:read', 'pins:write', 'user_accounts:read'],
     clientIdEnv: 'PINTEREST_CLIENT_ID',
     clientSecretEnv: 'PINTEREST_CLIENT_SECRET',
     scopeSeparator: ',',

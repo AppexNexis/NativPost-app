@@ -4,44 +4,39 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { getOrgBillingState } from '@/lib/billing';
+// import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import { publishingQueueSchema, socialAccountSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
 // GET /api/social-accounts
-// List connected social accounts for the current org.
-// metadata is included so the publisher can extract phoneNumberId
-// for WhatsApp (and any other platform-specific extras in future).
-// The raw metadata JSONB is passed through — the client never
-// renders it directly, so no masking is needed.
+// List connected social accounts for the current org
 // -----------------------------------------------------------
 export async function GET() {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   try {
+    // In GET /api/social-accounts
     const accounts = await db
       .select({
         id: socialAccountSchema.id,
         platform: socialAccountSchema.platform,
-        platformUserId: socialAccountSchema.platformUserId,
         platformUsername: socialAccountSchema.platformUsername,
         accountType: socialAccountSchema.accountType,
         profileImageUrl: socialAccountSchema.profileImageUrl,
         isActive: socialAccountSchema.isActive,
         connectedAt: socialAccountSchema.connectedAt,
-        oauthToken: socialAccountSchema.oauthToken,
-        accessToken: socialAccountSchema.accessToken,
-        // v6: platform-specific extras (e.g. WhatsApp phoneNumberId)
-        metadata: socialAccountSchema.metadata,
+        oauthToken: socialAccountSchema.oauthToken,  // already added
+        accessToken: socialAccountSchema.accessToken, // ← add this
       })
       .from(socialAccountSchema)
       .where(eq(socialAccountSchema.orgId, orgId!));
 
-    // Mask auth tokens before sending to the client.
-    // metadata is intentionally NOT masked — it contains non-secret
-    // identifiers (phoneNumberId, wabaId) needed by the publish flow.
+    // Mask tokens before sending to client
     const maskedAccounts = accounts.map(a => ({
       ...a,
       accessToken: a.accessToken ? 'connected' : null,
@@ -60,13 +55,14 @@ export async function GET() {
 
 // -----------------------------------------------------------
 // POST /api/social-accounts
-// Register a new social account after OAuth callback.
-// For WhatsApp, metadata should include { phoneNumberId, wabaId }.
+// Register a new social account after OAuth callback
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   try {
     const body = await request.json();
@@ -111,9 +107,6 @@ export async function POST(request: NextRequest) {
         accountType: body.accountType || 'page',
         profileImageUrl: body.profileImageUrl || null,
         isActive: true,
-        // v6: store platform-specific metadata if provided
-        // For WhatsApp this will be { phoneNumberId, wabaId }
-        metadata: body.metadata || null,
       })
       .returning({
         id: socialAccountSchema.id,
@@ -135,12 +128,14 @@ export async function POST(request: NextRequest) {
 
 // -----------------------------------------------------------
 // DELETE /api/social-accounts?id=xxx
-// Disconnect a social account.
+// Disconnect a social account
 // -----------------------------------------------------------
 export async function DELETE(request: NextRequest) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
@@ -150,6 +145,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
+    // Verify the account belongs to this org before deleting
     const [account] = await db
       .select({ id: socialAccountSchema.id })
       .from(socialAccountSchema)
@@ -170,6 +166,7 @@ export async function DELETE(request: NextRequest) {
       .delete(publishingQueueSchema)
       .where(eq(publishingQueueSchema.socialAccountId, id));
 
+    // Now safe to delete the social account
     await db
       .delete(socialAccountSchema)
       .where(eq(socialAccountSchema.id, id));

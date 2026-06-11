@@ -6,7 +6,6 @@ import { NextResponse } from 'next/server';
 import { getAuthContext } from '@/lib/auth';
 import { sendPublishedNotification } from '@/lib/email';
 import { publishToplatform } from '@/lib/social-publish';
-// import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import { contentItemSchema, publishingQueueSchema, socialAccountSchema } from '@/models/Schema';
 
@@ -16,20 +15,16 @@ type RouteParams = {
 
 // -----------------------------------------------------------
 // POST /api/content/[id]/publish
-// Publishes an approved content item to all target platforms
 // -----------------------------------------------------------
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
 
   console.log({ request });
   const { error, orgId, userId } = await getAuthContext();
-  if (error) {
-    return error;
-  }
+  if (error) return error;
 
   const { id } = await params;
 
-  // Parse optional body — TikTok publish modal sends user-confirmed settings
   let requestBody: { tiktokSettings?: Record<string, unknown> } = {};
   try { requestBody = await request.json(); } catch { /* no body is fine */ }
 
@@ -52,7 +47,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // 2. Get connected social accounts for target platforms
+    // 2. Get connected accounts
     const platforms = (item.targetPlatforms as string[]) || [];
     if (platforms.length === 0) {
       return NextResponse.json({ error: 'No target platforms specified' }, { status: 400 });
@@ -84,23 +79,35 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         continue;
       }
 
-      // Get platform-specific caption or fall back to main caption.
-      // IMPORTANT: platformSpecific[platform] must be a STRING — not an object.
-      // The 'youtube' key stores { title, thumbnailUrl } which is an object,
-      // not a caption. Guard with typeof to prevent "t.split is not a function".
+      // Resolve caption
       const platformSpecificData = (item.platformSpecific as Record<string, unknown>) || {};
       const platformCaption = platformSpecificData[platform];
       const caption = (typeof platformCaption === 'string' && platformCaption.trim())
         ? platformCaption
         : item.caption;
 
-      // For TikTok: merge user-confirmed settings from the publish modal
-      // into platformSpecificData so publishToplatform can read them
-      const mergedPlatformData = platform === 'tiktok' && requestBody.tiktokSettings
-        ? { ...platformSpecificData, tiktok: requestBody.tiktokSettings }
-        : platformSpecificData;
+      // ── Build merged platformSpecific ──────────────────────────────────────
+      // Start with content-level data (YouTube title, TikTok settings, etc.)
+      let mergedPlatformData: Record<string, unknown> = { ...platformSpecificData };
 
-      // Get all graphic URLs — supports text (empty), single image, carousel, and video
+      // TikTok: inject user-confirmed settings from the publish modal
+      if (platform === 'tiktok' && requestBody.tiktokSettings) {
+        mergedPlatformData = { ...mergedPlatformData, tiktok: requestBody.tiktokSettings };
+      }
+
+      // WhatsApp: inject phoneNumberId from account metadata so the publisher
+      // can identify which Cloud API number to send from
+      if (platform === 'whatsapp' && account.metadata) {
+        const meta = account.metadata as { phoneNumberId?: string; wabaId?: string };
+        if (meta.phoneNumberId) {
+          mergedPlatformData = {
+            ...mergedPlatformData,
+            whatsapp: { phoneNumberId: meta.phoneNumberId, wabaId: meta.wabaId },
+          };
+        }
+      }
+      // ──────────────────────────────────────────────────────────────────────
+
       const graphicUrls = (item.graphicUrls as string[]) || [];
 
       const result = await publishToplatform(
@@ -120,11 +127,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             })
             .where(eq(socialAccountSchema.id, account.id));
         },
-        item.contentType, // ← tells dispatcher whether this is a reel/video post
+        item.contentType,
         (account as any).oauthToken || undefined,
         (account as any).oauthTokenSecret || undefined,
-        mergedPlatformData, // ← YouTube title/thumbnail + TikTok user settings
-
+        mergedPlatformData,
       );
 
       results.push({ platform, ...result });
@@ -154,7 +160,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       })
       .where(eq(contentItemSchema.id, id));
 
-    // 6. Send email notification (non-blocking — never throws)
+    // 6. Send email notification (non-blocking)
     if (someSucceeded) {
       const successPlatforms = results
         .filter(r => r.success)
@@ -173,22 +179,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         const orgName = org.name || orgId!;
 
         if (userEmail) {
-          sendPublishedNotification(
-            userEmail,
-            orgName,
-            successPlatforms,
-            item.caption,
-          ).catch(err => console.error('[Email] sendPublishedNotification failed:', err));
+          sendPublishedNotification(userEmail, orgName, successPlatforms, item.caption)
+            .catch(err => console.error('[Email] sendPublishedNotification failed:', err));
         }
       } catch (emailErr) {
         console.error('[Email] Failed to send publish notification:', emailErr);
       }
     }
 
-    return NextResponse.json({
-      published: someSucceeded,
-      results,
-    });
+    return NextResponse.json({ published: someSucceeded, results });
   } catch (err) {
     console.error('Publish failed:', err);
     return NextResponse.json({ error: 'Publishing failed' }, { status: 500 });

@@ -4,7 +4,6 @@ import { NextResponse } from 'next/server';
 
 import { sendPublishedNotification } from '@/lib/email';
 import { publishToplatform } from '@/lib/social-publish';
-// import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import {
   contentItemSchema,
@@ -15,14 +14,8 @@ import { notifyPostFailed, notifyPostPublished } from '@/lib/notify-connect';
 
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY || '';
 
-/**
- * Fetch the admin email for an org via the Clerk Backend API.
- * Used in cron context where there is no active Clerk session.
- */
 async function getOrgAdminEmail(orgId: string): Promise<string | null> {
-  if (!CLERK_SECRET_KEY) {
-    return null;
-  }
+  if (!CLERK_SECRET_KEY) return null;
   try {
     const res = await fetch(
       `https://api.clerk.com/v1/organizations/${orgId}/memberships?limit=10`,
@@ -33,26 +26,17 @@ async function getOrgAdminEmail(orgId: string): Promise<string | null> {
         },
       },
     );
-    if (!res.ok) {
-      return null;
-    }
+    if (!res.ok) return null;
     const data = await res.json();
     const memberships: any[] = data.data ?? data ?? [];
-    // Prefer org:admin role; fall back to first member
     const admin = memberships.find(m => m.role === 'org:admin') ?? memberships[0];
-    if (!admin?.public_user_data?.user_id) {
-      return null;
-    }
+    if (!admin?.public_user_data?.user_id) return null;
 
     const userRes = await fetch(
       `https://api.clerk.com/v1/users/${admin.public_user_data.user_id}`,
-      {
-        headers: { Authorization: `Bearer ${CLERK_SECRET_KEY}` },
-      },
+      { headers: { Authorization: `Bearer ${CLERK_SECRET_KEY}` } },
     );
-    if (!userRes.ok) {
-      return null;
-    }
+    if (!userRes.ok) return null;
     const user = await userRes.json();
     const primaryEmail = user.email_addresses?.find(
       (e: any) => e.id === user.primary_email_address_id,
@@ -65,12 +49,7 @@ async function getOrgAdminEmail(orgId: string): Promise<string | null> {
 
 // -----------------------------------------------------------
 // GET /api/cron/publish-scheduled
-//
-// Publishes all posts where status='scheduled' AND scheduledFor <= now
 // Called by GitHub Actions every 5 minutes.
-// Protected by CRON_SECRET header.
-//
-// IMPORTANT: This route publishes directly via DB — no Clerk session needed.
 // -----------------------------------------------------------
 export async function GET(request: NextRequest) {
   const db = await getDb();
@@ -138,20 +117,11 @@ export async function GET(request: NextRequest) {
         }> = [];
 
         const graphicUrls = (item.graphicUrls as string[]) || [];
-        const platformCaptions = (item.platformSpecific as Record<string, string>) || {};
+        const platformCaptions = (item.platformSpecific as Record<string, unknown>) || {};
 
         // 3. Publish to each platform
         for (const platform of platforms) {
           const account = accounts.find(a => a.platform === platform);
-
-          // if (!account?.accessToken) {
-          //   platformResults.push({
-          //     platform,
-          //     success: false,
-          //     error: `No connected ${platform} account`,
-          //   });
-          //   continue;
-          // }
 
           if (!account) {
             platformResults.push({ platform, success: false, error: `No connected ${platform} account` });
@@ -172,11 +142,30 @@ export async function GET(request: NextRequest) {
             continue;
           }
 
-          const caption = platformCaptions[platform] || item.caption;
+          // Resolve caption — guard against non-string values (e.g. youtube object)
+          const platformCaption = platformCaptions[platform];
+          const caption = (typeof platformCaption === 'string' && platformCaption.trim())
+            ? platformCaption
+            : item.caption;
+
+          // ── Build merged platformSpecific ────────────────────────────────
+          let mergedPlatformData: Record<string, unknown> = { ...platformCaptions };
+
+          // WhatsApp: inject phoneNumberId from account metadata
+          if (platform === 'whatsapp' && account.metadata) {
+            const meta = account.metadata as { phoneNumberId?: string; wabaId?: string };
+            if (meta.phoneNumberId) {
+              mergedPlatformData = {
+                ...mergedPlatformData,
+                whatsapp: { phoneNumberId: meta.phoneNumberId, wabaId: meta.wabaId },
+              };
+            }
+          }
+          // ─────────────────────────────────────────────────────────────────
 
           const result = await publishToplatform(
             platform,
-            account.accessToken!,              // ← add ! (safe here because we checked above)
+            account.accessToken!,
             account.platformUserId || '',
             caption,
             graphicUrls,
@@ -194,7 +183,9 @@ export async function GET(request: NextRequest) {
             item.contentType,
             (account as any).oauthToken || undefined,
             (account as any).oauthTokenSecret || undefined,
+            mergedPlatformData,
           );
+
           platformResults.push({ platform, ...result });
 
           // 4. Record in publishing queue
@@ -222,7 +213,7 @@ export async function GET(request: NextRequest) {
           })
           .where(eq(contentItemSchema.id, item.id));
 
-        // 6. Send published email notification (non-blocking)
+        // 6. Email notification (non-blocking)
         if (someSucceeded) {
           const successPlatforms = platformResults
             .filter(r => r.success)
@@ -231,20 +222,13 @@ export async function GET(request: NextRequest) {
 
           getOrgAdminEmail(item.orgId)
             .then((email) => {
-              if (!email) {
-                return;
-              }
-              return sendPublishedNotification(
-                email,
-                item.orgId,
-                successPlatforms,
-                item.caption,
-              );
+              if (!email) return;
+              return sendPublishedNotification(email, item.orgId, successPlatforms, item.caption);
             })
             .catch(err => console.error(`[Cron] Email notification failed for post ${item.id}:`, err));
         }
 
-        // Phase 5: Connect notifications
+        // 7. Connect notifications
         if (someSucceeded) {
           const successPlatforms = platformResults
             .filter(r => r.success)
@@ -260,19 +244,10 @@ export async function GET(request: NextRequest) {
 
         const failedPlatforms = platformResults.filter(r => !r.success);
         for (const failed of failedPlatforms) {
-          void notifyPostFailed(
-            item.orgId,
-            failed.platform,
-            failed.error ?? 'Unknown error',
-          );
+          void notifyPostFailed(item.orgId, failed.platform, failed.error ?? 'Unknown error');
         }
 
-        results.push({
-          id: item.id,
-          success: someSucceeded,
-          platforms: platformResults,
-        });
-
+        results.push({ id: item.id, success: someSucceeded, platforms: platformResults });
         console.log(`[Cron] Post ${item.id}: ${someSucceeded ? 'published' : 'failed'}`);
       } catch (err) {
         console.error(`[Cron] Error publishing post ${item.id}:`, err);
