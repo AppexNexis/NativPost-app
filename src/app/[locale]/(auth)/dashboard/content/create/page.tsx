@@ -464,15 +464,25 @@ export default function ContentCreatePage() {
               //         ? ['linkedin', 'instagram', 'youtube']
               //         : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok'];
 
+              // const supported = type.id === 'text_only'
+              //   ? ['facebook', 'twitter', 'linkedin']
+              //   : type.id === 'reel'
+              //     ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube', 'snapchat']
+              //     : type.id === 'ugc_ad'
+              //       ? ['instagram', 'tiktok']
+              //       : type.id === 'data_story'
+              //         ? ['linkedin', 'instagram', 'youtube']
+              //         : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'snapchat']; // single_image + carousel
+
               const supported = type.id === 'text_only'
-                ? ['facebook', 'twitter', 'linkedin']
+                ? ['facebook', 'twitter', 'linkedin', 'whatsapp']
                 : type.id === 'reel'
-                  ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube', 'snapchat']
+                  ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube', 'snapchat', 'whatsapp']
                   : type.id === 'ugc_ad'
-                    ? ['instagram', 'tiktok']
+                    ? ['instagram', 'tiktok', 'whatsapp']
                     : type.id === 'data_story'
-                      ? ['linkedin', 'instagram', 'youtube']
-                      : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'snapchat']; // single_image + carousel
+                      ? ['linkedin', 'instagram', 'youtube', 'whatsapp']
+                      : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'snapchat', 'whatsapp'];
 
               return (
                 <button
@@ -550,8 +560,8 @@ export default function ContentCreatePage() {
                   type="button"
                   onClick={() => setContentMode(mode.id)}
                   className={`flex-1 rounded-md px-3 py-2 text-left transition-colors ${contentMode === mode.id
-                      ? 'bg-foreground text-background'
-                      : 'text-muted-foreground hover:text-foreground'
+                    ? 'bg-foreground text-background'
+                    : 'text-muted-foreground hover:text-foreground'
                     }`}
                 >
                   <span className="block text-xs font-semibold">{mode.label}</span>
@@ -869,8 +879,8 @@ export default function ContentCreatePage() {
               type="button"
               onClick={() => setSelectedVariant(variant.id)}
               className={`w-full rounded-xl border bg-card p-5 text-left transition-all ${selectedVariant === variant.id
-                  ? 'border-primary ring-2 ring-primary/15'
-                  : 'hover:border-muted-foreground/20'
+                ? 'border-primary ring-2 ring-primary/15'
+                : 'hover:border-muted-foreground/20'
                 }`}
             >
               {/* Variant header */}
