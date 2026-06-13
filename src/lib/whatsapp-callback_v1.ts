@@ -1,3 +1,20 @@
+/**
+ * WhatsApp OAuth callback handler.
+ *
+ * Call resolveAndSaveWhatsAppAccount() from within your existing
+ * OAuth callback route after exchangeCodeForTokens(), when platform === 'whatsapp'.
+ *
+ * Integration example in your existing callback handler:
+ *
+ *   if (platform === 'whatsapp') {
+ *     const saved = await resolveAndSaveWhatsAppAccount(orgId, accessToken, refreshToken);
+ *     if (!saved) {
+ *       return redirect(`${BASE_URL}/connections?error=whatsapp_resolve_failed`);
+ *     }
+ *     return redirect(`${BASE_URL}/connections?success=whatsapp`);
+ *   }
+ */
+
 import { and, eq } from 'drizzle-orm';
 
 import { getDb } from '@/libs/DB';
@@ -7,9 +24,16 @@ import { resolveWhatsAppAccount } from './oauth-config';
 export type WhatsAppAccountMetadata = {
   phoneNumberId: string;
   wabaId: string;
-  channelId: string | null;
 };
 
+/**
+ * After Meta OAuth completes for WhatsApp:
+ *  1. Calls the Graph API to resolve the WABA, phone number ID, and channel ID
+ *  2. Deactivates any existing WhatsApp account for this org
+ *  3. Inserts a fresh record with metadata.phoneNumberId stored in the JSONB column
+ *
+ * Returns true on success, false on failure.
+ */
 export async function resolveAndSaveWhatsAppAccount(
   orgId: string,
   accessToken: string,
@@ -46,20 +70,19 @@ export async function resolveAndSaveWhatsAppAccount(
         ),
       );
 
-    // Store the E.164 phone number as platformUserId
-    // display_phone_number from Meta comes as "+234 706 429 3843" — strip spaces
-    const e164Phone = phoneNumber.replace(/\s+/g, '');
+    // platformUserId = channelId if the business has a WhatsApp Channel,
+    // otherwise fall back to phoneNumberId (direct messaging mode)
+    const platformUserId = channelId || phoneNumberId;
 
     const metadata: WhatsAppAccountMetadata = {
       phoneNumberId,
       wabaId,
-      channelId: channelId || null,
     };
 
     await db.insert(socialAccountSchema).values({
       orgId,
       platform: 'whatsapp',
-      platformUserId: e164Phone,          // E.164 format e.g. "+2347064293843"
+      platformUserId,
       platformUsername: displayName || phoneNumber,
       accessToken,
       refreshToken: refreshToken || null,
@@ -69,7 +92,7 @@ export async function resolveAndSaveWhatsAppAccount(
       metadata,
     });
 
-    console.log(`[WhatsApp callback] Saved for org ${orgId}: ${e164Phone} (phoneNumberId: ${phoneNumberId})`);
+    console.log(`[WhatsApp callback] Saved for org ${orgId}: ${phoneNumber} (phoneNumberId: ${phoneNumberId})`);
     return true;
   } catch (err) {
     console.error('[WhatsApp callback] resolveAndSaveWhatsAppAccount error:', err);
