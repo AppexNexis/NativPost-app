@@ -7,7 +7,7 @@ import { getAuthContext } from '@/lib/auth';
 import { sendScheduledNotification } from '@/lib/email';
 import { getDb } from '@/libs/DB';
 import { brandProfileSchema, contentItemSchema } from '@/models/Schema';
-import { notifyConnect } from '@/lib/notify-connect_v1';
+import { notifyApprovalNeeded } from '@/lib/notify-connect';
 
 type RouteParams = {
   params: Promise<{ id: string }>;
@@ -188,18 +188,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     // Notify client when posts enter review queue
     if (body.status === 'pending_review') {
       getDb().then(async (db) => {
-        const { count } = await db
+        const result = await db
           .select({ count: sql<number>`count(*)` })
           .from(contentItemSchema)
-          .where(and(
-            eq(contentItemSchema.orgId, orgId!),
-            eq(contentItemSchema.status, 'pending_review'),
-          ))
-          .then(r => r[0] ?? { count: 0 });
+          .where(
+            and(
+              eq(contentItemSchema.orgId, orgId!),
+              eq(contentItemSchema.status, 'pending_review'),
+            ),
+          )
+          .then(r => r[0]);
 
-        notifyConnect(orgId!, 'approval_needed', {
-          count: Number(count),
-        });
+        const count = result?.count ?? 0;
+        void notifyApprovalNeeded(orgId!, Number(count));
       }).catch(() => { });
     }
 

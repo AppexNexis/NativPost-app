@@ -46,17 +46,6 @@ type RecentFailure = {
   createdAt: string;
 };
 
-type OnboardingStep = {
-  id: string;
-  label: string;
-  completed: boolean;
-};
-
-type OnboardingStatus = {
-  steps: OnboardingStep[];
-  isComplete: boolean;
-};
-
 type DashboardData = {
   stats: {
     pendingApprovals: number;
@@ -67,8 +56,6 @@ type DashboardData = {
   };
   pendingItems: PendingItem[];
   upcoming: UpcomingPost[];
-  recentActivity: unknown[];
-  onboarding: OnboardingStatus;
   recentFailures: RecentFailure[];
 };
 
@@ -163,71 +150,6 @@ function PlatformBadge({ platform }: { platform: string }) {
     <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-white ${color}`}>
       {PLATFORM_LABELS[platform] || platform}
     </span>
-  );
-}
-
-function OnboardingChecklist({ onboarding }: { onboarding: OnboardingStatus }) {
-  const STEP_LINKS: Record<string, string> = {
-    brand_profile: '/dashboard/brand-profile/onboarding',
-    connect_account: '/dashboard/social-accounts',
-    first_post: '/dashboard/content/create',
-  };
-
-  const completedCount = onboarding.steps.filter(s => s.completed).length;
-  const nextStep = onboarding.steps.find(s => !s.completed);
-
-  return (
-    <div className="rounded-xl border bg-card p-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-semibold">Get set up</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {completedCount}
-            {' '}
-            of
-            {' '}
-            {onboarding.steps.length}
-            {' '}
-            steps done
-          </p>
-        </div>
-        {nextStep && (
-          <Link
-            href={STEP_LINKS[nextStep.id] || '/dashboard'}
-            className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            Continue setup
-            <ChevronRight className="size-3.5" />
-          </Link>
-        )}
-      </div>
-
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
-        <div
-          className="h-full rounded-full bg-primary transition-all"
-          style={{ width: `${(completedCount / onboarding.steps.length) * 100}%` }}
-        />
-      </div>
-
-      <div className="mt-4 space-y-2">
-        {onboarding.steps.map(step => (
-          <Link
-            key={step.id}
-            href={STEP_LINKS[step.id] || '/dashboard'}
-            className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm transition-colors ${
-              step.completed ? '' : 'hover:bg-muted/50'
-            }`}
-          >
-            <CheckCircle2
-              className={`size-4 shrink-0 ${step.completed ? 'text-emerald-500' : 'text-muted-foreground/40'}`}
-            />
-            <span className={step.completed ? 'text-muted-foreground line-through' : ''}>
-              {step.label}
-            </span>
-          </Link>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -354,11 +276,6 @@ export default function DashboardPage() {
           {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
         </p>
       </div>
-
-      {/* Onboarding checklist — hides itself once every step is complete */}
-      {data?.onboarding && !data.onboarding.isComplete && (
-        <OnboardingChecklist onboarding={data.onboarding} />
-      )}
 
       {/* Failure alert — staff/admin org only - shown only when there are recent failures */}
       {isStaff && hasFailures && (

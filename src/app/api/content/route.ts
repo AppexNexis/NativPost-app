@@ -1,5 +1,5 @@
 import { clerkClient } from '@clerk/nextjs/server';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, ne } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -30,6 +30,11 @@ export async function GET(request: NextRequest) {
     const conditions = [eq(contentItemSchema.orgId, orgId!)];
     if (status) {
       conditions.push(eq(contentItemSchema.status, status));
+    } else {
+      // No status filter requested — archived variants are cleanup byproducts,
+      // not content anyone should see by default. Callers that explicitly
+      // want them can pass ?status=archived.
+      conditions.push(ne(contentItemSchema.status, 'archived'));
     }
 
     const items = await db

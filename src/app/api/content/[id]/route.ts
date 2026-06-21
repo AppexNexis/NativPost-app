@@ -121,7 +121,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       updates.hashtags = body.hashtags;
     }
     if (body.status !== undefined) {
-      const validStatuses = ['draft', 'pending_review', 'approved', 'scheduled', 'published', 'rejected'];
+      const validStatuses = ['draft', 'pending_review', 'approved', 'scheduled', 'published', 'rejected', 'archived'];
       if (validStatuses.includes(body.status)) {
         updates.status = body.status;
       }
@@ -184,6 +184,27 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (!updated) {
       return NextResponse.json({ error: 'Content item not found' }, { status: 404 });
     }
+
+    // ── Variant cleanup ────────────────────────────────────────────────────────
+    // When one variant in a group is approved, its siblings have lost — archive
+    // them instead of leaving them stuck in pending_review forever. Archived is
+    // distinct from rejected: a sibling losing to a better variant is not the
+    // same training signal as a reviewer actively disliking the content, so we
+    // don't want it polluting the "rejected" feedback sent to the engine below.
+    if (body.status === 'approved' && current.variantGroupId) {
+      db.update(contentItemSchema)
+        .set({ status: 'archived', updatedAt: new Date() })
+        .where(
+          and(
+            eq(contentItemSchema.variantGroupId, current.variantGroupId),
+            eq(contentItemSchema.orgId, orgId!),
+            sql`${contentItemSchema.id} != ${id}`,
+            sql`${contentItemSchema.status} IN ('draft', 'pending_review')`,
+          ),
+        )
+        .catch((err) => console.error('[Variant cleanup] Failed to archive siblings:', err));
+    }
+    // ── End variant cleanup ──────────────────────────────────────────────────────
 
     // Notify client when posts enter review queue
     if (body.status === 'pending_review') {
