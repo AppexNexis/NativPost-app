@@ -17,7 +17,7 @@ const OrganizationSelectionPage = () => (
   <div className="flex min-h-screen items-center justify-center">
     <OrganizationList
       afterSelectOrganizationUrl="/dashboard"
-      afterCreateOrganizationUrl="/dashboard"
+      afterCreateOrganizationUrl="/onboarding/setup"
       hidePersonal
       skipInvitationScreen
     />
