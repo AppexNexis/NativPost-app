@@ -3,7 +3,7 @@
 import { useAuth, useOrganization } from '@clerk/nextjs';
 import { Loader2 } from 'lucide-react';
 import Image from 'next/image';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 // -----------------------------------------------------------
@@ -79,6 +79,9 @@ const EXPECTATION_OPTIONS = [
 ];
 const REFERRAL_OPTIONS = ['X (Twitter)', 'LinkedIn', 'Instagram', 'TikTok', 'YouTube', 'Google search', 'Friend or referral', 'Other'];
 
+// -----------------------------------------------------------
+// DRAFT PERSISTENCE — survives an accidental refresh mid-wizard
+// -----------------------------------------------------------
 function draftKey(orgId: string) {
   return `nativpost:onboarding-setup-draft:${orgId}`;
 }
@@ -96,7 +99,7 @@ function saveDraft(orgId: string, data: WizardData) {
   try {
     localStorage.setItem(draftKey(orgId), JSON.stringify(data));
   } catch {
-    // ignore
+    // localStorage unavailable — non-fatal, just means no refresh recovery
   }
 }
 
@@ -108,6 +111,9 @@ function clearDraft(orgId: string) {
   }
 }
 
+// -----------------------------------------------------------
+// SHARED PIECES — no decorative icons, text only
+// -----------------------------------------------------------
 function ChoiceGrid({
   options,
   selected,
@@ -230,6 +236,11 @@ function ContinueButton({
   );
 }
 
+// -----------------------------------------------------------
+// LOGO UPLOADER — same Uploadcare approach as the Brand Profile
+// wizard, kept as its own small copy here rather than shared, so
+// neither file depends on the other changing.
+// -----------------------------------------------------------
 function LogoUploader({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -237,7 +248,9 @@ function LogoUploader({ value, onChange }: { value: string; onChange: (v: string
   const publicKey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY || '';
 
   const handleFile = async (file: File | undefined) => {
-    if (!file) return;
+    if (!file) {
+      return;
+    }
 
     const maxMb = 2;
     if (file.size > maxMb * 1024 * 1024) {
@@ -265,7 +278,9 @@ function LogoUploader({ value, onChange }: { value: string; onChange: (v: string
         body: form,
       });
 
-      if (!res.ok) throw new Error('Upload failed');
+      if (!res.ok) {
+        throw new Error('Upload failed');
+      }
 
       const data = await res.json() as { file: string };
       onChange(`https://9c0v643oty.ucarecd.net/${data.file}/`);
@@ -283,13 +298,15 @@ function LogoUploader({ value, onChange }: { value: string; onChange: (v: string
         onClick={() => inputRef.current?.click()}
         className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-8 text-center transition-colors hover:bg-muted/40"
       >
-        {value ? (
-          <Image src={value} alt="Logo preview" width={64} height={64} unoptimized className="size-16 rounded-lg object-contain" />
-        ) : (
-          <span className="text-sm font-medium text-muted-foreground">
-            {isUploading ? 'Uploading...' : 'Upload'}
-          </span>
-        )}
+        {value
+          ? (
+              <Image src={value} alt="Logo preview" width={64} height={64} unoptimized className="size-16 rounded-lg object-contain" />
+            )
+          : (
+              <span className="text-sm font-medium text-muted-foreground">
+                {isUploading ? 'Uploading...' : 'Upload'}
+              </span>
+            )}
         <span className="text-xs text-muted-foreground">
           {value ? 'Click to replace' : 'PNG, JPG, SVG, or WebP — up to 2MB'}
         </span>
@@ -306,11 +323,16 @@ function LogoUploader({ value, onChange }: { value: string; onChange: (v: string
   );
 }
 
+// -----------------------------------------------------------
+// PAGE
+// -----------------------------------------------------------
 export default function OnboardingSetupPage() {
   const router = useRouter();
-  const params = useParams();
-  const locale = params?.locale || 'en';
 
+  // orgId comes from the session claim (same source middleware uses),
+  // not the `organization` object — that object is known to lag a tick
+  // behind right after Clerk creates a new org, which previously caused
+  // this page to wrongly bounce back to org-selection.
   const { orgId, isLoaded: authLoaded } = useAuth();
   const { organization } = useOrganization();
 
@@ -331,15 +353,17 @@ export default function OnboardingSetupPage() {
     });
   };
 
+  // ── Re-entry guard ──────────────────────────────────────────
+  // Runs once, right after a new org is created. If it's already been
+  // completed (bookmarked URL, back button), skip straight to the
+  // dashboard instead of replaying it.
   useEffect(() => {
-    if (!authLoaded) return;
-
-    const targetSelectionUrl = locale === 'en' ? '/onboarding/organization-selection' : `/${locale}/onboarding/organization-selection`;
-    const targetDashboardUrl = locale === 'en' ? '/dashboard' : `/${locale}/dashboard`;
+    if (!authLoaded) {
+      return;
+    }
 
     if (!orgId) {
-      console.log('[Onboarding] No active Org ID found. Moving to selection screen.');
-      router.replace(targetSelectionUrl);
+      router.replace('/onboarding/organization-selection');
       return;
     }
 
@@ -347,21 +371,16 @@ export default function OnboardingSetupPage() {
 
     (async () => {
       try {
-        console.log('[Onboarding] Fetching onboarding status for org:', orgId);
         const res = await fetch('/api/onboarding-progress?step=post_signup');
         const json = await res.json();
-        
-        console.log('[Onboarding] API response returned:', json);
         const alreadyDone = (json.steps || []).some((s: any) => s.completed);
-        console.log('[Onboarding] Is onboarding already complete according to DB?:', alreadyDone);
 
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
 
-        // 💡 DEV NOTE: Comment out this entire IF block below if you want to force 
-        // the form to display during testing even if your database says you are completed.
         if (alreadyDone) {
-          console.log('[Onboarding] Guard activated: sending complete user straight to dashboard.');
-          router.replace(targetDashboardUrl);
+          router.replace('/dashboard');
           return;
         }
 
@@ -371,8 +390,9 @@ export default function OnboardingSetupPage() {
           ...(draft || {}),
         });
         setIsCheckingGate(false);
-      } catch (err) {
-        console.error('[Onboarding] Failed checking database state. Defaulting to show form.', err);
+      } catch {
+        // If the gate check itself fails, fail open rather than trap
+        // a real new user on a spinner forever.
         if (!cancelled) {
           setIsCheckingGate(false);
         }
@@ -382,7 +402,8 @@ export default function OnboardingSetupPage() {
     return () => {
       cancelled = true;
     };
-  }, [authLoaded, orgId, locale, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoaded, orgId]);
 
   const goNext = () => setStepIndex(i => Math.min(i + 1, STEPS.length - 1));
   const goBack = () => setStepIndex(i => Math.max(i - 1, 0));
@@ -390,6 +411,7 @@ export default function OnboardingSetupPage() {
   const toggleInList = (list: string[], value: string): string[] =>
     list.includes(value) ? list.filter(v => v !== value) : [...list, value];
 
+  // ── Website analysis ────────────────────────────────────────
   const handleAnalyzeWebsite = async () => {
     const url = data.websiteUrl.trim();
     if (!url) {
@@ -424,13 +446,14 @@ export default function OnboardingSetupPage() {
     }
   };
 
+  // ── Final submit ─────────────────────────────────────────────
   const handleFinish = async () => {
-    if (!orgId) return;
+    if (!orgId) {
+      return;
+    }
 
     setIsFinishing(true);
     setFinishError(null);
-
-    const targetDashboardUrl = locale === 'en' ? '/dashboard' : `/${locale}/dashboard`;
 
     try {
       const growthStage = ['Just me', '2–5'].includes(data.teamSize) && ['Pre-revenue', '$1 – $1,000'].includes(data.monthlyRevenue)
@@ -478,7 +501,9 @@ export default function OnboardingSetupPage() {
         body: JSON.stringify(brandProfilePayload),
       });
 
-      if (!profileRes.ok) throw new Error('Failed to save brand profile');
+      if (!profileRes.ok) {
+        throw new Error('Failed to save brand profile');
+      }
 
       await fetch('/api/onboarding-progress', {
         method: 'POST',
@@ -504,7 +529,7 @@ export default function OnboardingSetupPage() {
       });
 
       clearDraft(orgId);
-      router.push(targetDashboardUrl);
+      router.push('/dashboard');
     } catch {
       setFinishError('Something went wrong saving your setup. You can try again, or skip to the dashboard and finish your brand profile there.');
       setIsFinishing(false);
@@ -538,7 +563,7 @@ export default function OnboardingSetupPage() {
         </>
       )}
 
-      {/* ── Step: Brand context ── */}
+      {/* ── Step: Brand context (website or description) ── */}
       {currentStep === 'brand_context' && (
         <>
           <StepHeading title="Tell us about your brand" subtitle="This is what we use to generate content for you." />
@@ -564,59 +589,65 @@ export default function OnboardingSetupPage() {
             </button>
           </div>
 
-          {data.contextMode === 'website' ? (
-            <div className="space-y-3">
-              <div className="flex gap-2">
-                <input
-                  type="url"
-                  value={data.websiteUrl}
-                  onChange={e => update({ websiteUrl: e.target.value })}
-                  placeholder="https://example.com"
-                  disabled={isAnalyzing}
-                  className="flex-1 rounded-lg border bg-background px-3 py-2.5 text-sm disabled:opacity-60"
-                />
-                <button
-                  type="button"
-                  onClick={handleAnalyzeWebsite}
-                  disabled={isAnalyzing}
-                  className="shrink-0 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors disabled:opacity-60"
-                >
-                  {isAnalyzing ? 'Reading...' : 'Analyze'}
-                </button>
-              </div>
-              {data.websiteError && <p className="text-xs text-destructive">{data.websiteError}</p>}
-              {data.websiteFieldsFound && (
-                <p className="text-xs text-muted-foreground">
-                  Picked up {data.websiteFieldsFound.length} details from your site. You can edit everything later in Brand Profile.
-                </p>
+          {data.contextMode === 'website'
+            ? (
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={data.websiteUrl}
+                      onChange={e => update({ websiteUrl: e.target.value })}
+                      placeholder="https://example.com"
+                      disabled={isAnalyzing}
+                      className="flex-1 rounded-lg border bg-background px-3 py-2.5 text-sm disabled:opacity-60"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAnalyzeWebsite}
+                      disabled={isAnalyzing}
+                      className="shrink-0 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors disabled:opacity-60"
+                    >
+                      {isAnalyzing ? 'Reading...' : 'Analyze'}
+                    </button>
+                  </div>
+                  {data.websiteError && <p className="text-xs text-destructive">{data.websiteError}</p>}
+                  {data.websiteFieldsFound && (
+                    <p className="text-xs text-muted-foreground">
+                      Picked up
+                      {' '}
+                      {data.websiteFieldsFound.length}
+                      {' '}
+                      details from your site. You can edit everything later in Brand Profile.
+                    </p>
+                  )}
+                </div>
+              )
+            : (
+                <div className="space-y-3">
+                  {([
+                    ['descProduct', 'What do you sell or offer?'],
+                    ['descAudience', 'Who is it for?'],
+                    ['descProblem', 'What problem does it solve?'],
+                    ['descBenefits', 'Key benefits, in your own words'],
+                    ['descTone', 'How should your content sound? (e.g. direct, playful, formal)'],
+                    ['descAvoid', 'Anything we should avoid saying or doing?'],
+                  ] as const).map(([field, placeholder]) => (
+                    <input
+                      key={field}
+                      type="text"
+                      value={data[field]}
+                      onChange={e => update({ [field]: e.target.value } as Partial<WizardData>)}
+                      placeholder={placeholder}
+                      className="w-full rounded-lg border bg-background px-3 py-2.5 text-sm"
+                    />
+                  ))}
+                  <p className="text-right text-xs text-muted-foreground">
+                    {descriptionChars < minDescriptionChars
+                      ? `${minDescriptionChars - descriptionChars} more characters needed`
+                      : 'Looks good'}
+                  </p>
+                </div>
               )}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {([
-                ['descProduct', 'What do you sell or offer?'],
-                ['descAudience', 'Who is it for?'],
-                ['descProblem', 'What problem does it solve?'],
-                ['descBenefits', 'Key benefits, in your own words'],
-                ['descTone', 'How should your content sound? (e.g. direct, playful, formal)'],
-                ['descAvoid', 'Anything we should avoid saying or doing?'],
-              ] as const).map(([field, placeholder]) => (
-                <input
-                  key={field}
-                  type="text"
-                  value={data[field]}
-                  onChange={e => update({ [field]: e.target.value } as Partial<WizardData>)}
-                  placeholder={placeholder}
-                  className="w-full rounded-lg border bg-background px-3 py-2.5 text-sm"
-                />
-              ))}
-              <p className="text-right text-xs text-muted-foreground">
-                {descriptionChars < minDescriptionChars
-                  ? `${minDescriptionChars - descriptionChars} more characters needed`
-                  : 'Looks good'}
-              </p>
-            </div>
-          )}
 
           <div className="mt-7">
             <ContinueButton
