@@ -19,7 +19,8 @@ export default function AuthLayout(props: {
   //   (a) redirect to /dashboard if already subscribed/trialing, or
   //   (b) show the paywall so user can start their trial.
   // let postAuthUrl = '/subscribe';
-let postAuthUrl = '/onboarding/organization-selection';
+// let postAuthUrl = '/onboarding/organization-selection';
+let postAuthUrl = '/onboarding/setup';
 
   if (props.params.locale === 'fr') {
     clerkLocale = frFR;
