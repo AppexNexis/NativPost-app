@@ -303,31 +303,27 @@ function SectionHeader({
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
 
   // At the top of DashboardPage, alongside the existing useState/useEffect:
   const { orgId } = useAuth();
   const teamOrgId = process.env.NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID;
   const isStaff = !!(teamOrgId && orgId === teamOrgId);
 
- useEffect(() => {
-  async function load() {
-    try {
-      const res = await fetch('/api/dashboard');
-      if (res.ok) {
-        setData(await res.json());
-      } else {
-        setHasError(true); // 👈 Catches 500 or broken API responses
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch('/api/dashboard');
+        if (res.ok) {
+          setData(await res.json());
+        }
+      } catch (err) {
+        console.error('Dashboard load failed:', err);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err) {
-      console.error('Dashboard load failed:', err);
-      setHasError(true); // 👈 Catches network dropouts
-    } finally {
-      setIsLoading(false);
     }
-  }
-  load();
-}, []);
+    load();
+  }, []);
 
   if (isLoading) {
     return (
@@ -337,16 +333,6 @@ export default function DashboardPage() {
     );
   }
 
-  if (hasError || !data) {
-  return (
-    <div className="flex min-h-[400px] flex-col items-center justify-center text-center">
-      <AlertCircle className="mb-4 size-8 text-red-500" />
-      <h2 className="text-lg font-semibold">Failed to load dashboard</h2>
-      <p className="text-sm text-muted-foreground">Please refresh the page to try again.</p>
-    </div>
-  );
-}
-
   const stats = data?.stats || {
     pendingApprovals: 0,
     scheduledPosts: 0,
@@ -355,13 +341,9 @@ export default function DashboardPage() {
     drafts: 0,
   };
 
-  // const hasPending = (data?.pendingItems.length || 0) > 0;
-  // const hasFailures = (data?.recentFailures.length || 0) > 0;
-  // const hasUpcoming = (data?.upcoming.length || 0) > 0;
-
-  const hasPending = (data.pendingItems?.length || 0) > 0;
-const hasFailures = (data.recentFailures?.length || 0) > 0;
-const hasUpcoming = (data.upcoming?.length || 0) > 0;
+  const hasPending = (data?.pendingItems.length || 0) > 0;
+  const hasFailures = (data?.recentFailures.length || 0) > 0;
+  const hasUpcoming = (data?.upcoming.length || 0) > 0;
 
   return (
     <div className="space-y-6">
@@ -391,7 +373,7 @@ const hasUpcoming = (data.upcoming?.length || 0) > 0;
               failed to publish in the last 7 days
             </p>
             <div className="mt-1 space-y-0.5">
-              {(data.recentFailures || []).map((f, i) => (
+              {data!.recentFailures.map((f, i) => (
                 <p key={i} className="text-xs text-red-600">
                   <Link
                     href={`/dashboard/content/${f.contentItemId}`}
@@ -468,7 +450,7 @@ const hasUpcoming = (data.upcoming?.length || 0) > 0;
               </div>
             ) : (
               <div className="divide-y">
-                {(data.pendingItems || []).map(item => (
+                {data!.pendingItems.map(item => (
                   <Link
                     key={item.id}
                     href={`/dashboard/content/${item.id}`}
@@ -548,7 +530,7 @@ const hasUpcoming = (data.upcoming?.length || 0) > 0;
               </div>
             ) : (
               <div className="divide-y">
-                {(data.upcoming || []).map(post => (
+                {data!.upcoming.map(post => (
                   <Link
                     key={post.id}
                     href={`/dashboard/content/${post.id}`}

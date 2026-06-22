@@ -16,7 +16,8 @@ export async function generateMetadata(props: { params: { locale: string } }) {
 const OrganizationSelectionPage = () => (
   <div className="flex min-h-screen items-center justify-center">
     <OrganizationList
-      afterSelectOrganizationUrl="/dashboard"
+      // afterSelectOrganizationUrl="/dashboard"
+      afterSelectOrganizationUrl="/onboarding/setup"
       afterCreateOrganizationUrl="/onboarding/setup"
       hidePersonal
       skipInvitationScreen
