@@ -66,7 +66,8 @@ export const organizationSchema = pgTable(
     paystackAuthorizationCode: text('paystack_authorization_code'),
     // Plan details
     plan: text('plan').default('starter').notNull(), // starter, growth, pro, agency, enterprise
-    planStatus: text('plan_status').default('trialing').notNull(), // trialing, active, past_due, cancelled
+    // planStatus: text('plan_status').default('trialing').notNull(), // trialing, active, past_due, cancelled
+    planStatus: text('plan_status').default('inactive').notNull(),
     postsPerMonth: integer('posts_per_month').default(20).notNull(),
     platformsLimit: integer('platforms_limit').default(3).notNull(),
     setupFeePaid: boolean('setup_fee_paid').default(false).notNull(),
