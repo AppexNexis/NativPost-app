@@ -1,17 +1,7 @@
 'use client';
 
-import { useOrganization } from '@clerk/nextjs';
-import {
-  ArrowRight,
-  Check,
-  ChevronLeft,
-  FileText,
-  Globe,
-  Image as ImageIcon,
-  Loader2,
-  Megaphone,
-  Sparkles,
-} from 'lucide-react';
+import { useAuth, useOrganization } from '@clerk/nextjs';
+import { Loader2 } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -66,13 +56,13 @@ const EMPTY_DATA: WizardData = {
 };
 
 const STEPS = [
-  { id: 'logo', label: 'Brand basics' },
+  { id: 'logo', label: 'Logo' },
   { id: 'brand_context', label: 'About your brand' },
   { id: 'business_context', label: 'Your business' },
   { id: 'role', label: 'Your role' },
   { id: 'intent', label: 'Your goals' },
-  { id: 'referral', label: 'How you found us' },
-  { id: 'next_steps', label: 'What happens next' },
+  { id: 'referral', label: 'Referral source' },
+  { id: 'next_steps', label: 'Done' },
 ] as const;
 
 const TEAM_SIZE_OPTIONS = ['Just me', '2–5', '6–10', '11–20', '21–50', '50+'];
@@ -122,7 +112,7 @@ function clearDraft(orgId: string) {
 }
 
 // -----------------------------------------------------------
-// SMALL SHARED PIECES
+// SHARED PIECES — no decorative icons, text only
 // -----------------------------------------------------------
 function ChoiceGrid({
   options,
@@ -203,9 +193,8 @@ function WizardShell({
           <button
             type="button"
             onClick={onBack}
-            className="mx-auto mt-4 flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            className="mx-auto mt-4 block text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
-            <ChevronLeft className="size-3.5" />
             Back
           </button>
         )}
@@ -241,9 +230,8 @@ function ContinueButton({
       disabled={disabled || isLoading}
       className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
     >
-      {isLoading ? <Loader2 className="size-4 animate-spin" /> : null}
+      {isLoading && <Loader2 className="size-4 animate-spin" />}
       {isLoading ? 'Saving...' : label}
-      {!isLoading && <ArrowRight className="size-4" />}
     </button>
   );
 }
@@ -314,15 +302,13 @@ function LogoUploader({ value, onChange }: { value: string; onChange: (v: string
           ? (
               <Image src={value} alt="Logo preview" width={64} height={64} unoptimized className="size-16 rounded-lg object-contain" />
             )
-          : isUploading
-            ? (
-                <Loader2 className="size-6 animate-spin text-muted-foreground" />
-              )
-            : (
-                <ImageIcon className="size-6 text-muted-foreground" />
-              )}
+          : (
+              <span className="text-sm font-medium text-muted-foreground">
+                {isUploading ? 'Uploading...' : 'Upload'}
+              </span>
+            )}
         <span className="text-xs text-muted-foreground">
-          {value ? 'Click to replace' : isUploading ? 'Uploading...' : 'PNG, JPG, SVG, or WebP — up to 2MB'}
+          {value ? 'Click to replace' : 'PNG, JPG, SVG, or WebP — up to 2MB'}
         </span>
       </button>
       <input
@@ -342,7 +328,13 @@ function LogoUploader({ value, onChange }: { value: string; onChange: (v: string
 // -----------------------------------------------------------
 export default function OnboardingSetupPage() {
   const router = useRouter();
-  const { organization, isLoaded: orgLoaded } = useOrganization();
+
+  // orgId comes from the session claim (same source middleware uses),
+  // not the `organization` object — that object is known to lag a tick
+  // behind right after Clerk creates a new org, which previously caused
+  // this page to wrongly bounce back to org-selection.
+  const { orgId, isLoaded: authLoaded } = useAuth();
+  const { organization } = useOrganization();
 
   const [stepIndex, setStepIndex] = useState(0);
   const [data, setData] = useState<WizardData>(EMPTY_DATA);
@@ -354,24 +346,23 @@ export default function OnboardingSetupPage() {
   const update = (updates: Partial<WizardData>) => {
     setData((prev) => {
       const next = { ...prev, ...updates };
-      if (organization?.id) {
-        saveDraft(organization.id, next);
+      if (orgId) {
+        saveDraft(orgId, next);
       }
       return next;
     });
   };
 
   // ── Re-entry guard ──────────────────────────────────────────
-  // This wizard should only ever run once, right after a new org is
-  // created. If it's already been completed (e.g. someone bookmarks
-  // this URL or hits back), skip straight to the dashboard instead
-  // of making them redo it.
+  // Runs once, right after a new org is created. If it's already been
+  // completed (bookmarked URL, back button), skip straight to the
+  // dashboard instead of replaying it.
   useEffect(() => {
-    if (!orgLoaded) {
+    if (!authLoaded) {
       return;
     }
 
-    if (!organization?.id) {
+    if (!orgId) {
       router.replace('/onboarding/organization-selection');
       return;
     }
@@ -393,10 +384,9 @@ export default function OnboardingSetupPage() {
           return;
         }
 
-        const draft = loadDraft(organization.id);
+        const draft = loadDraft(orgId);
         setData({
           ...EMPTY_DATA,
-          brandName: organization.name || '',
           ...(draft || {}),
         });
         setIsCheckingGate(false);
@@ -404,7 +394,6 @@ export default function OnboardingSetupPage() {
         // If the gate check itself fails, fail open rather than trap
         // a real new user on a spinner forever.
         if (!cancelled) {
-          setData(prev => ({ ...prev, brandName: organization.name || prev.brandName }));
           setIsCheckingGate(false);
         }
       }
@@ -414,7 +403,7 @@ export default function OnboardingSetupPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgLoaded, organization?.id]);
+  }, [authLoaded, orgId]);
 
   const goNext = () => setStepIndex(i => Math.min(i + 1, STEPS.length - 1));
   const goBack = () => setStepIndex(i => Math.max(i - 1, 0));
@@ -449,7 +438,6 @@ export default function OnboardingSetupPage() {
       update({
         extracted: json.profile,
         websiteFieldsFound: json.fieldsFound || [],
-        brandName: data.brandName || json.profile?.brandName || '',
       });
     } catch {
       update({ websiteError: 'Something went wrong reaching the analysis service. Try again, or use the description option.' });
@@ -460,7 +448,7 @@ export default function OnboardingSetupPage() {
 
   // ── Final submit ─────────────────────────────────────────────
   const handleFinish = async () => {
-    if (!organization?.id) {
+    if (!orgId) {
       return;
     }
 
@@ -468,17 +456,18 @@ export default function OnboardingSetupPage() {
     setFinishError(null);
 
     try {
-      // Map team size + revenue to the brand_profile growth_stage field.
       const growthStage = ['Just me', '2–5'].includes(data.teamSize) && ['Pre-revenue', '$1 – $1,000'].includes(data.monthlyRevenue)
         ? 'early'
         : ['50+', '21–50'].includes(data.teamSize) || data.monthlyRevenue === '$500k+'
           ? 'established'
           : 'growing';
 
+      const brandName = data.brandName || organization?.name || '';
       const extracted: Record<string, unknown> = data.extracted || {};
+
       const brandProfilePayload = data.contextMode === 'website'
         ? {
-            brandName: data.brandName,
+            brandName,
             logoUrl: data.logoUrl,
             websiteUrl: data.websiteUrl,
             industry: extracted.industry,
@@ -497,7 +486,7 @@ export default function OnboardingSetupPage() {
             growthStage,
           }
         : {
-            brandName: data.brandName,
+            brandName,
             logoUrl: data.logoUrl,
             companyDescription: [data.descProduct, data.descProblem, data.descBenefits].filter(Boolean).join(' '),
             targetAudience: data.descAudience,
@@ -539,7 +528,7 @@ export default function OnboardingSetupPage() {
         body: JSON.stringify({ step: 'post_signup', completed: true, data: {} }),
       });
 
-      clearDraft(organization.id);
+      clearDraft(orgId);
       router.push('/dashboard');
     } catch {
       setFinishError('Something went wrong saving your setup. You can try again, or skip to the dashboard and finish your brand profile there.');
@@ -563,34 +552,13 @@ export default function OnboardingSetupPage() {
   return (
     <WizardShell stepIndex={stepIndex} onBack={goBack} showBack={stepIndex > 0 && stepIndex < STEPS.length - 1}>
 
-      {/* ── Step: Brand basics ── */}
+      {/* ── Step: Logo ── */}
       {currentStep === 'logo' && (
         <>
-          <StepHeading
-            title="Let's set up your brand"
-            subtitle="A couple of quick things before we get into content."
-          />
-          <div className="space-y-5">
-            <div>
-              <p className="mb-2 text-sm font-medium">Brand logo (optional)</p>
-              <LogoUploader value={data.logoUrl} onChange={v => update({ logoUrl: v })} />
-            </div>
-            <div>
-              <p className="mb-2 text-sm font-medium">Brand name</p>
-              <input
-                type="text"
-                value={data.brandName}
-                onChange={e => update({ brandName: e.target.value })}
-                placeholder="The name used in your generated content"
-                className="w-full rounded-lg border bg-background px-3 py-2.5 text-sm"
-              />
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                This can be different from your workspace name — it's what shows up in your posts.
-              </p>
-            </div>
-          </div>
+          <StepHeading title="Add a logo" subtitle="Optional — you can add this later in Brand Profile." />
+          <LogoUploader value={data.logoUrl} onChange={v => update({ logoUrl: v })} />
           <div className="mt-7">
-            <ContinueButton onClick={goNext} disabled={!data.brandName.trim()} />
+            <ContinueButton onClick={goNext} />
           </div>
         </>
       )}
@@ -598,10 +566,7 @@ export default function OnboardingSetupPage() {
       {/* ── Step: Brand context (website or description) ── */}
       {currentStep === 'brand_context' && (
         <>
-          <StepHeading
-            title="Tell us about your brand"
-            subtitle="We use this to generate content that actually sounds like you."
-          />
+          <StepHeading title="Tell us about your brand" subtitle="This is what we use to generate content for you." />
 
           <div className="mb-4 flex gap-2">
             <button
@@ -611,7 +576,6 @@ export default function OnboardingSetupPage() {
                 data.contextMode === 'website' ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted/50'
               }`}
             >
-              <Globe className="mr-1.5 inline size-3.5" />
               Website
             </button>
             <button
@@ -621,7 +585,6 @@ export default function OnboardingSetupPage() {
                 data.contextMode === 'description' ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted/50'
               }`}
             >
-              <FileText className="mr-1.5 inline size-3.5" />
               Describe it instead
             </button>
           </div>
@@ -642,21 +605,19 @@ export default function OnboardingSetupPage() {
                       type="button"
                       onClick={handleAnalyzeWebsite}
                       disabled={isAnalyzing}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors disabled:opacity-60"
+                      className="shrink-0 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors disabled:opacity-60"
                     >
-                      {isAnalyzing ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
                       {isAnalyzing ? 'Reading...' : 'Analyze'}
                     </button>
                   </div>
                   {data.websiteError && <p className="text-xs text-destructive">{data.websiteError}</p>}
                   {data.websiteFieldsFound && (
-                    <p className="flex items-center gap-1 text-xs text-emerald-600">
-                      <Check className="size-3.5" />
+                    <p className="text-xs text-muted-foreground">
                       Picked up
                       {' '}
                       {data.websiteFieldsFound.length}
                       {' '}
-                      details from your site. You can refine everything later in Brand Profile.
+                      details from your site. You can edit everything later in Brand Profile.
                     </p>
                   )}
                 </div>
@@ -713,14 +674,14 @@ export default function OnboardingSetupPage() {
       {/* ── Step: Business context ── */}
       {currentStep === 'business_context' && (
         <>
-          <StepHeading title="Tell us about your business" subtitle="This helps us tailor recommendations to your stage." />
+          <StepHeading title="Tell us about your business" />
           <div className="space-y-5">
             <div>
-              <p className="mb-2 text-sm font-medium">How big is your current team?</p>
+              <p className="mb-2 text-sm font-medium">Team size</p>
               <ChoiceGrid options={TEAM_SIZE_OPTIONS} selected={data.teamSize} onSelect={v => update({ teamSize: v })} columns={3} />
             </div>
             <div>
-              <p className="mb-2 text-sm font-medium">What's your current monthly revenue?</p>
+              <p className="mb-2 text-sm font-medium">Monthly revenue</p>
               <ChoiceGrid options={REVENUE_OPTIONS} selected={data.monthlyRevenue} onSelect={v => update({ monthlyRevenue: v })} columns={3} />
             </div>
           </div>
@@ -733,7 +694,7 @@ export default function OnboardingSetupPage() {
       {/* ── Step: Role ── */}
       {currentStep === 'role' && (
         <>
-          <StepHeading title="What describes you best?" subtitle="We'll tailor a few things based on your role." />
+          <StepHeading title="What's your role?" />
           <ChoiceGrid options={ROLE_OPTIONS} selected={data.role} onSelect={v => update({ role: v })} />
           <div className="mt-7">
             <ContinueButton onClick={goNext} disabled={!data.role} />
@@ -751,7 +712,7 @@ export default function OnboardingSetupPage() {
               <ChoiceGrid options={INTENT_OPTIONS} selected={data.intent} onSelect={v => update({ intent: v })} />
             </div>
             <div>
-              <p className="mb-2 text-sm font-medium">What do you expect from NativPost? Select all that apply</p>
+              <p className="mb-2 text-sm font-medium">What are you hoping to get out of NativPost? Select all that apply.</p>
               <ChoiceGrid
                 options={EXPECTATION_OPTIONS}
                 selected={data.expectations}
@@ -783,28 +744,15 @@ export default function OnboardingSetupPage() {
         </>
       )}
 
-      {/* ── Step: What happens next ── */}
+      {/* ── Step: Done ── */}
       {currentStep === 'next_steps' && (
         <>
-          <StepHeading title="Here's how NativPost works" subtitle="Five steps, and most of it runs itself." />
-          <div className="space-y-3">
-            {[
-              { icon: FileText, title: 'Brand profile', desc: 'Already set up from what you just told us.' },
-              { icon: Sparkles, title: 'Generate', desc: 'Give us a topic, get three distinct takes on it.' },
-              { icon: Check, title: 'Quality filter', desc: 'Generic AI-sounding drafts get rewritten automatically.' },
-              { icon: Megaphone, title: 'Review and publish', desc: 'Approve what you like — it goes out on schedule.' },
-            ].map(({ icon: Icon, title, desc }) => (
-              <div key={title} className="flex items-start gap-3 rounded-lg border bg-muted/20 px-4 py-3">
-                <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <Icon className="size-3.5" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium">{title}</p>
-                  <p className="text-xs text-muted-foreground">{desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+          <StepHeading title="You're set up" subtitle="Your brand profile is saved. Here's what happens from here." />
+          <ol className="space-y-2 text-sm">
+            <li className="border-b pb-2"><span className="font-medium">1. Generate</span> — give us a topic, get three takes on it.</li>
+            <li className="border-b pb-2"><span className="font-medium">2. Quality filter</span> — generic-sounding drafts get rewritten before you see them.</li>
+            <li><span className="font-medium">3. Review and publish</span> — approve what you like, it goes out on schedule.</li>
+          </ol>
           {finishError && <p className="mt-4 text-xs text-destructive">{finishError}</p>}
           <div className="mt-7">
             <ContinueButton onClick={handleFinish} isLoading={isFinishing} label="Go to your dashboard" />
