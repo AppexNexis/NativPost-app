@@ -1,7 +1,7 @@
 {
   "Index": {
-    "meta_title": "SaaS Template - Le template SaaS parfait pour construire et mettre à l'échelle votre entreprise en toute simplicité.",
-    "meta_description": "Un template gratuit et open-source de landing page pour votre entreprise SaaS, construit avec React, TypeScript, Shadcn UI et Tailwind CSS."
+    "meta_title": "NativPost - Du contenu pour les réseaux sociaux généré par IA qui sonne comme votre marque, pas comme un robot.",
+    "meta_description": "NativPost apprend la voix de votre marque et génère des légendes, des visuels et des vidéos de qualité professionnelle, puis les publie automatiquement sur toutes les plateformes. Conçu pour les entreprises africaines et internationales."
   },
   "Navbar": {
     "sign_in": "Se connecter",
@@ -13,57 +13,57 @@
     "company": "Entreprise"
   },
   "Hero": {
-    "follow_twitter": "Suivez @Ixartz sur Twitter",
-    "title": "Le parfait <important>SaaS template</important> pour construire et mettre à l'échelle votre entreprise en toute simplicité.",
-    "description": "Un template gratuit et open-source de landing page pour votre entreprise SaaS, construit avec React, TypeScript, Shadcn UI et Tailwind CSS.",
-    "primary_button": "Obtenir Next.js SaaS Starter Kit",
-    "secondary_button": "Mettez une étoile sur GitHub"
+    "follow_twitter": "Suivez @NativPost sur Twitter",
+    "title": "Du contenu <important>réseaux sociaux</important> digne d'une agence. Votre voix. Toutes les plateformes. Automatiquement.",
+    "description": "Configurez votre profil de marque une seule fois. NativPost apprend votre voix, génère du contenu de qualité professionnelle qui vous ressemble, et le publie automatiquement sur toutes les plateformes.",
+    "primary_button": "Démarrer votre essai gratuit",
+    "secondary_button": "Voir comment ça marche"
   },
   "Sponsors": {
-    "title": "Sponsorisé par"
+    "title": "Ils nous font confiance"
   },
   "Features": {
-    "section_subtitle": "Fonctionnalités",
-    "section_title": "Débloquer le plein potentiel du SaaS Template",
-    "section_description": "Un template gratuit et open-source de landing page pour votre entreprise SaaS, construit avec React, TypeScript, Shadcn UI et Tailwind CSS.",
-    "feature1_title": "Node.js",
-    "feature2_title": "React",
-    "feature3_title": "Tailwind CSS",
-    "feature4_title": "TypeScript",
-    "feature5_title": "Shadcn UI",
-    "feature6_title": "ESLint",
-    "feature_description": "Un template gratuit et open-source de landing page pour votre entreprise SaaS, construit avec React, TypeScript, Shadcn UI et Tailwind CSS."
+    "section_subtitle": "Fonctionnalités clés",
+    "section_title": "Tout ce qu'il faut pour ne plus sonner générique en ligne",
+    "section_description": "NativPost génère du contenu qui sonne comme votre marque, élimine tout ce qui paraît robotique, et s'améliore à chaque utilisation.",
+    "feature1_title": "Profil de marque",
+    "feature2_title": "Filtre qualité anti-générique",
+    "feature3_title": "Trois styles de contenu, à chaque fois",
+    "feature4_title": "Visuels et vidéos de qualité professionnelle",
+    "feature5_title": "Publication native sur 8 plateformes",
+    "feature6_title": "Facturation pensée pour l'Afrique",
+    "feature_description": "Configurez-le une fois, et NativPost s'y réfère chaque fois qu'il crée du contenu, le soumet à la validation de votre équipe, et s'améliore à chaque utilisation."
   },
   "Pricing": {
-    "section_subtitle": "Fonctionnalités",
-    "section_title": "Débloquer le plein potentiel du SaaS Template",
-    "section_description": "Un template gratuit et open-source de landing page pour votre entreprise SaaS, construit avec React, TypeScript, Shadcn UI et Tailwind CSS.",
+    "section_subtitle": "Tarifs",
+    "section_title": "Un plan pour chaque étape de votre entreprise",
+    "section_description": "Commencez avec un essai gratuit de 7 jours, sans carte bancaire requise. Évoluez selon vos besoins, des fondateurs solos aux agences qui gèrent plusieurs marques.",
     "button_text": "Démarrer"
   },
   "PricingPlan": {
-    "free_plan_name": "Gratuit",
-    "premium_plan_name": "Premium",
+    "free_plan_name": "Starter",
+    "premium_plan_name": "Pro",
     "enterprise_plan_name": "Enterprise",
-    "free_plan_description": "Pour les particuliers",
-    "premium_plan_description": "Pour les petites équipes",
-    "enterprise_plan_description": "Pour les leaders de l'industrie",
-    "feature_team_member": "{number} membres",
-    "feature_website": "{number} sites internet",
-    "feature_storage": "{number} Go de stockage",
-    "feature_transfer": "{number} TB de transfert",
+    "free_plan_description": "Pour les fondateurs solos et les petites entreprises qui démarrent",
+    "premium_plan_description": "Pour les marques établies avec une activité réseaux sociaux soutenue",
+    "enterprise_plan_description": "Pour les grandes organisations ayant besoin d'un support dédié et d'une configuration sur mesure",
+    "feature_team_member": "{number} membres d'équipe",
+    "feature_website": "{number} comptes sociaux connectés",
+    "feature_storage": "{number} publications par mois",
+    "feature_transfer": "{number} rendus vidéo par mois",
     "feature_email_support": "Support par e-mail",
     "plan_interval_month": "mois",
     "plan_interval_year": "année",
     "next_renew_date": "Votre abonnement sera renouvelé le {date}"
   },
   "FAQ": {
-    "question": "Lorem ipsum dolor sit amet, consectetur adipiscing elit?",
-    "answer": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Aliquam aliquam enim dui, id consequat turpis ullamcorper ac. Mauris id quam dolor. Nullam eu egestas turpis. Proin risus elit, sollicitudin in mi a, accumsan euismod turpis. In euismod mi sed diam tristique hendrerit."
+    "question": "En quoi NativPost est-il différent des autres outils IA pour les réseaux sociaux ?",
+    "answer": "La plupart des outils se contentent d'ajouter une simple fonction de légende IA à une application de planification. NativPost est conçu différemment : chaque contenu passe par un filtre qualité automatisé qui détecte les tournures génériques de l'IA, comme les mots à la mode et les phrases robotiques, avant même que vous le voyiez. Vous obtenez aussi trois angles créatifs distincts pour chaque sujet, et le système apprend les préférences de votre marque à partir de chaque validation, refus ou modification effectués par votre équipe."
   },
   "CTA": {
-    "title": "Vous êtes prêt?",
-    "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
-    "button_text": "Obtenir Next.js SaaS Starter Kit"
+    "title": "Prêt à ne plus sonner générique en ligne ?",
+    "description": "Configurez votre profil de marque une seule fois et laissez NativPost gérer la rédaction, le design et la publication.",
+    "button_text": "Démarrer votre essai gratuit"
   },
   "Footer": {
     "product": "Produit",
@@ -73,95 +73,95 @@
     "company": "Entreprise",
     "terms_of_service": "Conditions d'utilisation",
     "privacy_policy": "Politique de confidentialité",
-    "footer_text": "© {year} {name}. Fait avec <author></author>."
+    "footer_text": "© {year} {name}. Conçu avec <author></author>."
   },
   "ProtectFallback": {
     "not_enough_permission": "Vous n'avez pas les permissions pour effectuer cette action"
   },
   "SignIn": {
-    "meta_title": "Se connecter",
-    "meta_description": "Connectez-vous à votre compte avec facilité."
+    "meta_title": "Connexion à NativPost",
+    "meta_description": "Connectez-vous pour gérer votre profil de marque, valider le contenu en attente et publier sur toutes vos plateformes sociales connectées."
   },
   "SignUp": {
-    "meta_title": "S'inscrire",
-    "meta_description": "Créez un compte sans effort grâce à notre processus d'inscription intuitif."
+    "meta_title": "Inscription à NativPost",
+    "meta_description": "Créez votre compte NativPost et commencez à générer du contenu fidèle à votre marque en quelques minutes."
   },
   "DashboardLayout": {
     "home": "Accueil",
-    "todos": "Todos",
-    "members": "Membres",
+    "todos": "Studio de contenu",
+    "members": "Équipe",
     "billing": "Facturation",
     "settings": "Réglages"
   },
   "Dashboard": {
-    "meta_title": "Tableau de bord du SaaS Template",
-    "meta_description": "Un template gratuit et open-source de landing page pour votre entreprise SaaS, construit avec Next.js, TypeScript, Shadcn UI et Tailwind CSS."
+    "meta_title": "Choisissez votre organisation - NativPost",
+    "meta_description": "Sélectionnez ou créez l'organisation pour laquelle vous souhaitez gérer du contenu sur NativPost."
   },
   "DashboardIndex": {
     "title_bar": "Tableau de bord",
-    "title_bar_description": "Bienvenue sur votre tableau de bord",
-    "message_state_title": "C'est parti",
-    "message_state_description": "Vous pouvez personnaliser cette page en modifiant le fichier dans <code>dashboard/page.tsx</code>",
-    "message_state_button": "Mettez une étoile sur GitHub",
-    "message_state_alternative": "Besoin de fonctionnalités avancées ? Next.js 16 & React 19, Multi-tenancy & Équipes, Rôles & Permissions, Shadcn UI,\nTypesafety de bout en bout avec oRPC, Paiement Stripe, Mode clair / sombre. Essayez <url></url>.",
-    "max_message": "Ou, besoin d'une pile d'authentification auto-hébergée (Better Auth) ? Essayez <url></url>."
+    "title_bar_description": "Bon retour. Voici ce qui se passe avec votre contenu.",
+    "message_state_title": "Configurons votre marque",
+    "message_state_description": "Commencez par compléter votre profil de marque pour que NativPost puisse apprendre votre ton, votre vocabulaire et votre style avant de générer du contenu. Vous pouvez le modifier à tout moment depuis <code>dashboard/brand-profile</code>.",
+    "message_state_button": "Configurer le profil de marque",
+    "message_state_alternative": "Besoin d'un coup de pouce pour démarrer ? Consultez notre guide de démarrage rapide qui couvre la configuration du profil\nde marque, la connexion de vos comptes sociaux et la génération de votre premier lot de contenu. Essayez <url></url>.",
+    "max_message": "Ou bien, vous souhaitez que NativPost vous contacte directement sur WhatsApp, Telegram ou Discord ? Essayez <url></url>."
   },
   "UserProfile": {
     "title_bar": "Profil utilisateur",
     "title_bar_description": "Afficher et gérer votre profil utilisateur"
   },
   "OrganizationProfile": {
-    "title_bar": "Gestion de l’organisation",
-    "title_bar_description": "Gérer votre organisation"
+    "title_bar": "Gestion de l'organisation",
+    "title_bar_description": "Gérer votre organisation, vos membres d'équipe et les réglages de votre marque"
   },
   "Billing": {
     "title_bar": "Facturation",
     "title_bar_description": "Gérer votre facturation et votre abonnement",
     "current_section_title": "Plan actuel",
-    "current_section_description": "Ajuster votre plan de paiement pour le mieux répondre à vos besoins",
+    "current_section_description": "Ajustez votre plan de paiement pour qu'il corresponde au mieux à vos besoins de contenu",
     "manage_subscription_button": "Gérer l'abonnement"
   },
   "BillingOptions": {
     "current_plan": "Plan actuel",
-    "upgrade_plan": "Démarrer"
+    "upgrade_plan": "Améliorer le plan"
   },
   "CheckoutConfirmation": {
     "title_bar": "Confirmation du paiement",
     "message_state_title": "Paiement accepté",
-    "message_state_description": "Votre paiement a été traité avec succès. Merci pour votre achat !",
+    "message_state_description": "Votre paiement a été traité avec succès. Bienvenue chez NativPost !",
     "message_state_button": "Revenir à la facturation"
   },
   "DataTable": {
     "no_results": "Aucun résultat."
   },
   "Todos": {
-    "title_bar": "Liste de Todos",
-    "title_bar_description": "Afficher et gérer votre liste de todos",
-    "add_todo_button": "Nouveau todo"
+    "title_bar": "Studio de contenu",
+    "title_bar_description": "Générez, validez et gérez votre contenu pour les réseaux sociaux",
+    "add_todo_button": "Générer du contenu"
   },
   "TodoTableColumns": {
     "open_menu": "Ouvrir le menu",
     "edit": "Modifier",
     "delete": "Supprimer",
-    "title_header": "Titre",
-    "message_header": "Message",
+    "title_header": "Sujet",
+    "message_header": "Légende",
     "created_at_header": "Créé le"
   },
   "AddTodo": {
-    "title_bar": "Ajouter une todo",
-    "add_todo_section_title": "Créer une nouvelle todo",
-    "add_todo_section_description": "Remplissez le formulaire ci-dessous pour créer une nouvelle todo"
+    "title_bar": "Générer du contenu",
+    "add_todo_section_title": "Créer une nouvelle publication",
+    "add_todo_section_description": "Donnez un sujet ou une idée à NativPost, et trois versions adaptées à votre marque seront prêtes en quelques secondes"
   },
   "EditTodo": {
-    "title_bar": "Editer le todo",
-    "edit_todo_section_title": "Modifier le todo",
-    "edit_todo_section_description": "Remplissez le formulaire ci-dessous pour modifier la todo"
+    "title_bar": "Modifier la publication",
+    "edit_todo_section_title": "Modifier la publication",
+    "edit_todo_section_description": "Affinez la légende, la programmation ou la plateforme avant validation"
   },
   "TodoForm": {
-    "title_label": "Titre",
-    "title_description": "Entrez un titre descriptif pour votre todo.",
-    "message_title": "Message",
-    "message_description": "Entrez un message détaillé pour votre todo.",
+    "title_label": "Sujet",
+    "title_description": "Indiquez le sujet ou l'idée sur lequel vous souhaitez que NativPost génère du contenu.",
+    "message_title": "Légende",
+    "message_description": "Relisez ou modifiez la légende générée avant de la valider.",
     "submit_button": "Envoyer"
   }
 }
