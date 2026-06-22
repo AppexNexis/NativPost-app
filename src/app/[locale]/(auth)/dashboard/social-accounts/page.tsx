@@ -1,16 +1,23 @@
+
 'use client';
 
 import {
   AlertCircle,
   Check,
-  // Clock,
   Image as ImageIcon,
   Info,
   Loader2,
   Type,
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 import {
   FacebookIcon,
@@ -48,7 +55,6 @@ type PlatformEntry = {
   badge?: string;
   badgeVariant?: 'text' | 'media';
   connectHref?: string;
-  accountKey?: string;
   tip: {
     title: string;
     items: string[];
@@ -56,7 +62,7 @@ type PlatformEntry = {
 };
 
 // ---------------------------------------------------------------------------
-// PLATFORM DEFINITIONS WITH TIPS
+// PLATFORM GROUPS WITH TIPS
 // ---------------------------------------------------------------------------
 const PLATFORM_GROUPS: { label: string; platforms: PlatformEntry[] }[] = [
   {
@@ -72,7 +78,7 @@ const PLATFORM_GROUPS: { label: string; platforms: PlatformEntry[] }[] = [
           items: [
             'Your account must be a Business or Creator account. Personal accounts are not supported by Meta\'s API since December 2024.',
             'Your Instagram must be linked to a Facebook Page you admin. Go to Instagram Settings → Account → Linked accounts.',
-            'Log into Instagram in this browser before connecting so the OAuth handshake completes without interruption.',
+            'Log into Instagram in this browser before connecting.',
           ],
         },
       },
@@ -85,8 +91,8 @@ const PLATFORM_GROUPS: { label: string; platforms: PlatformEntry[] }[] = [
           title: 'Before connecting Facebook',
           items: [
             'Connect a Facebook Page, not a personal profile. Page admin access is required.',
-            'You must be logged into the Facebook account that owns or manages the Page in this browser.',
-            'To publish on behalf of a Page, your app role must include Content Creator or higher in Page settings.',
+            'Log into the Facebook account that owns or manages the Page in this browser.',
+            'Your app role must include Content Creator or higher in Page settings.',
           ],
         },
       },
@@ -138,7 +144,7 @@ const PLATFORM_GROUPS: { label: string; platforms: PlatformEntry[] }[] = [
         badge: 'Text',
         badgeVariant: 'text',
         tip: {
-          title: 'X text connection (OAuth 2.0)',
+          title: 'X — text connection (OAuth 2.0)',
           items: [
             'This connection handles text-only posts via OAuth 2.0.',
             'Log into X in this browser before connecting.',
@@ -154,13 +160,12 @@ const PLATFORM_GROUPS: { label: string; platforms: PlatformEntry[] }[] = [
         badge: 'Images & video',
         badgeVariant: 'media',
         connectHref: '/api/social-accounts/connect/twitter-v1',
-        accountKey: 'twitter_v1_media',
         tip: {
-          title: 'X media connection (OAuth 1.0a)',
+          title: 'X — media connection (OAuth 1.0a)',
           items: [
             'X requires two separate connections to publish all content types. This one unlocks images and video via OAuth 1.0a.',
             'Both connections must use the same X account.',
-            'If you have already connected the text connection above, use the same browser session here.',
+            'Use the same browser session as your text connection above.',
           ],
         },
       },
@@ -172,9 +177,9 @@ const PLATFORM_GROUPS: { label: string; platforms: PlatformEntry[] }[] = [
         tip: {
           title: 'Before connecting TikTok',
           items: [
-            'Log into TikTok in this browser before clicking Connect. The OAuth flow will open TikTok\'s authorization page.',
+            'Log into TikTok in this browser before clicking Connect.',
             'Your account must allow third-party app access. Check TikTok Settings → Privacy → Manage app permissions.',
-            'TikTok tokens expire roughly every 30 days. Reconnect when prompted to maintain publishing access.',
+            'TikTok tokens expire roughly every 30 days. Reconnect when prompted.',
           ],
         },
       },
@@ -193,7 +198,7 @@ const PLATFORM_GROUPS: { label: string; platforms: PlatformEntry[] }[] = [
           title: 'Before connecting YouTube',
           items: [
             'Log into the Google account that owns your YouTube channel in this browser.',
-            'If you manage multiple channels, make sure the correct channel is active at youtube.com before connecting.',
+            'If you manage multiple channels, make sure the correct channel is active at youtube.com first.',
             'YouTube\'s API quota is 10,000 units per day. Each video upload costs 1,600 units.',
           ],
         },
@@ -226,7 +231,7 @@ const PLATFORM_GROUPS: { label: string; platforms: PlatformEntry[] }[] = [
           title: 'Before connecting Threads',
           items: [
             'Threads connects through your Instagram Business or Creator account. Connect Instagram first.',
-            'The Threads API requires your Instagram account to have Threads enabled and active.',
+            'Your Instagram account must have Threads enabled and active.',
             'Log into Threads in this browser before connecting.',
           ],
         },
@@ -236,16 +241,14 @@ const PLATFORM_GROUPS: { label: string; platforms: PlatformEntry[] }[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// AVATAR with image + initials fallback
+// AVATAR — profile image with initials fallback
 // ---------------------------------------------------------------------------
 function Avatar({
   src,
   username,
-  size = 28,
 }: {
   src: string | null;
   username: string | null;
-  size?: number;
 }) {
   const [failed, setFailed] = useState(false);
 
@@ -259,83 +262,60 @@ function Avatar({
         .join('')
     : '?';
 
-  const style: React.CSSProperties = {
-    width: size,
-    height: size,
-    borderRadius: '50%',
-    flexShrink: 0,
-    overflow: 'hidden',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: size * 0.35,
-    fontWeight: 500,
-  };
-
-  if (!src || failed) {
+  if (src && !failed) {
     return (
-      <span
-        style={{
-          ...style,
-          background: 'hsl(var(--info) / .12)',
-          color: 'hsl(var(--info))',
-        }}
-      >
-        {initials}
-      </span>
+      <img
+        src={src}
+        alt={username ?? 'profile'}
+        onError={() => setFailed(true)}
+        className="size-7 shrink-0 rounded-full object-cover ring-1 ring-border"
+      />
     );
   }
 
   return (
-    <img
-      src={src}
-      alt={username ?? 'avatar'}
-      onError={() => setFailed(true)}
-      style={{ ...style, objectFit: 'cover' }}
-    />
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary ring-1 ring-border">
+      {initials}
+    </span>
   );
 }
 
 // ---------------------------------------------------------------------------
-// TOOLTIP
+// PLATFORM TIP — Radix tooltip, renders in a portal so it never gets clipped
 // ---------------------------------------------------------------------------
-function TipPopover({ tip }: { tip: PlatformEntry['tip'] }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
+function PlatformTip({ tip }: { tip: PlatformEntry['tip'] }) {
   return (
-    <div ref={ref} className="relative flex-shrink-0">
-      <button
-        type="button"
-        onClick={() => setOpen((p) => !p)}
-        className="flex size-6 items-center justify-center rounded-full border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        aria-label="Setup requirements"
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="flex size-6 shrink-0 items-center justify-center rounded-full border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          aria-label="Setup requirements"
+        >
+          <Info className="size-3" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="left"
+        align="center"
+        className="max-w-[280px] p-0"
+        sideOffset={8}
       >
-        <Info className="size-3" />
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-8 z-50 w-72 rounded-xl border bg-card p-4 shadow-lg">
+        <div className="rounded-lg border bg-popover p-4 shadow-md">
           <p className="mb-2.5 text-xs font-semibold text-foreground">{tip.title}</p>
-          <ul className="space-y-1.5 pl-3">
+          <ul className="space-y-1.5 pl-3.5">
             {tip.items.map((item, i) => (
-              <li key={i} className="list-disc text-[11px] leading-relaxed text-muted-foreground">
+              <li
+                key={i}
+                className="list-disc text-[11px] leading-relaxed text-muted-foreground"
+              >
                 {item}
               </li>
             ))}
           </ul>
         </div>
-      )}
-    </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -370,11 +350,9 @@ function SocialAccountsContent() {
   }, [fetchAccounts]);
 
   const connectPlatform = (entry: PlatformEntry) => {
-    if (entry.connectHref) {
-      window.location.href = entry.connectHref;
-      return;
-    }
-    window.location.href = `/api/social-accounts/connect?platform=${entry.id}`;
+    window.location.href = entry.connectHref
+      ? entry.connectHref
+      : `/api/social-accounts/connect?platform=${entry.id}`;
   };
 
   const disconnectAccount = async (accountId: string) => {
@@ -389,14 +367,11 @@ function SocialAccountsContent() {
     }
   };
 
-  // Resolve which DB account maps to a given platform entry
   const resolveAccount = (entry: PlatformEntry): SocialAccount | undefined => {
     if (entry.id === 'twitter_v1') {
-      // Media connection: twitter row that has oauth_token (OAuth 1.0a)
       return accounts.find((a) => a.platform === 'twitter' && a.isActive && a.oauthToken);
     }
     if (entry.id === 'twitter') {
-      // Text connection: twitter row that has access_token (OAuth 2.0)
       return accounts.find((a) => a.platform === 'twitter' && a.isActive && a.accessToken);
     }
     return accounts.find((a) => a.platform === entry.id && a.isActive);
@@ -405,7 +380,7 @@ function SocialAccountsContent() {
   const connectedCount = accounts.filter((a) => a.isActive).length;
 
   return (
-    <>
+    <TooltipProvider delayDuration={150}>
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-xl font-semibold tracking-tight">Social accounts</h1>
@@ -423,8 +398,8 @@ function SocialAccountsContent() {
             <Check className="size-3 text-white" />
           </div>
           <span>
-            <span className="font-medium capitalize">{successPlatform}</span>
-            {' '}connected successfully.
+            <span className="font-medium capitalize">{successPlatform}</span>{' '}
+            connected successfully.
           </span>
         </div>
       )}
@@ -448,7 +423,8 @@ function SocialAccountsContent() {
                 {group.label}
               </p>
 
-              <div className="overflow-hidden rounded-xl border bg-card">
+              {/* overflow-visible so portal tooltips still work, border via children */}
+              <div className="rounded-xl border bg-card">
                 {group.platforms.map((platform, i) => {
                   const PIcon = platform.icon;
                   const account = resolveAccount(platform);
@@ -467,23 +443,24 @@ function SocialAccountsContent() {
                         .filter(Boolean)
                         .join(' ')}
                     >
-                      {/* Icon */}
+                      {/* Platform icon */}
                       <div
                         className={[
                           'flex size-9 shrink-0 items-center justify-center rounded-lg sm:size-10',
                           isMediaRow ? 'bg-muted/50' : 'bg-muted',
-                        ]
-                          .filter(Boolean)
-                          .join(' ')}
+                        ].join(' ')}
                       >
                         {isMediaRow ? (
-                          <ImageIcon className="size-4 text-muted-foreground sm:size-5" aria-hidden />
+                          <ImageIcon
+                            className="size-4 text-muted-foreground sm:size-5"
+                            aria-hidden
+                          />
                         ) : (
                           <PIcon className="size-4 text-muted-foreground sm:size-5" />
                         )}
                       </div>
 
-                      {/* Info */}
+                      {/* Name + status */}
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <p className="text-sm font-medium">{platform.name}</p>
@@ -516,20 +493,22 @@ function SocialAccountsContent() {
                             Connect to publish images &amp; videos to X
                           </p>
                         ) : (
-                          <p className="mt-0.5 text-xs text-muted-foreground">Not connected</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            Not connected
+                          </p>
                         )}
                       </div>
 
                       {/* Actions */}
                       {connected ? (
-                        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-                          {/* Avatar */}
+                        <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
+                          {/* Profile picture */}
                           <Avatar
                             src={account.profileImageUrl}
                             username={account.platformUsername}
                           />
 
-                          {/* Connected label — desktop only */}
+                          {/* Connected indicator — desktop */}
                           <div className="hidden items-center gap-1.5 sm:flex">
                             <div className="flex size-4 items-center justify-center rounded-full bg-emerald-500">
                               <Check className="size-2.5 text-white" />
@@ -537,12 +516,12 @@ function SocialAccountsContent() {
                             <span className="text-xs text-emerald-600">Connected</span>
                           </div>
 
-                          {/* Connected dot — mobile only */}
+                          {/* Connected dot — mobile */}
                           <div className="flex size-5 items-center justify-center rounded-full bg-emerald-500 sm:hidden">
                             <Check className="size-3 text-white" />
                           </div>
 
-                          <TipPopover tip={platform.tip} />
+                          <PlatformTip tip={platform.tip} />
 
                           <button
                             type="button"
@@ -559,7 +538,8 @@ function SocialAccountsContent() {
                         </div>
                       ) : (
                         <div className="flex shrink-0 items-center gap-2">
-                          <TipPopover tip={platform.tip} />
+                          <PlatformTip tip={platform.tip} />
+
                           <button
                             type="button"
                             onClick={() => connectPlatform(platform)}
@@ -581,8 +561,8 @@ function SocialAccountsContent() {
 
               {group.label === 'Social' && (
                 <p className="mt-2 text-xs text-muted-foreground">
-                  X requires two separate connections: one for text posts (OAuth 2.0) and one for
-                  images &amp; video (OAuth 1.0a). Connect both for full publishing support.
+                  X requires two separate connections: one for text posts (OAuth 2.0) and one
+                  for images &amp; video (OAuth 1.0a). Connect both for full publishing support.
                 </p>
               )}
             </div>
@@ -595,7 +575,7 @@ function SocialAccountsContent() {
         Credentials are encrypted and stored securely. Content is never published without your
         explicit approval.
       </p>
-    </>
+    </TooltipProvider>
   );
 }
 
@@ -605,11 +585,11 @@ function SocialAccountsContent() {
 export default function SocialAccountsPage() {
   return (
     <Suspense
-      fallback={(
+      fallback={
         <div className="flex min-h-[300px] items-center justify-center">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
-      )}
+      }
     >
       <SocialAccountsContent />
     </Suspense>
