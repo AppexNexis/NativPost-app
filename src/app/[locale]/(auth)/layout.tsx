@@ -18,7 +18,8 @@ export default function AuthLayout(props: {
   // The subscribe page will check billing status and either:
   //   (a) redirect to /dashboard if already subscribed/trialing, or
   //   (b) show the paywall so user can start their trial.
-  let postAuthUrl = '/subscribe';
+  // let postAuthUrl = '/subscribe';
+let postAuthUrl = '/onboarding/organization-selection';
 
   if (props.params.locale === 'fr') {
     clerkLocale = frFR;
