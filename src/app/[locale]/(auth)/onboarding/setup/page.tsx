@@ -212,6 +212,13 @@ function StepHeading({ title, subtitle }: { title: string; subtitle?: string }) 
   );
 }
 
+// Helper to construct normalized clean submission URLs
+function getNormalizedUrl(rawUrl: string): string {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return '';
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 function ContinueButton({
   onClick,
   disabled,
@@ -413,8 +420,8 @@ export default function OnboardingSetupPage() {
 
   // ── Website analysis ────────────────────────────────────────
   const handleAnalyzeWebsite = async () => {
-    const url = data.websiteUrl.trim();
-    if (!url) {
+    const url = getNormalizedUrl(data.websiteUrl);
+    if (!url || url === 'https://') {
       update({ websiteError: 'Enter a website URL first.' });
       return;
     }
@@ -469,7 +476,7 @@ export default function OnboardingSetupPage() {
         ? {
             brandName,
             logoUrl: data.logoUrl,
-            websiteUrl: data.websiteUrl,
+            websiteUrl: getNormalizedUrl(data.websiteUrl),
             industry: extracted.industry,
             targetAudience: extracted.targetAudience,
             companyDescription: extracted.companyDescription,
@@ -593,14 +600,24 @@ export default function OnboardingSetupPage() {
             ? (
                 <div className="space-y-3">
                   <div className="flex gap-2">
-                    <input
-                      type="url"
-                      value={data.websiteUrl}
-                      onChange={e => update({ websiteUrl: e.target.value })}
-                      placeholder="https://example.com"
-                      disabled={isAnalyzing}
-                      className="flex-1 rounded-lg border bg-background px-3 py-2.5 text-sm disabled:opacity-60"
-                    />
+                    {/* Visual prefix layout wrapper matching image_8237f8.png */}
+                    <div className="flex flex-1 items-center rounded-lg border bg-background focus-within:border-primary focus-within:ring-1 focus-within:ring-primary overflow-hidden transition-all">
+                      <span className="pl-3 text-sm text-muted-foreground select-none pointer-events-none">
+                        https://
+                      </span>
+                      <input
+                        type="text"
+                        value={data.websiteUrl}
+                        onChange={e => {
+                          // Automatically strip matching web protocols if explicitly typed/pasted
+                          const cleanVal = e.target.value.replace(/^https?:\/\//i, '').trim();
+                          update({ websiteUrl: cleanVal });
+                        }}
+                        placeholder="nativpost.com"
+                        disabled={isAnalyzing}
+                        className="w-full bg-transparent pl-1 pr-3 py-2.5 text-sm outline-none disabled:opacity-60"
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={handleAnalyzeWebsite}
