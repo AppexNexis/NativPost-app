@@ -1,0 +1,1 @@
+ALTER TABLE "organization" ALTER COLUMN "plan_status" SET DEFAULT 'inactive';
