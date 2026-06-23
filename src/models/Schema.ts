@@ -93,6 +93,29 @@ export const organizationSchema = pgTable(
 );
 
 // -----------------------------------------------------------
+// MEDIA SETS (user-curated groups of media assets, or AI-curated sets based on themes)
+// -----------------------------------------------------------
+export const mediaSetSchema = pgTable('media_set', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: text('org_id')
+    .references(() => organizationSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  name: text('name').notNull(),
+  type: text('type').notNull(), // slideshow, video, curated
+  // Uploadcare file uuids, in display order. Empty/unused for curated sets,
+  // since those are theme-driven rather than user-curated.
+  assetUuids: jsonb('asset_uuids').default([]).notNull(),
+  // Only populated for curated sets — maps to an id in curatedThemes.ts
+  curatedThemeId: text('curated_theme_id'),
+  updatedAt: timestamp('updated_at', { mode: 'date' })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});
+ 
+
+// -----------------------------------------------------------
 // BRAND PROFILES (the core product — one per org)
 // -----------------------------------------------------------
 export const brandProfileSchema = pgTable('brand_profile', {
