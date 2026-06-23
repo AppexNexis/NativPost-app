@@ -1,11 +1,3 @@
-/**
- * /api/media-library/sets/[id]
- *
- * DELETE /api/media-library/sets/[id]
- * Deletes the set row from the DB. The Cloudinary assets are NOT deleted —
- * only the grouping disappears. Same behaviour as the Uploadcare version.
- */
-
 import { and, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -14,13 +6,26 @@ import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { mediaSetSchema } from '@/models/Schema';
 
+// -----------------------------------------------------------
+// DELETE /api/media-library/sets/[id]
+// Deletes the set row. Asset UUIDs live in a jsonb column on the
+// set itself (no child table), so the underlying media in
+// Uploadcare is untouched — only the grouping disappears.
+//
+// If you're on Next.js 13/14 (sync route params instead of the
+// Next 15 async/Promise params used below), change the signature to:
+//   { params }: { params: { id: string } }
+// and drop the `await` on the next line.
+// -----------------------------------------------------------
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 

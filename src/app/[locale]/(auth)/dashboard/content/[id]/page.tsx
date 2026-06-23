@@ -25,6 +25,7 @@ import { useEffect, useState } from 'react';
 import { MediaUploader } from '@/components/media/MediaUploader';
 import { PageHeader } from '@/features/dashboard/PageHeader';
 import { TikTokPublishModal } from '@/components/tiktok/TikTokPublishModal';
+import { cldImageUrl } from '@/lib/cloudflare-helpers';
 
 // -----------------------------------------------------------
 // TYPES
@@ -80,8 +81,8 @@ const PLATFORM_LABELS: Record<string, string> = {
   youtube: 'YouTube',
   threads: 'Threads',
   pinterest: 'Pinterest',
-   snapchat: 'Snapchat',
-     whatsapp: 'WhatsApp', 
+  snapchat: 'Snapchat',
+  whatsapp: 'WhatsApp',
 };
 
 const TITLE_PLATFORMS = new Set(['youtube', 'pinterest']);
@@ -1109,7 +1110,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           caption: item.caption || '',
           contentType: item.contentType || 'video', // 'video' or 'image'
           videoDuration: (item.platformSpecific?.videoDurationSeconds as number) || 0,
-           videoUrl: item.graphicUrls?.[0], 
+          videoUrl: item.graphicUrls?.[0],
         }}
       />
       <PageHeader
@@ -1462,8 +1463,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                       </p>
                       <MediaUploader
                         contentItemId={item.id}
-                        existingUrls={[]}
-                        onUpdate={(urls) => { if (urls[0]) setYoutubeThumbnailUrl(urls[0]); }}
+                        existingPublicIds={[]}
+                        onUpdate={(publicIds) => { if (publicIds[0]) setYoutubeThumbnailUrl(cldImageUrl(publicIds[0])); }}
                         mediaType="image"
                         maxFiles={1}
                       />
@@ -1517,6 +1518,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <Video className="size-4 text-muted-foreground" />
                 <h3 className="text-sm font-semibold">Video post</h3>
               </div>
+
 
               {!hasUploadedVideo && !hasGeneratedVideo && (
                 <div className="mb-5">
@@ -1683,679 +1685,680 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               )}
 
+
               <div className={!hasUploadedVideo && !hasGeneratedVideo && uploadedSlideImages.length === 0 ? '' : 'mt-5 border-t pt-5'}>
                 <p className="mb-3 text-xs font-medium text-muted-foreground">{hasUploadedVideo ? 'Replace video' : 'Or upload your own video'}</p>
                 <MediaUploader
                   contentItemId={item.id}
-                  existingUrls={[]}
-                  onUpdate={(urls) => { if (urls.length > 0) setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev); }}
-                  mediaType="video"
+                  existingPublicIds={item.graphicUrls || []}
+                  onUpdate={publicIds => setItem(prev => prev ? { ...prev, graphicUrls: publicIds } : prev)}
+                  mediaType="image"
                   maxFiles={1}
                 />
               </div>
-            </div>
-          )}
+              </div>
+            )}
 
-          {/* UGC Ad */}
-          {isUGCAd && (
-            <div className="rounded-xl border bg-card p-4 sm:p-5">
-              <div className="mb-4 flex items-center gap-2 border-b pb-4">
-                <Video className="size-4 text-muted-foreground" />
-                <h3 className="text-sm font-semibold">UGC Ad video</h3>
-              </div>
-              {item.graphicUrls && item.graphicUrls.length > 0 && (
-                <div className="mb-4">
-                  {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                  <video src={toVideoSrc(item.graphicUrls[0]!)} controls playsInline className="w-full max-w-[240px] rounded-lg" />
-                </div>
-              )}
-              <div className="mb-4">
-                <p className="mb-2 text-xs font-medium text-muted-foreground">Visual source</p>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  {([{ tier: 'unsplash', label: 'Unsplash', sub: 'Free editorial photos' }, { tier: 'flux', label: 'AI Scene', sub: 'FLUX Pro per section' }, { tier: 'seedance', label: 'AI Video', sub: 'Live clips per section' }] as const).map(({ tier, label, sub }) => (
-                    <button key={tier} type="button" onClick={() => setUgcPhotoTier(tier)} className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${ugcPhotoTier === tier ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
-                      <p className={`text-xs font-semibold ${ugcPhotoTier === tier ? 'text-primary' : ''}`}>{label}</p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">{sub}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <button type="button" onClick={generateUGCAd} disabled={isGeneratingUGC} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-                {isGeneratingUGC ? <><Loader2 className="size-4 animate-spin" />Generating UGC Ad...</> : <><Sparkles className="size-4" />Generate UGC Ad</>}
-              </button>
-              {ugcError && <p className="mt-2 text-xs text-red-500">{ugcError}</p>}
-            </div>
-          )}
-
-          {/* Data Story */}
-          {isDataStory && (
-            <div className="rounded-xl border bg-card p-4 sm:p-5">
-              <div className="mb-4 flex items-center gap-2 border-b pb-4">
-                <Video className="size-4 text-muted-foreground" />
-                <h3 className="text-sm font-semibold">Data Story video</h3>
-              </div>
-              <p className="mb-3 text-xs text-muted-foreground">Add stats below, then generate an animated video where each number counts up to its value.</p>
-              {((item.platformSpecific as Record<string, unknown>)?.data_story_stats as Array<{ label: string; value: number; unit?: string; prefix?: string }> | undefined)?.map((stat, i) => (
-                <div key={i} className="mb-2 flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-sm">
-                  <span className="font-medium">{stat.prefix || ''}{stat.value.toLocaleString()}{stat.unit || ''}</span>
-                  <span className="ml-2 flex-1 text-muted-foreground">{stat.label}</span>
-                  <button type="button" onClick={() => removeStatFromItem(i)} className="ml-2 text-xs opacity-40 hover:opacity-100">×</button>
-                </div>
-              ))}
-              <div className="mt-3 space-y-2 rounded-lg border p-3">
-                <p className="text-xs font-medium text-muted-foreground">Add a stat</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <input type="text" value={statLabel} onChange={e => setStatLabel(e.target.value)} placeholder="Label (e.g. Happy customers)" className="col-span-2 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
-                  <input type="text" value={statPrefix} onChange={e => setStatPrefix(e.target.value)} placeholder='Prefix (e.g. "$")' className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
-                  <input type="number" value={statValue} onChange={e => setStatValue(e.target.value)} placeholder="Value (e.g. 10000)" className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
-                  <input type="text" value={statUnit} onChange={e => setStatUnit(e.target.value)} placeholder='Unit (e.g. "%" or "K")' className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
-                  <button type="button" onClick={addStatToItem} disabled={!statLabel || !statValue} className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">Add stat</button>
-                </div>
-              </div>
-              {item.graphicUrls && item.graphicUrls.length > 0 && (
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {item.graphicUrls.filter(isVideoFileUrl).map((url, i) => (
-                    // eslint-disable-next-line jsx-a11y/media-has-caption
-                    <video key={i} src={toVideoSrc(url)} controls playsInline className="w-full rounded-lg" style={{ maxHeight: 300 }} />
-                  ))}
-                </div>
-              )}
-              <button type="button" onClick={generateDataStory} disabled={isGeneratingDataStory || !((item.platformSpecific as Record<string, unknown>)?.data_story_stats as unknown[] | undefined)?.length} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-                {isGeneratingDataStory ? <><Loader2 className="size-4 animate-spin" />Generating Data Story...</> : <><Sparkles className="size-4" />Generate Data Story</>}
-              </button>
-              {dataStoryError && <p className="mt-2 text-xs text-red-500">{dataStoryError}</p>}
-            </div>
-          )}
-
-          {/* ── Single Image — now with 3 modes ─────────────────────────────────── */}
-          {isSingleImage && (
-            <div className="rounded-xl border bg-card p-4 sm:p-5">
-              <div className="mb-4 flex items-center gap-2 border-b pb-4">
-                <ImageIcon className="size-4 text-muted-foreground" />
-                <h3 className="text-sm font-semibold">Post image</h3>
-                {needsMedia && !hasMedia && (
-                  <span className="ml-auto rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                    Required to publish
-                  </span>
-                )}
-              </div>
-
-              {/* Generated image preview */}
-              {hasMedia && (
-                <div className="mb-5">
-                  <p className="mb-3 text-xs font-medium text-muted-foreground">Generated images</p>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {item.graphicUrls.map((url, i) => {
-                      const fmt = imageFormats[i] ?? (i === 0 ? 'square' : 'vertical');
-                      const fmtLabel = fmt === 'square' ? '1:1 — Square (Instagram, LinkedIn)' : '9:16 — Vertical (Stories, Reels)';
-                      return (
-                        <div key={i} className="overflow-hidden rounded-lg border">
-                          <div className="border-b px-3 py-2">
-                            <p className="text-[11px] font-medium text-muted-foreground">{fmtLabel}</p>
-                          </div>
-                          <div className="relative w-full">
-                            <Image src={url} alt={`Generated graphic ${i + 1}`} width={540} height={540} className="w-full object-contain" style={{ maxHeight: 360 }} unoptimized />
-                          </div>
-                        </div>
-                      );
-                    })}
+              {/* UGC Ad */}
+              {isUGCAd && (
+                <div className="rounded-xl border bg-card p-4 sm:p-5">
+                  <div className="mb-4 flex items-center gap-2 border-b pb-4">
+                    <Video className="size-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">UGC Ad video</h3>
                   </div>
+                  {item.graphicUrls && item.graphicUrls.length > 0 && (
+                    <div className="mb-4">
+                      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                      <video src={toVideoSrc(item.graphicUrls[0]!)} controls playsInline className="w-full max-w-[240px] rounded-lg" />
+                    </div>
+                  )}
+                  <div className="mb-4">
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">Visual source</p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {([{ tier: 'unsplash', label: 'Unsplash', sub: 'Free editorial photos' }, { tier: 'flux', label: 'AI Scene', sub: 'FLUX Pro per section' }, { tier: 'seedance', label: 'AI Video', sub: 'Live clips per section' }] as const).map(({ tier, label, sub }) => (
+                        <button key={tier} type="button" onClick={() => setUgcPhotoTier(tier)} className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${ugcPhotoTier === tier ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
+                          <p className={`text-xs font-semibold ${ugcPhotoTier === tier ? 'text-primary' : ''}`}>{label}</p>
+                          <p className="mt-0.5 text-[11px] text-muted-foreground">{sub}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <button type="button" onClick={generateUGCAd} disabled={isGeneratingUGC} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                    {isGeneratingUGC ? <><Loader2 className="size-4 animate-spin" />Generating UGC Ad...</> : <><Sparkles className="size-4" />Generate UGC Ad</>}
+                  </button>
+                  {ugcError && <p className="mt-2 text-xs text-red-500">{ugcError}</p>}
                 </div>
               )}
 
-              {/* Image generator — 3-tab mode switcher */}
-              <div className="mb-5 rounded-lg border bg-muted/30 p-4">
-                <div className="mb-4 flex items-center gap-2">
-                  <Sparkles className="size-4 text-primary" />
-                  <p className="text-xs font-semibold">Generate image</p>
-                </div>
-
-                {/* ── Mode tabs — 3 options ── */}
-                <div className="mb-4 grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
-                  {([
-                    ['ai-graphic', 'AI Graphic'],
-                    ['ai-scene', 'AI Scene'],
-                    ['template', 'Template'],
-                  ] as const).map(([mode, label]) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => { setImageMode(mode); setImageGenError(null); setSceneResult(null); setAiGraphicResult(null); setAiGraphicError(null); }}
-                      className={`rounded-md px-2 py-1.5 text-[11px] font-medium transition-colors ${imageMode === mode ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                    >
-                      {label}
-                    </button>
+              {/* Data Story */}
+              {isDataStory && (
+                <div className="rounded-xl border bg-card p-4 sm:p-5">
+                  <div className="mb-4 flex items-center gap-2 border-b pb-4">
+                    <Video className="size-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">Data Story video</h3>
+                  </div>
+                  <p className="mb-3 text-xs text-muted-foreground">Add stats below, then generate an animated video where each number counts up to its value.</p>
+                  {((item.platformSpecific as Record<string, unknown>)?.data_story_stats as Array<{ label: string; value: number; unit?: string; prefix?: string }> | undefined)?.map((stat, i) => (
+                    <div key={i} className="mb-2 flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-sm">
+                      <span className="font-medium">{stat.prefix || ''}{stat.value.toLocaleString()}{stat.unit || ''}</span>
+                      <span className="ml-2 flex-1 text-muted-foreground">{stat.label}</span>
+                      <button type="button" onClick={() => removeStatFromItem(i)} className="ml-2 text-xs opacity-40 hover:opacity-100">×</button>
+                    </div>
                   ))}
+                  <div className="mt-3 space-y-2 rounded-lg border p-3">
+                    <p className="text-xs font-medium text-muted-foreground">Add a stat</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input type="text" value={statLabel} onChange={e => setStatLabel(e.target.value)} placeholder="Label (e.g. Happy customers)" className="col-span-2 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
+                      <input type="text" value={statPrefix} onChange={e => setStatPrefix(e.target.value)} placeholder='Prefix (e.g. "$")' className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
+                      <input type="number" value={statValue} onChange={e => setStatValue(e.target.value)} placeholder="Value (e.g. 10000)" className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
+                      <input type="text" value={statUnit} onChange={e => setStatUnit(e.target.value)} placeholder='Unit (e.g. "%" or "K")' className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
+                      <button type="button" onClick={addStatToItem} disabled={!statLabel || !statValue} className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">Add stat</button>
+                    </div>
+                  </div>
+                  {item.graphicUrls && item.graphicUrls.length > 0 && (
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {item.graphicUrls.filter(isVideoFileUrl).map((url, i) => (
+                        // eslint-disable-next-line jsx-a11y/media-has-caption
+                        <video key={i} src={toVideoSrc(url)} controls playsInline className="w-full rounded-lg" style={{ maxHeight: 300 }} />
+                      ))}
+                    </div>
+                  )}
+                  <button type="button" onClick={generateDataStory} disabled={isGeneratingDataStory || !((item.platformSpecific as Record<string, unknown>)?.data_story_stats as unknown[] | undefined)?.length} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                    {isGeneratingDataStory ? <><Loader2 className="size-4 animate-spin" />Generating Data Story...</> : <><Sparkles className="size-4" />Generate Data Story</>}
+                  </button>
+                  {dataStoryError && <p className="mt-2 text-xs text-red-500">{dataStoryError}</p>}
                 </div>
+              )}
 
-                {/* ── AI GRAPHIC MODE (NEW) ── */}
-                {imageMode === 'ai-graphic' && (
-                  <div className="space-y-4">
-                    {/* Badge explaining what this is */}
-                    <div className="flex items-start gap-2.5 rounded-lg border border-primary/20 bg-primary/5 p-3">
-                      <Sparkles className="mt-0.5 size-3.5 shrink-0 text-primary" />
-                      <p className="text-[11px] leading-relaxed text-primary/80">
-                        Uses OpenAI gpt-image-1 — the best model for graphic design, crisp typography, infographics, and branded illustrations. Claude auto-generates the visual brief from your brand and post topic.
-                      </p>
-                    </div>
+              {/* ── Single Image — now with 3 modes ─────────────────────────────────── */}
+              {isSingleImage && (
+                <div className="rounded-xl border bg-card p-4 sm:p-5">
+                  <div className="mb-4 flex items-center gap-2 border-b pb-4">
+                    <ImageIcon className="size-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">Post image</h3>
+                    {needsMedia && !hasMedia && (
+                      <span className="ml-auto rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                        Required to publish
+                      </span>
+                    )}
+                  </div>
 
-                    {/* Content type */}
-                    <div>
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Content type</p>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {AI_GRAPHIC_TYPES.map(({ value, label, sub }) => (
-                          <button
-                            key={value}
-                            type="button"
-                            onClick={() => setAiGraphicContentType(value)}
-                            className={`rounded-lg border px-2 py-2.5 text-left transition-colors ${aiGraphicContentType === value ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
-                          >
-                            <p className={`text-[11px] font-semibold ${aiGraphicContentType === value ? 'text-primary' : ''}`}>{label}</p>
-                            <p className="mt-0.5 text-[10px] text-muted-foreground leading-snug">{sub}</p>
-                          </button>
-                        ))}
+                  {/* Generated image preview */}
+                  {hasMedia && (
+                    <div className="mb-5">
+                      <p className="mb-3 text-xs font-medium text-muted-foreground">Generated images</p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {item.graphicUrls.map((url, i) => {
+                          const fmt = imageFormats[i] ?? (i === 0 ? 'square' : 'vertical');
+                          const fmtLabel = fmt === 'square' ? '1:1 — Square (Instagram, LinkedIn)' : '9:16 — Vertical (Stories, Reels)';
+                          return (
+                            <div key={i} className="overflow-hidden rounded-lg border">
+                              <div className="border-b px-3 py-2">
+                                <p className="text-[11px] font-medium text-muted-foreground">{fmtLabel}</p>
+                              </div>
+                              <div className="relative w-full">
+                                <Image src={url} alt={`Generated graphic ${i + 1}`} width={540} height={540} className="w-full object-contain" style={{ maxHeight: 360 }} unoptimized />
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
+                  )}
 
-                    {/* Format */}
-                    <div>
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Format</p>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {([['square', '1:1 — Square'], ['vertical', '9:16 — Vertical']] as const).map(([val, label]) => (
-                          <button
-                            key={val}
-                            type="button"
-                            onClick={() => setAiGraphicFormat(val)}
-                            className={`rounded-lg border px-3 py-2 text-[11px] font-medium transition-colors ${aiGraphicFormat === val ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                      <p className="mt-1.5 text-[10px] text-muted-foreground">
-                        Generate one format at a time. Run again with a different format to get both.
-                      </p>
+                  {/* Image generator — 3-tab mode switcher */}
+                  <div className="mb-5 rounded-lg border bg-muted/30 p-4">
+                    <div className="mb-4 flex items-center gap-2">
+                      <Sparkles className="size-4 text-primary" />
+                      <p className="text-xs font-semibold">Generate image</p>
                     </div>
 
-                    {/* Quality tier */}
-                    <div>
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Quality tier</p>
-                      <div className="grid grid-cols-2 gap-1.5">
+                    {/* ── Mode tabs — 3 options ── */}
+                    <div className="mb-4 grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
+                      {([
+                        ['ai-graphic', 'AI Graphic'],
+                        ['ai-scene', 'AI Scene'],
+                        ['template', 'Template'],
+                      ] as const).map(([mode, label]) => (
                         <button
+                          key={mode}
                           type="button"
-                          onClick={() => setAiGraphicQuality('standard')}
-                          className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${aiGraphicQuality === 'standard' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
+                          onClick={() => { setImageMode(mode); setImageGenError(null); setSceneResult(null); setAiGraphicResult(null); setAiGraphicError(null); }}
+                          className={`rounded-md px-2 py-1.5 text-[11px] font-medium transition-colors ${imageMode === mode ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                         >
-                          <p className={`text-[11px] font-semibold ${aiGraphicQuality === 'standard' ? 'text-primary' : ''}`}>Standard</p>
-                          <p className="mt-0.5 text-[10px] text-muted-foreground">~$0.01–0.04 · Fast</p>
+                          {label}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setAiGraphicQuality('premium')}
-                          className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${aiGraphicQuality === 'premium' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
-                        >
-                          <p className={`text-[11px] font-semibold ${aiGraphicQuality === 'premium' ? 'text-primary' : ''}`}>Premium</p>
-                          <p className="mt-0.5 text-[10px] text-muted-foreground">~$0.06–0.21 · Best quality</p>
-                        </button>
-                      </div>
+                      ))}
                     </div>
 
-                    {/* Optional eyebrow */}
-                    <div>
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Eyebrow label on overlay (optional)</p>
-                      <input
-                        type="text"
-                        value={aiGraphicEyebrow}
-                        onChange={e => setAiGraphicEyebrow(e.target.value)}
-                        placeholder="e.g. PRO TIP · NEW LAUNCH · CASE STUDY"
-                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                      />
-                    </div>
-
-                    {/* Advanced overrides — collapsible feel via opacity */}
-                    <details className="group">
-                      <summary className="cursor-pointer list-none text-[11px] font-medium text-muted-foreground hover:text-foreground">
-                        <span className="group-open:hidden">▸ Advanced: override Claude's prompt</span>
-                        <span className="hidden group-open:inline">▾ Advanced overrides</span>
-                      </summary>
-                      <div className="mt-3 space-y-3">
-                        <div>
-                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Visual prompt override</p>
-                          <textarea
-                            value={aiGraphicPromptOverride}
-                            onChange={e => setAiGraphicPromptOverride(e.target.value)}
-                            placeholder="Describe the exact image you want. Must also fill in Headline override below to skip Claude."
-                            rows={3}
-                            className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                          />
+                    {/* ── AI GRAPHIC MODE (NEW) ── */}
+                    {imageMode === 'ai-graphic' && (
+                      <div className="space-y-4">
+                        {/* Badge explaining what this is */}
+                        <div className="flex items-start gap-2.5 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                          <Sparkles className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                          <p className="text-[11px] leading-relaxed text-primary/80">
+                            Uses OpenAI gpt-image-1 — the best model for graphic design, crisp typography, infographics, and branded illustrations. Claude auto-generates the visual brief from your brand and post topic.
+                          </p>
                         </div>
+
+                        {/* Content type */}
                         <div>
-                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Headline override (brand overlay)</p>
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Content type</p>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {AI_GRAPHIC_TYPES.map(({ value, label, sub }) => (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => setAiGraphicContentType(value)}
+                                className={`rounded-lg border px-2 py-2.5 text-left transition-colors ${aiGraphicContentType === value ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
+                              >
+                                <p className={`text-[11px] font-semibold ${aiGraphicContentType === value ? 'text-primary' : ''}`}>{label}</p>
+                                <p className="mt-0.5 text-[10px] text-muted-foreground leading-snug">{sub}</p>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Format */}
+                        <div>
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Format</p>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {([['square', '1:1 — Square'], ['vertical', '9:16 — Vertical']] as const).map(([val, label]) => (
+                              <button
+                                key={val}
+                                type="button"
+                                onClick={() => setAiGraphicFormat(val)}
+                                className={`rounded-lg border px-3 py-2 text-[11px] font-medium transition-colors ${aiGraphicFormat === val ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="mt-1.5 text-[10px] text-muted-foreground">
+                            Generate one format at a time. Run again with a different format to get both.
+                          </p>
+                        </div>
+
+                        {/* Quality tier */}
+                        <div>
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Quality tier</p>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setAiGraphicQuality('standard')}
+                              className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${aiGraphicQuality === 'standard' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
+                            >
+                              <p className={`text-[11px] font-semibold ${aiGraphicQuality === 'standard' ? 'text-primary' : ''}`}>Standard</p>
+                              <p className="mt-0.5 text-[10px] text-muted-foreground">~$0.01–0.04 · Fast</p>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAiGraphicQuality('premium')}
+                              className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${aiGraphicQuality === 'premium' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
+                            >
+                              <p className={`text-[11px] font-semibold ${aiGraphicQuality === 'premium' ? 'text-primary' : ''}`}>Premium</p>
+                              <p className="mt-0.5 text-[10px] text-muted-foreground">~$0.06–0.21 · Best quality</p>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Optional eyebrow */}
+                        <div>
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Eyebrow label on overlay (optional)</p>
                           <input
                             type="text"
-                            value={aiGraphicHeadlineOverride}
-                            onChange={e => setAiGraphicHeadlineOverride(e.target.value)}
-                            placeholder="The headline shown on the brand overlay (not in the AI image)"
+                            value={aiGraphicEyebrow}
+                            onChange={e => setAiGraphicEyebrow(e.target.value)}
+                            placeholder="e.g. PRO TIP · NEW LAUNCH · CASE STUDY"
                             className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                           />
                         </div>
-                        <p className="text-[10px] text-muted-foreground">
-                          Both fields must be filled to bypass Claude's auto-generation. Leave blank to let Claude write the prompt.
-                        </p>
-                      </div>
-                    </details>
 
-                    {/* Result feedback */}
-                    {aiGraphicResult && (
-                      <div className="rounded-lg bg-muted/50 p-3 space-y-1.5">
-                        <p className="text-[11px] text-green-600 font-medium">
-                          ✓ Generated — {aiGraphicResult.quality} quality
-                          {aiGraphicResult.generationMs ? ` · ${(aiGraphicResult.generationMs / 1000).toFixed(1)}s` : ''}
-                        </p>
-                        {aiGraphicResult.overlayHeadline && (
-                          <p className="text-[11px] text-muted-foreground">
-                            <span className="font-medium text-foreground">Headline: </span>
-                            {aiGraphicResult.overlayHeadline}
-                          </p>
+                        {/* Advanced overrides — collapsible feel via opacity */}
+                        <details className="group">
+                          <summary className="cursor-pointer list-none text-[11px] font-medium text-muted-foreground hover:text-foreground">
+                            <span className="group-open:hidden">▸ Advanced: override Claude's prompt</span>
+                            <span className="hidden group-open:inline">▾ Advanced overrides</span>
+                          </summary>
+                          <div className="mt-3 space-y-3">
+                            <div>
+                              <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Visual prompt override</p>
+                              <textarea
+                                value={aiGraphicPromptOverride}
+                                onChange={e => setAiGraphicPromptOverride(e.target.value)}
+                                placeholder="Describe the exact image you want. Must also fill in Headline override below to skip Claude."
+                                rows={3}
+                                className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
+                            <div>
+                              <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Headline override (brand overlay)</p>
+                              <input
+                                type="text"
+                                value={aiGraphicHeadlineOverride}
+                                onChange={e => setAiGraphicHeadlineOverride(e.target.value)}
+                                placeholder="The headline shown on the brand overlay (not in the AI image)"
+                                className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
+                            <p className="text-[10px] text-muted-foreground">
+                              Both fields must be filled to bypass Claude's auto-generation. Leave blank to let Claude write the prompt.
+                            </p>
+                          </div>
+                        </details>
+
+                        {/* Result feedback */}
+                        {aiGraphicResult && (
+                          <div className="rounded-lg bg-muted/50 p-3 space-y-1.5">
+                            <p className="text-[11px] text-green-600 font-medium">
+                              ✓ Generated — {aiGraphicResult.quality} quality
+                              {aiGraphicResult.generationMs ? ` · ${(aiGraphicResult.generationMs / 1000).toFixed(1)}s` : ''}
+                            </p>
+                            {aiGraphicResult.overlayHeadline && (
+                              <p className="text-[11px] text-muted-foreground">
+                                <span className="font-medium text-foreground">Headline: </span>
+                                {aiGraphicResult.overlayHeadline}
+                              </p>
+                            )}
+                            {aiGraphicResult.visualPrompt && (
+                              <p className="text-[10px] text-muted-foreground line-clamp-2">{aiGraphicResult.visualPrompt}</p>
+                            )}
+                          </div>
                         )}
-                        {aiGraphicResult.visualPrompt && (
-                          <p className="text-[10px] text-muted-foreground line-clamp-2">{aiGraphicResult.visualPrompt}</p>
-                        )}
+
+                        {/* Generate button */}
+                        <button
+                          type="button"
+                          onClick={generateAiGraphic}
+                          disabled={isGeneratingAiGraphic}
+                          className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+                        >
+                          {isGeneratingAiGraphic
+                            ? <><Loader2 className="size-4 animate-spin" />Generating {aiGraphicQuality === 'premium' ? '(~60–90s)' : '(~20–40s)'}...</>
+                            : <><Sparkles className="size-4" />{hasMedia ? 'Regenerate AI graphic' : 'Generate AI graphic'}</>}
+                        </button>
+                        {aiGraphicError && <p className="mt-1 text-xs text-red-500">{aiGraphicError}</p>}
                       </div>
                     )}
 
-                    {/* Generate button */}
-                    <button
-                      type="button"
-                      onClick={generateAiGraphic}
-                      disabled={isGeneratingAiGraphic}
-                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-                    >
-                      {isGeneratingAiGraphic
-                        ? <><Loader2 className="size-4 animate-spin" />Generating {aiGraphicQuality === 'premium' ? '(~60–90s)' : '(~20–40s)'}...</>
-                        : <><Sparkles className="size-4" />{hasMedia ? 'Regenerate AI graphic' : 'Generate AI graphic'}</>}
-                    </button>
-                    {aiGraphicError && <p className="mt-1 text-xs text-red-500">{aiGraphicError}</p>}
-                  </div>
-                )}
-
-                {/* ── AI SCENE MODE ── */}
-                {imageMode === 'ai-scene' && (
-                  <div>
-                    <div className="mb-3">
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Visual style</p>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {(['professional', 'minimal', 'vibrant', 'elegant', 'bold', 'cinematic'] as const).map(s => (
-                          <button key={s} type="button" onClick={() => setSceneStyle(s)} className={`rounded-lg border px-2 py-2 text-[10px] font-medium capitalize transition-colors sm:px-2.5 sm:text-[11px] ${sceneStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>{s}</button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="mb-3">
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Brand overlay</p>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {([['standard', 'Logo + name'], ['minimal', 'Subtle'], ['none', 'None']] as const).map(([val, label]) => (
-                          <button key={val} type="button" onClick={() => setSceneOverlay(val)} className={`rounded-lg border px-1.5 py-2 text-[10px] font-medium transition-colors sm:px-2.5 sm:text-[11px] ${sceneOverlay === val ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>{label}</button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="mb-3">
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Formats</p>
-                      <div className="flex gap-2">
-                        {(['square', 'vertical'] as const).map(f => (
-                          <button key={f} type="button" onClick={() => setImageFormats(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f])} className={`rounded-lg border px-3 py-1.5 text-[11px] font-medium capitalize transition-colors ${imageFormats.includes(f) ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>
-                            {f === 'square' ? '1:1 Square' : '9:16 Vertical'}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="mb-3">
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Scene description (optional)</p>
-                      <input type="text" value={scenePromptOverride} onChange={e => setScenePromptOverride(e.target.value)} placeholder="Leave blank to auto-generate from your post..." className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-                    </div>
-                    <div className="mb-3">
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Headline on image (optional)</p>
-                      <input type="text" value={sceneHeadlineOverride} onChange={e => setSceneHeadlineOverride(e.target.value)} placeholder="Auto-extracted from your caption..." className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-                    </div>
-                    <div className="mb-4">
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Eyebrow label (optional)</p>
-                      <input type="text" value={sceneEyebrowOverride} onChange={e => setSceneEyebrowOverride(e.target.value)} placeholder="e.g. NEW LAUNCH · CASE STUDY · PRO TIP" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-                    </div>
-                    {sceneResult && (
-                      <div className="mb-3 rounded-lg bg-muted/50 p-3 space-y-1">
-                        {sceneResult.fallback && <p className="text-[11px] text-amber-600 font-medium">Template fallback used — top up fal.ai credits to enable AI scenes.</p>}
-                        {sceneResult.modelUsed && !sceneResult.fallback && <p className="text-[11px] text-green-600 font-medium">Generated with FLUX {sceneResult.modelUsed}</p>}
-                        {sceneResult.headlineUsed && <p className="text-[11px] text-muted-foreground"><span className="font-medium text-foreground">Headline: </span>{sceneResult.headlineUsed}</p>}
-                        {sceneResult.promptUsed && <p className="text-[11px] text-muted-foreground line-clamp-2">{sceneResult.promptUsed}</p>}
+                    {/* ── AI SCENE MODE ── */}
+                    {imageMode === 'ai-scene' && (
+                      <div>
+                        <div className="mb-3">
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Visual style</p>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {(['professional', 'minimal', 'vibrant', 'elegant', 'bold', 'cinematic'] as const).map(s => (
+                              <button key={s} type="button" onClick={() => setSceneStyle(s)} className={`rounded-lg border px-2 py-2 text-[10px] font-medium capitalize transition-colors sm:px-2.5 sm:text-[11px] ${sceneStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>{s}</button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="mb-3">
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Brand overlay</p>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {([['standard', 'Logo + name'], ['minimal', 'Subtle'], ['none', 'None']] as const).map(([val, label]) => (
+                              <button key={val} type="button" onClick={() => setSceneOverlay(val)} className={`rounded-lg border px-1.5 py-2 text-[10px] font-medium transition-colors sm:px-2.5 sm:text-[11px] ${sceneOverlay === val ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>{label}</button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="mb-3">
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Formats</p>
+                          <div className="flex gap-2">
+                            {(['square', 'vertical'] as const).map(f => (
+                              <button key={f} type="button" onClick={() => setImageFormats(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f])} className={`rounded-lg border px-3 py-1.5 text-[11px] font-medium capitalize transition-colors ${imageFormats.includes(f) ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>
+                                {f === 'square' ? '1:1 Square' : '9:16 Vertical'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="mb-3">
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Scene description (optional)</p>
+                          <input type="text" value={scenePromptOverride} onChange={e => setScenePromptOverride(e.target.value)} placeholder="Leave blank to auto-generate from your post..." className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                        </div>
+                        <div className="mb-3">
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Headline on image (optional)</p>
+                          <input type="text" value={sceneHeadlineOverride} onChange={e => setSceneHeadlineOverride(e.target.value)} placeholder="Auto-extracted from your caption..." className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                        </div>
+                        <div className="mb-4">
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Eyebrow label (optional)</p>
+                          <input type="text" value={sceneEyebrowOverride} onChange={e => setSceneEyebrowOverride(e.target.value)} placeholder="e.g. NEW LAUNCH · CASE STUDY · PRO TIP" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                        </div>
+                        {sceneResult && (
+                          <div className="mb-3 rounded-lg bg-muted/50 p-3 space-y-1">
+                            {sceneResult.fallback && <p className="text-[11px] text-amber-600 font-medium">Template fallback used — top up fal.ai credits to enable AI scenes.</p>}
+                            {sceneResult.modelUsed && !sceneResult.fallback && <p className="text-[11px] text-green-600 font-medium">Generated with FLUX {sceneResult.modelUsed}</p>}
+                            {sceneResult.headlineUsed && <p className="text-[11px] text-muted-foreground"><span className="font-medium text-foreground">Headline: </span>{sceneResult.headlineUsed}</p>}
+                            {sceneResult.promptUsed && <p className="text-[11px] text-muted-foreground line-clamp-2">{sceneResult.promptUsed}</p>}
+                          </div>
+                        )}
+                        <button type="button" onClick={generateScene} disabled={isGeneratingImage || imageFormats.length === 0} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
+                          {isGeneratingImage ? <><Loader2 className="size-4 animate-spin" />Generating...</> : <><Sparkles className="size-4" />{hasMedia ? 'Regenerate scene' : 'Generate scene'}</>}
+                        </button>
                       </div>
                     )}
-                    <button type="button" onClick={generateScene} disabled={isGeneratingImage || imageFormats.length === 0} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
-                      {isGeneratingImage ? <><Loader2 className="size-4 animate-spin" />Generating...</> : <><Sparkles className="size-4" />{hasMedia ? 'Regenerate scene' : 'Generate scene'}</>}
-                    </button>
-                  </div>
-                )}
 
-                {/* ── TEMPLATE MODE ── */}
-                {imageMode === 'template' && (
+                    {/* ── TEMPLATE MODE ── */}
+                    {imageMode === 'template' && (
+                      <div>
+                        <div className="mb-3">
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Template</p>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {(['quote-card', 'announcement-card', 'stat-card'] as const).map(t => (
+                              <button key={t} type="button" onClick={() => setImageTemplate(t)} className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium transition-colors ${imageTemplate === t ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>
+                                {t === 'quote-card' ? 'Quote' : t === 'announcement-card' ? 'Announcement' : 'Stat'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="mb-3">
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Style</p>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {(['dark', 'light', 'brand'] as const).map(s => (
+                              <button key={s} type="button" onClick={() => setImageStyle(s)} className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium capitalize transition-colors ${imageStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>{s}</button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="mb-3">
+                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Formats</p>
+                          <div className="flex gap-2">
+                            {(['square', 'vertical'] as const).map(f => (
+                              <button key={f} type="button" onClick={() => setImageFormats(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f])} className={`rounded-lg border px-3 py-1.5 text-[11px] font-medium capitalize transition-colors ${imageFormats.includes(f) ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>
+                                {f === 'square' ? '1:1 Square' : '9:16 Vertical'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        {imageTemplate === 'stat-card' && (
+                          <div className="mb-3 space-y-2">
+                            <input type="text" value={imageStatValue} onChange={e => setImageStatValue(e.target.value)} placeholder="Stat value, e.g. 47%" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                            <input type="text" value={imageStatLabel} onChange={e => setImageStatLabel(e.target.value)} placeholder="Stat label, e.g. improvement in engagement" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                          </div>
+                        )}
+                        <div className="mb-4">
+                          <input type="text" value={imageEyebrow} onChange={e => setImageEyebrow(e.target.value)} placeholder="Eyebrow label (optional) e.g. THIS WEEK" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                        </div>
+                        <button type="button" onClick={generateImage} disabled={isGeneratingImage || imageFormats.length === 0} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
+                          {isGeneratingImage ? <><Loader2 className="size-4 animate-spin" />Generating...</> : <><Sparkles className="size-4" />{hasMedia ? 'Regenerate image' : 'Generate image'}</>}
+                        </button>
+                      </div>
+                    )}
+
+                    {imageGenError && <p className="mt-2 text-xs text-red-500">{imageGenError}</p>}
+                  </div>
+
+                  {/* Manual upload */}
                   <div>
-                    <div className="mb-3">
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Template</p>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {(['quote-card', 'announcement-card', 'stat-card'] as const).map(t => (
-                          <button key={t} type="button" onClick={() => setImageTemplate(t)} className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium transition-colors ${imageTemplate === t ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>
-                            {t === 'quote-card' ? 'Quote' : t === 'announcement-card' ? 'Announcement' : 'Stat'}
-                          </button>
+                    <p className="mb-3 text-xs font-medium text-muted-foreground">Upload your own</p>
+                    <MediaUploader
+                      contentItemId={item.id}
+                      existingPublicIds={item.graphicUrls || []}
+                      onUpdate={publicIds => setItem(prev => prev ? { ...prev, graphicUrls: publicIds } : prev)}
+                      mediaType="image"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Carousel */}
+              {isCarousel && (
+                <div className="rounded-xl border bg-card p-4 sm:p-5">
+                  <div className="mb-4 flex items-center gap-2 border-b pb-4">
+                    <Layers className="size-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">Carousel slides</h3>
+                    {needsMedia && !hasMedia && (
+                      <span className="ml-auto rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                        Required to publish
+                      </span>
+                    )}
+                  </div>
+                  {hasMedia && (
+                    <div className="mb-5">
+                      <p className="mb-3 text-xs font-medium text-muted-foreground">{item.graphicUrls.length} slide{item.graphicUrls.length !== 1 ? 's' : ''} generated</p>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        {item.graphicUrls.map((url, i) => (
+                          <div key={i} className="overflow-hidden rounded-lg border">
+                            <div className="border-b px-2 py-1"><p className="text-[10px] text-muted-foreground">Slide {i + 1}</p></div>
+                            <Image src={url} alt={`Carousel slide ${i + 1}`} width={300} height={300} className="w-full object-cover" unoptimized />
+                          </div>
                         ))}
                       </div>
                     </div>
+                  )}
+                  <div className="mb-5 rounded-lg border bg-muted/30 p-4">
+                    <div className="mb-3 flex items-center gap-2">
+                      <Sparkles className="size-4 text-primary" />
+                      <p className="text-xs font-semibold">Generate carousel from caption</p>
+                    </div>
+                    <p className="mb-4 text-[11px] text-muted-foreground">Each paragraph in your caption becomes a slide. The first becomes the cover, the last gets a CTA slide appended automatically.</p>
                     <div className="mb-3">
                       <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Style</p>
                       <div className="grid grid-cols-3 gap-1.5">
                         {(['dark', 'light', 'brand'] as const).map(s => (
-                          <button key={s} type="button" onClick={() => setImageStyle(s)} className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium capitalize transition-colors ${imageStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>{s}</button>
+                          <button key={s} type="button" onClick={() => setCarouselStyle(s)} className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium capitalize transition-colors ${carouselStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>{s}</button>
                         ))}
                       </div>
                     </div>
-                    <div className="mb-3">
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Formats</p>
-                      <div className="flex gap-2">
-                        {(['square', 'vertical'] as const).map(f => (
-                          <button key={f} type="button" onClick={() => setImageFormats(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f])} className={`rounded-lg border px-3 py-1.5 text-[11px] font-medium capitalize transition-colors ${imageFormats.includes(f) ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>
-                            {f === 'square' ? '1:1 Square' : '9:16 Vertical'}
+                    <div className="mb-4">
+                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Format</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {(['1:1', '9:16'] as const).map(ar => (
+                          <button key={ar} type="button" onClick={() => setCarouselAspectRatio(ar)} className={`rounded-lg border px-3 py-2 text-[11px] font-medium transition-colors ${carouselAspectRatio === ar ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>
+                            {ar === '1:1' ? '1:1 — LinkedIn, Facebook' : '9:16 — Instagram, TikTok'}
                           </button>
                         ))}
                       </div>
                     </div>
-                    {imageTemplate === 'stat-card' && (
-                      <div className="mb-3 space-y-2">
-                        <input type="text" value={imageStatValue} onChange={e => setImageStatValue(e.target.value)} placeholder="Stat value, e.g. 47%" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-                        <input type="text" value={imageStatLabel} onChange={e => setImageStatLabel(e.target.value)} placeholder="Stat label, e.g. improvement in engagement" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-                      </div>
-                    )}
-                    <div className="mb-4">
-                      <input type="text" value={imageEyebrow} onChange={e => setImageEyebrow(e.target.value)} placeholder="Eyebrow label (optional) e.g. THIS WEEK" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-                    </div>
-                    <button type="button" onClick={generateImage} disabled={isGeneratingImage || imageFormats.length === 0} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
-                      {isGeneratingImage ? <><Loader2 className="size-4 animate-spin" />Generating...</> : <><Sparkles className="size-4" />{hasMedia ? 'Regenerate image' : 'Generate image'}</>}
+                    <button type="button" onClick={generateCarousel} disabled={isGeneratingCarousel} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                      {isGeneratingCarousel ? <><Loader2 className="size-4 animate-spin" />Generating slides (~5–10s)...</> : <><Sparkles className="size-4" />{hasMedia ? 'Regenerate carousel' : 'Generate carousel'}</>}
                     </button>
+                    {carouselError && <p className="mt-2 text-xs text-red-500">{carouselError}</p>}
                   </div>
-                )}
-
-                {imageGenError && <p className="mt-2 text-xs text-red-500">{imageGenError}</p>}
-              </div>
-
-              {/* Manual upload */}
-              <div>
-                <p className="mb-3 text-xs font-medium text-muted-foreground">Upload your own</p>
-                <MediaUploader
-                  contentItemId={item.id}
-                  existingUrls={item.graphicUrls || []}
-                  onUpdate={urls => setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev)}
-                  mediaType="image"
-                  maxFiles={1}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Carousel */}
-          {isCarousel && (
-            <div className="rounded-xl border bg-card p-4 sm:p-5">
-              <div className="mb-4 flex items-center gap-2 border-b pb-4">
-                <Layers className="size-4 text-muted-foreground" />
-                <h3 className="text-sm font-semibold">Carousel slides</h3>
-                {needsMedia && !hasMedia && (
-                  <span className="ml-auto rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                    Required to publish
-                  </span>
-                )}
-              </div>
-              {hasMedia && (
-                <div className="mb-5">
-                  <p className="mb-3 text-xs font-medium text-muted-foreground">{item.graphicUrls.length} slide{item.graphicUrls.length !== 1 ? 's' : ''} generated</p>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {item.graphicUrls.map((url, i) => (
-                      <div key={i} className="overflow-hidden rounded-lg border">
-                        <div className="border-b px-2 py-1"><p className="text-[10px] text-muted-foreground">Slide {i + 1}</p></div>
-                        <Image src={url} alt={`Carousel slide ${i + 1}`} width={300} height={300} className="w-full object-cover" unoptimized />
-                      </div>
-                    ))}
+                  <div>
+                    <p className="mb-3 text-xs font-medium text-muted-foreground">Or upload slides manually</p>
+                    <MediaUploader
+                      contentItemId={item.id}
+                      existingPublicIds={item.graphicUrls || []}
+                      onUpdate={publicIds => setItem(prev => prev ? { ...prev, graphicUrls: publicIds } : prev)}
+                      mediaType="image"
+                    />
                   </div>
                 </div>
               )}
-              <div className="mb-5 rounded-lg border bg-muted/30 p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <Sparkles className="size-4 text-primary" />
-                  <p className="text-xs font-semibold">Generate carousel from caption</p>
-                </div>
-                <p className="mb-4 text-[11px] text-muted-foreground">Each paragraph in your caption becomes a slide. The first becomes the cover, the last gets a CTA slide appended automatically.</p>
-                <div className="mb-3">
-                  <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Style</p>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {(['dark', 'light', 'brand'] as const).map(s => (
-                      <button key={s} type="button" onClick={() => setCarouselStyle(s)} className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium capitalize transition-colors ${carouselStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>{s}</button>
-                    ))}
-                  </div>
-                </div>
-                <div className="mb-4">
-                  <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Format</p>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {(['1:1', '9:16'] as const).map(ar => (
-                      <button key={ar} type="button" onClick={() => setCarouselAspectRatio(ar)} className={`rounded-lg border px-3 py-2 text-[11px] font-medium transition-colors ${carouselAspectRatio === ar ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>
-                        {ar === '1:1' ? '1:1 — LinkedIn, Facebook' : '9:16 — Instagram, TikTok'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <button type="button" onClick={generateCarousel} disabled={isGeneratingCarousel} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-                  {isGeneratingCarousel ? <><Loader2 className="size-4 animate-spin" />Generating slides (~5–10s)...</> : <><Sparkles className="size-4" />{hasMedia ? 'Regenerate carousel' : 'Generate carousel'}</>}
-                </button>
-                {carouselError && <p className="mt-2 text-xs text-red-500">{carouselError}</p>}
-              </div>
-              <div>
-                <p className="mb-3 text-xs font-medium text-muted-foreground">Or upload slides manually</p>
-                <MediaUploader
-                  contentItemId={item.id}
-                  existingUrls={item.graphicUrls || []}
-                  onUpdate={urls => setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev)}
-                  mediaType="image"
-                />
-              </div>
-            </div>
-          )}
 
-          {/* Platform adaptations */}
-          {Object.keys(item.platformSpecific || {}).length > 0
-            && Object.entries(item.platformSpecific).some(([k]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k))
-            && (
-              <div className="rounded-xl border bg-card p-4 sm:p-5">
-                <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Platform adaptations</h3>
-                <div className="space-y-3">
-                  {Object.entries(item.platformSpecific)
-                    .filter(([k, v]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k) && typeof v === 'string')
-                    .map(([platform, text]) => {
-                      const isEditingThis = editingAdaptation === platform;
-                      const loadingKey = `adaptation-${platform}`;
-                      return (
-                        <div key={platform} className="rounded-lg border bg-muted/30 p-3">
-                          <div className="mb-1.5 flex items-center justify-between">
-                            <span className="text-xs font-semibold capitalize">{PLATFORM_LABELS[platform] || platform}</span>
-                            {!isEditingThis && (
-                              <button type="button" onClick={() => { setEditingAdaptation(platform); setEditAdaptationText(String(text)); }} className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium transition-colors hover:bg-muted">
-                                <Edit3 className="size-3" />
-                                Edit
-                              </button>
-                            )}
-                          </div>
-                          {isEditingThis ? (
-                            <div>
-                              <textarea value={editAdaptationText} onChange={e => setEditAdaptationText(e.target.value)} rows={5} className="w-full resize-none rounded-lg border bg-background px-3 py-2.5 text-sm leading-relaxed focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                              <div className="mt-2 flex gap-2">
-                                <button type="button" onClick={() => saveAdaptation(platform)} disabled={actionLoading === loadingKey} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-                                  {actionLoading === loadingKey ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-                                  Save
-                                </button>
-                                <button type="button" onClick={() => setEditingAdaptation(null)} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">Cancel</button>
+              {/* Platform adaptations */}
+              {Object.keys(item.platformSpecific || {}).length > 0
+                && Object.entries(item.platformSpecific).some(([k]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k))
+                && (
+                  <div className="rounded-xl border bg-card p-4 sm:p-5">
+                    <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Platform adaptations</h3>
+                    <div className="space-y-3">
+                      {Object.entries(item.platformSpecific)
+                        .filter(([k, v]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k) && typeof v === 'string')
+                        .map(([platform, text]) => {
+                          const isEditingThis = editingAdaptation === platform;
+                          const loadingKey = `adaptation-${platform}`;
+                          return (
+                            <div key={platform} className="rounded-lg border bg-muted/30 p-3">
+                              <div className="mb-1.5 flex items-center justify-between">
+                                <span className="text-xs font-semibold capitalize">{PLATFORM_LABELS[platform] || platform}</span>
+                                {!isEditingThis && (
+                                  <button type="button" onClick={() => { setEditingAdaptation(platform); setEditAdaptationText(String(text)); }} className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium transition-colors hover:bg-muted">
+                                    <Edit3 className="size-3" />
+                                    Edit
+                                  </button>
+                                )}
                               </div>
+                              {isEditingThis ? (
+                                <div>
+                                  <textarea value={editAdaptationText} onChange={e => setEditAdaptationText(e.target.value)} rows={5} className="w-full resize-none rounded-lg border bg-background px-3 py-2.5 text-sm leading-relaxed focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                                  <div className="mt-2 flex gap-2">
+                                    <button type="button" onClick={() => saveAdaptation(platform)} disabled={actionLoading === loadingKey} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                                      {actionLoading === loadingKey ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+                                      Save
+                                    </button>
+                                    <button type="button" onClick={() => setEditingAdaptation(null)} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">Cancel</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-sm leading-relaxed text-muted-foreground">{String(text)}</p>
+                              )}
                             </div>
-                          ) : (
-                            <p className="text-sm leading-relaxed text-muted-foreground">{String(text)}</p>
-                          )}
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-            )}
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
 
-          {/* Rejection feedback */}
-          {item.rejectionFeedback && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4 sm:p-5">
-              <h3 className="mb-1 text-sm font-semibold text-red-700">Rejection feedback</h3>
-              <p className="text-sm text-red-600">{item.rejectionFeedback}</p>
+              {/* Rejection feedback */}
+              {item.rejectionFeedback && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4 sm:p-5">
+                  <h3 className="mb-1 text-sm font-semibold text-red-700">Rejection feedback</h3>
+                  <p className="text-sm text-red-600">{item.rejectionFeedback}</p>
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
         {/* ── Sidebar ──────────────────────────────────────── */}
-        <div className="hidden lg:block">
-          <div className="sticky top-6 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 5rem)' }}>
-            <ActionsPanel />
+          <div className="hidden lg:block">
+            <div className="sticky top-6 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 5rem)' }}>
+              <ActionsPanel />
 
-            {item.antiSlopScore !== null && (
-              <div className="rounded-xl border bg-card p-5">
-                <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
-                <div className="mb-3 flex items-center gap-3">
-                  <div className="relative size-12">
-                    <svg className="size-12 -rotate-90" viewBox="0 0 36 36">
-                      <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
-                      <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray={`${item.antiSlopScore * 100}, 100`} className={item.antiSlopScore >= 0.8 ? 'text-emerald-500' : item.antiSlopScore >= 0.7 ? 'text-yellow-500' : item.antiSlopScore >= 0.5 ? 'text-orange-500' : 'text-red-500'} />
-                    </svg>
-                    <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">{Math.round(item.antiSlopScore * 100)}</span>
+              {item.antiSlopScore !== null && (
+                <div className="rounded-xl border bg-card p-5">
+                  <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
+                  <div className="mb-3 flex items-center gap-3">
+                    <div className="relative size-12">
+                      <svg className="size-12 -rotate-90" viewBox="0 0 36 36">
+                        <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
+                        <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray={`${item.antiSlopScore * 100}, 100`} className={item.antiSlopScore >= 0.8 ? 'text-emerald-500' : item.antiSlopScore >= 0.7 ? 'text-yellow-500' : item.antiSlopScore >= 0.5 ? 'text-orange-500' : 'text-red-500'} />
+                      </svg>
+                      <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">{Math.round(item.antiSlopScore * 100)}</span>
+                    </div>
+                    <div>
+                      <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>{scoreLabel(item.antiSlopScore).text}</p>
+                      <p className="text-[11px] text-muted-foreground">Quality score</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>{scoreLabel(item.antiSlopScore).text}</p>
-                    <p className="text-[11px] text-muted-foreground">Quality score</p>
-                  </div>
+                  {item.qualityFlags.length > 0 && (
+                    <div>
+                      <button type="button" onClick={() => setShowQualityFlags(p => !p)} className="mb-2 text-xs text-muted-foreground underline hover:text-foreground">
+                        {showQualityFlags ? 'Hide' : 'Show'} {item.qualityFlags.length} quality {item.qualityFlags.length === 1 ? 'note' : 'notes'}
+                      </button>
+                      {showQualityFlags && (
+                        <div className="space-y-1.5">
+                          {item.qualityFlags.map((flag, i) => <p key={i} className="text-[11px] leading-snug text-muted-foreground">{flag}</p>)}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                {item.qualityFlags.length > 0 && (
-                  <div>
-                    <button type="button" onClick={() => setShowQualityFlags(p => !p)} className="mb-2 text-xs text-muted-foreground underline hover:text-foreground">
-                      {showQualityFlags ? 'Hide' : 'Show'} {item.qualityFlags.length} quality {item.qualityFlags.length === 1 ? 'note' : 'notes'}
-                    </button>
-                    {showQualityFlags && (
-                      <div className="space-y-1.5">
-                        {item.qualityFlags.map((flag, i) => <p key={i} className="text-[11px] leading-snug text-muted-foreground">{flag}</p>)}
-                      </div>
-                    )}
+              )}
+
+              <div className="rounded-xl border bg-card p-5">
+                <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Details</h3>
+                <div className="space-y-3">
+                  <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
+                  <DetailRow label="Topic" value={item.topic || 'Auto-selected'} />
+                  {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
+                  <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
+                  {isReel && (item.platformSpecific?.videoDurationSeconds as number) > 0 && (
+                    <DetailRow label="Video duration" value={`${item.platformSpecific.videoDurationSeconds}s`} />
+                  )}
+                  {/* Show AI graphic metadata when present */}
+                  {item.platformSpecific?.imageTemplate === 'ai-graphic' && (
+                    <>
+                      <DetailRow label="Image engine" value="OpenAI gpt-image-1" />
+                      {item.platformSpecific?.aiGraphicType && (
+                        <DetailRow label="Graphic type" value={String(item.platformSpecific.aiGraphicType)} />
+                      )}
+                      {item.platformSpecific?.aiGraphicQuality && (
+                        <DetailRow label="Quality tier" value={String(item.platformSpecific.aiGraphicQuality)} />
+                      )}
+                    </>
+                  )}
+                  <DetailRow label="Created" value={new Date(item.createdAt).toLocaleString()} />
+                  {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
+                  {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
+                </div>
+                {item.scheduledFor && (
+                  <div className="mt-4 border-t pt-3">
+                    <Link href={`/dashboard/calendar?selected=${item.scheduledFor.split('T')[0]}`} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+                      <Calendar className="size-3.5" />
+                      View on calendar
+                      <ChevronRight className="size-3" />
+                    </Link>
                   </div>
                 )}
               </div>
-            )}
 
-            <div className="rounded-xl border bg-card p-5">
-              <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Details</h3>
-              <div className="space-y-3">
-                <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
-                <DetailRow label="Topic" value={item.topic || 'Auto-selected'} />
-                {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
-                <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
-                {isReel && (item.platformSpecific?.videoDurationSeconds as number) > 0 && (
-                  <DetailRow label="Video duration" value={`${item.platformSpecific.videoDurationSeconds}s`} />
-                )}
-                {/* Show AI graphic metadata when present */}
-                {item.platformSpecific?.imageTemplate === 'ai-graphic' && (
-                  <>
-                    <DetailRow label="Image engine" value="OpenAI gpt-image-1" />
-                    {item.platformSpecific?.aiGraphicType && (
-                      <DetailRow label="Graphic type" value={String(item.platformSpecific.aiGraphicType)} />
-                    )}
-                    {item.platformSpecific?.aiGraphicQuality && (
-                      <DetailRow label="Quality tier" value={String(item.platformSpecific.aiGraphicQuality)} />
-                    )}
-                  </>
-                )}
-                <DetailRow label="Created" value={new Date(item.createdAt).toLocaleString()} />
-                {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
-                {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
-              </div>
-              {item.scheduledFor && (
-                <div className="mt-4 border-t pt-3">
-                  <Link href={`/dashboard/calendar?selected=${item.scheduledFor.split('T')[0]}`} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-                    <Calendar className="size-3.5" />
-                    View on calendar
-                    <ChevronRight className="size-3" />
-                  </Link>
+              {item.status === 'published' && (
+                <div className="rounded-xl border bg-card p-5">
+                  <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Engagement</h3>
+                  {Object.keys(item.engagementData || {}).length > 0 ? (
+                    <div className="space-y-3">
+                      {Object.entries(item.engagementData).map(([key, val]) => (
+                        <DetailRow key={key} label={key} value={String(val)} />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Engagement data will appear here once the post has been live for a few hours.</p>
+                  )}
                 </div>
               )}
             </div>
-
-            {item.status === 'published' && (
-              <div className="rounded-xl border bg-card p-5">
-                <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Engagement</h3>
-                {Object.keys(item.engagementData || {}).length > 0 ? (
-                  <div className="space-y-3">
-                    {Object.entries(item.engagementData).map(([key, val]) => (
-                      <DetailRow key={key} label={key} value={String(val)} />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">Engagement data will appear here once the post has been live for a few hours.</p>
-                )}
-              </div>
-            )}
           </div>
         </div>
-      </div>
 
-      {/* Mobile — Details + Quality */}
-      <div className={`mt-4 space-y-4 lg:hidden ${primaryAction ? 'pb-24' : ''}`}>
-        {item.antiSlopScore !== null && (
-          <div className="rounded-xl border bg-card p-4">
-            <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
-            <div className="flex items-center gap-3">
-              <div className="relative size-10">
-                <svg className="size-10 -rotate-90" viewBox="0 0 36 36">
-                  <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
-                  <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray={`${item.antiSlopScore * 100}, 100`} className={item.antiSlopScore >= 0.8 ? 'text-emerald-500' : item.antiSlopScore >= 0.7 ? 'text-yellow-500' : 'text-orange-500'} />
-                </svg>
-                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">{Math.round(item.antiSlopScore * 100)}</span>
-              </div>
-              <div>
-                <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>{scoreLabel(item.antiSlopScore).text}</p>
-                <p className="text-[11px] text-muted-foreground">Quality score</p>
+
+        {/* Mobile — Details + Quality */}
+        <div className={`mt-4 space-y-4 lg:hidden ${primaryAction ? 'pb-24' : ''}`}>
+          {item.antiSlopScore !== null && (
+            <div className="rounded-xl border bg-card p-4">
+              <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
+              <div className="flex items-center gap-3">
+                <div className="relative size-10">
+                  <svg className="size-10 -rotate-90" viewBox="0 0 36 36">
+                    <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
+                    <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray={`${item.antiSlopScore * 100}, 100`} className={item.antiSlopScore >= 0.8 ? 'text-emerald-500' : item.antiSlopScore >= 0.7 ? 'text-yellow-500' : 'text-orange-500'} />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">{Math.round(item.antiSlopScore * 100)}</span>
+                </div>
+                <div>
+                  <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>{scoreLabel(item.antiSlopScore).text}</p>
+                  <p className="text-[11px] text-muted-foreground">Quality score</p>
+                </div>
               </div>
             </div>
-          </div>
-        )}
-
-        <div className="rounded-xl border bg-card p-4">
-          <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Details</h3>
-          <div className="space-y-2.5">
-            <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
-            {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
-            <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
-            {item.platformSpecific?.imageTemplate === 'ai-graphic' && (
-              <DetailRow label="Image engine" value="OpenAI gpt-image-1" />
-            )}
-            <DetailRow label="Created" value={new Date(item.createdAt).toLocaleDateString()} />
-            {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
-            {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
-          </div>
-        </div>
-
-        <div className="flex gap-2">
-          {item.status !== 'published' && item.status !== 'rejected' && (
-            <button type="button" onClick={() => updateStatus('rejected')} disabled={!!actionLoading} className="flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium hover:bg-red-50 hover:text-red-600 disabled:opacity-50">
-              <X className="size-4" />
-              Reject
-            </button>
           )}
-          <button type="button" onClick={deleteItem} disabled={!!actionLoading} className="flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium text-red-500 hover:bg-red-50 disabled:opacity-50">
-            <Trash2 className="size-4" />
-            Delete
-          </button>
+
+          <div className="rounded-xl border bg-card p-4">
+            <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Details</h3>
+            <div className="space-y-2.5">
+              <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
+              {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
+              <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
+              {item.platformSpecific?.imageTemplate === 'ai-graphic' && (
+                <DetailRow label="Image engine" value="OpenAI gpt-image-1" />
+              )}
+              <DetailRow label="Created" value={new Date(item.createdAt).toLocaleDateString()} />
+              {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
+              {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            {item.status !== 'published' && item.status !== 'rejected' && (
+              <button type="button" onClick={() => updateStatus('rejected')} disabled={!!actionLoading} className="flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium hover:bg-red-50 hover:text-red-600 disabled:opacity-50">
+                <X className="size-4" />
+                Reject
+              </button>
+            )}
+            <button type="button" onClick={deleteItem} disabled={!!actionLoading} className="flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium text-red-500 hover:bg-red-50 disabled:opacity-50">
+              <Trash2 className="size-4" />
+              Delete
+            </button>
+          </div>
         </div>
-      </div>
-    </>
-  );
+      </>
+      );
 }

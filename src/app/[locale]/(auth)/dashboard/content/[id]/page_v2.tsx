@@ -24,6 +24,7 @@ import { useEffect, useState } from 'react';
 
 import { MediaUploader } from '@/components/media/MediaUploader';
 import { PageHeader } from '@/features/dashboard/PageHeader';
+import { cldImageUrl } from '@/lib/cloudflare-helpers';
 
 // -----------------------------------------------------------
 // TYPES
@@ -1441,10 +1442,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                       </p>
                       <MediaUploader
                         contentItemId={item.id}
-                        existingUrls={[]}
-                        onUpdate={(urls) => {
-                          if (urls[0]) setYoutubeThumbnailUrl(urls[0]);
-                        }}
+                        existingPublicIds={[]}
+                        onUpdate={(publicIds) => { if (publicIds[0]) setYoutubeThumbnailUrl(cldImageUrl(publicIds[0])); }}
                         mediaType="image"
                         maxFiles={1}
                       />
@@ -1596,7 +1595,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                         <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Visual style</p>
                         <div className="grid grid-cols-3 gap-1.5">
                           {([
-                            ['dark',  'Dark',  'Dark bg'],
+                            ['dark', 'Dark', 'Dark bg'],
                             ['light', 'Light', 'Light bg'],
                             ['brand', 'Brand', 'Brand color'],
                           ] as const).map(([val, label, sub]) => (
@@ -1794,12 +1793,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 </p>
                 <MediaUploader
                   contentItemId={item.id}
-                  existingUrls={[]}
-                  onUpdate={(urls) => {
-                    if (urls.length > 0) {
-                      setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev);
-                    }
-                  }}
+                  existingPublicIds={[]}
+                  onUpdate={(publicIds) => { if (publicIds.length > 0) setItem(prev => prev ? { ...prev, graphicUrls: publicIds } : prev); }}
                   mediaType="video"
                   maxFiles={1}
                 />
@@ -1834,8 +1829,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   {([
                     { tier: 'unsplash', label: 'Unsplash', sub: 'Free editorial photos' },
-                    { tier: 'flux',     label: 'AI Scene',  sub: 'FLUX Pro per section' },
-                    { tier: 'seedance', label: 'AI Video',  sub: 'Live clips per section' },
+                    { tier: 'flux', label: 'AI Scene', sub: 'FLUX Pro per section' },
+                    { tier: 'seedance', label: 'AI Video', sub: 'Live clips per section' },
                   ] as const).map(({ tier, label, sub }) => (
                     <button
                       key={tier}
@@ -2002,19 +1997,19 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               >
                 {isGeneratingDataStory
                   ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" />
-                        {' '}
-                        Generating Data Story...
-                      </>
-                    )
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      {' '}
+                      Generating Data Story...
+                    </>
+                  )
                   : (
-                      <>
-                        <Sparkles className="size-4" />
-                        {' '}
-                        Generate Data Story
-                      </>
-                    )}
+                    <>
+                      <Sparkles className="size-4" />
+                      {' '}
+                      Generate Data Story
+                    </>
+                  )}
               </button>
               {dataStoryError && <p className="mt-2 text-xs text-red-500">{dataStoryError}</p>}
             </div>
@@ -2309,8 +2304,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <p className="mb-3 text-xs font-medium text-muted-foreground">Upload your own</p>
                 <MediaUploader
                   contentItemId={item.id}
-                  existingUrls={item.graphicUrls || []}
-                  onUpdate={urls => setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev)}
+                  existingPublicIds={item.graphicUrls || []}
+                  onUpdate={publicIds => setItem(prev => prev ? { ...prev, graphicUrls: publicIds } : prev)}
                   mediaType="image"
                   maxFiles={1}
                 />
@@ -2411,17 +2406,17 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 >
                   {isGeneratingCarousel
                     ? (
-                        <>
-                          <Loader2 className="size-4 animate-spin" />
-                          Generating slides (~5–10s)...
-                        </>
-                      )
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        Generating slides (~5–10s)...
+                      </>
+                    )
                     : (
-                        <>
-                          <Sparkles className="size-4" />
-                          {hasMedia ? 'Regenerate carousel' : 'Generate carousel'}
-                        </>
-                      )}
+                      <>
+                        <Sparkles className="size-4" />
+                        {hasMedia ? 'Regenerate carousel' : 'Generate carousel'}
+                      </>
+                    )}
                 </button>
                 {carouselError && <p className="mt-2 text-xs text-red-500">{carouselError}</p>}
               </div>
@@ -2431,8 +2426,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <p className="mb-3 text-xs font-medium text-muted-foreground">Or upload slides manually</p>
                 <MediaUploader
                   contentItemId={item.id}
-                  existingUrls={item.graphicUrls || []}
-                  onUpdate={urls => setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev)}
+                  existingPublicIds={item.graphicUrls || []}
+                  onUpdate={publicIds => setItem(prev => prev ? { ...prev, graphicUrls: publicIds } : prev)}
                   mediaType="image"
                 />
               </div>
@@ -2441,67 +2436,67 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
 
           {/* Platform adaptations */}
           {Object.keys(item.platformSpecific || {}).length > 0
-          && Object.entries(item.platformSpecific).some(([k]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k))
-          && (
-            <div className="rounded-xl border bg-card p-4 sm:p-5">
-              <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Platform adaptations</h3>
-              <div className="space-y-3">
-                {Object.entries(item.platformSpecific)
-                  .filter(([k, v]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k) && typeof v === 'string')
-                  .map(([platform, text]) => {
-                    const isEditingThis = editingAdaptation === platform;
-                    const loadingKey = `adaptation-${platform}`;
-                    return (
-                      <div key={platform} className="rounded-lg border bg-muted/30 p-3">
-                        <div className="mb-1.5 flex items-center justify-between">
-                          <span className="text-xs font-semibold capitalize">
-                            {PLATFORM_LABELS[platform] || platform}
-                          </span>
-                          {!isEditingThis && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingAdaptation(platform); setEditAdaptationText(String(text));
-                              }}
-                              className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium transition-colors hover:bg-muted"
-                            >
-                              <Edit3 className="size-3" />
-                              Edit
-                            </button>
-                          )}
-                        </div>
-                        {isEditingThis ? (
-                          <div>
-                            <textarea
-                              value={editAdaptationText}
-                              onChange={e => setEditAdaptationText(e.target.value)}
-                              rows={5}
-                              className="w-full resize-none rounded-lg border bg-background px-3 py-2.5 text-sm leading-relaxed focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                            />
-                            <div className="mt-2 flex gap-2">
+            && Object.entries(item.platformSpecific).some(([k]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k))
+            && (
+              <div className="rounded-xl border bg-card p-4 sm:p-5">
+                <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Platform adaptations</h3>
+                <div className="space-y-3">
+                  {Object.entries(item.platformSpecific)
+                    .filter(([k, v]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k) && typeof v === 'string')
+                    .map(([platform, text]) => {
+                      const isEditingThis = editingAdaptation === platform;
+                      const loadingKey = `adaptation-${platform}`;
+                      return (
+                        <div key={platform} className="rounded-lg border bg-muted/30 p-3">
+                          <div className="mb-1.5 flex items-center justify-between">
+                            <span className="text-xs font-semibold capitalize">
+                              {PLATFORM_LABELS[platform] || platform}
+                            </span>
+                            {!isEditingThis && (
                               <button
                                 type="button"
-                                onClick={() => saveAdaptation(platform)}
-                                disabled={actionLoading === loadingKey}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                                onClick={() => {
+                                  setEditingAdaptation(platform); setEditAdaptationText(String(text));
+                                }}
+                                className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium transition-colors hover:bg-muted"
                               >
-                                {actionLoading === loadingKey ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-                                Save
+                                <Edit3 className="size-3" />
+                                Edit
                               </button>
-                              <button type="button" onClick={() => setEditingAdaptation(null)} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">
-                                Cancel
-                              </button>
-                            </div>
+                            )}
                           </div>
-                        ) : (
-                          <p className="text-sm leading-relaxed text-muted-foreground">{String(text)}</p>
-                        )}
-                      </div>
-                    );
-                  })}
+                          {isEditingThis ? (
+                            <div>
+                              <textarea
+                                value={editAdaptationText}
+                                onChange={e => setEditAdaptationText(e.target.value)}
+                                rows={5}
+                                className="w-full resize-none rounded-lg border bg-background px-3 py-2.5 text-sm leading-relaxed focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                              />
+                              <div className="mt-2 flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => saveAdaptation(platform)}
+                                  disabled={actionLoading === loadingKey}
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                                >
+                                  {actionLoading === loadingKey ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+                                  Save
+                                </button>
+                                <button type="button" onClick={() => setEditingAdaptation(null)} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-sm leading-relaxed text-muted-foreground">{String(text)}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
           {/* Rejection feedback */}
           {item.rejectionFeedback && (
@@ -2516,110 +2511,110 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         <div className="hidden lg:block">
           <div className="sticky top-6 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 5rem)' }}>
 
-          {/* Actions */}
-          <ActionsPanel />
+            {/* Actions */}
+            <ActionsPanel />
 
-          {/* Quality Score */}
-          {item.antiSlopScore !== null && (
-            <div className="rounded-xl border bg-card p-5">
-              <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
-              <div className="mb-3 flex items-center gap-3">
-                <div className="relative size-12">
-                  <svg className="size-12 -rotate-90" viewBox="0 0 36 36">
-                    <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
-                    <path
-                      d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeDasharray={`${item.antiSlopScore * 100}, 100`}
-                      className={item.antiSlopScore >= 0.8 ? 'text-emerald-500' : item.antiSlopScore >= 0.7 ? 'text-yellow-500' : item.antiSlopScore >= 0.5 ? 'text-orange-500' : 'text-red-500'}
-                    />
-                  </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">
-                    {Math.round(item.antiSlopScore * 100)}
-                  </span>
+            {/* Quality Score */}
+            {item.antiSlopScore !== null && (
+              <div className="rounded-xl border bg-card p-5">
+                <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
+                <div className="mb-3 flex items-center gap-3">
+                  <div className="relative size-12">
+                    <svg className="size-12 -rotate-90" viewBox="0 0 36 36">
+                      <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
+                      <path
+                        d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeDasharray={`${item.antiSlopScore * 100}, 100`}
+                        className={item.antiSlopScore >= 0.8 ? 'text-emerald-500' : item.antiSlopScore >= 0.7 ? 'text-yellow-500' : item.antiSlopScore >= 0.5 ? 'text-orange-500' : 'text-red-500'}
+                      />
+                    </svg>
+                    <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">
+                      {Math.round(item.antiSlopScore * 100)}
+                    </span>
+                  </div>
+                  <div>
+                    <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>
+                      {scoreLabel(item.antiSlopScore).text}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">Quality score</p>
+                  </div>
                 </div>
-                <div>
-                  <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>
-                    {scoreLabel(item.antiSlopScore).text}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">Quality score</p>
-                </div>
-              </div>
-              {item.qualityFlags.length > 0 && (
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setShowQualityFlags(p => !p)}
-                    className="mb-2 text-xs text-muted-foreground underline hover:text-foreground"
-                  >
-                    {showQualityFlags ? 'Hide' : 'Show'}
-                    {' '}
-                    {item.qualityFlags.length}
-                    {' '}
-                    quality
-                    {' '}
-                    {item.qualityFlags.length === 1 ? 'note' : 'notes'}
-                  </button>
-                  {showQualityFlags && (
-                    <div className="space-y-1.5">
-                      {item.qualityFlags.map((flag, i) => (
-                        <p key={i} className="text-[11px] leading-snug text-muted-foreground">{flag}</p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Details */}
-          <div className="rounded-xl border bg-card p-5">
-            <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Details</h3>
-            <div className="space-y-3">
-              <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
-              <DetailRow label="Topic" value={item.topic || 'Auto-selected'} />
-              {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
-              <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
-              {isReel && (item.platformSpecific?.videoDurationSeconds as number) > 0 && (
-                <DetailRow label="Video duration" value={`${item.platformSpecific.videoDurationSeconds}s`} />
-              )}
-              <DetailRow label="Created" value={new Date(item.createdAt).toLocaleString()} />
-              {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
-              {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
-            </div>
-            {item.scheduledFor && (
-              <div className="mt-4 border-t pt-3">
-                <Link
-                  href={`/dashboard/calendar?selected=${item.scheduledFor.split('T')[0]}`}
-                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                >
-                  <Calendar className="size-3.5" />
-                  View on calendar
-                  <ChevronRight className="size-3" />
-                </Link>
+                {item.qualityFlags.length > 0 && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setShowQualityFlags(p => !p)}
+                      className="mb-2 text-xs text-muted-foreground underline hover:text-foreground"
+                    >
+                      {showQualityFlags ? 'Hide' : 'Show'}
+                      {' '}
+                      {item.qualityFlags.length}
+                      {' '}
+                      quality
+                      {' '}
+                      {item.qualityFlags.length === 1 ? 'note' : 'notes'}
+                    </button>
+                    {showQualityFlags && (
+                      <div className="space-y-1.5">
+                        {item.qualityFlags.map((flag, i) => (
+                          <p key={i} className="text-[11px] leading-snug text-muted-foreground">{flag}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
-          </div>
 
-          {/* Engagement */}
-          {item.status === 'published' && (
+            {/* Details */}
             <div className="rounded-xl border bg-card p-5">
-              <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Engagement</h3>
-              {Object.keys(item.engagementData || {}).length > 0 ? (
-                <div className="space-y-3">
-                  {Object.entries(item.engagementData).map(([key, val]) => (
-                    <DetailRow key={key} label={key} value={String(val)} />
-                  ))}
+              <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Details</h3>
+              <div className="space-y-3">
+                <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
+                <DetailRow label="Topic" value={item.topic || 'Auto-selected'} />
+                {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
+                <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
+                {isReel && (item.platformSpecific?.videoDurationSeconds as number) > 0 && (
+                  <DetailRow label="Video duration" value={`${item.platformSpecific.videoDurationSeconds}s`} />
+                )}
+                <DetailRow label="Created" value={new Date(item.createdAt).toLocaleString()} />
+                {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
+                {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
+              </div>
+              {item.scheduledFor && (
+                <div className="mt-4 border-t pt-3">
+                  <Link
+                    href={`/dashboard/calendar?selected=${item.scheduledFor.split('T')[0]}`}
+                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <Calendar className="size-3.5" />
+                    View on calendar
+                    <ChevronRight className="size-3" />
+                  </Link>
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Engagement data will appear here once the post has been live for a few hours.
-                </p>
               )}
             </div>
-          )}
+
+            {/* Engagement */}
+            {item.status === 'published' && (
+              <div className="rounded-xl border bg-card p-5">
+                <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Engagement</h3>
+                {Object.keys(item.engagementData || {}).length > 0 ? (
+                  <div className="space-y-3">
+                    {Object.entries(item.engagementData).map(([key, val]) => (
+                      <DetailRow key={key} label={key} value={String(val)} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Engagement data will appear here once the post has been live for a few hours.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -5,32 +5,15 @@ import { NextResponse } from 'next/server';
 import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { mediaSetSchema } from '@/models/Schema';
-import { CURATED_THEMES } from '@/libs/curatedThemes';
+import { CURATED_THEMES } from '@/libs/curatedThemes'; // Restored import
 
-const UC_CDN_BASE = 'https://9c0v643oty.ucarecd.net';
-
-type SetResponse = {
-  id: string;
-  name: string;
-  type: 'slideshow' | 'video' | 'curated';
-  assetCount: number;
-  previewUrls: string[];
-  curatedThemeId?: string;
-};
-
-function uploadcarePreview(uuid: string, size = 200): string {
-  return `${UC_CDN_BASE}/${uuid}/-/preview/${size}x${size}/-/format/webp/-/quality/smart/`;
-}
-
-// -----------------------------------------------------------
-// GET /api/media-library/sets
-// -----------------------------------------------------------
+// ---------------------------------------------------------------------------
+// GET — list sets for the current org
+// ---------------------------------------------------------------------------
 export async function GET() {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) {
-    return error;
-  }
+  if (error) return error;
 
   try {
     const setRows = await db
@@ -39,17 +22,19 @@ export async function GET() {
       .where(eq(mediaSetSchema.orgId, orgId!))
       .orderBy(asc(mediaSetSchema.createdAt));
 
-    const sets: SetResponse[] = setRows.map((set) => {
+    const CLOUD = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME!;
+
+    const enriched = setRows.map((set) => {
+      // 1. Handle Curated Themes (Unsplash Previews)
       if (set.type === 'curated') {
         const theme = CURATED_THEMES.find((t) => t.id === set.curatedThemeId);
 
         // Use theme-based proxy URLs (pages 1–4) so the set card shows a
-        // 2×2 preview grid. The unsplash-preview route handles fallback
-        // queries internally when it receives a `theme` param.
+        // 2×2 preview grid.
         const previewUrls = theme
           ? [1, 2, 3, 4].map(
               (page) =>
-                `/api/media-library/unsplash-preview?theme=${encodeURIComponent(theme.id)}&w=240&page=${page}`,
+                `/api/media-library/unsplash-preview?theme=${encodeURIComponent(theme.id)}&w=240&page=${page}`
             )
           : [];
 
@@ -60,49 +45,57 @@ export async function GET() {
           assetCount: 0,
           previewUrls,
           curatedThemeId: set.curatedThemeId ?? undefined,
+          createdAt: set.createdAt,
         };
       }
 
-      // --- Safely parse the asset_uuids string into an array ---
-      let assetUuids: string[] = [];
+      // 2. Handle Cloudinary Assets (Slideshow / Video)
+      // Safely parse the asset_uuids string into an array to prevent crashes on legacy data
+      let publicIds: string[] = [];
       if (typeof set.assetUuids === 'string') {
         try {
-          assetUuids = JSON.parse(set.assetUuids);
+          publicIds = JSON.parse(set.assetUuids);
         } catch {
-          assetUuids = [];
+          publicIds = [];
         }
       } else if (Array.isArray(set.assetUuids)) {
-        assetUuids = set.assetUuids;
+        publicIds = set.assetUuids;
       }
+
+      // Build preview URLs from stored Cloudinary public_ids
+      const previewUrls = publicIds.slice(0, 4).map((pid) =>
+        set.type === 'video'
+          ? `https://res.cloudinary.com/${CLOUD}/video/upload/so_1,c_fill,w_200,h_200,q_auto,f_jpg/${pid}`
+          : `https://res.cloudinary.com/${CLOUD}/image/upload/c_fill,w_200,h_200,q_auto,f_webp/${pid}`
+      );
 
       return {
         id: set.id,
         name: set.name,
         type: set.type as 'slideshow' | 'video',
-        assetCount: assetUuids.length,
-        previewUrls: assetUuids.slice(0, 4).map((uuid) => uploadcarePreview(uuid)),
+        assetCount: publicIds.length,
+        previewUrls,
+        createdAt: set.createdAt,
       };
     });
 
-    return NextResponse.json({ sets });
+    return NextResponse.json({ sets: enriched });
   } catch (err) {
     console.error('[MediaLibrary/Sets] GET error:', err);
     return NextResponse.json({ error: 'Failed to fetch sets.' }, { status: 500 });
   }
 }
 
-// -----------------------------------------------------------
-// POST /api/media-library/sets
-// Body: { name: string, type: 'slideshow'|'video'|'curated', assetUuids?: string[], curatedThemeId?: string }
-// -----------------------------------------------------------
+// ---------------------------------------------------------------------------
+// POST — create a new set
+// Body: { name, type, assetPublicIds?, assetUuids?, curatedThemeId? }
+// ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) {
-    return error;
-  }
+  if (error) return error;
 
-  const body = await request.json().catch(() => null);
+  const body = await request.json().catch(() => ({}));
   const name = typeof body?.name === 'string' ? body.name.trim() : '';
   const type = body?.type;
 
@@ -110,26 +103,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'name and a valid type are required.' }, { status: 400 });
   }
 
-  const assetUuids: string[] = Array.isArray(body?.assetUuids) ? body.assetUuids : [];
+  // Gracefully handle both the new `assetPublicIds` and legacy `assetUuids` payloads
+  const incomingAssets = body.assetPublicIds ?? body.assetUuids;
+  const publicIds: string[] = Array.isArray(incomingAssets) ? incomingAssets : [];
   const curatedThemeId: string | undefined = body?.curatedThemeId;
 
   try {
-    const [set] = await db
+    const [created] = await db
       .insert(mediaSetSchema)
       .values({
         orgId: orgId!,
         name,
         type,
-        assetUuids: type === 'curated' ? [] : assetUuids,
+        // Column keeps old name `assetUuids` but stores public_ids now
+        assetUuids: type === 'curated' ? [] : publicIds,
         curatedThemeId: type === 'curated' ? (curatedThemeId ?? null) : null,
       })
       .returning();
 
-    if (!set) {
-      return NextResponse.json({ error: 'Failed to create set.' }, { status: 500 });
-    }
-
-    return NextResponse.json({ set }, { status: 201 });
+    return NextResponse.json({ set: created }, { status: 201 });
   } catch (err) {
     console.error('[MediaLibrary/Sets] POST error:', err);
     return NextResponse.json({ error: 'Failed to create set.' }, { status: 500 });

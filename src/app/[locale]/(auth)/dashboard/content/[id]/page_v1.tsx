@@ -25,6 +25,7 @@ import { useEffect, useState } from 'react';
 import { MediaUploader } from '@/components/media/MediaUploader';
 import { PageHeader } from '@/features/dashboard/PageHeader';
 import { TikTokPublishModal } from '@/components/tiktok/TikTokPublishModal_v1';
+import { cldImageUrl } from '@/lib/cloudflare-helpers';
 
 // -----------------------------------------------------------
 // TYPES
@@ -80,7 +81,7 @@ const PLATFORM_LABELS: Record<string, string> = {
   youtube: 'YouTube',
   threads: 'Threads',
   pinterest: 'Pinterest',
-   snapchat: 'Snapchat',
+  snapchat: 'Snapchat',
 };
 
 const TITLE_PLATFORMS = new Set(['youtube', 'pinterest']);
@@ -1460,8 +1461,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                       </p>
                       <MediaUploader
                         contentItemId={item.id}
-                        existingUrls={[]}
-                        onUpdate={(urls) => { if (urls[0]) setYoutubeThumbnailUrl(urls[0]); }}
+                        existingPublicIds={[]}
+                        onUpdate={(publicIds) => { if (publicIds[0]) setYoutubeThumbnailUrl(cldImageUrl(publicIds[0])); }}
                         mediaType="image"
                         maxFiles={1}
                       />
@@ -1685,8 +1686,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <p className="mb-3 text-xs font-medium text-muted-foreground">{hasUploadedVideo ? 'Replace video' : 'Or upload your own video'}</p>
                 <MediaUploader
                   contentItemId={item.id}
-                  existingUrls={[]}
-                  onUpdate={(urls) => { if (urls.length > 0) setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev); }}
+                  existingPublicIds={[]}
+                  onUpdate={(publicIds) => { if (publicIds.length > 0) setItem(prev => prev ? { ...prev, graphicUrls: publicIds } : prev); }}
                   mediaType="video"
                   maxFiles={1}
                 />
@@ -2086,8 +2087,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <p className="mb-3 text-xs font-medium text-muted-foreground">Upload your own</p>
                 <MediaUploader
                   contentItemId={item.id}
-                  existingUrls={item.graphicUrls || []}
-                  onUpdate={urls => setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev)}
+                  existingPublicIds={item.graphicUrls || []}
+                  onUpdate={publicIds => setItem(prev => prev ? { ...prev, graphicUrls: publicIds } : prev)}
                   mediaType="image"
                   maxFiles={1}
                 />
@@ -2153,8 +2154,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <p className="mb-3 text-xs font-medium text-muted-foreground">Or upload slides manually</p>
                 <MediaUploader
                   contentItemId={item.id}
-                  existingUrls={item.graphicUrls || []}
-                  onUpdate={urls => setItem(prev => prev ? { ...prev, graphicUrls: urls } : prev)}
+                  existingPublicIds={item.graphicUrls || []}
+                  onUpdate={publicIds => setItem(prev => prev ? { ...prev, graphicUrls: publicIds } : prev)}
                   mediaType="image"
                 />
               </div>
