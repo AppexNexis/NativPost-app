@@ -8,7 +8,7 @@
  * We embed the orgId as a tag and set the upload folder automatically.
  *
  * POST /api/media-library/signature
- * Body: { paramsToSign: Record<string, string> }
+ * Body: { paramsToSign: Record<string, any> }
  */
 
 import { v2 as cloudinary } from 'cloudinary';
@@ -29,11 +29,17 @@ export async function POST(request: NextRequest) {
   if (error) return error;
 
   const body = await request.json().catch(() => ({}));
-  const paramsToSign: Record<string, string> = body.paramsToSign ?? {};
+  
+  // Use Record<string, any> to account for numbers (like timestamps) and strings
+  const paramsToSign: Record<string, any> = body.paramsToSign ?? {};
 
-  // Always enforce org folder and org tag — client cannot override these
-  const enforced = {
+  // Safely extract the timestamp from the payload or generate a new one
+  const timestamp = paramsToSign.timestamp ?? Math.round(Date.now() / 1000);
+
+  // Explicitly type the enforced object to prevent strict inference errors
+  const enforced: Record<string, any> = {
     ...paramsToSign,
+    timestamp, // Inject the guaranteed timestamp back into the object for signing
     folder: `nativpost/${orgId}`,
     tags: `org:${orgId}`,
   };
@@ -46,7 +52,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       signature,
-      timestamp: enforced.timestamp ?? Math.round(Date.now() / 1000),
+      timestamp, // Pass the guaranteed timestamp to the frontend
       folder: enforced.folder,
       tags: enforced.tags,
       apiKey: process.env.CLOUDINARY_API_KEY,
