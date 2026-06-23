@@ -91,31 +91,35 @@ const VIDEO_CATEGORIES = [
 const ALL_CATEGORIES = [...IMAGE_CATEGORIES, ...VIDEO_CATEGORIES];
 
 // ---------------------------------------------------------------------------
-// URL HELPERS — CRITICAL FIXES
-//
-// The previous version built URLs like:
-//   `${cdnUrl}-/preview/...`  where cdnUrl = `https://.../{uuid}/`
-// This produced a double-slash:  `https://.../{uuid}//-/preview/...`
-// which Uploadcare rejects with a 404/black response.
-//
-// Fix: always strip trailing slash before appending UC transformation ops.
+// URL HELPERS
 // ---------------------------------------------------------------------------
 function ucThumbnail(cdnUrl: string, size = 400): string {
-  const base = cdnUrl.replace(/\/$/, ''); // strip trailing slash
+  const base = cdnUrl.replace(/\/$/, '');
   return `${base}/-/preview/${size}x${size}/-/format/webp/-/quality/smart/`;
 }
 
 function ucVideoSrc(cdnUrl: string): string {
-  // If the URL already points at a video file, use it directly
   if (/\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(cdnUrl)) return cdnUrl;
   const base = cdnUrl.replace(/\/$/, '');
   return `${base}/video.mp4`;
 }
 
-// Unsplash preview — goes through our proxy route (no redirect, no domain issues)
-function unsplashPreview(query: string, w = 300, page = 1): string {
-  return `/api/media-library/unsplash-preview?query=${encodeURIComponent(query)}&w=${w}&page=${page}`;
+/**
+ * Preferred — routes through ?theme= so the server can apply fallback
+ * queries automatically. Each unique `page` value rotates through the
+ * theme's query list, widening the image pool and eliminating blank cards.
+ */
+function unsplashPreviewByTheme(themeId: string, w = 300, page = 1): string {
+  return `/api/media-library/unsplash-preview?theme=${encodeURIComponent(themeId)}&w=${w}&page=${page}`;
 }
+
+/**
+ * Legacy helper — kept for any future callers that only have a raw query
+ * string and no theme id. No fallback queries are applied in this mode.
+ */
+// function unsplashPreview(query: string, w = 300, page = 1): string {
+//   return `/api/media-library/unsplash-preview?query=${encodeURIComponent(query)}&w=${w}&page=${page}`;
+// }
 
 // ---------------------------------------------------------------------------
 // FORMAT HELPERS
@@ -232,7 +236,7 @@ function VideoCard({
 }
 
 // ---------------------------------------------------------------------------
-// IMAGE CARD — uses native <img> (not Next.js Image) to avoid domain issues
+// IMAGE CARD
 // ---------------------------------------------------------------------------
 function ImageCard({
   asset,
@@ -257,7 +261,6 @@ function ImageCard({
       onClick={onClick}
     >
       <div className="relative aspect-[3/4] overflow-hidden bg-muted/30">
-        {/* Native <img> — bypasses Next.js domain restrictions entirely */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={ucThumbnail(asset.cdnUrl, 300)}
@@ -328,7 +331,6 @@ function AssetDetailModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
       <div className="relative flex max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-2xl border bg-background shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        {/* Preview */}
         <div className="flex w-[55%] shrink-0 items-center justify-center bg-zinc-950 p-4">
           {asset.isImage ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -352,7 +354,6 @@ function AssetDetailModal({
           )}
         </div>
 
-        {/* Details panel */}
         <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
           <div className="flex items-center justify-between border-b px-5 py-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Asset details</p>
@@ -523,7 +524,7 @@ function NewSetModal({
 
 // ---------------------------------------------------------------------------
 // CURATED PICKER MODAL
-// Uses native <img> pointing at our proxy route — no domain issues
+// Uses ?theme= URLs — server applies fallback queries automatically
 // ---------------------------------------------------------------------------
 function CuratedPickerModal({
   existing,
@@ -569,10 +570,10 @@ function CuratedPickerModal({
                   className={`group relative overflow-hidden rounded-xl border transition-all ${isSel ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-muted-foreground/30'}`}
                 >
                   <div className="aspect-[4/3] overflow-hidden bg-muted">
-                    {/* Native img pointing to our PROXY route — no domain blocklist issues */}
+                    {/* ?theme= route — server rotates fallback queries automatically */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={unsplashPreview(theme.query, 300, 1)}
+                      src={unsplashPreviewByTheme(theme.id, 300, 1)}
                       alt={theme.name}
                       className="size-full object-cover"
                       loading="lazy"
@@ -610,6 +611,7 @@ function CuratedPickerModal({
 
 // ---------------------------------------------------------------------------
 // CURATED PREVIEW MODAL
+// 16 images — each page number rotates through fallback queries server-side
 // ---------------------------------------------------------------------------
 function CuratedPreviewModal({
   theme,
@@ -620,7 +622,6 @@ function CuratedPreviewModal({
   onClose: () => void;
   onDelete: () => void;
 }) {
-  // 16 images — page param gives us different photos for the same query
   const pages = Array.from({ length: 16 }, (_, i) => i + 1);
 
   return (
@@ -645,7 +646,7 @@ function CuratedPreviewModal({
               <div key={page} className="aspect-square overflow-hidden rounded-lg bg-muted">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={unsplashPreview(theme.query, 200, page)}
+                  src={unsplashPreviewByTheme(theme.id, 200, page)}
                   alt={`${theme.name} ${page}`}
                   className="size-full object-cover"
                   loading="lazy"

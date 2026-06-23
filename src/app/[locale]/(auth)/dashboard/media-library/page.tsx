@@ -1,8 +1,5 @@
 'use client';
 
-import '@uploadcare/react-uploader/core.css';
-
-import { FileUploaderRegular } from '@uploadcare/react-uploader/next';
 import {
   Check,
   ChevronDown,
@@ -19,6 +16,8 @@ import {
   Video,
   X,
 } from 'lucide-react';
+import type { CloudinaryUploadWidgetOptions } from 'next-cloudinary';
+import { CldUploadWidget } from 'next-cloudinary';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
@@ -34,9 +33,10 @@ import { CURATED_THEMES, type CuratedTheme } from '@/libs/curatedThemes';
 // TYPES
 // ---------------------------------------------------------------------------
 type MediaAsset = {
-  uuid: string;
+  publicId: string;        // Cloudinary public_id — was: uuid
   name: string;
-  cdnUrl: string;
+  url: string;             // optimised delivery URL — was: cdnUrl + ucVideoSrc/ucThumbnail
+  thumbnailUrl: string;    // pre-built 400x400 thumbnail
   mimeType: string;
   size: number;
   isImage: boolean;
@@ -45,6 +45,7 @@ type MediaAsset = {
   height: number | null;
   uploadedAt: string;
   categories?: string[];
+  resourceType: 'image' | 'video' | 'raw';
 };
 
 type FilterType = 'all' | 'image' | 'video';
@@ -91,35 +92,11 @@ const VIDEO_CATEGORIES = [
 const ALL_CATEGORIES = [...IMAGE_CATEGORIES, ...VIDEO_CATEGORIES];
 
 // ---------------------------------------------------------------------------
-// URL HELPERS
+// UNSPLASH PREVIEW HELPER — unrelated to media storage, unchanged
 // ---------------------------------------------------------------------------
-function ucThumbnail(cdnUrl: string, size = 400): string {
-  const base = cdnUrl.replace(/\/$/, '');
-  return `${base}/-/preview/${size}x${size}/-/format/webp/-/quality/smart/`;
-}
-
-function ucVideoSrc(cdnUrl: string): string {
-  if (/\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(cdnUrl)) return cdnUrl;
-  const base = cdnUrl.replace(/\/$/, '');
-  return `${base}/video.mp4`;
-}
-
-/**
- * Preferred — routes through ?theme= so the server can apply fallback
- * queries automatically. Each unique `page` value rotates through the
- * theme's query list, widening the image pool and eliminating blank cards.
- */
 function unsplashPreviewByTheme(themeId: string, w = 300, page = 1): string {
   return `/api/media-library/unsplash-preview?theme=${encodeURIComponent(themeId)}&w=${w}&page=${page}`;
 }
-
-/**
- * Legacy helper — kept for any future callers that only have a raw query
- * string and no theme id. No fallback queries are applied in this mode.
- */
-// function unsplashPreview(query: string, w = 300, page = 1): string {
-//   return `/api/media-library/unsplash-preview?query=${encodeURIComponent(query)}&w=${w}&page=${page}`;
-// }
 
 // ---------------------------------------------------------------------------
 // FORMAT HELPERS
@@ -184,7 +161,7 @@ function VideoCard({
       <div className="relative aspect-[3/4] overflow-hidden bg-zinc-950">
         <video
           ref={videoRef}
-          src={ucVideoSrc(asset.cdnUrl)}
+          src={asset.url}
           className={`size-full object-cover transition-opacity duration-200 ${hovering ? 'opacity-100' : 'opacity-80'}`}
           preload="metadata"
           playsInline
@@ -263,7 +240,7 @@ function ImageCard({
       <div className="relative aspect-[3/4] overflow-hidden bg-muted/30">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={ucThumbnail(asset.cdnUrl, 300)}
+          src={asset.thumbnailUrl}
           alt={asset.name}
           className="size-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
           loading="lazy"
@@ -312,7 +289,7 @@ function AssetDetailModal({
   asset: MediaAsset;
   onClose: () => void;
   onDelete: () => void;
-  onCategoryChange: (uuid: string, categories: string[]) => Promise<void>;
+  onCategoryChange: (publicId: string, categories: string[], resourceType: MediaAsset['resourceType']) => Promise<void>;
   deleting: string | null;
 }) {
   const categories = asset.isVideo ? VIDEO_CATEGORIES : IMAGE_CATEGORIES;
@@ -320,11 +297,11 @@ function AssetDetailModal({
   const [saving, setSaving] = useState(false);
 
   const toggle = (cat: string) =>
-    setSelected((prev) => prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]);
+    setSelected((prev) => (prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]));
 
   const save = async () => {
     setSaving(true);
-    await onCategoryChange(asset.uuid, selected);
+    await onCategoryChange(asset.publicId, selected, asset.resourceType);
     setSaving(false);
   };
 
@@ -335,13 +312,13 @@ function AssetDetailModal({
           {asset.isImage ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={ucThumbnail(asset.cdnUrl, 800)}
+              src={asset.url}
               alt={asset.name}
               className="max-h-[70vh] w-full rounded-lg object-contain"
             />
           ) : asset.isVideo ? (
             <video
-              src={ucVideoSrc(asset.cdnUrl)}
+              src={asset.url}
               className="max-h-[70vh] w-full rounded-lg object-contain"
               controls
               preload="metadata"
@@ -431,8 +408,8 @@ function AssetDetailModal({
               {saving ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
               Save categories
             </button>
-            <a
-              href={asset.isVideo ? ucVideoSrc(asset.cdnUrl) : asset.cdnUrl}
+            
+             <a href={asset.url}
               target="_blank"
               rel="noopener noreferrer"
               className="flex w-full items-center justify-center rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
@@ -442,10 +419,10 @@ function AssetDetailModal({
             <button
               type="button"
               onClick={onDelete}
-              disabled={deleting === asset.uuid}
+              disabled={deleting === asset.publicId}
               className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-500 hover:bg-red-50 disabled:opacity-60"
             >
-              {deleting === asset.uuid ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
+              {deleting === asset.publicId ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
               Delete asset
             </button>
           </div>
@@ -456,7 +433,7 @@ function AssetDetailModal({
 }
 
 // ---------------------------------------------------------------------------
-// NEW SET MODAL
+// NEW SET MODAL  — unchanged
 // ---------------------------------------------------------------------------
 function NewSetModal({
   onClose,
@@ -523,8 +500,7 @@ function NewSetModal({
 }
 
 // ---------------------------------------------------------------------------
-// CURATED PICKER MODAL
-// Uses ?theme= URLs — server applies fallback queries automatically
+// CURATED PICKER MODAL — unchanged
 // ---------------------------------------------------------------------------
 function CuratedPickerModal({
   existing,
@@ -537,7 +513,7 @@ function CuratedPickerModal({
 }) {
   const [selected, setSelected] = useState<string[]>([]);
   const toggle = (id: string) =>
-    setSelected((prev) => prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]);
+    setSelected((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
 
   const available = CURATED_THEMES.filter((t) => !existing.includes(t.id));
 
@@ -570,7 +546,6 @@ function CuratedPickerModal({
                   className={`group relative overflow-hidden rounded-xl border transition-all ${isSel ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-muted-foreground/30'}`}
                 >
                   <div className="aspect-[4/3] overflow-hidden bg-muted">
-                    {/* ?theme= route — server rotates fallback queries automatically */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={unsplashPreviewByTheme(theme.id, 300, 1)}
@@ -610,8 +585,7 @@ function CuratedPickerModal({
 }
 
 // ---------------------------------------------------------------------------
-// CURATED PREVIEW MODAL
-// 16 images — each page number rotates through fallback queries server-side
+// CURATED PREVIEW MODAL — unchanged
 // ---------------------------------------------------------------------------
 function CuratedPreviewModal({
   theme,
@@ -675,7 +649,7 @@ function CuratedPreviewModal({
 }
 
 // ---------------------------------------------------------------------------
-// WHAT IS THIS MODAL
+// WHAT IS THIS MODAL — unchanged
 // ---------------------------------------------------------------------------
 function WhatIsThisModal({ onClose }: { onClose: () => void }) {
   return (
@@ -699,7 +673,7 @@ function WhatIsThisModal({ onClose }: { onClose: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// BULK ACTION BAR
+// BULK ACTION BAR — unchanged
 // ---------------------------------------------------------------------------
 function BulkBar({
   count,
@@ -747,7 +721,7 @@ function BulkBar({
 }
 
 // ---------------------------------------------------------------------------
-// SET CARD
+// SET CARD — unchanged
 // ---------------------------------------------------------------------------
 function SetCard({ set, onClick, onDelete }: { set: UserSet; onClick: () => void; onDelete: () => void }) {
   return (
@@ -793,7 +767,7 @@ function SetCard({ set, onClick, onDelete }: { set: UserSet; onClick: () => void
 }
 
 // ---------------------------------------------------------------------------
-// CATEGORY DROPDOWN
+// CATEGORY DROPDOWN — unchanged
 // ---------------------------------------------------------------------------
 function CategoryDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -838,7 +812,7 @@ function CategoryDropdown({ value, onChange }: { value: string; onChange: (v: st
 }
 
 // ---------------------------------------------------------------------------
-// CREATE SET BOTTOM BAR
+// CREATE SET BOTTOM BAR — unchanged
 // ---------------------------------------------------------------------------
 function CreateSetBar({
   type,
@@ -868,7 +842,7 @@ function CreateSetBar({
           type="text"
           value={name}
           onChange={(e) => onNameChange(e.target.value)}
-          placeholder={type === 'slideshow' ? "e.g. Brand photoshoot" : "e.g. Hook videos Q3"}
+          placeholder={type === 'slideshow' ? 'e.g. Brand photoshoot' : 'e.g. Hook videos Q3'}
           className="flex-1 rounded-lg border bg-muted/30 px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
         />
         <button type="button" onClick={onCancel} className="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">
@@ -902,18 +876,16 @@ export default function MediaLibraryPage() {
   const [filter, setFilter] = useState<FilterType>('all');
   const [categoryFilter, setCategoryFilter] = useState('All categories');
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
-  const [selectedUuids, setSelectedUuids] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [showUploader, setShowUploader] = useState(false);
-  const [isTagging, setIsTagging] = useState(false);
+  const [isFinalizingUpload, setIsFinalizingUpload] = useState(false);
   const [sets, setSets] = useState<UserSet[]>([]);
   const [creatingSetType, setCreatingSetType] = useState<'slideshow' | 'video' | null>(null);
   const [newSetName, setNewSetName] = useState('');
   const [savingSet, setSavingSet] = useState(false);
-
-  const pubkey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY || '';
 
   const fetchAssets = useCallback(async (type: FilterType, category: string, offset = 0) => {
     const params = new URLSearchParams({
@@ -968,30 +940,32 @@ export default function MediaLibraryPage() {
   useEffect(() => { load(filter, categoryFilter); }, [filter, categoryFilter, load]);
   useEffect(() => { fetchSets(); }, [fetchSets]);
 
-  const handleUploadDone = async (files: { allEntries: { status: string; uuid: string | null }[] }) => {
-    const uploaded = files.allEntries.filter((f) => f.status === 'success' && f.uuid).map((f) => f.uuid as string);
-    if (!uploaded.length) { setShowUploader(false); return; }
-    setIsTagging(true);
+  // ---------------------------------------------------------------------------
+  // Upload — Cloudinary signed widget.
+  // No separate "tag" call is needed: the signature endpoint already pins
+  // every upload into the org's isolated folder (nativpost/{orgId}) server-side.
+  // We just wait for the queue to finish, then refresh the grid.
+  // ---------------------------------------------------------------------------
+  const handleQueuesEnd = async () => {
+    setIsFinalizingUpload(true);
     try {
-      await Promise.all(uploaded.map((uuid) =>
-        fetch('/api/media-library/tag', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uuid }) })
-      ));
+      await load(filter, categoryFilter);
     } finally {
-      setIsTagging(false);
+      setIsFinalizingUpload(false);
       setShowUploader(false);
-      load(filter, categoryFilter);
     }
   };
 
   const handleDelete = async (asset: MediaAsset) => {
     if (!window.confirm(`Delete "${asset.name}"? This cannot be undone.`)) return;
-    setDeleting(asset.uuid);
+    setDeleting(asset.publicId);
     try {
-      const res = await fetch(`/api/media-library?uuid=${asset.uuid}`, { method: 'DELETE' });
+      const params = new URLSearchParams({ publicId: asset.publicId, resourceType: asset.resourceType });
+      const res = await fetch(`/api/media-library?${params}`, { method: 'DELETE' });
       if (res.ok) {
-        setAssets((prev) => prev.filter((a) => a.uuid !== asset.uuid));
+        setAssets((prev) => prev.filter((a) => a.publicId !== asset.publicId));
         setTotal((prev) => prev - 1);
-        if (modal.kind === 'asset' && modal.asset.uuid === asset.uuid) setModal({ kind: 'none' });
+        if (modal.kind === 'asset' && modal.asset.publicId === asset.publicId) setModal({ kind: 'none' });
       }
     } finally {
       setDeleting(null);
@@ -999,36 +973,41 @@ export default function MediaLibraryPage() {
   };
 
   const handleBulkDelete = async () => {
-    if (!window.confirm(`Delete ${selectedUuids.size} items? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete ${selectedIds.size} items? This cannot be undone.`)) return;
     setBulkDeleting(true);
     try {
-      await Promise.all([...selectedUuids].map((uuid) => fetch(`/api/media-library?uuid=${uuid}`, { method: 'DELETE' })));
-      setAssets((prev) => prev.filter((a) => !selectedUuids.has(a.uuid)));
-      setTotal((prev) => prev - selectedUuids.size);
-      setSelectedUuids(new Set());
+      await Promise.all([...selectedIds].map((id) => {
+        const asset = assets.find((a) => a.publicId === id);
+        const params = new URLSearchParams({ publicId: id, resourceType: asset?.resourceType ?? 'image' });
+        return fetch(`/api/media-library?${params}`, { method: 'DELETE' });
+      }));
+      setAssets((prev) => prev.filter((a) => !selectedIds.has(a.publicId)));
+      setTotal((prev) => prev - selectedIds.size);
+      setSelectedIds(new Set());
       setSelectMode(false);
     } finally {
       setBulkDeleting(false);
     }
   };
 
-  const handleCategoryChange = async (uuid: string, categories: string[]) => {
-    await fetch(`/api/media-library/${uuid}/categories`, {
+  const handleCategoryChange = async (publicId: string, categories: string[], resourceType: MediaAsset['resourceType']) => {
+    await fetch(`/api/media-library/${encodeURIComponent(publicId)}/categories`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ categories }),
+      body: JSON.stringify({ categories, resourceType }),
     });
-    setAssets((prev) => prev.map((a) => (a.uuid === uuid ? { ...a, categories } : a)));
-    if (modal.kind === 'asset' && modal.asset.uuid === uuid) {
+    setAssets((prev) => prev.map((a) => (a.publicId === publicId ? { ...a, categories } : a)));
+    if (modal.kind === 'asset' && modal.asset.publicId === publicId) {
       setModal({ kind: 'asset', asset: { ...modal.asset, categories } });
     }
   };
 
   const handleBulkCategory = async (category: string) => {
-    await Promise.all([...selectedUuids].map((uuid) => {
-      const asset = assets.find((a) => a.uuid === uuid);
+    await Promise.all([...selectedIds].map((id) => {
+      const asset = assets.find((a) => a.publicId === id);
       const existing = asset?.categories ?? [];
-      return handleCategoryChange(uuid, existing.includes(category) ? existing : [...existing, category]);
+      const resourceType = asset?.resourceType ?? 'image';
+      return handleCategoryChange(id, existing.includes(category) ? existing : [...existing, category], resourceType);
     }));
   };
 
@@ -1039,13 +1018,15 @@ export default function MediaLibraryPage() {
       const res = await fetch('/api/media-library/sets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newSetName.trim(), type: creatingSetType, assetUuids: [...selectedUuids] }),
+        // NOTE: field is still named `assetUuids` to match the existing sets
+        // route — values are now Cloudinary public_ids, not Uploadcare uuids.
+        body: JSON.stringify({ name: newSetName.trim(), type: creatingSetType, assetUuids: [...selectedIds] }),
       });
       if (res.ok) {
         await fetchSets();
         setCreatingSetType(null);
         setNewSetName('');
-        setSelectedUuids(new Set());
+        setSelectedIds(new Set());
         setSelectMode(false);
       }
     } finally {
@@ -1072,12 +1053,12 @@ export default function MediaLibraryPage() {
     setModal({ kind: 'none' });
   };
 
-  const toggleSelect = (uuid: string) =>
-    setSelectedUuids((prev) => { const n = new Set(prev); n.has(uuid) ? n.delete(uuid) : n.add(uuid); return n; });
+  const toggleSelect = (publicId: string) =>
+    setSelectedIds((prev) => { const n = new Set(prev); n.has(publicId) ? n.delete(publicId) : n.add(publicId); return n; });
 
   const handleCardClick = (asset: MediaAsset) => {
     if (selectMode || creatingSetType) {
-      toggleSelect(asset.uuid);
+      toggleSelect(asset.publicId);
     } else {
       setModal({ kind: 'asset', asset });
     }
@@ -1090,6 +1071,23 @@ export default function MediaLibraryPage() {
   ];
 
   const curatedSetIds = sets.filter((s) => s.type === 'curated').map((s) => s.curatedThemeId ?? '');
+
+  // Cloudinary signed upload widget options.
+  // TODO: verify uploads land in nativpost/{orgId}/ in your Cloudinary console.
+  // If they don't, the signature endpoint's folder override isn't being
+  // applied to the actual upload request by this next-cloudinary version —
+  // in that case set `folder` here too so client + signed params match.
+  const uploadSources: CloudinaryUploadWidgetOptions['sources'] = [
+    'local', 'url', 'camera', 'dropbox', 'google_drive',
+  ];
+
+  const uploadWidgetOptions: CloudinaryUploadWidgetOptions = {
+    sources: uploadSources,
+    multiple: true,
+    resourceType: 'auto',
+    maxFileSize: 500_000_000,
+    cropping: false,
+  };
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -1151,20 +1149,28 @@ export default function MediaLibraryPage() {
                 <X className="size-4 text-muted-foreground" />
               </button>
             </div>
-            {isTagging ? (
+            {isFinalizingUpload ? (
               <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" /> Saving to your library...
               </div>
             ) : (
-              <FileUploaderRegular
-                pubkey={pubkey}
-                multiple
-                imgOnly={false}
-                sourceList="local, url, dropbox, gdrive, camera"
-                onDoneClick={handleUploadDone}
-                classNameUploader="uc-light"
-                className="w-full"
-              />
+              <CldUploadWidget
+                signatureEndpoint="/api/media-library/signature"
+                options={uploadWidgetOptions}
+                onQueuesEnd={handleQueuesEnd}
+              >
+                {({ open }) => (
+                  <button
+                    type="button"
+                    onClick={() => open()}
+                    className="flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border/60 bg-muted/20 py-8 text-center transition-colors hover:border-primary/40 hover:bg-muted/40"
+                  >
+                    <Upload className="size-6 text-muted-foreground/50" />
+                    <p className="text-sm font-medium text-muted-foreground">Click to choose files</p>
+                    <p className="text-xs text-muted-foreground/60">Images or videos, from your computer, a URL, Dropbox, or Google Drive</p>
+                  </button>
+                )}
+              </CldUploadWidget>
             )}
           </div>
         ) : (
@@ -1186,11 +1192,11 @@ export default function MediaLibraryPage() {
         {/* FILTER BAR */}
         {selectMode ? (
           <BulkBar
-            count={selectedUuids.size}
-            onSelectAll={() => setSelectedUuids(new Set(assets.map((a) => a.uuid)))}
+            count={selectedIds.size}
+            onSelectAll={() => setSelectedIds(new Set(assets.map((a) => a.publicId)))}
             onDelete={handleBulkDelete}
             onCategoryChange={handleBulkCategory}
-            onCancel={() => { setSelectMode(false); setSelectedUuids(new Set()); }}
+            onCancel={() => { setSelectMode(false); setSelectedIds(new Set()); }}
             deleting={bulkDeleting}
           />
         ) : (
@@ -1268,20 +1274,20 @@ export default function MediaLibraryPage() {
               {assets.map((asset) =>
                 asset.isVideo ? (
                   <VideoCard
-                    key={asset.uuid}
+                    key={asset.publicId}
                     asset={asset}
-                    isSelected={selectedUuids.has(asset.uuid)}
-                    isDeleting={deleting === asset.uuid}
+                    isSelected={selectedIds.has(asset.publicId)}
+                    isDeleting={deleting === asset.publicId}
                     selectMode={selectMode || !!creatingSetType}
                     onClick={() => handleCardClick(asset)}
                     onDelete={(e) => { e.stopPropagation(); handleDelete(asset); }}
                   />
                 ) : (
                   <ImageCard
-                    key={asset.uuid}
+                    key={asset.publicId}
                     asset={asset}
-                    isSelected={selectedUuids.has(asset.uuid)}
-                    isDeleting={deleting === asset.uuid}
+                    isSelected={selectedIds.has(asset.publicId)}
+                    isDeleting={deleting === asset.publicId}
                     selectMode={selectMode || !!creatingSetType}
                     onClick={() => handleCardClick(asset)}
                     onDelete={(e) => { e.stopPropagation(); handleDelete(asset); }}
@@ -1305,11 +1311,11 @@ export default function MediaLibraryPage() {
         {creatingSetType && (
           <CreateSetBar
             type={creatingSetType}
-            selectedCount={selectedUuids.size}
+            selectedCount={selectedIds.size}
             name={newSetName}
             onNameChange={setNewSetName}
             onSave={handleSaveSet}
-            onCancel={() => { setCreatingSetType(null); setNewSetName(''); setSelectedUuids(new Set()); }}
+            onCancel={() => { setCreatingSetType(null); setNewSetName(''); setSelectedIds(new Set()); }}
             saving={savingSet}
           />
         )}
@@ -1327,8 +1333,8 @@ export default function MediaLibraryPage() {
         {modal.kind === 'new-set' && (
           <NewSetModal
             onClose={() => setModal({ kind: 'none' })}
-            onSelectSlideshow={() => { setModal({ kind: 'none' }); setCreatingSetType('slideshow'); setSelectedUuids(new Set()); }}
-            onSelectVideo={() => { setModal({ kind: 'none' }); setCreatingSetType('video'); setSelectedUuids(new Set()); }}
+            onSelectSlideshow={() => { setModal({ kind: 'none' }); setCreatingSetType('slideshow'); setSelectedIds(new Set()); }}
+            onSelectVideo={() => { setModal({ kind: 'none' }); setCreatingSetType('video'); setSelectedIds(new Set()); }}
             onBrowseCurated={() => setModal({ kind: 'curated-picker' })}
           />
         )}
