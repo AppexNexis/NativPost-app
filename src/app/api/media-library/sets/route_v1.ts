@@ -5,6 +5,11 @@ import { NextResponse } from 'next/server';
 import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { mediaSetSchema } from '@/models/Schema';
+// NOTE: adjust this import to wherever curatedThemes.ts actually lives.
+// It currently sits next to the media-library page component (imported
+// there as './curatedThemes'); move it to a shared location such as
+// `@/libs/curatedThemes` so both the page and this route can use the
+// same 60+ theme list instead of duplicating it.
 import { CURATED_THEMES } from '@/libs/curatedThemes';
 
 const UC_CDN_BASE = 'https://9c0v643oty.ucarecd.net';
@@ -41,16 +46,9 @@ export async function GET() {
 
     const sets: SetResponse[] = setRows.map((set) => {
       if (set.type === 'curated') {
-        const theme = CURATED_THEMES.find((t) => t.id === set.curatedThemeId);
-
-        // Use theme-based proxy URLs (pages 1–4) so the set card shows a
-        // 2×2 preview grid. The unsplash-preview route handles fallback
-        // queries internally when it receives a `theme` param.
+        const theme = CURATED_THEMES.find(t => t.id === set.curatedThemeId);
         const previewUrls = theme
-          ? [1, 2, 3, 4].map(
-              (page) =>
-                `/api/media-library/unsplash-preview?theme=${encodeURIComponent(theme.id)}&w=240&page=${page}`,
-            )
+          ? [`/api/media-library/unsplash-preview?query=${encodeURIComponent(theme.query)}&w=240&page=1`]
           : [];
 
         return {
@@ -63,12 +61,12 @@ export async function GET() {
         };
       }
 
-      // --- Safely parse the asset_uuids string into an array ---
+      // --- FIX: Safely parse the asset_uuids string into an array ---
       let assetUuids: string[] = [];
       if (typeof set.assetUuids === 'string') {
         try {
           assetUuids = JSON.parse(set.assetUuids);
-        } catch {
+        } catch (e) {
           assetUuids = [];
         }
       } else if (Array.isArray(set.assetUuids)) {
@@ -80,7 +78,7 @@ export async function GET() {
         name: set.name,
         type: set.type as 'slideshow' | 'video',
         assetCount: assetUuids.length,
-        previewUrls: assetUuids.slice(0, 4).map((uuid) => uploadcarePreview(uuid)),
+        previewUrls: assetUuids.slice(0, 4).map(uuid => uploadcarePreview(uuid)),
       };
     });
 
@@ -121,7 +119,7 @@ export async function POST(request: NextRequest) {
         name,
         type,
         assetUuids: type === 'curated' ? [] : assetUuids,
-        curatedThemeId: type === 'curated' ? (curatedThemeId ?? null) : null,
+        curatedThemeId: type === 'curated' ? curatedThemeId ?? null : null,
       })
       .returning();
 
