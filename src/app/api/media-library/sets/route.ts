@@ -44,11 +44,39 @@ export async function GET() {
       .where(eq(mediaSetSchema.orgId, orgId!))
       .orderBy(asc(mediaSetSchema.createdAt));
 
+    // const sets: SetResponse[] = setRows.map((set) => {
+    //   if (set.type === 'curated') {
+    //     const theme = CURATED_THEMES.find(t => t.id === set.curatedThemeId);
+    //     // Fastlane shows a single hero photo per curated set card (not a
+    //     // mosaic), so we only return one preview URL here.
+    //     const previewUrls = theme
+    //       ? [`/api/media-library/unsplash-preview?query=${encodeURIComponent(theme.query)}&w=240&page=1`]
+    //       : [];
+
+    //     return {
+    //       id: set.id,
+    //       name: set.name,
+    //       type: 'curated' as const,
+    //       assetCount: 0,
+    //       previewUrls,
+    //       curatedThemeId: set.curatedThemeId ?? undefined,
+    //     };
+    //   }
+
+    //   const assetUuids = (set.assetUuids as string[]) || [];
+
+    //   return {
+    //     id: set.id,
+    //     name: set.name,
+    //     type: set.type as 'slideshow' | 'video',
+    //     assetCount: assetUuids.length,
+    //     previewUrls: assetUuids.slice(0, 4).map(uuid => uploadcarePreview(uuid)),
+    //   };
+    // });
+
     const sets: SetResponse[] = setRows.map((set) => {
       if (set.type === 'curated') {
         const theme = CURATED_THEMES.find(t => t.id === set.curatedThemeId);
-        // Fastlane shows a single hero photo per curated set card (not a
-        // mosaic), so we only return one preview URL here.
         const previewUrls = theme
           ? [`/api/media-library/unsplash-preview?query=${encodeURIComponent(theme.query)}&w=240&page=1`]
           : [];
@@ -63,7 +91,17 @@ export async function GET() {
         };
       }
 
-      const assetUuids = (set.assetUuids as string[]) || [];
+      // --- FIX: Safely parse the asset_uuids string into an array ---
+      let assetUuids: string[] = [];
+      if (typeof set.assetUuids === 'string') {
+        try {
+          assetUuids = JSON.parse(set.assetUuids);
+        } catch (e) {
+          assetUuids = [];
+        }
+      } else if (Array.isArray(set.assetUuids)) {
+        assetUuids = set.assetUuids;
+      }
 
       return {
         id: set.id,
