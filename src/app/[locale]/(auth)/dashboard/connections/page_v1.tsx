@@ -26,12 +26,12 @@ type PlatformEntry = (PlatformInfo | { id: string; name: string; description: st
   _accountKey?: string;
   _badge?: string;
   _badgeVariant?: 'default' | 'highlight';
-  _pending?: boolean;       // shows "coming soon" state — API approval in progress
-  _pendingLabel?: string;   // e.g. "Awaiting Meta API approval"
+  _pending?: boolean;
+  _pendingLabel?: string;
 };
 
 // -----------------------------------------------------------
-// Inline SVG icons for platforms not yet in PlatformIcons
+// Inline SVG icons
 // -----------------------------------------------------------
 function WhatsAppIcon({ className = 'size-4' }: { className?: string }) {
   return (
@@ -98,31 +98,21 @@ function buildGroups(platforms: PlatformInfo[]): { label: string; platforms: Pla
     {
       label: 'Messaging',
       platforms: [
+        // WhatsApp — now live after Meta business verification
         {
           id: 'whatsapp',
           name: 'WhatsApp',
           icon: WhatsAppIcon as PlatformInfo['icon'],
           color: '#25D366',
           description: 'Channel publishing',
-          _pending: true,
-          _pendingLabel: 'Meta Business API approval in progress',
+          // _pending removed — WhatsApp is now available
         },
-        // {
-        //   id: 'snapchat',
-        //   name: 'Snapchat',
-        //   icon: SnapchatIcon as PlatformInfo['icon'],
-        //   color: '#FFFC00',
-        //   description: 'Story publishing',
-        //   _pending: true,
-        //   _pendingLabel: 'Snap Marketing API approval in progress',
-        // },
         {
           id: 'snapchat',
           name: 'Snapchat',
           icon: SnapchatIcon as PlatformInfo['icon'],
           color: '#FFFC00',
           description: 'Story publishing',
-          // _pending and _pendingLabel removed — now live
         },
       ],
     },
@@ -179,18 +169,16 @@ function ConnectionsContent() {
     }
   };
 
-  // For regular platforms: find by platform id + isActive
   const getAccount = (platformId: string) => {
     const acc = accounts.find(a => a.platform === platformId && a.isActive);
     if (!acc) return undefined;
-    if (platformId === 'twitter') return acc.accessToken ? acc : undefined; // ← needs OAuth 2.0
+    if (platformId === 'twitter') return acc.accessToken ? acc : undefined;
     return acc;
   };
 
-  // For the twitter_v1 (media) row: same twitter account but must have oauthToken
   const getTwitterMediaAccount = () => {
     const acc = accounts.find(a => a.platform === 'twitter' && a.isActive);
-    return acc?.oauthToken ? acc : undefined; // ← needs OAuth 1.0a
+    return acc?.oauthToken ? acc : undefined;
   };
 
   const resolveAccount = (entry: PlatformEntry) => {
@@ -199,7 +187,8 @@ function ConnectionsContent() {
   };
 
   const successLabel = successPlatform
-    ? (PLATFORMS.find(p => p.id === successPlatform)?.name ?? successPlatform)
+    ? (PLATFORMS.find(p => p.id === successPlatform)?.name
+      ?? (successPlatform === 'whatsapp' ? 'WhatsApp' : successPlatform))
     : null;
 
   const connectedCount = accounts.filter(a => a.isActive).length;
@@ -259,7 +248,6 @@ function ConnectionsContent() {
                   const isTwitterMediaRow = platform.id === 'twitter_v1';
                   const isPending = '_pending' in platform && platform._pending === true;
 
-                  // Pending platforms (API approval in progress) — show differently
                   if (isPending) {
                     const PendingIcon = platform.icon;
                     return (
@@ -294,19 +282,16 @@ function ConnectionsContent() {
                       key={`${platform.id}-${i}`}
                       className={`flex items-center gap-3 p-4 sm:gap-4 sm:px-5 ${!isLast ? 'border-b' : ''} ${isTwitterMediaRow && !connected ? 'bg-muted/30' : ''}`}
                     >
-                      {/* Platform icon — indented for sub-rows */}
                       <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg sm:size-10 ${isTwitterMediaRow ? 'bg-muted/50' : 'bg-muted'}`}>
                         {isTwitterMediaRow
                           ? <Image className="size-4 text-muted-foreground sm:size-5" aria-hidden />
                           : <PIcon className="size-4 text-muted-foreground sm:size-5" />}
                       </div>
 
-                      {/* Name, badge, status */}
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <p className="text-sm font-medium">{platform.name}</p>
 
-                          {/* Capability badge */}
                           {platform._badgeVariant === 'highlight' ? (
                             <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
                               <Image className="size-2.5" aria-hidden />
@@ -337,7 +322,6 @@ function ConnectionsContent() {
                         )}
                       </div>
 
-                      {/* Actions */}
                       {connected ? (
                         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
                           <div className="hidden items-center gap-1.5 sm:flex">
@@ -377,7 +361,6 @@ function ConnectionsContent() {
                 })}
               </div>
 
-              {/* Contextual hint under the Social group explaining the two X rows */}
               {group.label === 'Social' && (
                 <p className="mt-2 text-xs text-muted-foreground">
                   X requires two separate connections: one for text posts (OAuth 2.0) and one for images &amp; video (OAuth 1.0a). Connect both for full publishing support.
@@ -388,7 +371,6 @@ function ConnectionsContent() {
         </div>
       )}
 
-      {/* Security note */}
       <p className="mt-8 text-xs text-muted-foreground">
         NativPost uses official platform APIs with OAuth 2.0 and OAuth 1.0a where required. Credentials are encrypted and stored securely.
         Content is never published without your explicit approval.

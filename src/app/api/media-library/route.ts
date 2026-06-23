@@ -1,293 +1,209 @@
-import { eq } from 'drizzle-orm';
+/**
+ * /api/media-library
+ *
+ * Full Cloudinary replacement for the previous Uploadcare-based media library.
+ *
+ * Storage model:
+ *   - Every asset is uploaded directly to Cloudinary (browser → Cloudinary via signed widget).
+ *   - Assets are organised under a folder per org:  nativpost/{orgId}/
+ *   - orgId is embedded as a Cloudinary tag:        tag = "org:{orgId}"
+ *   - Categories are stored in Cloudinary context:  context.categories = "Cat1|Cat2"
+ *   - The DB (mediaSetSchema) only tracks sets — not individual assets.
+ *
+ * GET  /api/media-library?type=image|video|all&category=...&limit=48&offset=0
+ * DELETE /api/media-library?publicId=<public_id>
+ */
+
+import { v2 as cloudinary } from 'cloudinary';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { getDb } from '@/libs/DB';
-import { contentItemSchema } from '@/models/Schema';
 
-const UC_PUB_KEY = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY || '';
-const UC_SECRET_KEY = process.env.UPLOADCARE_SECRET_KEY || '';
-const UC_CDN_BASE = 'https://9c0v643oty.ucarecd.net';
-const UC_API = 'https://api.uploadcare.com';
+// ---------------------------------------------------------------------------
+// Cloudinary config — loaded from env at module level
+// ---------------------------------------------------------------------------
+cloudinary.config({
+  cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+  secure: true,
+});
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 export type MediaAsset = {
-  uuid: string;
-  name: string;
-  cdnUrl: string;
+  publicId: string;       // Cloudinary public_id  (primary key going forward)
+  name: string;           // display filename
+  url: string;            // optimised delivery URL  (with f_auto,q_auto)
+  thumbnailUrl: string;   // 400×400 thumbnail
   mimeType: string;
-  size: number;
+  size: number;           // bytes
   isImage: boolean;
   isVideo: boolean;
   width: number | null;
   height: number | null;
-  uploadedAt: string;
-  categories: string[];
+  uploadedAt: string;     // ISO string
+  categories: string[];   // from Cloudinary context.categories
+  resourceType: 'image' | 'video' | 'raw';
 };
 
-function ucAuthHeader() {
-  return `Uploadcare.Simple ${UC_PUB_KEY}:${UC_SECRET_KEY}`;
-}
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+const CLOUD = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME!;
 
-// Extract UUID from any Uploadcare CDN URL format.
-function extractUuid(url: string): string | null {
-  const segment = /(?:ucarecd\.net|ucarecdn\.com)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(url)?.[0];
-  return segment ? segment.split('/').pop() ?? null : null;
-}
-
-function isVideoFilename(name: string): boolean {
-  return /\.(mp4|mov|webm|avi|mkv)$/i.test(name);
-}
-
-// Categories are stored as a JSON-encoded array string in Uploadcare file
-// metadata (set via PATCH /api/media-library/[uuid]/categories), using the
-// same metadata mechanism already in place for orgId tagging below.
-function parseCategories(metadata: Record<string, string>): string[] {
-  if (!metadata.categories) return [];
-  try {
-    const parsed = JSON.parse(metadata.categories);
-    return Array.isArray(parsed) ? parsed.filter((c): c is string => typeof c === 'string') : [];
-  } catch {
-    return [];
+function buildDeliveryUrl(publicId: string, resourceType: 'image' | 'video' | 'raw'): string {
+  if (resourceType === 'video') {
+    // q_auto, f_auto video delivery
+    return `https://res.cloudinary.com/${CLOUD}/video/upload/q_auto,f_auto/${publicId}`;
   }
+  // AI-enhanced image: enhance + upscale cap + auto format + auto quality
+  return `https://res.cloudinary.com/${CLOUD}/image/upload/e_enhance,q_auto,f_auto,c_limit,w_2000/${publicId}`;
 }
 
-function normalizeAsset(file: Record<string, unknown>): MediaAsset {
-  const mime = String(
-    (file.mime_type as string)
-    || ((file.content_info as Record<string, unknown>)?.mime as Record<string, unknown>)?.mime
-    || '',
-  );
-  const filename = String(file.original_filename || file.uuid || '');
-  const isImage = mime.startsWith('image/');
-  const isVideo = mime.startsWith('video/') || isVideoFilename(filename);
-  const metadata = (file.metadata as Record<string, string>) || {};
+function buildThumbnailUrl(publicId: string, resourceType: 'image' | 'video' | 'raw'): string {
+  if (resourceType === 'video') {
+    // Video thumbnail: grab frame at 1s, crop to square
+    return `https://res.cloudinary.com/${CLOUD}/video/upload/so_1,c_fill,w_400,h_400,q_auto,f_jpg/${publicId}`;
+  }
+  return `https://res.cloudinary.com/${CLOUD}/image/upload/c_fill,w_400,h_400,q_auto,f_webp/${publicId}`;
+}
 
-  const uuid = String(file.uuid || '');
-  const cdnUrl = `${UC_CDN_BASE}/${uuid}/`;
+/**
+ * Parse Cloudinary context string into a categories array.
+ * Cloudinary context is stored as "key=value|key2=value2".
+ * We store categories as:  categories=Cat1\,Cat2\,Cat3
+ * (commas escaped because pipe and equals are Cloudinary context delimiters)
+ */
+function parseCategories(context: Record<string, string> | undefined): string[] {
+  if (!context?.categories) return [];
+  // We store as comma-separated (commas encoded as \, by Cloudinary, returned decoded)
+  return context.categories.split(',').map(c => c.trim()).filter(Boolean);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeResource(resource: any): MediaAsset {
+  const resourceType: 'image' | 'video' | 'raw' = resource.resource_type ?? 'image';
+  const isVideo = resourceType === 'video';
+  const isImage = resourceType === 'image';
+  const context = resource.context?.custom ?? resource.context ?? {};
+  const publicId: string = resource.public_id;
+  const name = publicId.split('/').pop() ?? publicId;
 
   return {
-    uuid,
-    name: filename,
-    cdnUrl,
-    mimeType: mime,
-    size: Number(file.size) || 0,
+    publicId,
+    name,
+    url: buildDeliveryUrl(publicId, resourceType),
+    thumbnailUrl: buildThumbnailUrl(publicId, resourceType),
+    mimeType: resource.format ? `${resourceType}/${resource.format}` : '',
+    size: resource.bytes ?? 0,
     isImage,
     isVideo,
-    width: (file.image_info as Record<string, unknown>)?.width as number | null ?? null,
-    height: (file.image_info as Record<string, unknown>)?.height as number | null ?? null,
-    uploadedAt: String(file.datetime_uploaded || file.datetime_stored || ''),
-    categories: parseCategories(metadata),
+    width: resource.width ?? null,
+    height: resource.height ?? null,
+    uploadedAt: resource.created_at ?? '',
+    categories: parseCategories(context),
+    resourceType,
   };
 }
 
-// -----------------------------------------------------------
-// GET /api/media-library
-// Fetches only UUIDs attached to this org's content items from
-// the DB, then retrieves their metadata from Uploadcare in batch.
-//
-// ?type=image|video|all          (default: all)
-// ?category=<name>|Uncategorized (default: no filter)
-// ?limit=48
-// ?offset=0
-// -----------------------------------------------------------
+// ---------------------------------------------------------------------------
+// GET
+// ---------------------------------------------------------------------------
 export async function GET(request: NextRequest) {
-  const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) {
-    return error;
-  }
-
-  if (!UC_SECRET_KEY) {
-    return NextResponse.json(
-      { error: 'UPLOADCARE_SECRET_KEY is not configured.' },
-      { status: 500 },
-    );
-  }
+  if (error) return error;
 
   const { searchParams } = new URL(request.url);
-  const type = searchParams.get('type') || 'all';
+  const type = (searchParams.get('type') || 'all') as 'image' | 'video' | 'all';
   const category = searchParams.get('category');
   const limit = Math.min(Number(searchParams.get('limit') || 48), 100);
   const offset = Number(searchParams.get('offset') || 0);
 
   try {
-    // Source A — UUIDs from this org's content item graphic_urls in the DB
-    const rows = await db
-      .select({ graphicUrls: contentItemSchema.graphicUrls })
-      .from(contentItemSchema)
-      .where(eq(contentItemSchema.orgId, orgId!));
+    // Folder-based isolation: all org assets live under nativpost/{orgId}/
+    const folder = `nativpost/${orgId}`;
 
-    const dbUuidSet = new Set<string>();
-    for (const row of rows) {
-      const urls = (row.graphicUrls as string[]) || [];
-      for (const url of urls) {
-        const uuid = extractUuid(url);
-        if (uuid) {
-          dbUuidSet.add(uuid);
-        }
-      }
-    }
+    const fetchType = async (rt: 'image' | 'video') => {
+      const results: MediaAsset[] = [];
+      let nextCursor: string | undefined;
 
-    // Source B — Files tagged with this orgId via /api/media-library/tag.
-    // We fetch all stored files from Uploadcare and filter by metadata.
-    // This catches files uploaded directly to the library (not yet on any post).
-    const PAGE_SIZE = 100;
-    const allFetched: Record<string, unknown>[] = [];
-    let nextFrom: string | null = null;
+      // Paginate through all assets in the org folder for this resource type
+      do {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const res: any = await cloudinary.api.resources({
+          type: 'upload',
+          resource_type: rt,
+          prefix: folder,
+          max_results: 100,
+          context: true,         // fetch context (categories)
+          tags: true,
+          ...(nextCursor ? { next_cursor: nextCursor } : {}),
+        });
+        results.push(...(res.resources ?? []).map(normalizeResource));
+        nextCursor = res.next_cursor;
+      } while (nextCursor);
 
-    while (true) {
-      const params = new URLSearchParams({
-        limit: String(PAGE_SIZE),
-        ordering: '-datetime_uploaded',
-        stored: 'true',
-      });
-      if (nextFrom) {
-        params.set('from', nextFrom);
-      }
+      return results;
+    };
 
-      const res = await fetch(`${UC_API}/files/?${params.toString()}`, {
-        headers: {
-          Authorization: ucAuthHeader(),
-          Accept: 'application/vnd.uploadcare-v0.7+json',
-        },
-      });
+    let assets: MediaAsset[] = [];
 
-      if (!res.ok) {
-        break;
-      }
-
-      const data = await res.json();
-      const results: Record<string, unknown>[] = data.results || [];
-      allFetched.push(...results);
-
-      if (!data.next || results.length < PAGE_SIZE) {
-        break;
-      }
-      try {
-        const nextUrl = new URL(data.next);
-        nextFrom = nextUrl.searchParams.get('from');
-        if (!nextFrom) {
-          break;
-        }
-      } catch {
-        break;
-      }
-    }
-
-    // Merge: include file if it's in the DB set OR tagged with this orgId
-    const seenUuids = new Set<string>();
-    let fetchedAssets: MediaAsset[] = [];
-
-    for (const file of allFetched) {
-      const uuid = String(file.uuid || '');
-      if (seenUuids.has(uuid)) {
-        continue;
-      }
-
-      const metadata = (file.metadata as Record<string, string>) || {};
-      const taggedForOrg = metadata.orgId === orgId;
-      const inDb = dbUuidSet.has(uuid);
-
-      if (taggedForOrg || inDb) {
-        seenUuids.add(uuid);
-        fetchedAssets.push(normalizeAsset(file));
-      }
-    }
-
-    // Also add any DB UUIDs that weren't returned by Uploadcare's list
-    // (e.g. unstored files) — fetch them individually
-    for (const uuid of dbUuidSet) {
-      if (!seenUuids.has(uuid)) {
-        try {
-          const res = await fetch(`${UC_API}/files/${uuid}/`, {
-            headers: {
-              Authorization: ucAuthHeader(),
-              Accept: 'application/vnd.uploadcare-v0.7+json',
-            },
-          });
-          if (res.ok) {
-            const file = await res.json();
-            fetchedAssets.push(normalizeAsset(file));
-            seenUuids.add(uuid);
-          }
-        } catch {
-          // Skip missing files silently
-        }
-      }
-    }
-
-    // Apply type filter
     if (type === 'image') {
-      fetchedAssets = fetchedAssets.filter(a => a.isImage);
+      assets = await fetchType('image');
     } else if (type === 'video') {
-      fetchedAssets = fetchedAssets.filter(a => a.isVideo);
+      assets = await fetchType('video');
+    } else {
+      // Fetch both in parallel
+      const [images, videos] = await Promise.all([fetchType('image'), fetchType('video')]);
+      assets = [...images, ...videos];
     }
 
-    // Apply category filter
+    // Category filter
     if (category && category !== 'All categories') {
       if (category === 'Uncategorized') {
-        fetchedAssets = fetchedAssets.filter(a => a.categories.length === 0);
+        assets = assets.filter(a => a.categories.length === 0);
       } else {
-        fetchedAssets = fetchedAssets.filter(a => a.categories.includes(category));
+        assets = assets.filter(a => a.categories.includes(category));
       }
     }
 
     // Sort newest first
-    fetchedAssets.sort((a, b) => {
-      if (!a.uploadedAt || !b.uploadedAt) {
-        return 0;
-      }
-      return new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime();
-    });
+    assets.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
 
-    const total = fetchedAssets.length;
-    const page = fetchedAssets.slice(offset, offset + limit);
+    const total = assets.length;
+    const page = assets.slice(offset, offset + limit);
     const nextOffset = offset + limit < total ? offset + limit : null;
 
-    return NextResponse.json({
-      assets: page,
-      total,
-      nextOffset,
-      nextCursor: null,
-    });
+    return NextResponse.json({ assets: page, total, nextOffset });
   } catch (err) {
-    console.error('[MediaLibrary] Error:', err);
+    console.error('[MediaLibrary] Cloudinary fetch error:', err);
     return NextResponse.json({ error: 'Failed to fetch media library.' }, { status: 500 });
   }
 }
 
-// -----------------------------------------------------------
-// DELETE /api/media-library?uuid=<uuid>
-// Permanently deletes a file from Uploadcare
-// -----------------------------------------------------------
+// ---------------------------------------------------------------------------
+// DELETE  /api/media-library?publicId=<public_id>&resourceType=image|video
+// ---------------------------------------------------------------------------
 export async function DELETE(request: NextRequest) {
   const { error } = await getAuthContext();
-  if (error) {
-    return error;
-  }
+  if (error) return error;
 
-  const uuid = new URL(request.url).searchParams.get('uuid');
-  if (!uuid) {
-    return NextResponse.json({ error: 'Missing uuid parameter.' }, { status: 400 });
+  const { searchParams } = new URL(request.url);
+  const publicId = searchParams.get('publicId');
+  const resourceType = (searchParams.get('resourceType') || 'image') as 'image' | 'video';
+
+  if (!publicId) {
+    return NextResponse.json({ error: 'Missing publicId parameter.' }, { status: 400 });
   }
 
   try {
-    const res = await fetch(`${UC_API}/files/${uuid}/`, {
-      method: 'DELETE',
-      headers: {
-        Authorization: ucAuthHeader(),
-        Accept: 'application/vnd.uploadcare-v0.7+json',
-      },
-    });
-
-    if (!res.ok && res.status !== 404) {
-      return NextResponse.json({ error: 'Failed to delete file.' }, { status: 502 });
-    }
-
-    return NextResponse.json({ deleted: true, uuid });
+    await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
+    return NextResponse.json({ deleted: true, publicId });
   } catch (err) {
-    console.error('[MediaLibrary] Delete error:', err);
-    return NextResponse.json({ error: 'Failed to delete file.' }, { status: 500 });
+    console.error('[MediaLibrary] Cloudinary delete error:', err);
+    return NextResponse.json({ error: 'Failed to delete asset.' }, { status: 500 });
   }
 }

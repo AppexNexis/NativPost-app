@@ -1,82 +1,69 @@
+/**
+ * /api/media-library/[uuid]/categories
+ *
+ * Updates categories for a Cloudinary asset using Cloudinary's context API.
+ * "uuid" here is actually the Cloudinary public_id (URL-encoded).
+ *
+ * Cloudinary context stores arbitrary key=value pairs alongside assets.
+ * We use:   context.categories = "Cat1,Cat2,Cat3"
+ *
+ * Unlike Uploadcare's metadata which had a 256-char cap, Cloudinary context
+ * values support up to 1024 characters — plenty for any realistic category set.
+ *
+ * PATCH /api/media-library/[publicId]/categories
+ * Body: { categories: string[], resourceType?: 'image' | 'video' }
+ *
+ * Note: The route param is named [uuid] to match existing Next.js file structure
+ * but it receives a Cloudinary public_id. The client must URL-encode slashes.
+ */
+
+import { v2 as cloudinary } from 'cloudinary';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 
-const UC_PUB_KEY = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY || '';
-const UC_SECRET_KEY = process.env.UPLOADCARE_SECRET_KEY || '';
-const UC_API = 'https://api.uploadcare.com';
+cloudinary.config({
+  cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+  secure: true,
+});
 
-function ucAuthHeader() {
-  return `Uploadcare.Simple ${UC_PUB_KEY}:${UC_SECRET_KEY}`;
-}
-
-// -----------------------------------------------------------
-// PATCH /api/media-library/[uuid]/categories
-// Body: { categories: string[] }
-//
-// Categories are stored as a JSON-encoded array string in the file's
-// Uploadcare metadata — same mechanism already used for orgId tagging
-// in /api/media-library/route.ts. No DB table needed for this part.
-//
-// Note: Uploadcare metadata values are capped at 256 characters, so
-// this comfortably covers a handful of category names but isn't
-// unlimited — we reject the request before hitting that cap.
-//
-// If you're on Next.js 13/14 (sync route params), change the second
-// argument's type to `{ params: { uuid: string } }` and drop the await.
-// -----------------------------------------------------------
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ uuid: string }> },
 ) {
   const { error } = await getAuthContext();
-  if (error) {
-    return error;
-  }
-
-  if (!UC_SECRET_KEY) {
-    return NextResponse.json({ error: 'UPLOADCARE_SECRET_KEY is not configured.' }, { status: 500 });
-  }
+  if (error) return error;
 
   const { uuid } = await params;
+  // public_id may contain slashes — decode it
+  const publicId = decodeURIComponent(uuid);
+
   const body = await request.json().catch(() => null);
   const categories = Array.isArray(body?.categories) ? (body.categories as string[]) : null;
+  const resourceType: 'image' | 'video' = body?.resourceType === 'video' ? 'video' : 'image';
 
   if (!categories) {
     return NextResponse.json({ error: 'categories array is required.' }, { status: 400 });
   }
 
-  const encoded = JSON.stringify(categories);
-  if (encoded.length > 256) {
-    return NextResponse.json(
-      { error: 'Too many categories — Uploadcare metadata values are capped at 256 characters.' },
-      { status: 400 },
-    );
-  }
+  // Cloudinary context value: comma-separated category names
+  // Commas within category names would need escaping, but our category names
+  // don't contain commas, so this is safe.
+  const contextValue = categories.join(',');
 
   try {
-    const res = await fetch(`${UC_API}/files/${uuid}/metadata/categories/`, {
-      method: 'PUT',
-      headers: {
-        Authorization: ucAuthHeader(),
-        Accept: 'application/vnd.uploadcare-v0.7+json',
-        'Content-Type': 'application/json',
-      },
-      // Uploadcare metadata values are raw strings — we send our
-      // JSON-encoded array as a JSON-encoded string value.
-      body: JSON.stringify(encoded),
+    await cloudinary.uploader.explicit(publicId, {
+      type: 'upload',
+      resource_type: resourceType,
+      context: `categories=${contextValue}`,
     });
 
-    if (!res.ok) {
-      const text = await res.text();
-      console.error('[MediaLibrary] Uploadcare metadata error:', res.status, text);
-      return NextResponse.json({ error: 'Failed to update categories on Uploadcare.' }, { status: 502 });
-    }
-
-    return NextResponse.json({ uuid, categories });
+    return NextResponse.json({ publicId, categories });
   } catch (err) {
-    console.error('[MediaLibrary] Categories PATCH error:', err);
+    console.error('[MediaLibrary/Categories] Cloudinary context error:', err);
     return NextResponse.json({ error: 'Failed to update categories.' }, { status: 500 });
   }
 }

@@ -3,14 +3,12 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-// import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import { contentItemSchema } from '@/models/Schema';
 
 const UC_PUB_KEY = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY || '';
 const UC_SECRET_KEY = process.env.UPLOADCARE_SECRET_KEY || '';
 const UC_CDN_BASE = 'https://9c0v643oty.ucarecd.net';
-// const UC_CDN_BASE = 'https://32v3ws8ss0.ucarecd.net';
 const UC_API = 'https://api.uploadcare.com';
 
 export type MediaAsset = {
@@ -24,27 +22,34 @@ export type MediaAsset = {
   width: number | null;
   height: number | null;
   uploadedAt: string;
+  categories: string[];
 };
 
 function ucAuthHeader() {
   return `Uploadcare.Simple ${UC_PUB_KEY}:${UC_SECRET_KEY}`;
 }
 
-// Extract UUID from any Uploadcare CDN URL format:
-//   https://32v3ws8ss0.ucarecd.net/{uuid}/
-//   https://32v3ws8ss0.ucarecd.net/{uuid}/filename.mp4
-//   https://ucarecdn.com/{uuid}/
+// Extract UUID from any Uploadcare CDN URL format.
 function extractUuid(url: string): string | null {
-  // const match = url.match(
-  //   /(?:ucarecd\.net|ucarecdn\.com)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
-  // );
-  // return match?.[1] ?? null;
   const segment = /(?:ucarecd\.net|ucarecdn\.com)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(url)?.[0];
   return segment ? segment.split('/').pop() ?? null : null;
 }
 
 function isVideoFilename(name: string): boolean {
   return /\.(mp4|mov|webm|avi|mkv)$/i.test(name);
+}
+
+// Categories are stored as a JSON-encoded array string in Uploadcare file
+// metadata (set via PATCH /api/media-library/[uuid]/categories), using the
+// same metadata mechanism already in place for orgId tagging below.
+function parseCategories(metadata: Record<string, string>): string[] {
+  if (!metadata.categories) return [];
+  try {
+    const parsed = JSON.parse(metadata.categories);
+    return Array.isArray(parsed) ? parsed.filter((c): c is string => typeof c === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 function normalizeAsset(file: Record<string, unknown>): MediaAsset {
@@ -56,8 +61,8 @@ function normalizeAsset(file: Record<string, unknown>): MediaAsset {
   const filename = String(file.original_filename || file.uuid || '');
   const isImage = mime.startsWith('image/');
   const isVideo = mime.startsWith('video/') || isVideoFilename(filename);
+  const metadata = (file.metadata as Record<string, string>) || {};
 
-  // Build canonical CDN URL using our project subdomain
   const uuid = String(file.uuid || '');
   const cdnUrl = `${UC_CDN_BASE}/${uuid}/`;
 
@@ -72,6 +77,7 @@ function normalizeAsset(file: Record<string, unknown>): MediaAsset {
     width: (file.image_info as Record<string, unknown>)?.width as number | null ?? null,
     height: (file.image_info as Record<string, unknown>)?.height as number | null ?? null,
     uploadedAt: String(file.datetime_uploaded || file.datetime_stored || ''),
+    categories: parseCategories(metadata),
   };
 }
 
@@ -80,7 +86,8 @@ function normalizeAsset(file: Record<string, unknown>): MediaAsset {
 // Fetches only UUIDs attached to this org's content items from
 // the DB, then retrieves their metadata from Uploadcare in batch.
 //
-// ?type=image|video|all  (default: all)
+// ?type=image|video|all          (default: all)
+// ?category=<name>|Uncategorized (default: no filter)
 // ?limit=48
 // ?offset=0
 // -----------------------------------------------------------
@@ -100,6 +107,7 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const type = searchParams.get('type') || 'all';
+  const category = searchParams.get('category');
   const limit = Math.min(Number(searchParams.get('limit') || 48), 100);
   const offset = Number(searchParams.get('offset') || 0);
 
@@ -177,11 +185,8 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
-      // Check if tagged with this orgId via metadata
       const metadata = (file.metadata as Record<string, string>) || {};
       const taggedForOrg = metadata.orgId === orgId;
-
-      // Check if referenced in DB graphic_urls
       const inDb = dbUuidSet.has(uuid);
 
       if (taggedForOrg || inDb) {
@@ -217,6 +222,15 @@ export async function GET(request: NextRequest) {
       fetchedAssets = fetchedAssets.filter(a => a.isImage);
     } else if (type === 'video') {
       fetchedAssets = fetchedAssets.filter(a => a.isVideo);
+    }
+
+    // Apply category filter
+    if (category && category !== 'All categories') {
+      if (category === 'Uncategorized') {
+        fetchedAssets = fetchedAssets.filter(a => a.categories.length === 0);
+      } else {
+        fetchedAssets = fetchedAssets.filter(a => a.categories.includes(category));
+      }
     }
 
     // Sort newest first

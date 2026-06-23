@@ -1,70 +1,52 @@
+/**
+ * /api/media-library/tag
+ *
+ * With Cloudinary, org isolation is handled automatically at upload time:
+ * - The /api/media-library/signature route enforces folder = nativpost/{orgId}
+ * - It also attaches tag = org:{orgId} to every upload
+ *
+ * So unlike the Uploadcare version, we don't need a separate tagging step
+ * after upload. This route exists as a thin compatibility shim in case any
+ * part of the codebase still calls it, and for future use (e.g. bulk retagging).
+ *
+ * POST /api/media-library/tag
+ * Body: { publicId: string, resourceType?: 'image' | 'video' }
+ */
+
+import { v2 as cloudinary } from 'cloudinary';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 
-const UC_PUB_KEY = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY || '';
-const UC_SECRET_KEY = process.env.UPLOADCARE_SECRET_KEY || '';
-const UC_API = 'https://api.uploadcare.com';
+cloudinary.config({
+  cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+  secure: true,
+});
 
-function ucAuthHeader() {
-  return `Uploadcare.Simple ${UC_PUB_KEY}:${UC_SECRET_KEY}`;
-}
-
-// -----------------------------------------------------------
-// POST /api/media-library/tag
-// Called immediately after a file is uploaded via the widget.
-// Tags the file with the current org's ID so it appears only
-// in that org's media library.
-//
-// Body: { uuid: string }
-// -----------------------------------------------------------
 export async function POST(request: NextRequest) {
   const { error, orgId } = await getAuthContext();
-  if (error) {
-    return error;
-  }
+  if (error) return error;
 
-  if (!UC_SECRET_KEY) {
-    return NextResponse.json(
-      { error: 'UPLOADCARE_SECRET_KEY is not configured.' },
-      { status: 500 },
-    );
-  }
+  const body = await request.json().catch(() => ({}));
+  const publicId: string = body.publicId ?? '';
+  const resourceType: 'image' | 'video' = body.resourceType === 'video' ? 'video' : 'image';
 
-  let uuid: string;
-  try {
-    const body = await request.json();
-    uuid = body.uuid;
-    if (!uuid || typeof uuid !== 'string') {
-      throw new Error('invalid');
-    }
-  } catch {
-    return NextResponse.json({ error: 'Missing or invalid uuid.' }, { status: 400 });
+  if (!publicId) {
+    return NextResponse.json({ error: 'publicId is required.' }, { status: 400 });
   }
 
   try {
-    // PUT /files/{uuid}/metadata/{key}/ sets a single metadata value.
-    // The body must be a JSON-encoded string (including the quotes).
-    const res = await fetch(`${UC_API}/files/${uuid}/metadata/orgId/`, {
-      method: 'PUT',
-      headers: {
-        'Authorization': ucAuthHeader(),
-        'Accept': 'application/vnd.uploadcare-v0.7+json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(orgId),
+    // Ensure the org tag is attached (idempotent — safe to call multiple times)
+    await cloudinary.uploader.add_tag(`org:${orgId}`, [publicId], {
+      resource_type: resourceType,
     });
 
-    if (!res.ok) {
-      const text = await res.text();
-      console.error('[MediaLibrary/tag] Uploadcare metadata error:', text);
-      return NextResponse.json({ error: 'Failed to tag file.' }, { status: 502 });
-    }
-
-    return NextResponse.json({ tagged: true, uuid, orgId });
+    return NextResponse.json({ tagged: true, publicId, orgId });
   } catch (err) {
-    console.error('[MediaLibrary/tag] Error:', err);
-    return NextResponse.json({ error: 'Failed to tag file.' }, { status: 500 });
+    console.error('[MediaLibrary/Tag] Cloudinary tag error:', err);
+    return NextResponse.json({ error: 'Failed to tag asset.' }, { status: 500 });
   }
 }

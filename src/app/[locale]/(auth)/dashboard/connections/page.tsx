@@ -1,14 +1,39 @@
+
 'use client';
 
-import { AlertCircle, Check, Clock, Image, Loader2, Type } from 'lucide-react';
+import {
+  AlertCircle,
+  Check,
+  Image as ImageIcon,
+  Info,
+  Loader2,
+  Type,
+} from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 
-import { type PlatformInfo, PLATFORMS } from '@/components/icons/PlatformIcons';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
-// -----------------------------------------------------------
+import {
+  FacebookIcon,
+  InstagramIcon,
+  LinkedInIcon,
+  PinterestIcon,
+  ThreadsIcon,
+  TikTokIcon,
+  TwitterIcon,
+  YoutubeIcon,
+  type PlatformInfo,
+} from '@/components/icons/PlatformIcons';
+
+// ---------------------------------------------------------------------------
 // TYPES
-// -----------------------------------------------------------
+// ---------------------------------------------------------------------------
 type SocialAccount = {
   id: string;
   platform: string;
@@ -21,108 +46,283 @@ type SocialAccount = {
   accessToken?: string | null;
 };
 
-type PlatformEntry = (PlatformInfo | { id: string; name: string; description: string; icon: PlatformInfo['icon'] }) & {
-  _connectHref?: string;
-  _accountKey?: string;
-  _badge?: string;
-  _badgeVariant?: 'default' | 'highlight';
-  _pending?: boolean;
-  _pendingLabel?: string;
+type PlatformEntry = {
+  id: string;
+  name: string;
+  icon: PlatformInfo['icon'];
+  color: string;
+  description?: string;
+  badge?: string;
+  badgeVariant?: 'text' | 'media';
+  connectHref?: string;
+  tip: {
+    title: string;
+    items: string[];
+  };
 };
 
-// -----------------------------------------------------------
-// Inline SVG icons
-// -----------------------------------------------------------
-function WhatsAppIcon({ className = 'size-4' }: { className?: string }) {
+// ---------------------------------------------------------------------------
+// PLATFORM GROUPS WITH TIPS
+// ---------------------------------------------------------------------------
+const PLATFORM_GROUPS: { label: string; platforms: PlatformEntry[] }[] = [
+  {
+    label: 'Meta',
+    platforms: [
+      {
+        id: 'instagram',
+        name: 'Instagram',
+        icon: InstagramIcon,
+        color: '#E4405F',
+        tip: {
+          title: 'Before connecting Instagram',
+          items: [
+            'Your account must be a Business or Creator account. Personal accounts are not supported by Meta\'s API since December 2024.',
+            'Your Instagram must be linked to a Facebook Page you admin. Go to Instagram Settings → Account → Linked accounts.',
+            'Log into Instagram in this browser before connecting.',
+          ],
+        },
+      },
+      {
+        id: 'facebook',
+        name: 'Facebook',
+        icon: FacebookIcon,
+        color: '#1877F2',
+        tip: {
+          title: 'Before connecting Facebook',
+          items: [
+            'Connect a Facebook Page, not a personal profile. Page admin access is required.',
+            'Log into the Facebook account that owns or manages the Page in this browser.',
+            'Your app role must include Content Creator or higher in Page settings.',
+          ],
+        },
+      },
+    ],
+  },
+  {
+    label: 'Professional',
+    platforms: [
+      {
+        id: 'linkedin',
+        name: 'LinkedIn',
+        icon: LinkedInIcon,
+        color: '#0A66C2',
+        description: 'Personal profile',
+        tip: {
+          title: 'Before connecting LinkedIn',
+          items: [
+            'Log into the LinkedIn account you want to publish from in this browser.',
+            'LinkedIn tokens expire after 60 days. You will be prompted to reconnect before expiry.',
+            'Avoid connecting the same account to multiple scheduling apps — LinkedIn rate-limits per member.',
+          ],
+        },
+      },
+      {
+        id: 'linkedin_page',
+        name: 'LinkedIn Page',
+        icon: LinkedInIcon,
+        color: '#0A66C2',
+        description: 'Company page',
+        tip: {
+          title: 'Before connecting a LinkedIn Page',
+          items: [
+            'You must be a Super Admin of the LinkedIn Company Page.',
+            'Log in as the account with Super Admin access before clicking Connect.',
+            'Company Pages require a separate connection from personal profiles even if it\'s the same LinkedIn account.',
+          ],
+        },
+      },
+    ],
+  },
+  {
+    label: 'Social',
+    platforms: [
+      {
+        id: 'twitter',
+        name: 'X',
+        icon: TwitterIcon,
+        color: '#000000',
+        badge: 'Text',
+        badgeVariant: 'text',
+        tip: {
+          title: 'X — text connection (OAuth 2.0)',
+          items: [
+            'This connection handles text-only posts via OAuth 2.0.',
+            'Log into X in this browser before connecting.',
+            'As of February 2026, X charges per API request for URL-containing posts. NativPost absorbs this cost.',
+          ],
+        },
+      },
+      {
+        id: 'twitter_v1',
+        name: 'X',
+        icon: TwitterIcon,
+        color: '#000000',
+        badge: 'Images & video',
+        badgeVariant: 'media',
+        connectHref: '/api/social-accounts/connect/twitter-v1',
+        tip: {
+          title: 'X — media connection (OAuth 1.0a)',
+          items: [
+            'X requires two separate connections to publish all content types. This one unlocks images and video via OAuth 1.0a.',
+            'Both connections must use the same X account.',
+            'Use the same browser session as your text connection above.',
+          ],
+        },
+      },
+      {
+        id: 'tiktok',
+        name: 'TikTok',
+        icon: TikTokIcon,
+        color: '#000000',
+        tip: {
+          title: 'Before connecting TikTok',
+          items: [
+            'Log into TikTok in this browser before clicking Connect.',
+            'Your account must allow third-party app access. Check TikTok Settings → Privacy → Manage app permissions.',
+            'TikTok tokens expire roughly every 30 days. Reconnect when prompted.',
+          ],
+        },
+      },
+    ],
+  },
+  {
+    label: 'Video and visual',
+    platforms: [
+      {
+        id: 'youtube',
+        name: 'YouTube',
+        icon: YoutubeIcon,
+        color: '#FF0000',
+        description: 'Video only',
+        tip: {
+          title: 'Before connecting YouTube',
+          items: [
+            'Log into the Google account that owns your YouTube channel in this browser.',
+            'If you manage multiple channels, make sure the correct channel is active at youtube.com first.',
+            'YouTube\'s API quota is 10,000 units per day. Each video upload costs 1,600 units.',
+          ],
+        },
+      },
+      {
+        id: 'pinterest',
+        name: 'Pinterest',
+        icon: PinterestIcon,
+        color: '#E60023',
+        tip: {
+          title: 'Before connecting Pinterest',
+          items: [
+            'Log into Pinterest in this browser before clicking Connect.',
+            'A Pinterest Business account unlocks analytics and richer publishing capabilities.',
+            'Pins published via API are public by default. Secret board publishing requires specific permissions.',
+          ],
+        },
+      },
+    ],
+  },
+  {
+    label: 'Threads',
+    platforms: [
+      {
+        id: 'threads',
+        name: 'Threads',
+        icon: ThreadsIcon,
+        color: '#000000',
+        tip: {
+          title: 'Before connecting Threads',
+          items: [
+            'Threads connects through your Instagram Business or Creator account. Connect Instagram first.',
+            'Your Instagram account must have Threads enabled and active.',
+            'Log into Threads in this browser before connecting.',
+          ],
+        },
+      },
+    ],
+  },
+];
+
+// ---------------------------------------------------------------------------
+// AVATAR — profile image with initials fallback
+// ---------------------------------------------------------------------------
+function Avatar({
+  src,
+  username,
+}: {
+  src: string | null;
+  username: string | null;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  const initials = username
+    ? username
+        .replace(/^@/, '')
+        .split(/[\s_.]/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((w) => w[0]?.toUpperCase() ?? '')
+        .join('')
+    : '?';
+
+  if (src && !failed) {
+    return (
+      <img
+        src={src}
+        alt={username ?? 'profile'}
+        onError={() => setFailed(true)}
+        className="size-7 shrink-0 rounded-full object-cover ring-1 ring-border"
+      />
+    );
+  }
+
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
-      <path d="M12 0C5.373 0 0 5.373 0 12c0 2.125.553 4.118 1.522 5.85L0 24l6.313-1.496A11.955 11.955 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.796 9.796 0 01-5.007-1.374l-.36-.213-3.727.883.944-3.623-.234-.372A9.796 9.796 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182S21.818 6.57 21.818 12 17.43 21.818 12 21.818z" />
-    </svg>
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary ring-1 ring-border">
+      {initials}
+    </span>
   );
 }
 
-function SnapchatIcon({ className = 'size-4' }: { className?: string }) {
+// ---------------------------------------------------------------------------
+// PLATFORM TIP — Radix tooltip, renders in a portal so it never gets clipped
+// ---------------------------------------------------------------------------
+function PlatformTip({ tip }: { tip: PlatformEntry['tip'] }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12.004 2c-1.3 0-4.243.37-5.823 3.455-.518 1.007-.394 2.694-.33 3.73l-.003.003c-.007.111-.014.222-.02.333-.106.12-.37.264-.818.264-.22 0-.47-.043-.734-.128l-.009-.003c-.047-.015-.098-.024-.155-.024-.285 0-.536.208-.536.494 0 .252.176.454.426.52.016.005 1.655.425 1.875 1.657.008.047.024.09.046.13.388.71 1.022 1.174 1.782 1.174.17 0 .34-.02.506-.059.534-.124 1.064-.074 1.518.14.618.292 1.03.914 1.01 1.558-.007.218-.035.424-.084.616-.16.634-.604 1.047-1.14 1.047-.065 0-.13-.007-.193-.022-.16-.037-.31-.06-.456-.06-.24 0-.465.056-.65.162C8.6 17.2 8.327 17.77 8.327 18.46c0 .095.007.187.022.278.13.776.99 1.165 2.137 1.358.08.356.19.796.23.937.063.22.245.363.47.363h.033c.12-.007.242-.043.367-.107.387-.197.834-.3 1.414-.3.58 0 1.027.1 1.414.3.126.064.247.1.367.107h.033c.225 0 .407-.143.47-.363.04-.14.15-.58.23-.937 1.147-.193 2.007-.582 2.137-1.358.015-.09.022-.183.022-.278 0-.69-.274-1.26-.69-1.587-.185-.106-.41-.162-.65-.162-.147 0-.296.023-.456.06-.063.015-.128.022-.193.022-.537 0-.98-.413-1.14-1.047-.05-.192-.077-.398-.084-.616-.02-.644.392-1.266 1.01-1.558.454-.214.984-.264 1.518-.14.166.039.337.059.506.059.76 0 1.394-.464 1.782-1.174.022-.04.038-.083.046-.13.22-1.232 1.86-1.652 1.875-1.657.25-.066.426-.268.426-.52 0-.286-.251-.494-.536-.494-.057 0-.108.009-.155.024l-.009.003c-.264.085-.514.128-.734.128-.448 0-.712-.145-.818-.264-.006-.111-.013-.222-.02-.333l-.003-.003c.064-1.036.188-2.723-.33-3.73C16.247 2.37 13.304 2 12.004 2z" />
-    </svg>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="flex size-6 shrink-0 items-center justify-center rounded-full border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          aria-label="Setup requirements"
+        >
+          <Info className="size-3" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="left"
+        align="center"
+        className="max-w-[280px] p-0"
+        sideOffset={8}
+      >
+        <div className="rounded-lg border bg-popover p-4 shadow-md">
+          <p className="mb-2.5 text-xs font-semibold text-foreground">{tip.title}</p>
+          <ul className="space-y-1.5 pl-3.5">
+            {tip.items.map((item, i) => (
+              <li
+                key={i}
+                className="list-disc text-[11px] leading-relaxed text-muted-foreground"
+              >
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
-// -----------------------------------------------------------
-// PLATFORM GROUPS
-// -----------------------------------------------------------
-function buildGroups(platforms: PlatformInfo[]): { label: string; platforms: PlatformEntry[] }[] {
-  const twitterPlatform = platforms.find(p => p.id === 'twitter');
-
-  return [
-    {
-      label: 'Meta',
-      platforms: platforms.filter(p => ['instagram', 'facebook', 'threads'].includes(p.id)),
-    },
-    {
-      label: 'Professional',
-      platforms: platforms.filter(p => ['linkedin', 'linkedin_page'].includes(p.id)),
-    },
-    {
-      label: 'Social',
-      platforms: [
-        ...(twitterPlatform
-          ? [{
-            ...twitterPlatform,
-            description: 'Text only',
-            _badge: 'Text',
-            _badgeVariant: 'default' as const,
-          }]
-          : []),
-        ...(twitterPlatform
-          ? [{
-            ...twitterPlatform,
-            id: 'twitter_v1',
-            name: 'X',
-            description: 'Images & video',
-            _connectHref: '/api/social-accounts/connect/twitter-v1',
-            _accountKey: 'twitter_v1_media',
-            _badge: 'Media',
-            _badgeVariant: 'highlight' as const,
-          }]
-          : []),
-        ...platforms.filter(p => p.id === 'tiktok'),
-      ],
-    },
-    {
-      label: 'Video and visual',
-      platforms: platforms.filter(p => ['youtube', 'pinterest'].includes(p.id)),
-    },
-    {
-      label: 'Messaging',
-      platforms: [
-        // WhatsApp — now live after Meta business verification
-        {
-          id: 'whatsapp',
-          name: 'WhatsApp',
-          icon: WhatsAppIcon as PlatformInfo['icon'],
-          color: '#25D366',
-          description: 'Channel publishing',
-          // _pending removed — WhatsApp is now available
-        },
-        {
-          id: 'snapchat',
-          name: 'Snapchat',
-          icon: SnapchatIcon as PlatformInfo['icon'],
-          color: '#FFFC00',
-          description: 'Story publishing',
-        },
-      ],
-    },
-  ];
-}
-
-// -----------------------------------------------------------
-// CONNECTIONS CONTENT
-// -----------------------------------------------------------
-function ConnectionsContent() {
+// ---------------------------------------------------------------------------
+// MAIN CONTENT
+// ---------------------------------------------------------------------------
+function SocialAccountsContent() {
   const searchParams = useSearchParams();
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -150,11 +350,9 @@ function ConnectionsContent() {
   }, [fetchAccounts]);
 
   const connectPlatform = (entry: PlatformEntry) => {
-    if (entry._connectHref) {
-      window.location.href = entry._connectHref;
-      return;
-    }
-    window.location.href = `/api/social-accounts/connect?platform=${entry.id}`;
+    window.location.href = entry.connectHref
+      ? entry.connectHref
+      : `/api/social-accounts/connect?platform=${entry.id}`;
   };
 
   const disconnectAccount = async (accountId: string) => {
@@ -163,42 +361,29 @@ function ConnectionsContent() {
     setDisconnecting(accountId);
     try {
       await fetch(`/api/social-accounts?id=${accountId}`, { method: 'DELETE' });
-      setAccounts(prev => prev.filter(a => a.id !== accountId));
+      setAccounts((prev) => prev.filter((a) => a.id !== accountId));
     } finally {
       setDisconnecting(null);
     }
   };
 
-  const getAccount = (platformId: string) => {
-    const acc = accounts.find(a => a.platform === platformId && a.isActive);
-    if (!acc) return undefined;
-    if (platformId === 'twitter') return acc.accessToken ? acc : undefined;
-    return acc;
+  const resolveAccount = (entry: PlatformEntry): SocialAccount | undefined => {
+    if (entry.id === 'twitter_v1') {
+      return accounts.find((a) => a.platform === 'twitter' && a.isActive && a.oauthToken);
+    }
+    if (entry.id === 'twitter') {
+      return accounts.find((a) => a.platform === 'twitter' && a.isActive && a.accessToken);
+    }
+    return accounts.find((a) => a.platform === entry.id && a.isActive);
   };
 
-  const getTwitterMediaAccount = () => {
-    const acc = accounts.find(a => a.platform === 'twitter' && a.isActive);
-    return acc?.oauthToken ? acc : undefined;
-  };
-
-  const resolveAccount = (entry: PlatformEntry) => {
-    if (entry.id === 'twitter_v1') return getTwitterMediaAccount();
-    return getAccount(entry.id);
-  };
-
-  const successLabel = successPlatform
-    ? (PLATFORMS.find(p => p.id === successPlatform)?.name
-      ?? (successPlatform === 'whatsapp' ? 'WhatsApp' : successPlatform))
-    : null;
-
-  const connectedCount = accounts.filter(a => a.isActive).length;
-  const PLATFORM_GROUPS = buildGroups(PLATFORMS);
+  const connectedCount = accounts.filter((a) => a.isActive).length;
 
   return (
-    <>
+    <TooltipProvider delayDuration={150}>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-xl font-semibold tracking-tight">Connections</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Social accounts</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
           {connectedCount > 0
             ? `${connectedCount} platform${connectedCount === 1 ? '' : 's'} connected. Connect more to expand your publishing reach.`
@@ -206,15 +391,14 @@ function ConnectionsContent() {
         </p>
       </div>
 
-      {/* Toast notifications */}
-      {successLabel && (
+      {/* Banners */}
+      {successPlatform && (
         <div className="mb-5 flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
           <div className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-500">
             <Check className="size-3 text-white" />
           </div>
           <span>
-            <span className="font-medium">{successLabel}</span>
-            {' '}
+            <span className="font-medium capitalize">{successPlatform}</span>{' '}
             connected successfully.
           </span>
         </div>
@@ -233,74 +417,63 @@ function ConnectionsContent() {
         </div>
       ) : (
         <div className="space-y-8">
-          {PLATFORM_GROUPS.map(group => (
+          {PLATFORM_GROUPS.map((group) => (
             <div key={group.label}>
               <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {group.label}
               </p>
 
-              <div className="overflow-hidden rounded-xl border bg-card">
+              {/* overflow-visible so portal tooltips still work, border via children */}
+              <div className="rounded-xl border bg-card">
                 {group.platforms.map((platform, i) => {
                   const PIcon = platform.icon;
                   const account = resolveAccount(platform);
                   const connected = !!account;
                   const isLast = i === group.platforms.length - 1;
-                  const isTwitterMediaRow = platform.id === 'twitter_v1';
-                  const isPending = '_pending' in platform && platform._pending === true;
-
-                  if (isPending) {
-                    const PendingIcon = platform.icon;
-                    return (
-                      <div
-                        key={`${platform.id}-${i}`}
-                        className={`flex items-center gap-3 p-4 sm:gap-4 sm:px-5 ${!isLast ? 'border-b' : ''} bg-muted/20`}
-                      >
-                        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 sm:size-10">
-                          <PendingIcon className="size-4 text-muted-foreground/60 sm:size-5" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <p className="text-sm font-medium text-muted-foreground">{platform.name}</p>
-                            <span className="rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                              Coming soon
-                            </span>
-                          </div>
-                          <p className="mt-0.5 text-xs text-muted-foreground/70">
-                            {'_pendingLabel' in platform ? platform._pendingLabel as string : 'API approval in progress'}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground/50">
-                          <Clock className="size-3.5" />
-                          <span className="hidden text-xs sm:inline">Pending</span>
-                        </div>
-                      </div>
-                    );
-                  }
+                  const isMediaRow = platform.id === 'twitter_v1';
 
                   return (
                     <div
                       key={`${platform.id}-${i}`}
-                      className={`flex items-center gap-3 p-4 sm:gap-4 sm:px-5 ${!isLast ? 'border-b' : ''} ${isTwitterMediaRow && !connected ? 'bg-muted/30' : ''}`}
+                      className={[
+                        'flex items-center gap-3 p-4 sm:gap-4 sm:px-5',
+                        !isLast ? 'border-b' : '',
+                        isMediaRow && !connected ? 'bg-muted/30' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
                     >
-                      <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg sm:size-10 ${isTwitterMediaRow ? 'bg-muted/50' : 'bg-muted'}`}>
-                        {isTwitterMediaRow
-                          ? <Image className="size-4 text-muted-foreground sm:size-5" aria-hidden />
-                          : <PIcon className="size-4 text-muted-foreground sm:size-5" />}
+                      {/* Platform icon */}
+                      <div
+                        className={[
+                          'flex size-9 shrink-0 items-center justify-center rounded-lg sm:size-10',
+                          isMediaRow ? 'bg-muted/50' : 'bg-muted',
+                        ].join(' ')}
+                      >
+                        {isMediaRow ? (
+                          <ImageIcon
+                            className="size-4 text-muted-foreground sm:size-5"
+                            aria-hidden
+                          />
+                        ) : (
+                          <PIcon className="size-4 text-muted-foreground sm:size-5" />
+                        )}
                       </div>
 
+                      {/* Name + status */}
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <p className="text-sm font-medium">{platform.name}</p>
 
-                          {platform._badgeVariant === 'highlight' ? (
+                          {platform.badgeVariant === 'media' ? (
                             <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
-                              <Image className="size-2.5" aria-hidden />
+                              <ImageIcon className="size-2.5" aria-hidden />
                               Images &amp; video
                             </span>
-                          ) : platform._badge ? (
+                          ) : platform.badge ? (
                             <span className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                               <Type className="size-2.5" aria-hidden />
-                              {platform._badge}
+                              {platform.badge}
                             </span>
                           ) : platform.description ? (
                             <span className="rounded-full border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
@@ -311,50 +484,75 @@ function ConnectionsContent() {
 
                         {connected ? (
                           <p className="mt-0.5 text-xs text-emerald-600">
-                            {account.platformUsername ? `@${account.platformUsername}` : 'Connected'}
+                            {account.platformUsername
+                              ? `@${account.platformUsername}`
+                              : 'Connected'}
                           </p>
-                        ) : isTwitterMediaRow ? (
+                        ) : isMediaRow ? (
                           <p className="mt-0.5 text-xs text-muted-foreground">
                             Connect to publish images &amp; videos to X
                           </p>
                         ) : (
-                          <p className="mt-0.5 text-xs text-muted-foreground">Not connected</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            Not connected
+                          </p>
                         )}
                       </div>
 
+                      {/* Actions */}
                       {connected ? (
-                        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                        <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
+                          {/* Profile picture */}
+                          <Avatar
+                            src={account.profileImageUrl}
+                            username={account.platformUsername}
+                          />
+
+                          {/* Connected indicator — desktop */}
                           <div className="hidden items-center gap-1.5 sm:flex">
                             <div className="flex size-4 items-center justify-center rounded-full bg-emerald-500">
                               <Check className="size-2.5 text-white" />
                             </div>
                             <span className="text-xs text-emerald-600">Connected</span>
                           </div>
+
+                          {/* Connected dot — mobile */}
                           <div className="flex size-5 items-center justify-center rounded-full bg-emerald-500 sm:hidden">
                             <Check className="size-3 text-white" />
                           </div>
+
+                          <PlatformTip tip={platform.tip} />
+
                           <button
                             type="button"
                             onClick={() => disconnectAccount(account.id)}
                             disabled={disconnecting === account.id}
                             className="rounded-lg border px-2.5 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-50 disabled:opacity-50 sm:px-3"
                           >
-                            {disconnecting === account.id
-                              ? <Loader2 className="size-3 animate-spin" />
-                              : 'Disconnect'}
+                            {disconnecting === account.id ? (
+                              <Loader2 className="size-3 animate-spin" />
+                            ) : (
+                              'Disconnect'
+                            )}
                           </button>
                         </div>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => connectPlatform(platform)}
-                          className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors sm:px-4 sm:py-2 ${isTwitterMediaRow
-                            ? 'border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100'
-                            : 'bg-foreground text-background hover:opacity-90'
-                            }`}
-                        >
-                          Connect
-                        </button>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <PlatformTip tip={platform.tip} />
+
+                          <button
+                            type="button"
+                            onClick={() => connectPlatform(platform)}
+                            className={[
+                              'shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors sm:px-4 sm:py-2',
+                              isMediaRow
+                                ? 'border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100'
+                                : 'bg-foreground text-background hover:opacity-90',
+                            ].join(' ')}
+                          >
+                            Connect
+                          </button>
+                        </div>
                       )}
                     </div>
                   );
@@ -363,7 +561,8 @@ function ConnectionsContent() {
 
               {group.label === 'Social' && (
                 <p className="mt-2 text-xs text-muted-foreground">
-                  X requires two separate connections: one for text posts (OAuth 2.0) and one for images &amp; video (OAuth 1.0a). Connect both for full publishing support.
+                  X requires two separate connections: one for text posts (OAuth 2.0) and one
+                  for images &amp; video (OAuth 1.0a). Connect both for full publishing support.
                 </p>
               )}
             </div>
@@ -372,26 +571,27 @@ function ConnectionsContent() {
       )}
 
       <p className="mt-8 text-xs text-muted-foreground">
-        NativPost uses official platform APIs with OAuth 2.0 and OAuth 1.0a where required. Credentials are encrypted and stored securely.
-        Content is never published without your explicit approval.
+        NativPost uses official platform APIs with OAuth 2.0 and OAuth 1.0a where required.
+        Credentials are encrypted and stored securely. Content is never published without your
+        explicit approval.
       </p>
-    </>
+    </TooltipProvider>
   );
 }
 
-// -----------------------------------------------------------
+// ---------------------------------------------------------------------------
 // PAGE
-// -----------------------------------------------------------
-export default function ConnectionsPage() {
+// ---------------------------------------------------------------------------
+export default function SocialAccountsPage() {
   return (
     <Suspense
-      fallback={(
+      fallback={
         <div className="flex min-h-[300px] items-center justify-center">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
-      )}
+      }
     >
-      <ConnectionsContent />
+      <SocialAccountsContent />
     </Suspense>
   );
 }
