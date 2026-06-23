@@ -45,6 +45,16 @@ export default withSentryConfig(
             protocol: 'https',
             hostname: '*.ucarecd.net',
           },
+          // Unsplash CDN (for curated theme previews)
+          {
+            protocol: 'https',
+            hostname: 'images.unsplash.com',
+          },
+          // Unsplash Plus CDN
+          {
+            protocol: 'https',
+            hostname: 'plus.unsplash.com',
+          },
         ],
       },
     }),
