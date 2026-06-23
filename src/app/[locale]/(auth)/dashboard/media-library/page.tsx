@@ -117,9 +117,9 @@ function unsplashPreviewByTheme(themeId: string, w = 300, page = 1): string {
  * Legacy helper — kept for any future callers that only have a raw query
  * string and no theme id. No fallback queries are applied in this mode.
  */
-function unsplashPreview(query: string, w = 300, page = 1): string {
-  return `/api/media-library/unsplash-preview?query=${encodeURIComponent(query)}&w=${w}&page=${page}`;
-}
+// function unsplashPreview(query: string, w = 300, page = 1): string {
+//   return `/api/media-library/unsplash-preview?query=${encodeURIComponent(query)}&w=${w}&page=${page}`;
+// }
 
 // ---------------------------------------------------------------------------
 // FORMAT HELPERS
