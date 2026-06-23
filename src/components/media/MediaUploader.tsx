@@ -187,38 +187,38 @@ export function MediaUploader({
   // ---------------------------------------------------------------------------
   // Cloudinary widget options
   // ---------------------------------------------------------------------------
- const widgetSources: CloudinaryUploadWidgetOptions['sources'] = isVideoMode
-  ? ['local', 'url', 'dropbox', 'google_drive']
-  : ['local', 'url', 'camera', 'dropbox', 'google_drive', 'instagram', 'unsplash'];
+  const widgetSources: CloudinaryUploadWidgetOptions['sources'] = isVideoMode
+    ? ['local', 'url', 'dropbox', 'google_drive']
+    : ['local', 'url', 'camera', 'dropbox', 'google_drive', 'instagram', 'unsplash'];
 
-const widgetOptions: CloudinaryUploadWidgetOptions = {
-  sources: widgetSources,
-  multiple: false,
-  resourceType: isVideoMode ? 'video' : 'image',
-  clientAllowedFormats: isVideoMode
-    ? ['mp4', 'mov', 'webm']
-    : ['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif'],
-  maxFileSize: isVideoMode ? 500_000_000 : 20_000_000,
-  cropping: false,
-  showSkipCropButton: true,
-  styles: {
-    palette: {
-      window: '#FFFFFF',
-      windowBorder: '#E5E7EB',
-      tabIcon: '#F97316',
-      menuIcons: '#6B7280',
-      textDark: '#111827',
-      textLight: '#FFFFFF',
-      link: '#F97316',
-      action: '#F97316',
-      inactiveTabIcon: '#9CA3AF',
-      error: '#EF4444',
-      inProgress: '#F97316',
-      complete: '#10B981',
-      sourceBg: '#F9FAFB',
+  const widgetOptions: CloudinaryUploadWidgetOptions = {
+    sources: widgetSources,
+    multiple: false,
+    resourceType: isVideoMode ? 'video' : 'image',
+    clientAllowedFormats: isVideoMode
+      ? ['mp4', 'mov', 'webm']
+      : ['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif'],
+    maxFileSize: isVideoMode ? 500_000_000 : 20_000_000,
+    cropping: false,
+    showSkipCropButton: true,
+    styles: {
+      palette: {
+        window: '#FFFFFF',
+        windowBorder: '#E5E7EB',
+        tabIcon: '#F97316',
+        menuIcons: '#6B7280',
+        textDark: '#111827',
+        textLight: '#FFFFFF',
+        link: '#F97316',
+        action: '#F97316',
+        inactiveTabIcon: '#9CA3AF',
+        error: '#EF4444',
+        inProgress: '#F97316',
+        complete: '#10B981',
+        sourceBg: '#F9FAFB',
+      },
     },
-  },
-};
+  };
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -335,6 +335,9 @@ const widgetOptions: CloudinaryUploadWidgetOptions = {
           <CldUploadWidget
             signatureEndpoint="/api/media-library/signature"
             onSuccess={handleUploadSuccess}
+            onError={(error) => {
+              console.log(error);
+            }}
             options={widgetOptions}
           >
             {({ open }) => (
