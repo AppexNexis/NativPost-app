@@ -53,8 +53,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       signature,
       timestamp, // Pass the guaranteed timestamp to the frontend
-      // folder: enforced.folder,
-      // tags: enforced.tags,
+      folder: enforced.folder,
+      tags: enforced.tags,
       apiKey: process.env.CLOUDINARY_API_KEY,
       cloudName: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
     });
