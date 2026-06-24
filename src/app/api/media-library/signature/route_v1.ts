@@ -2,11 +2,13 @@
  * /api/media-library/signature
  *
  * Generates a signed upload signature for the Cloudinary Upload Widget.
+ * This is required for SIGNED uploads (more secure than unsigned presets).
  *
- * The widget sends paramsToSign (e.g. {timestamp, source}).
- * We inject folder + tags into the params BEFORE signing, so the signature
- * covers all fields. The widget then receives folder + tags and includes
- * them in the actual upload request — making the signature valid.
+ * The widget calls this endpoint before each upload to get a fresh signature.
+ * We embed the orgId as a tag and set the upload folder automatically.
+ *
+ * POST /api/media-library/signature
+ * Body: { paramsToSign: Record<string, any> }
  */
 
 import { v2 as cloudinary } from 'cloudinary';
@@ -27,19 +29,19 @@ export async function POST(request: NextRequest) {
   if (error) return error;
 
   const body = await request.json().catch(() => ({}));
+  
+  // Use Record<string, any> to account for numbers (like timestamps) and strings
   const paramsToSign: Record<string, any> = body.paramsToSign ?? {};
 
+  // Safely extract the timestamp from the payload or generate a new one
   const timestamp = paramsToSign.timestamp ?? Math.round(Date.now() / 1000);
-  const folder = `nativpost/${orgId}`;
-  const tags = `org:${orgId}`;
 
-  // Sign ALL params including folder + tags so the signature matches
-  // what will actually be sent to Cloudinary in the upload request
+  // Explicitly type the enforced object to prevent strict inference errors
   const enforced: Record<string, any> = {
     ...paramsToSign,
-    timestamp,
-    folder,
-    tags,
+    timestamp, // Inject the guaranteed timestamp back into the object for signing
+    folder: `nativpost/${orgId}`,
+    tags: `org:${orgId}`,
   };
 
   try {
@@ -48,14 +50,11 @@ export async function POST(request: NextRequest) {
       process.env.CLOUDINARY_API_SECRET!,
     );
 
-    // Return signature + all enforced params so the widget sends them all
-    // The widget will include folder + tags in the upload request,
-    // which means the signature will match what Cloudinary verifies
     return NextResponse.json({
       signature,
-      timestamp,
-      folder,
-      tags,
+      timestamp, // Pass the guaranteed timestamp to the frontend
+      folder: enforced.folder,
+      tags: enforced.tags,
       apiKey: process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY,
       cloudName: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
     });
