@@ -8,13 +8,15 @@ import {
   Copy,
   Edit3,
   ImageIcon,
-  Layers,
+  // Layers,
   Link2,
   Loader2,
+  RefreshCw,
   Send,
-  Sparkles,
+  // Sparkles,
   Trash2,
   Video,
+  Wand2,
   X,
 } from 'lucide-react';
 import Image from 'next/image';
@@ -22,15 +24,12 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-import { MediaUploader } from '@/components/media/MediaUploader';
 import { PageHeader } from '@/features/dashboard/PageHeader';
-import { TikTokPublishModal } from '@/components/tiktok/TikTokPublishModal';
-import { cldImageUrl } from '@/lib/cloudflare-helpers';
 
 // -----------------------------------------------------------
 // TYPES
 // -----------------------------------------------------------
-type ContentItem = {
+interface V2ContentItem {
   id: string;
   caption: string;
   hashtags: string[];
@@ -51,6 +50,40 @@ type ContentItem = {
   graphicUrls: string[];
   createdAt: string;
   updatedAt: string;
+  // v2 fields
+  aspectRatio?: string | null;
+  durationSeconds?: number | null;
+  aiModelUsed?: string | null;
+  generationParams?: Record<string, unknown> | null;
+  campaignId?: string | null;
+  templateId?: string | null;
+  influencerId?: string | null;
+  angleId?: string | null;
+}
+
+type Campaign = {
+  id: string;
+  name: string;
+  reRollsRemaining: number;
+};
+
+type ContentTemplate = {
+  id: string;
+  thumbnailUrl: string;
+  sourceCreator: string | null;
+  contentType: string;
+};
+
+type AIInfluencer = {
+  id: string;
+  name: string;
+  baseImageUrl: string | null;
+};
+
+type ContentAngle = {
+  id: string;
+  name: string;
+  color: string | null;
 };
 
 // -----------------------------------------------------------
@@ -63,6 +96,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   scheduled: { label: 'Scheduled', color: 'bg-violet-50 text-violet-700' },
   published: { label: 'Published', color: 'bg-emerald-50 text-emerald-700' },
   rejected: { label: 'Rejected', color: 'bg-red-50 text-red-700' },
+  archived: { label: 'Archived', color: 'bg-gray-100 text-gray-500' },
 };
 
 const MODE_CONFIG: Record<string, { label: string; color: string }> = {
@@ -85,38 +119,18 @@ const PLATFORM_LABELS: Record<string, string> = {
   whatsapp: 'WhatsApp',
 };
 
-const TITLE_PLATFORMS = new Set(['youtube', 'pinterest']);
-const PLATFORM_SPECIFIC_SYSTEM_KEYS = [
-  'sourceImages', 'videoDurationSeconds', 'title', 'imageTemplate', 'imageStyle',
-  'carouselAspectRatio', 'carouselStyle', 'carouselSlideCount', 'photoTier',
-  'sceneModelUsed', 'promptUsed', 'isFallback', 'ugcHook', 'ugcProblem',
-  'ugcSolution', 'ugcCta', 'DataStoryFormats', 'Data_story_stats', 'DataStoryStatCount',
-  'captionOriginal', 'videoGenerated', 'unsplashCredits', 'stylePresetUsed', 'youtube',
-  // AI graphic keys
-  'aiGraphicType', 'aiGraphicQuality', 'headlineUsed',
-];
 const MEDIA_CONTENT_TYPES = ['single_image', 'carousel', 'reel', 'ugc_ad', 'data_story'];
 
-// AI Graphic content type metadata
-const AI_GRAPHIC_TYPES = [
-  {
-    value: 'illustration' as const,
-    label: 'Illustration',
-    sub: 'Branded concept art, flat design',
-  },
-  {
-    value: 'infographic' as const,
-    label: 'Infographic',
-    sub: 'Structured data layouts, guides',
-  },
-  {
-    value: 'typography' as const,
-    label: 'Typography',
-    sub: 'Bold text-dominant editorial',
-  },
-] as const;
-
-type AIGraphicContentType = 'illustration' | 'infographic' | 'typography';
+const ASPECT_RATIO_LABELS: Record<string, string> = {
+  '9:16': '9:16 — Vertical (Stories, Reels)',
+  '1:1': '1:1 — Square (Feed)',
+  '16:9': '16:9 — Landscape (YouTube, LinkedIn)',
+  '4:3': '4:3 — Standard',
+  '3:4': '3:4 — Portrait',
+  '2:3': '2:3 — Tall',
+  '3:2': '3:2 — Wide',
+  '21:9': '21:9 — Cinematic',
+};
 
 // -----------------------------------------------------------
 // HELPERS
@@ -131,43 +145,30 @@ function toVideoSrc(url: string): string {
   return `${base}video.mp4`;
 }
 
-function scoreLabel(score: number): { text: string; color: string } {
-  if (score >= 0.9) return { text: 'Excellent', color: 'bg-emerald-50 text-emerald-700' };
-  if (score >= 0.8) return { text: 'Great', color: 'bg-green-50 text-green-700' };
-  if (score >= 0.7) return { text: 'Good', color: 'bg-yellow-50 text-yellow-700' };
-  if (score >= 0.5) return { text: 'Needs work', color: 'bg-orange-50 text-orange-700' };
-  return { text: 'Poor', color: 'bg-red-50 text-red-700' };
+function scoreLabel(score: number): { text: string; color: string; ring: string } {
+  if (score >= 0.9) return { text: 'Excellent', color: 'bg-emerald-50 text-emerald-700', ring: 'text-emerald-500' };
+  if (score >= 0.8) return { text: 'Great', color: 'bg-green-50 text-green-700', ring: 'text-green-500' };
+  if (score >= 0.7) return { text: 'Good', color: 'bg-yellow-50 text-yellow-700', ring: 'text-yellow-500' };
+  if (score >= 0.5) return { text: 'Needs work', color: 'bg-orange-50 text-orange-700', ring: 'text-orange-500' };
+  return { text: 'Poor', color: 'bg-red-50 text-red-700', ring: 'text-red-500' };
 }
 
-// -----------------------------------------------------------
-// SMALL SUB-COMPONENTS
-// -----------------------------------------------------------
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
-      <span className="text-right text-sm font-medium capitalize">{value}</span>
-    </div>
-  );
-}
-
-function EnrichmentRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start gap-3">
-      <span className="shrink-0 text-xs font-medium text-muted-foreground">{label}</span>
-      <span className="break-all text-xs text-foreground">{value}</span>
-    </div>
-  );
+function formatDuration(seconds: number | null | undefined): string {
+  if (!seconds) return '—';
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return `${m}m ${s}s`;
 }
 
 // -----------------------------------------------------------
 // PAGE
 // -----------------------------------------------------------
-export default function ContentDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function ContentIdPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [item, setItem] = useState<ContentItem | null>(null);
+  const [item, setItem] = useState<V2ContentItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editCaption, setEditCaption] = useState('');
@@ -175,95 +176,20 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
   const [showScheduler, setShowScheduler] = useState(false);
   const [scheduleDate, setScheduleDate] = useState('');
   const [scheduleTime, setScheduleTime] = useState('');
-  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
-  const [videoGenError, setVideoGenError] = useState<string | null>(null);
-  const [videoPhotoTier, setVideoPhotoTier] = useState<'unsplash' | 'flux'>('unsplash');
-  const [videoFormat, setVideoFormat] = useState<'slideshow' | 'text-motion'>('slideshow');
-  const [textMotionStyle, setTextMotionStyle] = useState<'dark' | 'light' | 'brand'>('dark');
-  const [textMotionHeadlineOverride, setTextMotionHeadlineOverride] = useState('');
-  const [textMotionEyebrow, setTextMotionEyebrow] = useState('');
-  const [textMotionCta, setTextMotionCta] = useState('');
-  const [textMotionResult, setTextMotionResult] = useState<{ headlineUsed?: string; durationSeconds?: number } | null>(null);
-  const [isGeneratingTextMotion, setIsGeneratingTextMotion] = useState(false);
-  const [textMotionError, setTextMotionError] = useState<string | null>(null);
-  const [isGeneratingUGC, setIsGeneratingUGC] = useState(false);
-  const [ugcError, setUgcError] = useState<string | null>(null);
-  const [ugcPhotoTier, setUgcPhotoTier] = useState<'unsplash' | 'flux' | 'seedance'>('unsplash');
-  const [isGeneratingDataStory, setIsGeneratingDataStory] = useState(false);
-  const [dataStoryError, setDataStoryError] = useState<string | null>(null);
-
-  // Image engine state
-  const [imageMode, setImageMode] = useState<'template' | 'ai-scene' | 'ai-graphic'>('ai-scene');
-  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const [imageGenError, setImageGenError] = useState<string | null>(null);
-  const [imageTemplate, setImageTemplate] = useState<'quote-card' | 'announcement-card' | 'stat-card'>('quote-card');
-  const [imageStyle, setImageStyle] = useState<'dark' | 'light' | 'brand'>('dark');
-  const [imageFormats, setImageFormats] = useState<string[]>(['square', 'vertical']);
-  const [imageStatValue, setImageStatValue] = useState('');
-  const [imageStatLabel, setImageStatLabel] = useState('');
-  const [imageEyebrow, setImageEyebrow] = useState('');
-
-  // AI Scene state
-  const [sceneStyle, setSceneStyle] = useState<'professional' | 'minimal' | 'vibrant' | 'elegant' | 'bold' | 'cinematic'>('professional');
-  const [sceneOverlay, setSceneOverlay] = useState<'standard' | 'minimal' | 'none'>('standard');
-  const [scenePromptOverride, setScenePromptOverride] = useState('');
-  const [sceneHeadlineOverride, setSceneHeadlineOverride] = useState('');
-  const [sceneEyebrowOverride, setSceneEyebrowOverride] = useState('');
-  const [sceneResult, setSceneResult] = useState<{ promptUsed?: string; modelUsed?: string; fallback?: boolean; headlineUsed?: string } | null>(null);
-
-  // ── AI Graphic state (NEW) ─────────────────────────────────────────────────
-  const [aiGraphicContentType, setAiGraphicContentType] = useState<AIGraphicContentType>('illustration');
-  const [aiGraphicQuality, setAiGraphicQuality] = useState<'standard' | 'premium'>('standard');
-  const [aiGraphicFormat, setAiGraphicFormat] = useState<'square' | 'vertical'>('square');
-  const [aiGraphicPromptOverride, setAiGraphicPromptOverride] = useState('');
-  const [aiGraphicHeadlineOverride, setAiGraphicHeadlineOverride] = useState('');
-  const [aiGraphicEyebrow, setAiGraphicEyebrow] = useState('');
-  const [isGeneratingAiGraphic, setIsGeneratingAiGraphic] = useState(false);
-  const [aiGraphicError, setAiGraphicError] = useState<string | null>(null);
-  const [aiGraphicResult, setAiGraphicResult] = useState<{
-    visualPrompt?: string;
-    overlayHeadline?: string;
-    quality?: string;
-    generationMs?: number;
-    totalMs?: number;
-  } | null>(null);
-
-  // Carousel engine state
-  const [isGeneratingCarousel, setIsGeneratingCarousel] = useState(false);
-  const [carouselError, setCarouselError] = useState<string | null>(null);
-  const [carouselStyle, setCarouselStyle] = useState<'dark' | 'light' | 'brand'>('dark');
-  const [carouselAspectRatio, setCarouselAspectRatio] = useState<'1:1' | '9:16'>('1:1');
-
-  // Data story stats editor
-  const [statLabel, setStatLabel] = useState('');
-  const [statValue, setStatValue] = useState('');
-  const [statUnit, setStatUnit] = useState('');
-  const [statPrefix, setStatPrefix] = useState('');
   const [copyDone, setCopyDone] = useState(false);
   const [showQualityFlags, setShowQualityFlags] = useState(false);
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [editTitle, setEditTitle] = useState('');
-  const [editingAdaptation, setEditingAdaptation] = useState<string | null>(null);
-  const [editAdaptationText, setEditAdaptationText] = useState('');
+  const [showGenerationParams, setShowGenerationParams] = useState(false);
 
-  // AI Edit state
-  const [isAiEditing, setIsAiEditing] = useState(false);
-  const [aiInstruction, setAiInstruction] = useState('');
-  const [aiEditLoading, setAiEditLoading] = useState(false);
-  const [aiSuggestedCaption, setAiSuggestedCaption] = useState<string | null>(null);
-  const [aiEditError, setAiEditError] = useState<string | null>(null);
+  // v2 related state
+  const [campaign, setCampaign] = useState<Campaign | null>(null);
+  const [template, setTemplate] = useState<ContentTemplate | null>(null);
+  const [influencer, setInfluencer] = useState<AIInfluencer | null>(null);
+  const [angle, setAngle] = useState<ContentAngle | null>(null);
+  const [isReRolling, setIsReRolling] = useState(false);
+  const [reRollError, setReRollError] = useState<string | null>(null);
+  const [isRemixing, setIsRemixing] = useState(false);
 
-  // TikTok publish modal
-  const [showTikTokModal, setShowTikTokModal] = useState(false);
-  // const [isTikTokPublishing, setIsTikTokPublishing] = useState(false);
-
-  // YouTube thumbnail state
-  const [youtubeThumbnailUrl, setYoutubeThumbnailUrl] = useState<string | null>(null);
-  const [isGeneratingYoutubeThumbnail, setIsGeneratingYoutubeThumbnail] = useState(false);
-  const [youtubeThumbnailError, setYoutubeThumbnailError] = useState<string | null>(null);
-  const [isSavingYoutubeSettings, setIsSavingYoutubeSettings] = useState(false);
-
-  // ── Load ───────────────────────────────────────────────────────────────────
+  // Load content item
   useEffect(() => {
     async function load() {
       const { id } = await params;
@@ -271,15 +197,40 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         const res = await fetch(`/api/content/${id}`);
         if (res.ok) {
           const data = await res.json();
-          setItem(data.item);
-          setEditCaption(data.item.caption);
-          setEditTitle((data.item.platformSpecific?.title as string) || '');
-          const yts = (data.item.platformSpecific as Record<string, Record<string, string>>)?.youtube;
-          if (yts?.thumbnailUrl) setYoutubeThumbnailUrl(yts.thumbnailUrl);
-          if (data.item.scheduledFor) {
-            const d = new Date(data.item.scheduledFor);
+          const loadedItem = data.item as V2ContentItem;
+          setItem(loadedItem);
+          setEditCaption(loadedItem.caption);
+
+          if (loadedItem.scheduledFor) {
+            const d = new Date(loadedItem.scheduledFor);
             setScheduleDate(d.toISOString().split('T')[0] ?? '');
             setScheduleTime(d.toISOString().split('T')[1]?.slice(0, 5) ?? '');
+          }
+
+          // Load v2 related data
+          if (loadedItem.campaignId) {
+            fetch(`/api/campaigns/${loadedItem.campaignId}`)
+              .then(r => r.ok ? r.json() : null)
+              .then(d => d && setCampaign(d.item))
+              .catch(() => {});
+          }
+          if (loadedItem.templateId) {
+            fetch(`/api/templates/${loadedItem.templateId}`)
+              .then(r => r.ok ? r.json() : null)
+              .then(d => d && setTemplate(d.item))
+              .catch(() => {});
+          }
+          if (loadedItem.influencerId) {
+            fetch(`/api/ai-influencers/${loadedItem.influencerId}`)
+              .then(r => r.ok ? r.json() : null)
+              .then(d => d && setInfluencer(d.item))
+              .catch(() => {});
+          }
+          if (loadedItem.angleId) {
+            fetch(`/api/content-angles/${loadedItem.angleId}`)
+              .then(r => r.ok ? r.json() : null)
+              .then(d => d && setAngle(d.item))
+              .catch(() => {});
           }
         }
       } catch (err) {
@@ -291,6 +242,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     load();
   }, [params]);
 
+  // Auto-schedule from query param
   useEffect(() => {
     const autoSchedule = searchParams.get('autoSchedule');
     if (autoSchedule && !isLoading) {
@@ -300,7 +252,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     }
   }, [searchParams, isLoading]);
 
-  // ── Status / edit / save actions ──────────────────────────────────────────
+  // Actions
   const updateStatus = async (status: string) => {
     if (!item) return;
     setActionLoading(status);
@@ -325,153 +277,18 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ caption: editCaption }),
       });
-      if (res.ok) { setItem((await res.json()).item); setIsEditing(false); }
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const saveTitle = async () => {
-    if (!item) return;
-    setActionLoading('save-title');
-    try {
-      const res = await fetch(`/api/content/${item.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platformSpecific: { title: editTitle.trim() } }),
-      });
-      if (res.ok) { setItem((await res.json()).item); setIsEditingTitle(false); }
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const saveAdaptation = async (platform: string) => {
-    if (!item) return;
-    setActionLoading(`adaptation-${platform}`);
-    try {
-      const res = await fetch(`/api/content/${item.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platformSpecific: { [platform]: editAdaptationText } }),
-      });
-      if (res.ok) { setItem((await res.json()).item); setEditingAdaptation(null); }
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleAiEdit = async () => {
-    if (!item || !aiInstruction.trim()) return;
-    setAiEditLoading(true);
-    setAiEditError(null);
-    setAiSuggestedCaption(null);
-    try {
-      const res = await fetch(`/api/content/${item.id}/edit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          instruction: aiInstruction.trim(),
-          platform: (item.targetPlatforms as string[])?.[0] || 'instagram',
-        }),
-      });
-      const data = await res.json() as { revisedCaption?: string; error?: string };
-      if (res.ok && data.revisedCaption) {
-        setAiSuggestedCaption(data.revisedCaption);
-      } else {
-        setAiEditError(data.error || 'Edit failed. Please try again.');
-      }
-    } catch {
-      setAiEditError('Network error. Please try again.');
-    } finally {
-      setAiEditLoading(false);
-    }
-  };
-
-  const handleAcceptAiEdit = async () => {
-    if (!item || !aiSuggestedCaption) return;
-    setActionLoading('save');
-    try {
-      const res = await fetch(`/api/content/${item.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ caption: aiSuggestedCaption }),
-      });
       if (res.ok) {
         const updated = await res.json();
         setItem(updated.item);
-        setEditCaption(updated.item.caption);
-        setAiSuggestedCaption(null);
-        setAiInstruction('');
-        setIsAiEditing(false);
+        setIsEditing(false);
       }
     } finally {
       setActionLoading(null);
     }
   };
 
-  const saveYoutubeSettings = async () => {
-    if (!item) return;
-    setIsSavingYoutubeSettings(true);
-    try {
-      const existingPs = (item.platformSpecific as Record<string, unknown>) || {};
-      const existingYt = (existingPs.youtube as Record<string, string>) || {};
-      const res = await fetch(`/api/content/${item.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          platformSpecific: {
-            ...existingPs,
-            youtube: { ...existingYt, ...(youtubeThumbnailUrl ? { thumbnailUrl: youtubeThumbnailUrl } : {}) },
-          },
-        }),
-      });
-      if (res.ok) setItem((await res.json()).item);
-    } finally {
-      setIsSavingYoutubeSettings(false);
-    }
-  };
-
-  const generateYoutubeThumbnail = async () => {
-    if (!item) return;
-    setIsGeneratingYoutubeThumbnail(true);
-    setYoutubeThumbnailError(null);
-    try {
-      const res = await fetch(`/api/content/${item.id}/generate-thumbnail`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ style: 'brand' }),
-      });
-      const data = await res.json() as { success?: boolean; thumbnailUrl?: string; error?: string };
-      if (res.ok && data.success && data.thumbnailUrl) {
-        setYoutubeThumbnailUrl(data.thumbnailUrl);
-        const refreshRes = await fetch(`/api/content/${item.id}`);
-        if (refreshRes.ok) {
-          const refreshData = await refreshRes.json() as { item: ContentItem };
-          setItem(refreshData.item);
-        }
-      } else {
-        setYoutubeThumbnailError(data.error || 'Thumbnail generation failed. Please try again.');
-      }
-    } catch {
-      setYoutubeThumbnailError('Network error. Please try again.');
-    } finally {
-      setIsGeneratingYoutubeThumbnail(false);
-    }
-  };
-
-  const copyCaption = () => {
-    if (!item) return;
-    navigator.clipboard.writeText(item.caption);
-    setCopyDone(true);
-    setTimeout(() => setCopyDone(false), 1500);
-  };
-
-  const hasTikTok = (item?.targetPlatforms as string[] || []).includes('tiktok');
-
   const publishNow = async () => {
     if (!item) return;
-    if (hasTikTok) { setShowTikTokModal(true); return; }
     setActionLoading('publish');
     try {
       const res = await fetch(`/api/content/${item.id}/publish`, { method: 'POST' });
@@ -480,31 +297,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         if (refreshRes.ok) setItem((await refreshRes.json()).item);
       }
     } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleTikTokPublish = async (tiktokSettings: {
-    title: string; privacyLevel: string; allowComment: boolean;
-    allowDuet: boolean; allowStitch: boolean;
-    brandOrganicToggle: boolean; brandContentToggle: boolean;
-  }) => {
-    if (!item) return;
-    // setIsTikTokPublishing(true);
-    setActionLoading('publish');
-    try {
-      const res = await fetch(`/api/content/${item.id}/publish`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tiktokSettings }),
-      });
-      if (res.ok) {
-        setShowTikTokModal(false);
-        const refreshRes = await fetch(`/api/content/${item.id}`);
-        if (refreshRes.ok) setItem((await refreshRes.json()).item);
-      }
-    } finally {
-      // setIsTikTokPublishing(false);
       setActionLoading(null);
     }
   };
@@ -519,362 +311,17 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'scheduled', scheduledFor }),
       });
-      if (res.ok) { setItem((await res.json()).item); setShowScheduler(false); }
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const deleteVideo = async () => {
-    if (!item) return;
-    setActionLoading('delete-video');
-    try {
-      const existingPs = (item.platformSpecific as Record<string, unknown>) || {};
-      const res = await fetch(`/api/content/${item.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          graphicUrls: [],
-          platformSpecific: {
-            ...existingPs,
-            videoGenerated: false,
-            photoTier: 'none',
-            sourceImages: [],
-            videoDurationSeconds: 0,
-            unsplashCredits: [],
-          },
-        }),
-      });
       if (res.ok) {
-        const updated = await res.json() as { item: ContentItem };
-        setItem(updated.item);
+        setItem((await res.json()).item);
+        setShowScheduler(false);
       }
     } finally {
       setActionLoading(null);
-    }
-  };
-
-  const generateVideo = async () => {
-    if (!item) return;
-    setIsGeneratingVideo(true);
-    setVideoGenError(null);
-    try {
-      const res = await fetch(`/api/content/${item.id}/generate-video`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ photoTier: videoPhotoTier === 'flux' ? 'flux' : 'unsplash' }),
-      });
-      const data = await res.json() as { success?: boolean; vertical?: string; square?: string; error?: string };
-      if (res.ok && data.success && data.vertical && data.square) {
-        const refreshRes = await fetch(`/api/content/${item.id}`);
-        if (refreshRes.ok) {
-          const refreshData = await refreshRes.json() as { item: ContentItem };
-          if (refreshData?.item?.id) setItem(refreshData.item);
-        }
-      } else {
-        setVideoGenError(data.error || 'Video generation failed. Please try again.');
-      }
-    } catch (err) {
-      console.error('[Video] generateVideo error:', err);
-      setVideoGenError('Network error. Please try again.');
-    } finally {
-      setIsGeneratingVideo(false);
-    }
-  };
-
-  const generateTextMotion = async () => {
-    if (!item) return;
-    setIsGeneratingTextMotion(true);
-    setTextMotionError(null);
-    setTextMotionResult(null);
-    try {
-      const res = await fetch(`/api/content/${item.id}/generate-text-motion`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          style: textMotionStyle,
-          formats: ['vertical', 'square'],
-          ...(textMotionHeadlineOverride.trim() ? { headline: textMotionHeadlineOverride.trim() } : {}),
-          ...(textMotionEyebrow.trim() ? { eyebrow: textMotionEyebrow.trim().toUpperCase() } : {}),
-          ...(textMotionCta.trim() ? { cta: textMotionCta.trim() } : {}),
-        }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setTextMotionResult({ headlineUsed: data.headlineUsed, durationSeconds: data.durationSeconds });
-        const refreshRes = await fetch(`/api/content/${item.id}`);
-        if (refreshRes.ok) {
-          const refreshData = await refreshRes.json();
-          if (refreshData?.item?.id) setItem(refreshData.item);
-        }
-      } else {
-        setTextMotionError(data.error || 'Text motion generation failed. Please try again.');
-      }
-    } catch (err) {
-      console.error('[TextMotion] error:', err);
-      setTextMotionError('Network error. Please try again.');
-    } finally {
-      setIsGeneratingTextMotion(false);
-    }
-  };
-
-  const generateUGCAd = async () => {
-    if (!item) return;
-    setIsGeneratingUGC(true);
-    setUgcError(null);
-    try {
-      const res = await fetch(`/api/content/${item.id}/generate-ugc-ad`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ photoTier: ugcPhotoTier }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setUgcError(data.error || 'UGC ad generation failed. Please try again.');
-        return;
-      }
-      const data = await res.json();
-      setItem(prev => prev ? {
-        ...prev,
-        graphicUrls: [data.vertical].filter(Boolean),
-        platformSpecific: {
-          ...prev.platformSpecific,
-          videoDurationSeconds: data.durationSeconds,
-          photoTier: data.photoTier,
-          unsplashCredits: data.credits,
-        },
-      } : prev);
-    } catch (err) {
-      console.error('[UGCAd] error:', err);
-      setUgcError('Network error. Please try again.');
-    } finally {
-      setIsGeneratingUGC(false);
-    }
-  };
-
-  const generateDataStory = async () => {
-    if (!item) return;
-    setIsGeneratingDataStory(true);
-    setDataStoryError(null);
-    try {
-      const res = await fetch(`/api/content/${item.id}/generate-data-story`, { method: 'POST' });
-      if (!res.ok) {
-        const data = await res.json();
-        setDataStoryError(data.error || 'Data story generation failed. Please try again.');
-        return;
-      }
-      const data = await res.json();
-      setItem(prev => prev ? {
-        ...prev,
-        graphicUrls: [data.vertical, data.square, data.landscape].filter(Boolean) as string[],
-        platformSpecific: { ...prev.platformSpecific, videoDurationSeconds: data.durationSeconds },
-      } : prev);
-    } catch (err) {
-      console.error('[DataStory] error:', err);
-      setDataStoryError('Network error. Please try again.');
-    } finally {
-      setIsGeneratingDataStory(false);
-    }
-  };
-
-  const addStatToItem = async () => {
-    if (!item || !statLabel || !statValue) return;
-    const newStat = {
-      label: statLabel,
-      value: Number(statValue),
-      ...(statUnit ? { unit: statUnit } : {}),
-      ...(statPrefix ? { prefix: statPrefix } : {}),
-    };
-    const ps = (item.platformSpecific as Record<string, unknown>) || {};
-    const existing = (ps.data_story_stats as object[]) || [];
-    const updated = [...existing, newStat];
-    await fetch(`/api/content/${item.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platformSpecific: { data_story_stats: updated } }),
-    });
-    setItem(prev => prev ? {
-      ...prev,
-      platformSpecific: { ...prev.platformSpecific, data_story_stats: updated },
-    } : prev);
-    setStatLabel(''); setStatValue(''); setStatUnit(''); setStatPrefix('');
-  };
-
-  const removeStatFromItem = async (index: number) => {
-    if (!item) return;
-    const ps = (item.platformSpecific as Record<string, unknown>) || {};
-    const existing = (ps.data_story_stats as object[]) || [];
-    const updated = existing.filter((_, i) => i !== index);
-    await fetch(`/api/content/${item.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platformSpecific: { data_story_stats: updated } }),
-    });
-    setItem(prev => prev ? {
-      ...prev,
-      platformSpecific: { ...prev.platformSpecific, data_story_stats: updated },
-    } : prev);
-  };
-
-  const generateImage = async () => {
-    if (!item) return;
-    setIsGeneratingImage(true);
-    setImageGenError(null);
-    try {
-      const body: Record<string, unknown> = {
-        template: imageTemplate,
-        style: imageStyle,
-        formats: imageFormats,
-        eyebrow: imageEyebrow || undefined,
-      };
-      if (imageTemplate === 'stat-card') {
-        if (!imageStatValue || !imageStatLabel) {
-          setImageGenError('Stat value and label are required for stat card.');
-          return;
-        }
-        body.statValue = imageStatValue;
-        body.statLabel = imageStatLabel;
-      }
-      const res = await fetch(`/api/content/${item.id}/generate-image`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        const refreshRes = await fetch(`/api/content/${item.id}`);
-        if (refreshRes.ok) setItem((await refreshRes.json()).item);
-      } else {
-        setImageGenError(data.error || 'Image generation failed. Please try again.');
-      }
-    } catch (err) {
-      console.error('[Image] generate error:', err);
-      setImageGenError('Network error. Please try again.');
-    } finally {
-      setIsGeneratingImage(false);
-    }
-  };
-
-  const generateScene = async () => {
-    if (!item) return;
-    setIsGeneratingImage(true);
-    setImageGenError(null);
-    setSceneResult(null);
-    try {
-      const res = await fetch(`/api/content/${item.id}/generate-scene`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          formats: imageFormats,
-          imageStyle: sceneStyle,
-          modelTier: 'pro',
-          overlayStyle: sceneOverlay,
-          ...(scenePromptOverride.trim() ? { scenePrompt: scenePromptOverride.trim() } : {}),
-          ...(sceneHeadlineOverride.trim() ? { headline: sceneHeadlineOverride.trim() } : {}),
-          ...(sceneEyebrowOverride.trim() ? { eyebrow: sceneEyebrowOverride.trim().toUpperCase() } : {}),
-        }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setSceneResult({ promptUsed: data.promptUsed, modelUsed: data.modelUsed, fallback: data.fallback, headlineUsed: data.headlineUsed });
-        const refreshRes = await fetch(`/api/content/${item.id}`);
-        if (refreshRes.ok) setItem((await refreshRes.json()).item);
-      } else {
-        setImageGenError(data.error || 'Scene generation failed. Please try again.');
-      }
-    } catch (err) {
-      console.error('[Scene] generate error:', err);
-      setImageGenError('Network error. Please try again.');
-    } finally {
-      setIsGeneratingImage(false);
-    }
-  };
-
-  // ── AI Graphic generate (NEW) ─────────────────────────────────────────────
-  const generateAiGraphic = async () => {
-    if (!item) return;
-    setIsGeneratingAiGraphic(true);
-    setAiGraphicError(null);
-    setAiGraphicResult(null);
-    try {
-      const res = await fetch(`/api/content/${item.id}/generate-ai-graphic`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contentType: aiGraphicContentType,
-          format: aiGraphicFormat,
-          quality: aiGraphicQuality,
-          ...(aiGraphicPromptOverride.trim() && aiGraphicHeadlineOverride.trim()
-            ? {
-              visualPrompt: aiGraphicPromptOverride.trim(),
-              overlayHeadline: aiGraphicHeadlineOverride.trim(),
-            }
-            : {}),
-          ...(aiGraphicEyebrow.trim()
-            ? { overlayEyebrow: aiGraphicEyebrow.trim().toUpperCase() }
-            : {}),
-        }),
-      });
-      const data = await res.json() as {
-        success?: boolean;
-        url?: string;
-        visualPrompt?: string;
-        overlayHeadline?: string;
-        quality?: string;
-        generationMs?: number;
-        totalMs?: number;
-        error?: string;
-      };
-      if (res.ok && data.success && data.url) {
-        setAiGraphicResult({
-          visualPrompt: data.visualPrompt,
-          overlayHeadline: data.overlayHeadline,
-          quality: data.quality,
-          generationMs: data.generationMs,
-          totalMs: data.totalMs,
-        });
-        // Refresh item so graphicUrls updates with the new image
-        const refreshRes = await fetch(`/api/content/${item.id}`);
-        if (refreshRes.ok) setItem((await refreshRes.json()).item);
-      } else {
-        setAiGraphicError(data.error || 'AI graphic generation failed. Please try again.');
-      }
-    } catch (err) {
-      console.error('[AI Graphic] error:', err);
-      setAiGraphicError('Network error. Please try again.');
-    } finally {
-      setIsGeneratingAiGraphic(false);
-    }
-  };
-
-  const generateCarousel = async () => {
-    if (!item) return;
-    setIsGeneratingCarousel(true);
-    setCarouselError(null);
-    try {
-      const res = await fetch(`/api/content/${item.id}/generate-carousel`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ style: carouselStyle, aspectRatio: carouselAspectRatio }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        const refreshRes = await fetch(`/api/content/${item.id}`);
-        if (refreshRes.ok) setItem((await refreshRes.json()).item);
-      } else {
-        setCarouselError(data.error || 'Carousel generation failed. Please try again.');
-      }
-    } catch (err) {
-      console.error('[Carousel] generate error:', err);
-      setCarouselError('Network error. Please try again.');
-    } finally {
-      setIsGeneratingCarousel(false);
     }
   };
 
   const deleteItem = async () => {
     if (!item) return;
-    // eslint-disable-next-line no-alert
     if (!window.confirm('Delete this content? This cannot be undone.')) return;
     setActionLoading('delete');
     try {
@@ -885,7 +332,64 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     }
   };
 
-  // ── Loading / not found ────────────────────────────────────────────────────
+  const copyCaption = () => {
+    if (!item) return;
+    navigator.clipboard.writeText(item.caption);
+    setCopyDone(true);
+    setTimeout(() => setCopyDone(false), 1500);
+  };
+
+  const handleReRoll = async () => {
+    if (!item || !item.campaignId || !campaign) return;
+    if (campaign.reRollsRemaining <= 0) {
+      setReRollError('No re-rolls remaining for this campaign.');
+      return;
+    }
+    setIsReRolling(true);
+    setReRollError(null);
+    try {
+      // Decrement re-rolls
+      const campaignRes = await fetch(`/api/campaigns/${campaign.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reRollsRemaining: campaign.reRollsRemaining - 1 }),
+      });
+      if (campaignRes.ok) {
+        const campaignData = await campaignRes.json();
+        setCampaign(campaignData.item);
+      }
+
+      // Regenerate content for this item
+      const res = await fetch(`/api/content/${item.id}/regenerate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setReRollError(data.error || 'Re-roll failed. Please try again.');
+      } else {
+        // Refresh item
+        const refreshRes = await fetch(`/api/content/${item.id}`);
+        if (refreshRes.ok) setItem((await refreshRes.json()).item);
+      }
+    } catch {
+      setReRollError('Network error. Please try again.');
+    } finally {
+      setIsReRolling(false);
+    }
+  };
+
+  const handleRemix = async () => {
+    if (!item?.templateId) return;
+    setIsRemixing(true);
+    try {
+      router.push(`/dashboard/content/create?templateId=${item.templateId}`);
+    } finally {
+      setIsRemixing(false);
+    }
+  };
+
+  // Loading / not found
   if (isLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
@@ -898,43 +402,27 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     return (
       <div className="py-20 text-center">
         <p className="text-sm text-muted-foreground">Content not found.</p>
-        <Link href="/dashboard/posts" className="mt-2 block text-sm text-primary underline">
-          Back to posts
-        </Link>
+        <Link href="/dashboard/posts" className="mt-2 block text-sm text-primary underline">Back to posts</Link>
       </div>
     );
   }
 
-  // ── Derived state ──────────────────────────────────────────────────────────
+  // Derived state
   const statusConfig = STATUS_CONFIG[item.status] || { label: item.status, color: 'bg-muted' };
-  const modeConfig = MODE_CONFIG[item.contentMode || 'normal'] ?? { label: 'Normal', color: 'bg-zinc-100 text-zinc-600' };
+  const modeConfig = item.contentMode ? (MODE_CONFIG[item.contentMode] || { label: item.contentMode, color: 'bg-zinc-100 text-zinc-600' }) : null;
   const needsMedia = MEDIA_CONTENT_TYPES.includes(item.contentType);
   const isReel = item.contentType === 'reel';
   const isUGCAd = item.contentType === 'ugc_ad';
   const isDataStory = item.contentType === 'data_story';
   const isCarousel = item.contentType === 'carousel';
-  const isSingleImage = item.contentType === 'single_image';
+  // const isSingleImage = item.contentType === 'single_image';
   const hasMedia = item.graphicUrls && item.graphicUrls.length > 0;
-  const sourceImages = (item.platformSpecific?.sourceImages as string[]) || [];
-  const hasGeneratedVideo = isReel && hasMedia && (
-    sourceImages.length > 0
-    || item.platformSpecific?.videoGenerated === true
-    || (item.platformSpecific?.photoTier as string) === 'unsplash'
-    || (item.platformSpecific?.photoTier as string) === 'flux'
-    || item.graphicUrls.some(url => isVideoFileUrl(url))
-  );
-  const hasVideoExtension = isReel && hasMedia && item.graphicUrls.some(url => isVideoFileUrl(url));
-  const isLikelyLegacyVideo = isReel && !hasGeneratedVideo && item.graphicUrls.length === 1 && !isVideoFileUrl(item.graphicUrls[0]!);
-  const hasUploadedVideo = !hasGeneratedVideo && (hasVideoExtension || isLikelyLegacyVideo);
-  const uploadedSlideImages = isReel && !hasGeneratedVideo && !hasUploadedVideo ? item.graphicUrls : [];
-  const hasVideo = isReel && (hasGeneratedVideo || hasUploadedVideo);
-  const hasImages = (isSingleImage || isCarousel) && hasMedia;
-  const hasUGCOrDataStoryVideo = (isUGCAd || isDataStory) && hasMedia;
-  const canPublish = item.status === 'approved' && (!needsMedia || hasVideo || hasImages || hasUGCOrDataStoryVideo);
-  const platformsWithTitle = (item.targetPlatforms || []).filter(p => TITLE_PLATFORMS.has(p));
-  const showTitleField = platformsWithTitle.length > 0;
-  const currentTitle = (item.platformSpecific?.title as string) || '';
-  const isYoutubeTarget = (item.targetPlatforms as string[] || []).includes('youtube');
+  const isVideo = hasMedia && item.graphicUrls.some(url => isVideoFileUrl(url));
+  const canPublish = item.status === 'approved' && (!needsMedia || hasMedia);
+  const primaryAction = item.status === 'pending_review' || item.status === 'draft' ? 'approve'
+    : item.status === 'approved' ? 'publish'
+    : item.status === 'scheduled' ? 'publish'
+    : null;
 
   type EnrichmentShape = {
     cta_url?: string; cta_label?: string; reference_links?: string[];
@@ -948,13 +436,64 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     || (enrichment.custom_mentions?.length ?? 0) > 0
   );
 
-  const primaryAction = item.status === 'pending_review' || item.status === 'draft'
-    ? 'approve'
-    : item.status === 'approved' ? 'publish'
-      : item.status === 'scheduled' ? 'publish'
-        : null;
+  // -----------------------------------------------------------
+  // Sub-components
+  // -----------------------------------------------------------
+  function AntiSlopBadge({ score, compact = false }: { score: number; compact?: boolean }) {
+    const sl = scoreLabel(score);
+    if (compact) {
+      return (
+        <div className="flex items-center gap-2">
+          <div className={`relative ${compact ? 'size-10' : 'size-12'}`}>
+            <svg className={`${compact ? 'size-10' : 'size-12'} -rotate-90`} viewBox="0 0 36 36">
+              <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
+              <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray={`${score * 100}, 100`} className={sl.ring} />
+            </svg>
+            <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">{Math.round(score * 100)}</span>
+          </div>
+          <div>
+            <p className={`text-sm font-semibold ${sl.color.split(' ')[1]}`}>{sl.text}</p>
+            <p className="text-[11px] text-muted-foreground">Quality score</p>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="mb-3 flex items-center gap-3">
+        <div className="relative size-12">
+          <svg className="size-12 -rotate-90" viewBox="0 0 36 36">
+            <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
+            <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray={`${score * 100}, 100`} className={sl.ring} />
+          </svg>
+          <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">{Math.round(score * 100)}</span>
+        </div>
+        <div>
+          <p className={`text-sm font-semibold ${sl.color.split(' ')[1]}`}>{sl.text}</p>
+          <p className="text-[11px] text-muted-foreground">Quality score</p>
+        </div>
+      </div>
+    );
+  }
 
-  // ── Actions Panel ──────────────────────────────────────────────────────────
+  function DetailRow({ label, value }: { label: string; value: string }) {
+    return (
+      <div className="flex items-start justify-between gap-3">
+        <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
+        <span className="text-right text-sm font-medium capitalize">{value}</span>
+      </div>
+    );
+  }
+
+  function EnrichmentRow({ label, value }: { label: string; value: string }) {
+    return (
+      <div className="flex items-start gap-3">
+        <span className="shrink-0 text-xs font-medium text-muted-foreground">{label}</span>
+        <span className="break-all text-xs text-foreground">{value}</span>
+      </div>
+    );
+  }
+
+  // Actions Panel
   const ActionsPanel = ({ compact = false }: { compact?: boolean }) => (
     <div className={`space-y-2.5 ${compact ? '' : 'rounded-xl border bg-card p-5'}`}>
       {!compact && <h3 className="mb-3 text-sm font-semibold">Actions</h3>}
@@ -1002,11 +541,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               Scheduled for <span className="font-semibold">{new Date(item.scheduledFor!).toLocaleString()}</span>
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowScheduler(p => !p)}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors hover:bg-muted"
-          >
+          <button type="button" onClick={() => setShowScheduler(p => !p)} className="flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors hover:bg-muted">
             <Calendar className="size-4" />
             Reschedule
           </button>
@@ -1025,19 +560,8 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       {showScheduler && (
         <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
           <p className="text-xs font-medium">Date and time</p>
-          <input
-            type="date"
-            value={scheduleDate}
-            min={new Date().toISOString().split('T')[0]}
-            onChange={e => setScheduleDate(e.target.value)}
-            className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-          <input
-            type="time"
-            value={scheduleTime}
-            onChange={e => setScheduleTime(e.target.value)}
-            className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
+          <input type="date" value={scheduleDate} min={new Date().toISOString().split('T')[0]} onChange={e => setScheduleDate(e.target.value)} className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
+          <input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
           <div className="flex gap-2">
             <button
               type="button"
@@ -1048,11 +572,44 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
               {actionLoading === 'schedule' ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
               Confirm
             </button>
-            <button type="button" onClick={() => setShowScheduler(false)} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">
-              Cancel
-            </button>
+            <button type="button" onClick={() => setShowScheduler(false)} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">Cancel</button>
           </div>
         </div>
+      )}
+
+      {/* Re-roll button for campaign content */}
+      {item.campaignId && campaign && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-medium text-amber-800">Campaign re-roll</span>
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+              {campaign.reRollsRemaining} left
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleReRoll}
+            disabled={isReRolling || campaign.reRollsRemaining <= 0}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100 disabled:opacity-50"
+          >
+            {isReRolling ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+            Re-roll variant
+          </button>
+          {reRollError && <p className="mt-1.5 text-[11px] text-red-600">{reRollError}</p>}
+        </div>
+      )}
+
+      {/* Remix button */}
+      {item.templateId && (
+        <button
+          type="button"
+          onClick={handleRemix}
+          disabled={isRemixing}
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2.5 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-100 disabled:opacity-50"
+        >
+          <Wand2 className="size-4" />
+          Remix from template
+        </button>
       )}
 
       {!compact && (
@@ -1079,7 +636,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           </button>
           {needsMedia && !hasMedia && item.status === 'approved' && (
             <p className="text-center text-[11px] text-amber-600">
-              {isReel ? 'Add images and generate a video, or upload a video directly.' : 'Add an image before publishing.'}
+              {isReel ? 'Add a video before publishing.' : 'Add an image before publishing.'}
             </p>
           )}
         </>
@@ -1087,39 +644,15 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
     </div>
   );
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // -----------------------------------------------------------
+  // Render
+  // -----------------------------------------------------------
   return (
     <>
-      {/* <TikTokPublishModal
-        open={showTikTokModal}
-        onClose={() => setShowTikTokModal(false)}
-        onConfirm={handleTikTokPublish}
-        contentId={item.id}
-        caption={item.caption}
-        videoUrl={item.graphicUrls?.[0]}
-        videoDurationSec={(item.platformSpecific?.videoDurationSeconds as number) || 0}
-        loading={isTikTokPublishing}
-      /> */}
-      {/*  AUDIT-COMPLIANT IMPLEMENTATION */}
-      <TikTokPublishModal
-        isOpen={showTikTokModal}
-        onClose={() => setShowTikTokModal(false)}
-        onPublish={handleTikTokPublish}
-        contentItem={{
-          id: item.id,
-          caption: item.caption || '',
-          contentType: item.contentType || 'video', // 'video' or 'image'
-          videoDuration: (item.platformSpecific?.videoDurationSeconds as number) || 0,
-          videoUrl: item.graphicUrls?.[0],
-        }}
-      />
       <PageHeader
         title="Content detail"
         actions={(
-          <Link
-            href="/dashboard/posts"
-            className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-muted sm:px-4 sm:py-2.5"
-          >
+          <Link href="/dashboard/posts" className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-muted sm:px-4 sm:py-2.5">
             <ArrowLeft className="size-4" />
             <span className="hidden sm:inline">Back to posts</span>
             <span className="sm:hidden">Back</span>
@@ -1132,44 +665,24 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
         <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 px-4 py-3 backdrop-blur-sm lg:hidden">
           <div className="flex items-center gap-2">
             {primaryAction === 'approve' && (
-              <button
-                type="button"
-                onClick={() => updateStatus('approved')}
-                disabled={!!actionLoading}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-3 text-sm font-medium text-primary-foreground disabled:opacity-60"
-              >
+              <button type="button" onClick={() => updateStatus('approved')} disabled={!!actionLoading} className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-3 text-sm font-medium text-primary-foreground disabled:opacity-60">
                 {actionLoading === item.status ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
                 Approve
               </button>
             )}
             {primaryAction === 'publish' && (
               <>
-                <button
-                  type="button"
-                  onClick={publishNow}
-                  disabled={!!actionLoading || !canPublish}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-foreground py-3 text-sm font-medium text-background disabled:opacity-50"
-                >
+                <button type="button" onClick={publishNow} disabled={!!actionLoading || !canPublish} className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-foreground py-3 text-sm font-medium text-background disabled:opacity-50">
                   {actionLoading === 'publish' ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
                   Publish now
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setShowScheduler(p => !p)}
-                  disabled={!!actionLoading}
-                  className="flex items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium hover:bg-muted disabled:opacity-50"
-                >
+                <button type="button" onClick={() => setShowScheduler(p => !p)} disabled={!!actionLoading} className="flex items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium hover:bg-muted disabled:opacity-50">
                   <Calendar className="size-4" />
                 </button>
               </>
             )}
             {item.status !== 'published' && item.status !== 'rejected' && (
-              <button
-                type="button"
-                onClick={() => updateStatus('rejected')}
-                disabled={!!actionLoading}
-                className="flex items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium text-red-500 hover:bg-red-50 disabled:opacity-50"
-              >
+              <button type="button" onClick={() => updateStatus('rejected')} disabled={!!actionLoading} className="flex items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium text-red-500 hover:bg-red-50 disabled:opacity-50">
                 <X className="size-4" />
               </button>
             )}
@@ -1177,33 +690,15 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
           {showScheduler && (
             <div className="mt-3 space-y-2 border-t pt-3">
               <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="date"
-                  value={scheduleDate}
-                  min={new Date().toISOString().split('T')[0]}
-                  onChange={e => setScheduleDate(e.target.value)}
-                  className="rounded-lg border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none"
-                />
-                <input
-                  type="time"
-                  value={scheduleTime}
-                  onChange={e => setScheduleTime(e.target.value)}
-                  className="rounded-lg border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none"
-                />
+                <input type="date" value={scheduleDate} min={new Date().toISOString().split('T')[0]} onChange={e => setScheduleDate(e.target.value)} className="rounded-lg border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+                <input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} className="rounded-lg border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none" />
               </div>
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={schedulePost}
-                  disabled={!scheduleDate || !scheduleTime || actionLoading === 'schedule'}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground disabled:opacity-60"
-                >
+                <button type="button" onClick={schedulePost} disabled={!scheduleDate || !scheduleTime || actionLoading === 'schedule'} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground disabled:opacity-60">
                   {actionLoading === 'schedule' ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
                   Confirm schedule
                 </button>
-                <button type="button" onClick={() => setShowScheduler(false)} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">
-                  Cancel
-                </button>
+                <button type="button" onClick={() => setShowScheduler(false)} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">Cancel</button>
               </div>
             </div>
           )}
@@ -1211,48 +706,72 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
       )}
 
       <div className={`grid gap-6 lg:grid-cols-3 ${primaryAction ? 'pb-24 lg:pb-0' : ''}`}>
-        {/* ── Main content ────────────────────────────────── */}
+        {/* Main content */}
         <div className="space-y-4 lg:col-span-2">
+
+          {/* Status badges */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusConfig.color}`}>{statusConfig.label}</span>
+            {modeConfig && (
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${modeConfig.color}`}>{modeConfig.label}</span>
+            )}
+            {/* v2 badges */}
+            {item.aspectRatio && (
+              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                {item.aspectRatio}
+              </span>
+            )}
+            {item.durationSeconds && item.durationSeconds > 0 && (
+              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                <Video className="mr-1 inline size-3" />
+                {formatDuration(item.durationSeconds)}
+              </span>
+            )}
+            {item.aiModelUsed && (
+              <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
+                {item.aiModelUsed}
+              </span>
+            )}
+            {campaign && (
+              <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                Campaign: {campaign.name}
+              </span>
+            )}
+            {template && (
+              <Link href={`/dashboard/content-library?template=${template.id}`} className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2.5 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-100">
+                <Wand2 className="size-3" />
+                Template
+              </Link>
+            )}
+            {influencer && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-pink-50 px-2.5 py-0.5 text-xs font-medium text-pink-700">
+                {influencer.baseImageUrl && (
+                  <Image src={influencer.baseImageUrl} alt="" width={12} height={12} className="rounded-full" unoptimized />
+                )}
+                {influencer.name}
+              </span>
+            )}
+            {angle && (
+              <span className="rounded-full px-2.5 py-0.5 text-xs font-medium text-white" style={{ backgroundColor: angle.color || '#6B7280' }}>
+                {angle.name}
+              </span>
+            )}
+          </div>
 
           {/* Caption */}
           <div className="rounded-xl border bg-card p-4 sm:p-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusConfig.color}`}>
-                  {statusConfig.label}
-                </span>
-                {item.contentMode && item.contentMode !== 'normal' && (
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${modeConfig.color}`}>
-                    {modeConfig.label}
-                  </span>
-                )}
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusConfig.color}`}>{statusConfig.label}</span>
               </div>
               <div className="flex items-center gap-2">
-                {!isEditing && !isAiEditing && (
-                  <button
-                    type="button"
-                    onClick={() => setIsEditing(true)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
-                  >
+                {!isEditing && (
+                  <button type="button" onClick={() => setIsEditing(true)} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted">
                     <Edit3 className="size-3" />
                     Edit
                   </button>
                 )}
-                {!isEditing && !isAiEditing && (
-                  <button
-                    type="button"
-                    onClick={() => { setIsAiEditing(true); setAiSuggestedCaption(null); setAiEditError(null); }}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
-                  >
-                    <Sparkles className="size-3" />
-                    Refine with AI
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={copyCaption}
-                  className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
-                >
+                <button type="button" onClick={copyCaption} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted">
                   {copyDone ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
                   {copyDone ? 'Copied' : 'Copy'}
                 </button>
@@ -1268,83 +787,15 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                   className="w-full resize-none rounded-lg border bg-background px-3.5 py-2.5 text-sm leading-relaxed focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
                 <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={saveEdit}
-                    disabled={actionLoading === 'save'}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                  >
+                  <button type="button" onClick={saveEdit} disabled={actionLoading === 'save'} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
                     {actionLoading === 'save' ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
                     Save changes
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => { setIsEditing(false); setEditCaption(item.caption); }}
-                    className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
-                  >
-                    Cancel
-                  </button>
+                  <button type="button" onClick={() => { setIsEditing(false); setEditCaption(item.caption); }} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">Cancel</button>
                 </div>
               </div>
             ) : (
               <p className="whitespace-pre-wrap text-sm leading-relaxed">{item.caption}</p>
-            )}
-
-            {/* AI Edit panel */}
-            {isAiEditing && !isEditing && (
-              <div className="mt-4 space-y-3 rounded-lg border bg-muted/30 p-4">
-                <p className="text-xs font-medium">Describe how to change this content</p>
-                <textarea
-                  value={aiInstruction}
-                  onChange={e => setAiInstruction(e.target.value)}
-                  placeholder="Make this shorter. Change the tone to casual. Add a stronger call to action at the end..."
-                  className="w-full resize-none rounded-lg border bg-background px-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  rows={2}
-                />
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleAiEdit}
-                    disabled={aiEditLoading || !aiInstruction.trim()}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                  >
-                    {aiEditLoading ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
-                    {aiEditLoading ? 'Rewriting...' : 'Apply'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setIsAiEditing(false); setAiInstruction(''); setAiSuggestedCaption(null); setAiEditError(null); }}
-                    className="text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    Cancel
-                  </button>
-                </div>
-                {aiEditError && <p className="text-xs text-red-500">{aiEditError}</p>}
-                {aiSuggestedCaption && (
-                  <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
-                    <p className="text-xs font-medium text-primary">Suggested revision</p>
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{aiSuggestedCaption}</p>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleAcceptAiEdit}
-                        disabled={actionLoading === 'save'}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                      >
-                        {actionLoading === 'save' ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-                        Accept and save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setAiSuggestedCaption(null)}
-                        className="text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        Discard
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
             )}
 
             {item.hashtags.length > 0 && (
@@ -1356,138 +807,6 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             )}
           </div>
 
-          {/* Title field (YouTube / Pinterest) */}
-          {showTitleField && (
-            <div className="rounded-xl border bg-card p-4 sm:p-5">
-              <div className="mb-3 flex items-start justify-between gap-3 border-b pb-3">
-                <div>
-                  <h3 className="text-sm font-semibold">Post title</h3>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Headline on {platformsWithTitle.map(p => PLATFORM_LABELS[p] || p).join(' and ')}. Max 100 characters.
-                  </p>
-                </div>
-                {!isEditingTitle && (
-                  <button
-                    type="button"
-                    onClick={() => { setIsEditingTitle(true); setEditTitle(currentTitle); }}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
-                  >
-                    <Edit3 className="size-3" />
-                    {currentTitle ? 'Edit' : 'Add title'}
-                  </button>
-                )}
-              </div>
-              {isEditingTitle ? (
-                <div>
-                  <input
-                    type="text"
-                    value={editTitle}
-                    onChange={e => setEditTitle(e.target.value.slice(0, 100))}
-                    maxLength={100}
-                    placeholder="Write a clear, descriptive title..."
-                    className="w-full rounded-lg border bg-background px-3.5 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  />
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">{editTitle.length}/100</span>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={saveTitle}
-                        disabled={actionLoading === 'save-title'}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                      >
-                        {actionLoading === 'save-title' ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-                        Save
-                      </button>
-                      <button type="button" onClick={() => setIsEditingTitle(false)} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm">
-                  {currentTitle || <span className="italic text-muted-foreground">No title set. The first 100 characters of the caption will be used as fallback.</span>}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* YouTube settings */}
-          {isYoutubeTarget && (
-            <div className="rounded-xl border bg-card p-4 sm:p-5">
-              <div className="mb-4 flex items-center gap-2 border-b pb-4">
-                <svg className="size-4 text-muted-foreground" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.546 12 3.546 12 3.546s-7.505 0-9.377.504A3.015 3.015 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.504 9.376.504 9.376.504s7.505 0 9.377-.504a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-                </svg>
-                <h3 className="text-sm font-semibold">YouTube settings</h3>
-                <p className="ml-auto text-xs text-muted-foreground">Title and thumbnail</p>
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <p className="mb-2 text-xs font-medium text-muted-foreground">Video thumbnail</p>
-                  {youtubeThumbnailUrl ? (
-                    <div className="relative overflow-hidden rounded-lg border">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={youtubeThumbnailUrl}
-                        alt="YouTube thumbnail"
-                        className="w-full object-cover"
-                        style={{ maxHeight: 180, aspectRatio: '16/9', objectFit: 'cover' }}
-                      />
-                      <div className="flex gap-2 border-t p-2">
-                        <button
-                          type="button"
-                          onClick={() => setYoutubeThumbnailUrl(null)}
-                          className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium text-red-500 hover:bg-red-50"
-                        >
-                          <X className="size-3" />
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <button
-                        type="button"
-                        onClick={generateYoutubeThumbnail}
-                        disabled={isGeneratingYoutubeThumbnail}
-                        className="flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-60"
-                      >
-                        {isGeneratingYoutubeThumbnail
-                          ? <><Loader2 className="size-4 animate-spin" />Generating...</>
-                          : <><Sparkles className="size-4" />Generate thumbnail with AI</>}
-                      </button>
-                      <p className="text-center text-[11px] text-muted-foreground">
-                        Or upload a custom thumbnail (1280×720px recommended)
-                      </p>
-                      <MediaUploader
-                        contentItemId={item.id}
-                        existingPublicIds={[]}
-                        onUpdate={(publicIds) => { if (publicIds[0]) setYoutubeThumbnailUrl(cldImageUrl(publicIds[0])); }}
-                        mediaType="image"
-                        maxFiles={1}
-                      />
-                    </div>
-                  )}
-                  {youtubeThumbnailError && <p className="mt-1 text-xs text-red-500">{youtubeThumbnailError}</p>}
-                </div>
-                {youtubeThumbnailUrl && (
-                  <button
-                    type="button"
-                    onClick={saveYoutubeSettings}
-                    disabled={isSavingYoutubeSettings}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                  >
-                    {isSavingYoutubeSettings
-                      ? <><Loader2 className="size-4 animate-spin" />Saving...</>
-                      : <><Check className="size-4" />Save YouTube settings</>}
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
           {/* Enrichment */}
           {hasEnrichment && (
             <div className="rounded-xl border bg-card p-4 sm:p-5">
@@ -1495,9 +814,7 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
                 <Link2 className="size-4 text-muted-foreground" />
                 <h3 className="text-sm font-semibold">Post enrichment</h3>
                 {item.enrichmentApplied && item.enrichmentApplied.length > 0 && (
-                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                    {item.enrichmentApplied.length} applied
-                  </span>
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">{item.enrichmentApplied.length} applied</span>
                 )}
               </div>
               <div className="space-y-2">
@@ -1511,854 +828,213 @@ export default function ContentDetailPage({ params }: { params: Promise<{ id: st
             </div>
           )}
 
-          {/* Reel / Video — unchanged */}
-          {isReel && (
+          {/* Media Preview — v2 improvements */}
+          {needsMedia && (
             <div className="rounded-xl border bg-card p-4 sm:p-5">
               <div className="mb-4 flex items-center gap-2 border-b pb-4">
-                <Video className="size-4 text-muted-foreground" />
-                <h3 className="text-sm font-semibold">Video post</h3>
+                {isReel || isUGCAd || isDataStory ? <Video className="size-4 text-muted-foreground" /> : <ImageIcon className="size-4 text-muted-foreground" />}
+                <h3 className="text-sm font-semibold">
+                  {isReel ? 'Video' : isCarousel ? 'Carousel' : 'Image'}
+                </h3>
+                {item.aspectRatio && (
+                  <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {ASPECT_RATIO_LABELS[item.aspectRatio] || item.aspectRatio}
+                  </span>
+                )}
+                {needsMedia && !hasMedia && (
+                  <span className="ml-auto rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">Required to publish</span>
+                )}
               </div>
 
-
-              {!hasUploadedVideo && !hasGeneratedVideo && (
-                <div className="mb-5">
-                  <div className="mb-4">
-                    <p className="mb-2 text-xs font-medium text-muted-foreground">Video format</p>
-                    <div className="grid grid-cols-2 gap-1.5 rounded-lg bg-muted p-1">
-                      {(['slideshow', 'text-motion'] as const).map(fmt => (
-                        <button
-                          key={fmt}
-                          type="button"
-                          onClick={() => { setVideoFormat(fmt); setVideoGenError(null); setTextMotionError(null); setTextMotionResult(null); }}
-                          className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${videoFormat === fmt ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                        >
-                          {fmt === 'slideshow' ? 'Photo Slideshow' : 'Text Motion'}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="mt-1.5 text-[11px] text-muted-foreground">
-                      {videoFormat === 'slideshow'
-                        ? 'Cinematic photos with Ken Burns animation and your caption.'
-                        : 'Bold animated text — no photos needed. Great for quotes and insights.'}
-                    </p>
-                  </div>
-
-                  {videoFormat === 'slideshow' && (
-                    <>
-                      <div className="mb-4">
-                        <p className="mb-2 text-xs font-medium text-muted-foreground">Photo source</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button type="button" onClick={() => setVideoPhotoTier('unsplash')} className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${videoPhotoTier === 'unsplash' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
-                            <p className={`text-xs font-semibold ${videoPhotoTier === 'unsplash' ? 'text-primary' : ''}`}>Unsplash</p>
-                            <p className="mt-0.5 text-[11px] text-muted-foreground">Free photos</p>
-                          </button>
-                          <button type="button" onClick={() => setVideoPhotoTier('flux')} className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${videoPhotoTier === 'flux' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
-                            <p className={`text-xs font-semibold ${videoPhotoTier === 'flux' ? 'text-primary' : ''}`}>AI Scene</p>
-                            <p className="mt-0.5 text-[11px] text-muted-foreground">FLUX Pro</p>
-                          </button>
-                        </div>
-                      </div>
-                      <button type="button" onClick={generateVideo} disabled={isGeneratingVideo} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-                        {isGeneratingVideo ? <><Loader2 className="size-4 animate-spin" />Generating video (~30–60s)...</> : <><Sparkles className="size-4" />Generate photo slideshow</>}
-                      </button>
-                      <p className="mt-2 text-xs text-muted-foreground">Renders 9:16 for Reels/TikTok and 1:1 for LinkedIn. Takes 30–60 seconds.</p>
-                      {videoGenError && <p className="mt-2 text-xs text-red-500">{videoGenError}</p>}
-                      {uploadedSlideImages.length > 0 && (
-                        <div className="mt-4">
-                          <p className="mb-2 text-xs font-medium text-muted-foreground">Or use your uploaded images</p>
-                          <div className="flex gap-2 overflow-x-auto pb-1">
-                            {uploadedSlideImages.slice(0, 5).map((url, i) => (
-                              <div key={i} className="size-14 shrink-0 overflow-hidden rounded-md border">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={url} alt="" className="size-full object-cover" />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  {videoFormat === 'text-motion' && (
-                    <div className="space-y-3">
-                      <div>
-                        <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Visual style</p>
-                        <div className="grid grid-cols-3 gap-1.5">
-                          {(['dark', 'light', 'brand'] as const).map(val => (
-                            <button key={val} type="button" onClick={() => setTextMotionStyle(val)} className={`rounded-lg border px-2 py-2 text-left transition-colors ${textMotionStyle === val ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
-                              <p className={`text-[11px] font-semibold ${textMotionStyle === val ? 'text-primary' : ''}`}>{val.charAt(0).toUpperCase() + val.slice(1)}</p>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Headline (optional)</p>
-                        <input type="text" value={textMotionHeadlineOverride} onChange={e => setTextMotionHeadlineOverride(e.target.value)} placeholder="Auto-extracted from your caption…" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-                      </div>
-                      <div>
-                        <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Eyebrow label (optional)</p>
-                        <input type="text" value={textMotionEyebrow} onChange={e => setTextMotionEyebrow(e.target.value)} placeholder="e.g. HOT TAKE · MILESTONE · PRO TIP" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-                      </div>
-                      <div>
-                        <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Outro CTA (optional)</p>
-                        <input type="text" value={textMotionCta} onChange={e => setTextMotionCta(e.target.value)} placeholder="e.g. Follow for more · nativpost.com" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-                      </div>
-                      {textMotionResult && (
-                        <div className="rounded-lg bg-muted/50 p-3 space-y-1">
-                          {textMotionResult.headlineUsed && <p className="text-[11px] text-muted-foreground"><span className="font-medium text-foreground">Headline: </span>{textMotionResult.headlineUsed}</p>}
-                          {textMotionResult.durationSeconds && <p className="text-[11px] text-green-600 font-medium">Generated — {textMotionResult.durationSeconds.toFixed(1)}s video</p>}
-                        </div>
-                      )}
-                      <button type="button" onClick={generateTextMotion} disabled={isGeneratingTextMotion} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-                        {isGeneratingTextMotion ? <><Loader2 className="size-4 animate-spin" />Generating (~15–30s)...</> : <><Sparkles className="size-4" />Generate text motion video</>}
-                      </button>
-                      {textMotionError && <p className="mt-2 text-xs text-red-500">{textMotionError}</p>}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {hasGeneratedVideo && (
-                <div className="mb-5">
-                  <div className="mb-3 flex items-center gap-2">
-                    <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">2</span>
-                    <p className="text-xs font-medium text-muted-foreground">Generated branded video</p>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {item.graphicUrls[0] && (
-                      <div className="overflow-hidden rounded-lg border bg-black">
-                        <div className="border-b px-3 py-2"><p className="text-[11px] font-medium text-muted-foreground">9:16 — Instagram Reels, TikTok</p></div>
-                        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                        <video src={toVideoSrc(item.graphicUrls[0])} className="w-full" controls preload="metadata" playsInline style={{ maxHeight: 360 }} />
-                      </div>
-                    )}
-                    {item.graphicUrls[1] && (
-                      <div className="overflow-hidden rounded-lg border bg-black">
-                        <div className="border-b px-3 py-2"><p className="text-[11px] font-medium text-muted-foreground">1:1 — LinkedIn, Facebook</p></div>
-                        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                        <video src={toVideoSrc(item.graphicUrls[1])} className="w-full" controls preload="metadata" playsInline style={{ maxHeight: 360 }} />
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button type="button" onClick={generateVideo} disabled={isGeneratingVideo || isGeneratingTextMotion} className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-60">
-                      {isGeneratingVideo ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
-                      Regenerate slideshow
-                    </button>
-                    <button type="button" onClick={generateTextMotion} disabled={isGeneratingVideo || isGeneratingTextMotion} className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-60">
-                      {isGeneratingTextMotion ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
-                      Try text motion
-                    </button>
-                    <button type="button" onClick={deleteVideo} disabled={actionLoading === 'delete-video' || isGeneratingVideo || isGeneratingTextMotion} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-500 hover:bg-red-50 disabled:opacity-60">
-                      {actionLoading === 'delete-video' ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
-                      Delete video
-                    </button>
-                  </div>
-                  {videoGenError && <p className="mt-1 text-xs text-red-500">{videoGenError}</p>}
-                  {(() => {
-                    const rawCredits = (item.platformSpecific?.unsplashCredits as Array<string | { name: string; link: string }>) || [];
-                    const tier = item.platformSpecific?.photoTier as string;
-                    if (tier !== 'unsplash' || rawCredits.length === 0) return null;
-                    const credits = rawCredits.map(c => typeof c === 'string' ? { name: c, link: `https://unsplash.com/?utm_source=nativpost&utm_medium=referral` } : c);
-                    return (
-                      <div className="mt-3 rounded-lg border bg-muted/30 px-3 py-2.5">
-                        <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Credits</p>
-                        <div className="flex flex-wrap gap-x-3 gap-y-1">
-                          {credits.map((c, i) => (
-                            <a key={i} href={c.link} target="_blank" rel="noopener noreferrer" className="text-[11px] text-foreground underline hover:text-primary">{c.name}</a>
-                          ))}
-                          <a href="https://unsplash.com/?utm_source=nativpost&utm_medium=referral" target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground underline hover:text-foreground">via Unsplash</a>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {hasUploadedVideo && (
-                <div className="mb-5">
-                  <p className="mb-3 text-xs font-medium text-muted-foreground">Uploaded video</p>
-                  <div className="overflow-hidden rounded-lg border bg-black">
-                    {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                    <video src={toVideoSrc(item.graphicUrls[0]!)} className="w-full" controls preload="metadata" playsInline style={{ maxHeight: 400 }} />
-                  </div>
-                </div>
-              )}
-
-
-              <div className={!hasUploadedVideo && !hasGeneratedVideo && uploadedSlideImages.length === 0 ? '' : 'mt-5 border-t pt-5'}>
-                <p className="mb-3 text-xs font-medium text-muted-foreground">{hasUploadedVideo ? 'Replace video' : 'Or upload your own video'}</p>
-                <MediaUploader
-                  contentItemId={item.id}
-                  existingPublicIds={item.graphicUrls || []}
-                  onUpdate={publicIds => setItem(prev => prev ? { ...prev, graphicUrls: publicIds } : prev)}
-                  mediaType="image"
-                  maxFiles={1}
-                />
-              </div>
-              </div>
-            )}
-
-              {/* UGC Ad */}
-              {isUGCAd && (
-                <div className="rounded-xl border bg-card p-4 sm:p-5">
-                  <div className="mb-4 flex items-center gap-2 border-b pb-4">
-                    <Video className="size-4 text-muted-foreground" />
-                    <h3 className="text-sm font-semibold">UGC Ad video</h3>
-                  </div>
-                  {item.graphicUrls && item.graphicUrls.length > 0 && (
-                    <div className="mb-4">
-                      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                      <video src={toVideoSrc(item.graphicUrls[0]!)} controls playsInline className="w-full max-w-[240px] rounded-lg" />
-                    </div>
-                  )}
-                  <div className="mb-4">
-                    <p className="mb-2 text-xs font-medium text-muted-foreground">Visual source</p>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                      {([{ tier: 'unsplash', label: 'Unsplash', sub: 'Free editorial photos' }, { tier: 'flux', label: 'AI Scene', sub: 'FLUX Pro per section' }, { tier: 'seedance', label: 'AI Video', sub: 'Live clips per section' }] as const).map(({ tier, label, sub }) => (
-                        <button key={tier} type="button" onClick={() => setUgcPhotoTier(tier)} className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${ugcPhotoTier === tier ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
-                          <p className={`text-xs font-semibold ${ugcPhotoTier === tier ? 'text-primary' : ''}`}>{label}</p>
-                          <p className="mt-0.5 text-[11px] text-muted-foreground">{sub}</p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <button type="button" onClick={generateUGCAd} disabled={isGeneratingUGC} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-                    {isGeneratingUGC ? <><Loader2 className="size-4 animate-spin" />Generating UGC Ad...</> : <><Sparkles className="size-4" />Generate UGC Ad</>}
-                  </button>
-                  {ugcError && <p className="mt-2 text-xs text-red-500">{ugcError}</p>}
-                </div>
-              )}
-
-              {/* Data Story */}
-              {isDataStory && (
-                <div className="rounded-xl border bg-card p-4 sm:p-5">
-                  <div className="mb-4 flex items-center gap-2 border-b pb-4">
-                    <Video className="size-4 text-muted-foreground" />
-                    <h3 className="text-sm font-semibold">Data Story video</h3>
-                  </div>
-                  <p className="mb-3 text-xs text-muted-foreground">Add stats below, then generate an animated video where each number counts up to its value.</p>
-                  {((item.platformSpecific as Record<string, unknown>)?.data_story_stats as Array<{ label: string; value: number; unit?: string; prefix?: string }> | undefined)?.map((stat, i) => (
-                    <div key={i} className="mb-2 flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-sm">
-                      <span className="font-medium">{stat.prefix || ''}{stat.value.toLocaleString()}{stat.unit || ''}</span>
-                      <span className="ml-2 flex-1 text-muted-foreground">{stat.label}</span>
-                      <button type="button" onClick={() => removeStatFromItem(i)} className="ml-2 text-xs opacity-40 hover:opacity-100">×</button>
-                    </div>
-                  ))}
-                  <div className="mt-3 space-y-2 rounded-lg border p-3">
-                    <p className="text-xs font-medium text-muted-foreground">Add a stat</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input type="text" value={statLabel} onChange={e => setStatLabel(e.target.value)} placeholder="Label (e.g. Happy customers)" className="col-span-2 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
-                      <input type="text" value={statPrefix} onChange={e => setStatPrefix(e.target.value)} placeholder='Prefix (e.g. "$")' className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
-                      <input type="number" value={statValue} onChange={e => setStatValue(e.target.value)} placeholder="Value (e.g. 10000)" className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
-                      <input type="text" value={statUnit} onChange={e => setStatUnit(e.target.value)} placeholder='Unit (e.g. "%" or "K")' className="rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none" />
-                      <button type="button" onClick={addStatToItem} disabled={!statLabel || !statValue} className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">Add stat</button>
-                    </div>
-                  </div>
-                  {item.graphicUrls && item.graphicUrls.length > 0 && (
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      {item.graphicUrls.filter(isVideoFileUrl).map((url, i) => (
-                        // eslint-disable-next-line jsx-a11y/media-has-caption
-                        <video key={i} src={toVideoSrc(url)} controls playsInline className="w-full rounded-lg" style={{ maxHeight: 300 }} />
-                      ))}
-                    </div>
-                  )}
-                  <button type="button" onClick={generateDataStory} disabled={isGeneratingDataStory || !((item.platformSpecific as Record<string, unknown>)?.data_story_stats as unknown[] | undefined)?.length} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-                    {isGeneratingDataStory ? <><Loader2 className="size-4 animate-spin" />Generating Data Story...</> : <><Sparkles className="size-4" />Generate Data Story</>}
-                  </button>
-                  {dataStoryError && <p className="mt-2 text-xs text-red-500">{dataStoryError}</p>}
-                </div>
-              )}
-
-              {/* ── Single Image — now with 3 modes ─────────────────────────────────── */}
-              {isSingleImage && (
-                <div className="rounded-xl border bg-card p-4 sm:p-5">
-                  <div className="mb-4 flex items-center gap-2 border-b pb-4">
-                    <ImageIcon className="size-4 text-muted-foreground" />
-                    <h3 className="text-sm font-semibold">Post image</h3>
-                    {needsMedia && !hasMedia && (
-                      <span className="ml-auto rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                        Required to publish
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Generated image preview */}
-                  {hasMedia && (
-                    <div className="mb-5">
-                      <p className="mb-3 text-xs font-medium text-muted-foreground">Generated images</p>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {item.graphicUrls.map((url, i) => {
-                          const fmt = imageFormats[i] ?? (i === 0 ? 'square' : 'vertical');
-                          const fmtLabel = fmt === 'square' ? '1:1 — Square (Instagram, LinkedIn)' : '9:16 — Vertical (Stories, Reels)';
-                          return (
-                            <div key={i} className="overflow-hidden rounded-lg border">
-                              <div className="border-b px-3 py-2">
-                                <p className="text-[11px] font-medium text-muted-foreground">{fmtLabel}</p>
-                              </div>
-                              <div className="relative w-full">
-                                <Image src={url} alt={`Generated graphic ${i + 1}`} width={540} height={540} className="w-full object-contain" style={{ maxHeight: 360 }} unoptimized />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Image generator — 3-tab mode switcher */}
-                  <div className="mb-5 rounded-lg border bg-muted/30 p-4">
-                    <div className="mb-4 flex items-center gap-2">
-                      <Sparkles className="size-4 text-primary" />
-                      <p className="text-xs font-semibold">Generate image</p>
-                    </div>
-
-                    {/* ── Mode tabs — 3 options ── */}
-                    <div className="mb-4 grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
-                      {([
-                        ['ai-graphic', 'AI Graphic'],
-                        ['ai-scene', 'AI Scene'],
-                        ['template', 'Template'],
-                      ] as const).map(([mode, label]) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          onClick={() => { setImageMode(mode); setImageGenError(null); setSceneResult(null); setAiGraphicResult(null); setAiGraphicError(null); }}
-                          className={`rounded-md px-2 py-1.5 text-[11px] font-medium transition-colors ${imageMode === mode ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* ── AI GRAPHIC MODE (NEW) ── */}
-                    {imageMode === 'ai-graphic' && (
-                      <div className="space-y-4">
-                        {/* Badge explaining what this is */}
-                        <div className="flex items-start gap-2.5 rounded-lg border border-primary/20 bg-primary/5 p-3">
-                          <Sparkles className="mt-0.5 size-3.5 shrink-0 text-primary" />
-                          <p className="text-[11px] leading-relaxed text-primary/80">
-                            Uses OpenAI gpt-image-1 — the best model for graphic design, crisp typography, infographics, and branded illustrations. Claude auto-generates the visual brief from your brand and post topic.
-                          </p>
-                        </div>
-
-                        {/* Content type */}
-                        <div>
-                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Content type</p>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {AI_GRAPHIC_TYPES.map(({ value, label, sub }) => (
-                              <button
-                                key={value}
-                                type="button"
-                                onClick={() => setAiGraphicContentType(value)}
-                                className={`rounded-lg border px-2 py-2.5 text-left transition-colors ${aiGraphicContentType === value ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
-                              >
-                                <p className={`text-[11px] font-semibold ${aiGraphicContentType === value ? 'text-primary' : ''}`}>{label}</p>
-                                <p className="mt-0.5 text-[10px] text-muted-foreground leading-snug">{sub}</p>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Format */}
-                        <div>
-                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Format</p>
-                          <div className="grid grid-cols-2 gap-1.5">
-                            {([['square', '1:1 — Square'], ['vertical', '9:16 — Vertical']] as const).map(([val, label]) => (
-                              <button
-                                key={val}
-                                type="button"
-                                onClick={() => setAiGraphicFormat(val)}
-                                className={`rounded-lg border px-3 py-2 text-[11px] font-medium transition-colors ${aiGraphicFormat === val ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}
-                              >
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                          <p className="mt-1.5 text-[10px] text-muted-foreground">
-                            Generate one format at a time. Run again with a different format to get both.
-                          </p>
-                        </div>
-
-                        {/* Quality tier */}
-                        <div>
-                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Quality tier</p>
-                          <div className="grid grid-cols-2 gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setAiGraphicQuality('standard')}
-                              className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${aiGraphicQuality === 'standard' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
-                            >
-                              <p className={`text-[11px] font-semibold ${aiGraphicQuality === 'standard' ? 'text-primary' : ''}`}>Standard</p>
-                              <p className="mt-0.5 text-[10px] text-muted-foreground">~$0.01–0.04 · Fast</p>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setAiGraphicQuality('premium')}
-                              className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${aiGraphicQuality === 'premium' ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
-                            >
-                              <p className={`text-[11px] font-semibold ${aiGraphicQuality === 'premium' ? 'text-primary' : ''}`}>Premium</p>
-                              <p className="mt-0.5 text-[10px] text-muted-foreground">~$0.06–0.21 · Best quality</p>
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Optional eyebrow */}
-                        <div>
-                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Eyebrow label on overlay (optional)</p>
-                          <input
-                            type="text"
-                            value={aiGraphicEyebrow}
-                            onChange={e => setAiGraphicEyebrow(e.target.value)}
-                            placeholder="e.g. PRO TIP · NEW LAUNCH · CASE STUDY"
-                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                          />
-                        </div>
-
-                        {/* Advanced overrides — collapsible feel via opacity */}
-                        <details className="group">
-                          <summary className="cursor-pointer list-none text-[11px] font-medium text-muted-foreground hover:text-foreground">
-                            <span className="group-open:hidden">▸ Advanced: override Claude's prompt</span>
-                            <span className="hidden group-open:inline">▾ Advanced overrides</span>
-                          </summary>
-                          <div className="mt-3 space-y-3">
-                            <div>
-                              <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Visual prompt override</p>
-                              <textarea
-                                value={aiGraphicPromptOverride}
-                                onChange={e => setAiGraphicPromptOverride(e.target.value)}
-                                placeholder="Describe the exact image you want. Must also fill in Headline override below to skip Claude."
-                                rows={3}
-                                className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                              />
-                            </div>
-                            <div>
-                              <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Headline override (brand overlay)</p>
-                              <input
-                                type="text"
-                                value={aiGraphicHeadlineOverride}
-                                onChange={e => setAiGraphicHeadlineOverride(e.target.value)}
-                                placeholder="The headline shown on the brand overlay (not in the AI image)"
-                                className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                              />
-                            </div>
-                            <p className="text-[10px] text-muted-foreground">
-                              Both fields must be filled to bypass Claude's auto-generation. Leave blank to let Claude write the prompt.
-                            </p>
-                          </div>
-                        </details>
-
-                        {/* Result feedback */}
-                        {aiGraphicResult && (
-                          <div className="rounded-lg bg-muted/50 p-3 space-y-1.5">
-                            <p className="text-[11px] text-green-600 font-medium">
-                              ✓ Generated — {aiGraphicResult.quality} quality
-                              {aiGraphicResult.generationMs ? ` · ${(aiGraphicResult.generationMs / 1000).toFixed(1)}s` : ''}
-                            </p>
-                            {aiGraphicResult.overlayHeadline && (
-                              <p className="text-[11px] text-muted-foreground">
-                                <span className="font-medium text-foreground">Headline: </span>
-                                {aiGraphicResult.overlayHeadline}
+              {/* Media display with 9:16 vertical card */}
+              {hasMedia ? (
+                <div className="space-y-4">
+                  {isVideo || isReel || isUGCAd || isDataStory ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {item.graphicUrls.map((url, i) => {
+                        const isVid = isVideoFileUrl(url);
+                        const isVertical = item.aspectRatio === '9:16' || item.aspectRatio === '3:4' || item.aspectRatio === '2:3';
+                        return (
+                          <div key={i} className={`overflow-hidden rounded-lg border bg-black ${isVertical ? 'mx-auto max-w-[240px]' : ''}`}>
+                            <div className="border-b px-3 py-2">
+                              <p className="text-[11px] font-medium text-muted-foreground">
+                                {item.aspectRatio ? ASPECT_RATIO_LABELS[item.aspectRatio] : isVid ? 'Video' : 'Image'} {item.graphicUrls.length > 1 ? `#${i + 1}` : ''}
                               </p>
-                            )}
-                            {aiGraphicResult.visualPrompt && (
-                              <p className="text-[10px] text-muted-foreground line-clamp-2">{aiGraphicResult.visualPrompt}</p>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Generate button */}
-                        <button
-                          type="button"
-                          onClick={generateAiGraphic}
-                          disabled={isGeneratingAiGraphic}
-                          className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-                        >
-                          {isGeneratingAiGraphic
-                            ? <><Loader2 className="size-4 animate-spin" />Generating {aiGraphicQuality === 'premium' ? '(~60–90s)' : '(~20–40s)'}...</>
-                            : <><Sparkles className="size-4" />{hasMedia ? 'Regenerate AI graphic' : 'Generate AI graphic'}</>}
-                        </button>
-                        {aiGraphicError && <p className="mt-1 text-xs text-red-500">{aiGraphicError}</p>}
-                      </div>
-                    )}
-
-                    {/* ── AI SCENE MODE ── */}
-                    {imageMode === 'ai-scene' && (
-                      <div>
-                        <div className="mb-3">
-                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Visual style</p>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {(['professional', 'minimal', 'vibrant', 'elegant', 'bold', 'cinematic'] as const).map(s => (
-                              <button key={s} type="button" onClick={() => setSceneStyle(s)} className={`rounded-lg border px-2 py-2 text-[10px] font-medium capitalize transition-colors sm:px-2.5 sm:text-[11px] ${sceneStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>{s}</button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="mb-3">
-                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Brand overlay</p>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {([['standard', 'Logo + name'], ['minimal', 'Subtle'], ['none', 'None']] as const).map(([val, label]) => (
-                              <button key={val} type="button" onClick={() => setSceneOverlay(val)} className={`rounded-lg border px-1.5 py-2 text-[10px] font-medium transition-colors sm:px-2.5 sm:text-[11px] ${sceneOverlay === val ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>{label}</button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="mb-3">
-                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Formats</p>
-                          <div className="flex gap-2">
-                            {(['square', 'vertical'] as const).map(f => (
-                              <button key={f} type="button" onClick={() => setImageFormats(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f])} className={`rounded-lg border px-3 py-1.5 text-[11px] font-medium capitalize transition-colors ${imageFormats.includes(f) ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>
-                                {f === 'square' ? '1:1 Square' : '9:16 Vertical'}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="mb-3">
-                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Scene description (optional)</p>
-                          <input type="text" value={scenePromptOverride} onChange={e => setScenePromptOverride(e.target.value)} placeholder="Leave blank to auto-generate from your post..." className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-                        </div>
-                        <div className="mb-3">
-                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Headline on image (optional)</p>
-                          <input type="text" value={sceneHeadlineOverride} onChange={e => setSceneHeadlineOverride(e.target.value)} placeholder="Auto-extracted from your caption..." className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-                        </div>
-                        <div className="mb-4">
-                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Eyebrow label (optional)</p>
-                          <input type="text" value={sceneEyebrowOverride} onChange={e => setSceneEyebrowOverride(e.target.value)} placeholder="e.g. NEW LAUNCH · CASE STUDY · PRO TIP" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-                        </div>
-                        {sceneResult && (
-                          <div className="mb-3 rounded-lg bg-muted/50 p-3 space-y-1">
-                            {sceneResult.fallback && <p className="text-[11px] text-amber-600 font-medium">Template fallback used — top up fal.ai credits to enable AI scenes.</p>}
-                            {sceneResult.modelUsed && !sceneResult.fallback && <p className="text-[11px] text-green-600 font-medium">Generated with FLUX {sceneResult.modelUsed}</p>}
-                            {sceneResult.headlineUsed && <p className="text-[11px] text-muted-foreground"><span className="font-medium text-foreground">Headline: </span>{sceneResult.headlineUsed}</p>}
-                            {sceneResult.promptUsed && <p className="text-[11px] text-muted-foreground line-clamp-2">{sceneResult.promptUsed}</p>}
-                          </div>
-                        )}
-                        <button type="button" onClick={generateScene} disabled={isGeneratingImage || imageFormats.length === 0} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
-                          {isGeneratingImage ? <><Loader2 className="size-4 animate-spin" />Generating...</> : <><Sparkles className="size-4" />{hasMedia ? 'Regenerate scene' : 'Generate scene'}</>}
-                        </button>
-                      </div>
-                    )}
-
-                    {/* ── TEMPLATE MODE ── */}
-                    {imageMode === 'template' && (
-                      <div>
-                        <div className="mb-3">
-                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Template</p>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {(['quote-card', 'announcement-card', 'stat-card'] as const).map(t => (
-                              <button key={t} type="button" onClick={() => setImageTemplate(t)} className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium transition-colors ${imageTemplate === t ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>
-                                {t === 'quote-card' ? 'Quote' : t === 'announcement-card' ? 'Announcement' : 'Stat'}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="mb-3">
-                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Style</p>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {(['dark', 'light', 'brand'] as const).map(s => (
-                              <button key={s} type="button" onClick={() => setImageStyle(s)} className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium capitalize transition-colors ${imageStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>{s}</button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="mb-3">
-                          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Formats</p>
-                          <div className="flex gap-2">
-                            {(['square', 'vertical'] as const).map(f => (
-                              <button key={f} type="button" onClick={() => setImageFormats(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f])} className={`rounded-lg border px-3 py-1.5 text-[11px] font-medium capitalize transition-colors ${imageFormats.includes(f) ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>
-                                {f === 'square' ? '1:1 Square' : '9:16 Vertical'}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        {imageTemplate === 'stat-card' && (
-                          <div className="mb-3 space-y-2">
-                            <input type="text" value={imageStatValue} onChange={e => setImageStatValue(e.target.value)} placeholder="Stat value, e.g. 47%" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-                            <input type="text" value={imageStatLabel} onChange={e => setImageStatLabel(e.target.value)} placeholder="Stat label, e.g. improvement in engagement" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-                          </div>
-                        )}
-                        <div className="mb-4">
-                          <input type="text" value={imageEyebrow} onChange={e => setImageEyebrow(e.target.value)} placeholder="Eyebrow label (optional) e.g. THIS WEEK" className="w-full rounded-lg border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-                        </div>
-                        <button type="button" onClick={generateImage} disabled={isGeneratingImage || imageFormats.length === 0} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50">
-                          {isGeneratingImage ? <><Loader2 className="size-4 animate-spin" />Generating...</> : <><Sparkles className="size-4" />{hasMedia ? 'Regenerate image' : 'Generate image'}</>}
-                        </button>
-                      </div>
-                    )}
-
-                    {imageGenError && <p className="mt-2 text-xs text-red-500">{imageGenError}</p>}
-                  </div>
-
-                  {/* Manual upload */}
-                  <div>
-                    <p className="mb-3 text-xs font-medium text-muted-foreground">Upload your own</p>
-                    <MediaUploader
-                      contentItemId={item.id}
-                      existingPublicIds={item.graphicUrls || []}
-                      onUpdate={publicIds => setItem(prev => prev ? { ...prev, graphicUrls: publicIds } : prev)}
-                      mediaType="image"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Carousel */}
-              {isCarousel && (
-                <div className="rounded-xl border bg-card p-4 sm:p-5">
-                  <div className="mb-4 flex items-center gap-2 border-b pb-4">
-                    <Layers className="size-4 text-muted-foreground" />
-                    <h3 className="text-sm font-semibold">Carousel slides</h3>
-                    {needsMedia && !hasMedia && (
-                      <span className="ml-auto rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                        Required to publish
-                      </span>
-                    )}
-                  </div>
-                  {hasMedia && (
-                    <div className="mb-5">
-                      <p className="mb-3 text-xs font-medium text-muted-foreground">{item.graphicUrls.length} slide{item.graphicUrls.length !== 1 ? 's' : ''} generated</p>
-                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                        {item.graphicUrls.map((url, i) => (
-                          <div key={i} className="overflow-hidden rounded-lg border">
-                            <div className="border-b px-2 py-1"><p className="text-[10px] text-muted-foreground">Slide {i + 1}</p></div>
-                            <Image src={url} alt={`Carousel slide ${i + 1}`} width={300} height={300} className="w-full object-cover" unoptimized />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div className="mb-5 rounded-lg border bg-muted/30 p-4">
-                    <div className="mb-3 flex items-center gap-2">
-                      <Sparkles className="size-4 text-primary" />
-                      <p className="text-xs font-semibold">Generate carousel from caption</p>
-                    </div>
-                    <p className="mb-4 text-[11px] text-muted-foreground">Each paragraph in your caption becomes a slide. The first becomes the cover, the last gets a CTA slide appended automatically.</p>
-                    <div className="mb-3">
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Style</p>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {(['dark', 'light', 'brand'] as const).map(s => (
-                          <button key={s} type="button" onClick={() => setCarouselStyle(s)} className={`rounded-lg border px-2.5 py-2 text-[11px] font-medium capitalize transition-colors ${carouselStyle === s ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>{s}</button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="mb-4">
-                      <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Format</p>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {(['1:1', '9:16'] as const).map(ar => (
-                          <button key={ar} type="button" onClick={() => setCarouselAspectRatio(ar)} className={`rounded-lg border px-3 py-2 text-[11px] font-medium transition-colors ${carouselAspectRatio === ar ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-muted'}`}>
-                            {ar === '1:1' ? '1:1 — LinkedIn, Facebook' : '9:16 — Instagram, TikTok'}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <button type="button" onClick={generateCarousel} disabled={isGeneratingCarousel} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-                      {isGeneratingCarousel ? <><Loader2 className="size-4 animate-spin" />Generating slides (~5–10s)...</> : <><Sparkles className="size-4" />{hasMedia ? 'Regenerate carousel' : 'Generate carousel'}</>}
-                    </button>
-                    {carouselError && <p className="mt-2 text-xs text-red-500">{carouselError}</p>}
-                  </div>
-                  <div>
-                    <p className="mb-3 text-xs font-medium text-muted-foreground">Or upload slides manually</p>
-                    <MediaUploader
-                      contentItemId={item.id}
-                      existingPublicIds={item.graphicUrls || []}
-                      onUpdate={publicIds => setItem(prev => prev ? { ...prev, graphicUrls: publicIds } : prev)}
-                      mediaType="image"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Platform adaptations */}
-              {Object.keys(item.platformSpecific || {}).length > 0
-                && Object.entries(item.platformSpecific).some(([k]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k))
-                && (
-                  <div className="rounded-xl border bg-card p-4 sm:p-5">
-                    <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Platform adaptations</h3>
-                    <div className="space-y-3">
-                      {Object.entries(item.platformSpecific)
-                        .filter(([k, v]) => !PLATFORM_SPECIFIC_SYSTEM_KEYS.includes(k) && typeof v === 'string')
-                        .map(([platform, text]) => {
-                          const isEditingThis = editingAdaptation === platform;
-                          const loadingKey = `adaptation-${platform}`;
-                          return (
-                            <div key={platform} className="rounded-lg border bg-muted/30 p-3">
-                              <div className="mb-1.5 flex items-center justify-between">
-                                <span className="text-xs font-semibold capitalize">{PLATFORM_LABELS[platform] || platform}</span>
-                                {!isEditingThis && (
-                                  <button type="button" onClick={() => { setEditingAdaptation(platform); setEditAdaptationText(String(text)); }} className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium transition-colors hover:bg-muted">
-                                    <Edit3 className="size-3" />
-                                    Edit
-                                  </button>
-                                )}
-                              </div>
-                              {isEditingThis ? (
-                                <div>
-                                  <textarea value={editAdaptationText} onChange={e => setEditAdaptationText(e.target.value)} rows={5} className="w-full resize-none rounded-lg border bg-background px-3 py-2.5 text-sm leading-relaxed focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                                  <div className="mt-2 flex gap-2">
-                                    <button type="button" onClick={() => saveAdaptation(platform)} disabled={actionLoading === loadingKey} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-                                      {actionLoading === loadingKey ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-                                      Save
-                                    </button>
-                                    <button type="button" onClick={() => setEditingAdaptation(null)} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">Cancel</button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <p className="text-sm leading-relaxed text-muted-foreground">{String(text)}</p>
-                              )}
                             </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                )}
-
-              {/* Rejection feedback */}
-              {item.rejectionFeedback && (
-                <div className="rounded-xl border border-red-200 bg-red-50 p-4 sm:p-5">
-                  <h3 className="mb-1 text-sm font-semibold text-red-700">Rejection feedback</h3>
-                  <p className="text-sm text-red-600">{item.rejectionFeedback}</p>
-                </div>
-              )}
-            </div>
-
-        {/* ── Sidebar ──────────────────────────────────────── */}
-          <div className="hidden lg:block">
-            <div className="sticky top-6 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 5rem)' }}>
-              <ActionsPanel />
-
-              {item.antiSlopScore !== null && (
-                <div className="rounded-xl border bg-card p-5">
-                  <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
-                  <div className="mb-3 flex items-center gap-3">
-                    <div className="relative size-12">
-                      <svg className="size-12 -rotate-90" viewBox="0 0 36 36">
-                        <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
-                        <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray={`${item.antiSlopScore * 100}, 100`} className={item.antiSlopScore >= 0.8 ? 'text-emerald-500' : item.antiSlopScore >= 0.7 ? 'text-yellow-500' : item.antiSlopScore >= 0.5 ? 'text-orange-500' : 'text-red-500'} />
-                      </svg>
-                      <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">{Math.round(item.antiSlopScore * 100)}</span>
-                    </div>
-                    <div>
-                      <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>{scoreLabel(item.antiSlopScore).text}</p>
-                      <p className="text-[11px] text-muted-foreground">Quality score</p>
-                    </div>
-                  </div>
-                  {item.qualityFlags.length > 0 && (
-                    <div>
-                      <button type="button" onClick={() => setShowQualityFlags(p => !p)} className="mb-2 text-xs text-muted-foreground underline hover:text-foreground">
-                        {showQualityFlags ? 'Hide' : 'Show'} {item.qualityFlags.length} quality {item.qualityFlags.length === 1 ? 'note' : 'notes'}
-                      </button>
-                      {showQualityFlags && (
-                        <div className="space-y-1.5">
-                          {item.qualityFlags.map((flag, i) => <p key={i} className="text-[11px] leading-snug text-muted-foreground">{flag}</p>)}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="rounded-xl border bg-card p-5">
-                <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Details</h3>
-                <div className="space-y-3">
-                  <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
-                  <DetailRow label="Topic" value={item.topic || 'Auto-selected'} />
-                  {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
-                  <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
-                  {isReel && (item.platformSpecific?.videoDurationSeconds as number) > 0 && (
-                    <DetailRow label="Video duration" value={`${item.platformSpecific.videoDurationSeconds}s`} />
-                  )}
-                  {/* Show AI graphic metadata when present */}
-                  {item.platformSpecific?.imageTemplate === 'ai-graphic' && (
-                    <>
-                      <DetailRow label="Image engine" value="OpenAI gpt-image-1" />
-                      {item.platformSpecific?.aiGraphicType && (
-                        <DetailRow label="Graphic type" value={String(item.platformSpecific.aiGraphicType)} />
-                      )}
-                      {item.platformSpecific?.aiGraphicQuality && (
-                        <DetailRow label="Quality tier" value={String(item.platformSpecific.aiGraphicQuality)} />
-                      )}
-                    </>
-                  )}
-                  <DetailRow label="Created" value={new Date(item.createdAt).toLocaleString()} />
-                  {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
-                  {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
-                </div>
-                {item.scheduledFor && (
-                  <div className="mt-4 border-t pt-3">
-                    <Link href={`/dashboard/calendar?selected=${item.scheduledFor.split('T')[0]}`} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-                      <Calendar className="size-3.5" />
-                      View on calendar
-                      <ChevronRight className="size-3" />
-                    </Link>
-                  </div>
-                )}
-              </div>
-
-              {item.status === 'published' && (
-                <div className="rounded-xl border bg-card p-5">
-                  <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Engagement</h3>
-                  {Object.keys(item.engagementData || {}).length > 0 ? (
-                    <div className="space-y-3">
-                      {Object.entries(item.engagementData).map(([key, val]) => (
-                        <DetailRow key={key} label={key} value={String(val)} />
-                      ))}
+                            {isVid ? (
+                              <video
+                                src={toVideoSrc(url)}
+                                className="w-full"
+                                controls
+                                preload="metadata"
+                                playsInline
+                                style={{ maxHeight: isVertical ? 420 : 300, aspectRatio: item.aspectRatio?.replace(':', '/') || '9/16' }}
+                              />
+                            ) : (
+                              <Image src={url} alt={`Media ${i + 1}`} width={isVertical ? 240 : 540} height={isVertical ? 420 : 300} className="w-full object-cover" unoptimized />
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : (
-                    <p className="text-xs text-muted-foreground">Engagement data will appear here once the post has been live for a few hours.</p>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {item.graphicUrls.map((url, i) => (
+                        <div key={i} className="overflow-hidden rounded-lg border">
+                          <div className="border-b px-2 py-1"><p className="text-[10px] text-muted-foreground">{isCarousel ? `Slide ${i + 1}` : `Image ${i + 1}`}</p></div>
+                          <Image src={url} alt={`Media ${i + 1}`} width={300} height={300} className="w-full object-cover" unoptimized />
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 bg-muted/20 py-12 text-center">
+                  <Video className="mb-2 size-8 text-muted-foreground/40" />
+                  <p className="text-sm text-muted-foreground">No media generated yet.</p>
+                  <p className="text-xs text-muted-foreground/60">Generate or upload media to publish.</p>
+                </div>
               )}
-            </div>
-          </div>
-        </div>
-
-
-        {/* Mobile — Details + Quality */}
-        <div className={`mt-4 space-y-4 lg:hidden ${primaryAction ? 'pb-24' : ''}`}>
-          {item.antiSlopScore !== null && (
-            <div className="rounded-xl border bg-card p-4">
-              <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
-              <div className="flex items-center gap-3">
-                <div className="relative size-10">
-                  <svg className="size-10 -rotate-90" viewBox="0 0 36 36">
-                    <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
-                    <path d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray={`${item.antiSlopScore * 100}, 100`} className={item.antiSlopScore >= 0.8 ? 'text-emerald-500' : item.antiSlopScore >= 0.7 ? 'text-yellow-500' : 'text-orange-500'} />
-                  </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">{Math.round(item.antiSlopScore * 100)}</span>
-                </div>
-                <div>
-                  <p className={`text-sm font-semibold ${scoreLabel(item.antiSlopScore).color.split(' ')[1]}`}>{scoreLabel(item.antiSlopScore).text}</p>
-                  <p className="text-[11px] text-muted-foreground">Quality score</p>
-                </div>
-              </div>
             </div>
           )}
 
-          <div className="rounded-xl border bg-card p-4">
-            <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Details</h3>
-            <div className="space-y-2.5">
-              <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
-              {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
-              <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
-              {item.platformSpecific?.imageTemplate === 'ai-graphic' && (
-                <DetailRow label="Image engine" value="OpenAI gpt-image-1" />
-              )}
-              <DetailRow label="Created" value={new Date(item.createdAt).toLocaleDateString()} />
-              {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
-              {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
+          {/* Rejection feedback */}
+          {item.rejectionFeedback && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 sm:p-5">
+              <h3 className="mb-1 text-sm font-semibold text-red-700">Rejection feedback</h3>
+              <p className="text-sm text-red-600">{item.rejectionFeedback}</p>
             </div>
-          </div>
+          )}
+        </div>
 
-          <div className="flex gap-2">
-            {item.status !== 'published' && item.status !== 'rejected' && (
-              <button type="button" onClick={() => updateStatus('rejected')} disabled={!!actionLoading} className="flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium hover:bg-red-50 hover:text-red-600 disabled:opacity-50">
-                <X className="size-4" />
-                Reject
-              </button>
+        {/* Sidebar */}
+        <div className="hidden lg:block">
+          <div className="sticky top-6 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 5rem)' }}>
+            <ActionsPanel />
+
+            {/* Anti-Slop Score */}
+            {item.antiSlopScore !== null && item.antiSlopScore !== undefined && (
+              <div className="rounded-xl border bg-card p-5">
+                <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
+                <AntiSlopBadge score={item.antiSlopScore} />
+                {item.qualityFlags.length > 0 && (
+                  <div>
+                    <button type="button" onClick={() => setShowQualityFlags(p => !p)} className="mb-2 text-xs text-muted-foreground underline hover:text-foreground">
+                      {showQualityFlags ? 'Hide' : 'Show'} {item.qualityFlags.length} quality {item.qualityFlags.length === 1 ? 'note' : 'notes'}
+                    </button>
+                    {showQualityFlags && (
+                      <div className="space-y-1.5">
+                        {item.qualityFlags.map((flag, i) => <p key={i} className="text-[11px] leading-snug text-muted-foreground">{flag}</p>)}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
-            <button type="button" onClick={deleteItem} disabled={!!actionLoading} className="flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium text-red-500 hover:bg-red-50 disabled:opacity-50">
-              <Trash2 className="size-4" />
-              Delete
-            </button>
+
+            {/* Details */}
+            <div className="rounded-xl border bg-card p-5">
+              <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Details</h3>
+              <div className="space-y-3">
+                <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
+                <DetailRow label="Topic" value={item.topic || 'Auto-selected'} />
+                {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
+                <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
+                {item.aspectRatio && <DetailRow label="Aspect ratio" value={item.aspectRatio} />}
+                {(item.durationSeconds && item.durationSeconds > 0) && (
+                  <DetailRow label="Duration" value={formatDuration(item.durationSeconds)} />
+                )}
+                {item.aiModelUsed && <DetailRow label="AI model" value={item.aiModelUsed} />}
+                <DetailRow label="Created" value={new Date(item.createdAt).toLocaleString()} />
+                {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
+                {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
+              </div>
+              {item.scheduledFor && (
+                <div className="mt-4 border-t pt-3">
+                  <Link href={`/dashboard/calendar?selected=${item.scheduledFor.split('T')[0]}`} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+                    <Calendar className="size-3.5" />
+                    View on calendar
+                    <ChevronRight className="size-3" />
+                  </Link>
+                </div>
+              )}
+            </div>
+
+            {/* Generation Params */}
+            {item.generationParams && Object.keys(item.generationParams).length > 0 && (
+              <div className="rounded-xl border bg-card p-5">
+                <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Generation params</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowGenerationParams(p => !p)}
+                  className="text-xs text-muted-foreground underline hover:text-foreground"
+                >
+                  {showGenerationParams ? 'Hide' : 'Show'} generation payload
+                </button>
+                {showGenerationParams && (
+                  <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-muted/50 p-3 text-[10px] text-muted-foreground">
+                    {JSON.stringify(item.generationParams, null, 2)}
+                  </pre>
+                )}
+              </div>
+            )}
+
+            {/* Engagement */}
+            {item.status === 'published' && (
+              <div className="rounded-xl border bg-card p-5">
+                <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Engagement</h3>
+                {Object.keys(item.engagementData || {}).length > 0 ? (
+                  <div className="space-y-3">
+                    {Object.entries(item.engagementData).map(([key, val]) => (
+                      <DetailRow key={key} label={key} value={String(val)} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Engagement data will appear here once the post has been live for a few hours.</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
-      </>
-      );
+      </div>
+
+      {/* Mobile sidebar content */}
+      <div className={`mt-4 space-y-4 lg:hidden ${primaryAction ? 'pb-24' : ''}`}>
+        {item.antiSlopScore !== null && item.antiSlopScore !== undefined && (
+          <div className="rounded-xl border bg-card p-4">
+            <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
+            <AntiSlopBadge score={item.antiSlopScore} compact />
+          </div>
+        )}
+
+        <div className="rounded-xl border bg-card p-4">
+          <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Details</h3>
+          <div className="space-y-2.5">
+            <DetailRow label="Type" value={item.contentType.replace(/_/g, ' ')} />
+            {item.contentMode && <DetailRow label="Mode" value={item.contentMode} />}
+            <DetailRow label="Platforms" value={(item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ')} />
+            {item.aspectRatio && <DetailRow label="Aspect ratio" value={item.aspectRatio} />}
+            {(item.durationSeconds && item.durationSeconds > 0) && <DetailRow label="Duration" value={formatDuration(item.durationSeconds)} />}
+            {item.aiModelUsed && <DetailRow label="AI model" value={item.aiModelUsed} />}
+            <DetailRow label="Created" value={new Date(item.createdAt).toLocaleDateString()} />
+            {item.scheduledFor && <DetailRow label="Scheduled" value={new Date(item.scheduledFor).toLocaleString()} />}
+            {item.publishedAt && <DetailRow label="Published" value={new Date(item.publishedAt).toLocaleString()} />}
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          {item.status !== 'published' && item.status !== 'rejected' && (
+            <button type="button" onClick={() => updateStatus('rejected')} disabled={!!actionLoading} className="flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium hover:bg-red-50 hover:text-red-600 disabled:opacity-50">
+              <X className="size-4" />
+              Reject
+            </button>
+          )}
+          <button type="button" onClick={deleteItem} disabled={!!actionLoading} className="flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium text-red-500 hover:bg-red-50 disabled:opacity-50">
+            <Trash2 className="size-4" />
+            Delete
+          </button>
+        </div>
+      </div>
+    </>
+  );
 }

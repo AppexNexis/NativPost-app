@@ -136,9 +136,17 @@ export default function ContentCreatePage() {
   const searchParams = useSearchParams();
   const scheduledDate = searchParams.get('scheduledDate') || '';
 
-  const [step, setStep] = useState<'type' | 'configure' | 'review'>('type');
-  const [contentType, setContentType] = useState('');
-  const [topic, setTopic] = useState('');
+  // Monthly Plan prefill — passed from the calendar day panel's "Create this post" CTA.
+  // When both are present we skip step 1 (type picker) and land directly on configure.
+  const prefillTopic = searchParams.get('topic') || '';
+  const prefillContentType = searchParams.get('contentType') || '';
+  const fromMonthlyPlan = !!(prefillTopic && prefillContentType);
+
+  const [step, setStep] = useState<'type' | 'configure' | 'review'>(
+    fromMonthlyPlan ? 'configure' : 'type',
+  );
+  const [contentType, setContentType] = useState(prefillContentType);
+  const [topic, setTopic] = useState(prefillTopic);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -408,6 +416,18 @@ export default function ContentCreatePage() {
         )}
       </div>
 
+      {/* Monthly Plan context banner */}
+      {fromMonthlyPlan && step !== 'review' && (
+        <div className="mb-4 flex items-center gap-3 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3">
+          <Sparkles className="size-3.5 shrink-0 text-violet-600" />
+          <p className="text-sm text-muted-foreground">
+            From your{' '}
+            <span className="font-medium text-violet-700">Monthly Plan</span>
+            {' — '}topic pre-filled. Edit it freely before generating.
+          </p>
+        </div>
+      )}
+
       {/* Calendar context banner */}
       {scheduledDate && (
         <div className="mb-5 flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
@@ -434,15 +454,35 @@ export default function ContentCreatePage() {
           <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
             {CONTENT_TYPES.map((type) => {
               const Icon = type.icon;
+              // const supported = type.id === 'text_only'
+              //   ? ['facebook', 'twitter', 'linkedin']
+              //   : type.id === 'reel'
+              //     ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube']
+              //     : type.id === 'ugc_ad'
+              //       ? ['instagram', 'tiktok']
+              //       : type.id === 'data_story'
+              //         ? ['linkedin', 'instagram', 'youtube']
+              //         : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok'];
+
+              // const supported = type.id === 'text_only'
+              //   ? ['facebook', 'twitter', 'linkedin']
+              //   : type.id === 'reel'
+              //     ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube', 'snapchat']
+              //     : type.id === 'ugc_ad'
+              //       ? ['instagram', 'tiktok']
+              //       : type.id === 'data_story'
+              //         ? ['linkedin', 'instagram', 'youtube']
+              //         : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'snapchat']; // single_image + carousel
+
               const supported = type.id === 'text_only'
-                ? ['facebook', 'twitter', 'linkedin']
+                ? ['facebook', 'twitter', 'linkedin', 'whatsapp']
                 : type.id === 'reel'
-                  ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube']
+                  ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube', 'snapchat', 'whatsapp']
                   : type.id === 'ugc_ad'
-                    ? ['instagram', 'tiktok']
+                    ? ['instagram', 'tiktok', 'whatsapp']
                     : type.id === 'data_story'
-                      ? ['linkedin', 'instagram', 'youtube']
-                      : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok'];
+                      ? ['linkedin', 'instagram', 'youtube', 'whatsapp']
+                      : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'snapchat', 'whatsapp'];
 
               return (
                 <button
@@ -498,13 +538,16 @@ export default function ContentCreatePage() {
             <span className="rounded-lg bg-muted px-3 py-1.5 text-xs font-medium">
               {CONTENT_TYPES.find(t => t.id === contentType)?.label}
             </span>
-            <button
-              type="button"
-              onClick={() => setStep('type')}
-              className="text-xs text-muted-foreground underline hover:text-foreground"
-            >
-              Change
-            </button>
+            {/* Only show Change if not locked to a plan-prefilled type */}
+            {!fromMonthlyPlan && (
+              <button
+                type="button"
+                onClick={() => setStep('type')}
+                className="text-xs text-muted-foreground underline hover:text-foreground"
+              >
+                Change
+              </button>
+            )}
           </div>
 
           {/* Content mode */}
@@ -516,16 +559,14 @@ export default function ContentCreatePage() {
                   key={mode.id}
                   type="button"
                   onClick={() => setContentMode(mode.id)}
-                  className={`flex-1 rounded-md px-3 py-2 text-left transition-colors ${
-                    contentMode === mode.id
-                      ? 'bg-foreground text-background'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
+                  className={`flex-1 rounded-md px-3 py-2 text-left transition-colors ${contentMode === mode.id
+                    ? 'bg-foreground text-background'
+                    : 'text-muted-foreground hover:text-foreground'
+                    }`}
                 >
                   <span className="block text-xs font-semibold">{mode.label}</span>
-                  <span className={`mt-0.5 block text-[10px] leading-tight ${
-                    contentMode === mode.id ? 'opacity-70' : 'opacity-60'
-                  }`}
+                  <span className={`mt-0.5 block text-[10px] leading-tight ${contentMode === mode.id ? 'opacity-70' : 'opacity-60'
+                    }`}
                   >
                     {mode.description}
                   </span>
@@ -567,9 +608,8 @@ export default function ContentCreatePage() {
                     type="button"
                     onClick={() => togglePlatform(platform.id)}
                     disabled={!isConnected}
-                    className={`flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left text-sm transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
-                      isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted'
-                    }`}
+                    className={`flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left text-sm transition-all disabled:cursor-not-allowed disabled:opacity-40 ${isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted'
+                      }`}
                   >
                     <PIcon className={`size-4 shrink-0 sm:size-5 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
                     <span className={`flex-1 ${isSelected ? 'font-medium' : ''}`}>{platform.name}</span>
@@ -838,11 +878,10 @@ export default function ContentCreatePage() {
               key={variant.id}
               type="button"
               onClick={() => setSelectedVariant(variant.id)}
-              className={`w-full rounded-xl border bg-card p-5 text-left transition-all ${
-                selectedVariant === variant.id
-                  ? 'border-primary ring-2 ring-primary/15'
-                  : 'hover:border-muted-foreground/20'
-              }`}
+              className={`w-full rounded-xl border bg-card p-5 text-left transition-all ${selectedVariant === variant.id
+                ? 'border-primary ring-2 ring-primary/15'
+                : 'hover:border-muted-foreground/20'
+                }`}
             >
               {/* Variant header */}
               <div className="mb-3 flex items-center justify-between gap-2">

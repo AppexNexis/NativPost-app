@@ -12,35 +12,8 @@ import {
 } from 'drizzle-orm/pg-core';
 
 // ============================================================
-// NATIVPOST DATABASE SCHEMA v6
+// NATIVPOST DATABASE SCHEMA v7
 // Using Drizzle ORM with Supabase PostgreSQL
-// Run: npm run db:generate → npm run db:migrate
-//
-// v2 additions:
-// - brandProfileSchema: growthStage
-// - contentItemSchema: contentMode, enrichmentData, enrichmentApplied
-//
-// v3 additions:
-// - contentPlanSchema: monthly AI-generated content plan per org
-//
-// v4 additions:
-// - socialAccountSchema: oauthToken, oauthTokenSecret
-//   Stores OAuth 1.0a credentials for Twitter/X media uploads.
-//
-// v5 additions:
-// - organizationSchema: settings JSONB column
-// - notificationSchema: in-app notification center (90-day lifetime)
-// - userSettingsSchema: per-user preferences synced across devices
-//
-// v6 additions:
-// - socialAccountSchema: metadata JSONB column
-//   Platform-specific extras that don't fit the flat schema.
-//   Currently used by WhatsApp to store:
-//     { phoneNumberId: string, wabaId: string }
-//   The phoneNumberId is required by the Cloud API publisher at
-//   publish time to identify which number sends the message.
-//   Other platforms can use this column for future extras without
-//   needing additional migrations.
 // ============================================================
 
 // -----------------------------------------------------------
@@ -50,7 +23,6 @@ export const organizationSchema = pgTable(
   'organization',
   {
     id: text('id').primaryKey(), // Clerk org ID
-    // Billing — Stripe
     stripeCustomerId: text('stripe_customer_id'),
     stripeSubscriptionId: text('stripe_subscription_id'),
     stripeSubscriptionPriceId: text('stripe_subscription_price_id'),
@@ -58,25 +30,19 @@ export const organizationSchema = pgTable(
     stripeSubscriptionCurrentPeriodEnd: integer(
       'stripe_subscription_current_period_end',
     ),
-    // Billing — Paystack (African markets)
     paystackCustomerCode: text('paystack_customer_code'),
     paystackCustomerEmail: text('paystack_customer_email'),
     paystackSubscriptionCode: text('paystack_subscription_code'),
     paystackPlanCode: text('paystack_plan_code'),
     paystackAuthorizationCode: text('paystack_authorization_code'),
-    // Plan details
-    plan: text('plan').default('starter').notNull(), // starter, growth, pro, agency, enterprise
-    // planStatus: text('plan_status').default('trialing').notNull(), // trialing, active, past_due, cancelled
+    plan: text('plan').default('starter').notNull(),
     planStatus: text('plan_status').default('inactive').notNull(),
     postsPerMonth: integer('posts_per_month').default(20).notNull(),
     platformsLimit: integer('platforms_limit').default(3).notNull(),
     setupFeePaid: boolean('setup_fee_paid').default(false).notNull(),
     trialEndsAt: timestamp('trial_ends_at', { mode: 'date' }),
-    // Payment provider the org used to subscribe — drives billing page behaviour
-    paymentType: text('payment_type').default('stripe'), // 'stripe' | 'paystack'
-    // v5: Workspace-level configuration (timezone, content defaults, publishing prefs)
+    paymentType: text('payment_type').default('stripe'),
     settings: jsonb('settings').default({}).notNull(),
-    // Metadata
     updatedAt: timestamp('updated_at', { mode: 'date' })
       .defaultNow()
       .$onUpdate(() => new Date())
@@ -93,7 +59,7 @@ export const organizationSchema = pgTable(
 );
 
 // -----------------------------------------------------------
-// MEDIA SETS (user-curated groups of media assets, or AI-curated sets based on themes)
+// MEDIA SETS
 // -----------------------------------------------------------
 export const mediaSetSchema = pgTable('media_set', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -101,11 +67,8 @@ export const mediaSetSchema = pgTable('media_set', {
     .references(() => organizationSchema.id, { onDelete: 'cascade' })
     .notNull(),
   name: text('name').notNull(),
-  type: text('type').notNull(), // slideshow, video, curated
-  // Uploadcare file uuids, in display order. Empty/unused for curated sets,
-  // since those are theme-driven rather than user-curated.
+  type: text('type').notNull(),
   assetUuids: jsonb('asset_uuids').default([]).notNull(),
-  // Only populated for curated sets — maps to an id in curatedThemes.ts
   curatedThemeId: text('curated_theme_id'),
   updatedAt: timestamp('updated_at', { mode: 'date' })
     .defaultNow()
@@ -113,57 +76,47 @@ export const mediaSetSchema = pgTable('media_set', {
     .notNull(),
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
 });
- 
 
 // -----------------------------------------------------------
-// BRAND PROFILES (the core product — one per org)
+// BRAND PROFILES
 // -----------------------------------------------------------
 export const brandProfileSchema = pgTable('brand_profile', {
   id: uuid('id').primaryKey().defaultRandom(),
   orgId: text('org_id')
     .references(() => organizationSchema.id, { onDelete: 'cascade' })
     .notNull(),
-  // --- Business Basics ---
   brandName: text('brand_name').notNull(),
   industry: text('industry'),
   targetAudience: text('target_audience'),
   companyDescription: text('company_description'),
   websiteUrl: text('website_url'),
-  // --- Voice & Personality ---
   toneFormality: integer('tone_formality').default(5),
   toneHumor: integer('tone_humor').default(5),
   toneEnergy: integer('tone_energy').default(5),
   vocabulary: jsonb('vocabulary').default([]),
   forbiddenWords: jsonb('forbidden_words').default([]),
   communicationStyle: text('communication_style'),
-  // --- Visual Identity ---
   primaryColor: text('primary_color'),
   secondaryColor: text('secondary_color'),
   accentColor: text('accent_color'),
   fontPreference: text('font_preference'),
   imageStyle: text('image_style'),
   logoUrl: text('logo_url'),
-  // --- Content Preferences ---
   contentExamples: jsonb('content_examples').default([]),
   antiPatterns: jsonb('anti_patterns').default([]),
   hashtagStrategy: text('hashtag_strategy'),
-  // --- Platform-Specific Voice ---
   linkedinVoice: text('linkedin_voice'),
   instagramVoice: text('instagram_voice'),
   twitterVoice: text('twitter_voice'),
   facebookVoice: text('facebook_voice'),
   tiktokVoice: text('tiktok_voice'),
-  // --- Company Knowledge ---
   mission: text('mission'),
   values: jsonb('values').default([]),
   productsServices: jsonb('products_services').default([]),
   keyDifferentiators: text('key_differentiators'),
-  // --- v2: Growth Stage ---
   growthStage: text('growth_stage').default('early'),
-  // --- Status ---
   profileCompleteness: integer('profile_completeness').default(0),
   onboardingCompleted: boolean('onboarding_completed').default(false),
-  // Metadata
   updatedAt: timestamp('updated_at', { mode: 'date' })
     .defaultNow()
     .$onUpdate(() => new Date())
@@ -172,47 +125,30 @@ export const brandProfileSchema = pgTable('brand_profile', {
 });
 
 // -----------------------------------------------------------
-// SOCIAL ACCOUNTS (connected platforms)
+// SOCIAL ACCOUNTS
 // -----------------------------------------------------------
 export const socialAccountSchema = pgTable('social_account', {
   id: uuid('id').primaryKey().defaultRandom(),
   orgId: text('org_id')
     .references(() => organizationSchema.id, { onDelete: 'cascade' })
     .notNull(),
-  platform: text('platform').notNull(), // instagram, facebook, linkedin, twitter, tiktok, whatsapp, ...
+  platform: text('platform').notNull(),
   platformUserId: text('platform_user_id'),
   platformUsername: text('platform_username'),
-  accessToken: text('access_token'),       // OAuth 2.0 access token — encrypted at rest
-  refreshToken: text('refresh_token'),     // OAuth 2.0 refresh token — encrypted at rest
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token'),
   tokenExpiresAt: timestamp('token_expires_at', { mode: 'date' }),
-  accountType: text('account_type'),       // personal, page, company, business
+  accountType: text('account_type'),
   profileImageUrl: text('profile_image_url'),
   isActive: boolean('is_active').default(true).notNull(),
-  connectedAt: timestamp('connected_at', { mode: 'date' })
-    .defaultNow()
-    .notNull(),
-  // v4: OAuth 1.0a credentials for Twitter/X media uploads.
+  connectedAt: timestamp('connected_at', { mode: 'date' }).defaultNow().notNull(),
   oauthToken: text('oauth_token'),
   oauthTokenSecret: text('oauth_token_secret'),
-  // v6: Platform-specific metadata.
-  // Stores extra fields that don't belong in the flat schema.
-  // Each platform uses a different shape — all are optional/nullable.
-  //
-  // WhatsApp shape:
-  //   {
-  //     phoneNumberId: string,  // Cloud API phone number ID — REQUIRED for publishing
-  //     wabaId: string,         // WhatsApp Business Account ID
-  //   }
-  //
-  // Future platforms can add their own keys here without a migration.
-  // Access in code:
-  //   const meta = account.metadata as { phoneNumberId?: string; wabaId?: string } | null;
-  //   const phoneNumberId = meta?.phoneNumberId;
   metadata: jsonb('metadata').default(null),
 });
 
 // -----------------------------------------------------------
-// CONTENT ITEMS (generated posts)
+// CONTENT ITEMS
 // -----------------------------------------------------------
 export const contentItemSchema = pgTable('content_item', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -222,36 +158,27 @@ export const contentItemSchema = pgTable('content_item', {
   brandProfileId: uuid('brand_profile_id').references(
     () => brandProfileSchema.id,
   ),
-  // Content
   caption: text('caption').notNull(),
   hashtags: jsonb('hashtags').default([]),
-  contentType: text('content_type').notNull(), // single_image, carousel, story, text_only, reel
+  contentType: text('content_type').notNull(),
   topic: text('topic'),
-  // Graphics
   graphicUrls: jsonb('graphic_urls').default([]),
   graphicTemplateId: text('graphic_template_id'),
-  // Variants
   variantGroupId: uuid('variant_group_id'),
   variantNumber: integer('variant_number').default(1),
   isSelectedVariant: boolean('is_selected_variant').default(false),
-  // Platform targeting
   targetPlatforms: jsonb('target_platforms').default([]),
   platformSpecific: jsonb('platform_specific').default({}),
-  // Status & Workflow
-  status: text('status').default('draft').notNull(), // draft, pending_review, approved, scheduled, published, rejected
+  status: text('status').default('draft').notNull(),
   scheduledFor: timestamp('scheduled_for', { mode: 'date' }),
   publishedAt: timestamp('published_at', { mode: 'date' }),
   rejectionFeedback: text('rejection_feedback'),
-  // Quality
   antiSlopScore: real('anti_slop_score'),
   qualityFlags: jsonb('quality_flags').default([]),
-  // v2: Content Mode & Enrichment
   contentMode: text('content_mode').default('normal'),
   enrichmentData: jsonb('enrichment_data').default({}),
   enrichmentApplied: jsonb('enrichment_applied').default([]),
-  // Engagement (post-publish)
   engagementData: jsonb('engagement_data').default({}),
-  // Metadata
   updatedAt: timestamp('updated_at', { mode: 'date' })
     .defaultNow()
     .$onUpdate(() => new Date())
@@ -270,15 +197,15 @@ export const contentCalendarSchema = pgTable('content_calendar', {
   contentItemId: uuid('content_item_id').references(
     () => contentItemSchema.id,
   ),
-  scheduledDate: text('scheduled_date').notNull(), // YYYY-MM-DD
-  scheduledTime: text('scheduled_time'),           // HH:MM
+  scheduledDate: text('scheduled_date').notNull(),
+  scheduledTime: text('scheduled_time'),
   timezone: text('timezone').default('UTC'),
   isPublished: boolean('is_published').default(false),
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
 });
 
 // -----------------------------------------------------------
-// CONTENT PLAN (v3 — Monthly Plan feature)
+// CONTENT PLAN
 // -----------------------------------------------------------
 export const contentPlanSchema = pgTable(
   'content_plan',
@@ -287,7 +214,7 @@ export const contentPlanSchema = pgTable(
     orgId: text('org_id')
       .references(() => organizationSchema.id, { onDelete: 'cascade' })
       .notNull(),
-    month: text('month').notNull(), // YYYY-MM
+    month: text('month').notNull(),
     topics: jsonb('topics').default([]).notNull(),
     regenerationCount: integer('regeneration_count').default(0).notNull(),
     generatedAt: timestamp('generated_at', { mode: 'date' }).defaultNow().notNull(),
@@ -314,7 +241,7 @@ export const publishingQueueSchema = pgTable('publishing_queue', {
     .notNull(),
   platform: text('platform').notNull(),
   scheduledFor: timestamp('scheduled_for', { mode: 'date' }).notNull(),
-  status: text('status').default('queued').notNull(), // queued, publishing, published, failed
+  status: text('status').default('queued').notNull(),
   platformPostId: text('platform_post_id'),
   errorMessage: text('error_message'),
   retryCount: integer('retry_count').default(0),
@@ -331,7 +258,7 @@ export const contentFeedbackSchema = pgTable('content_feedback', {
     .references(() => contentItemSchema.id, { onDelete: 'cascade' })
     .notNull(),
   userId: text('user_id').notNull(),
-  feedbackType: text('feedback_type').notNull(), // thumbs_up, thumbs_down, edit, rejection
+  feedbackType: text('feedback_type').notNull(),
   feedbackText: text('feedback_text'),
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
 });
@@ -394,7 +321,7 @@ export const supportMessageSchema = pgTable('support_message', {
   ticketId: uuid('ticket_id')
     .references(() => supportTicketSchema.id, { onDelete: 'cascade' })
     .notNull(),
-  authorType: text('author_type').notNull(), // client, agent, ai
+  authorType: text('author_type').notNull(),
   authorUserId: text('author_user_id'),
   authorName: text('author_name').notNull(),
   authorEmail: text('author_email'),
@@ -448,7 +375,7 @@ export const knowledgeArticleSchema = pgTable('knowledge_article', {
 });
 
 // -----------------------------------------------------------
-// v5: NOTIFICATIONS
+// NOTIFICATIONS
 // -----------------------------------------------------------
 export const notificationSchema = pgTable('notification', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -456,8 +383,8 @@ export const notificationSchema = pgTable('notification', {
     .references(() => organizationSchema.id, { onDelete: 'cascade' })
     .notNull(),
   userId: text('user_id'),
-  type: text('type').notNull(),     // 'error' | 'warning' | 'info' | 'success'
-  category: text('category').notNull(), // 'publish' | 'approval' | 'billing' | 'system' | 'content'
+  type: text('type').notNull(),
+  category: text('category').notNull(),
   title: text('title').notNull(),
   body: text('body').notNull(),
   actionUrl: text('action_url'),
@@ -468,7 +395,7 @@ export const notificationSchema = pgTable('notification', {
 });
 
 // -----------------------------------------------------------
-// v5: USER SETTINGS
+// USER SETTINGS
 // -----------------------------------------------------------
 export const userSettingsSchema = pgTable(
   'user_settings',
@@ -497,3 +424,217 @@ export const userSettingsSchema = pgTable(
     ),
   }),
 );
+
+// ============================================================
+// v7 ADDITIONS
+// ============================================================
+
+// -----------------------------------------------------------
+// CONTENT TEMPLATE (Trending content library)
+// -----------------------------------------------------------
+export const contentTemplateSchema = pgTable('content_template', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sourceUrl: text('source_url').notNull(),
+  sourcePlatform: text('source_platform').notNull(),
+  sourceCreator: text('source_creator'),
+  sourceVideoId: text('source_video_id'),
+  mediaUrl: text('media_url'),
+  thumbnailUrl: text('thumbnail_url').notNull(),
+  thumbnailUrls: jsonb('thumbnail_urls').default({}),
+  durationSeconds: integer('duration_seconds'),
+  contentType: text('content_type').notNull(),
+  niches: jsonb('niches').default([]),
+  angles: jsonb('angles').default([]),
+  structure: jsonb('structure').default({}),
+  engagementScore: real('engagement_score'),
+  viewCount: integer('view_count'),
+  likeCount: integer('like_count'),
+  shareCount: integer('share_count'),
+  commentCount: integer('comment_count'),
+  curationStatus: text('curation_status').default('pending'),
+  curatedBy: text('curated_by'),
+  curatedAt: timestamp('curated_at', { mode: 'date' }),
+  remixCount: integer('remix_count').default(0),
+  publishCount: integer('publish_count').default(0),
+  avgRemixPerformance: real('avg_remix_performance'),
+  addedAt: timestamp('added_at', { mode: 'date' }).defaultNow(),
+  lastRefreshedAt: timestamp('last_refreshed_at', { mode: 'date' }),
+  isActive: boolean('is_active').default(true),
+  trainingUsed: boolean('training_used').default(false),
+  updatedAt: timestamp('updated_at', { mode: 'date' })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------
+// CAMPAIGN
+// -----------------------------------------------------------
+export const campaignSchema = pgTable('campaign', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: text('org_id')
+    .references(() => organizationSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  name: text('name').notNull(),
+  description: text('description'),
+  status: text('status').default('draft').notNull(),
+  contentMix: jsonb('content_mix').default({}),
+  remixRatio: integer('remix_ratio').default(50),
+  angles: jsonb('angles').default([]),
+  mentionFrequency: text('mention_frequency').default('sometimes'),
+  genderPreference: text('gender_preference'),
+  ownMediaMix: integer('own_media_mix').default(50),
+  influencerFrequency: integer('influencer_frequency').default(0),
+  targetAccounts: jsonb('target_accounts').default([]),
+  postsPerDay: integer('posts_per_day').default(3),
+  campaignLengthDays: integer('campaign_length_days').default(7),
+  startDate: timestamp('start_date', { mode: 'date' }),
+  totalPosts: integer('total_posts').default(0),
+  generatedPosts: integer('generated_posts').default(0),
+  reRollsRemaining: integer('re_rolls_remaining').default(4),
+  qualityThreshold: real('quality_threshold').default(0.7),
+  totalEngagement: integer('total_engagement').default(0),
+  avgEngagementRate: real('avg_engagement_rate'),
+  updatedAt: timestamp('updated_at', { mode: 'date' })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------
+// CAMPAIGN CONTENT
+// -----------------------------------------------------------
+export const campaignContentSchema = pgTable('campaign_content', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  campaignId: uuid('campaign_id')
+    .references(() => campaignSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  contentItemId: uuid('content_item_id')
+    .references(() => contentItemSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  sequenceIndex: integer('sequence_index').default(0),
+  scheduledDate: timestamp('scheduled_date', { mode: 'date' }),
+  scheduledTime: text('scheduled_time'),
+  isRolled: boolean('is_rolled').default(false),
+});
+
+// -----------------------------------------------------------
+// AI INFLUENCER
+// -----------------------------------------------------------
+export const aiInfluencerSchema = pgTable('ai_influencer', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: text('org_id')
+    .references(() => organizationSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  name: text('name').notNull(),
+  description: text('description'),
+  gender: text('gender'),
+  ageRange: text('age_range'),
+  ethnicity: text('ethnicity'),
+  hairStyle: text('hair_style'),
+  hairColor: text('hair_color'),
+  bodyType: text('body_type'),
+  fashionStyle: text('fashion_style'),
+  poseStyle: text('pose_style'),
+  backgroundPreference: text('background_preference'),
+  baseImageUrl: text('base_image_url'),
+  referenceImageUrls: jsonb('reference_image_urls').default([]),
+  loraModelId: text('lora_model_id'),
+  usageCount: integer('usage_count').default(0),
+  isActive: boolean('is_active').default(true),
+  updatedAt: timestamp('updated_at', { mode: 'date' })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------
+// CONTENT ANGLE
+// -----------------------------------------------------------
+export const contentAngleSchema = pgTable('content_angle', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: text('org_id').references(() => organizationSchema.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  description: text('description'),
+  color: text('color'),
+  isSystem: boolean('is_system').default(false),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------
+// MEDIA ASSET
+// -----------------------------------------------------------
+export const mediaAssetSchema = pgTable('media_asset', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: text('org_id')
+    .references(() => organizationSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  uploadcareUuid: text('uploadcare_uuid'),
+  url: text('url').notNull(),
+  thumbnailUrl: text('thumbnail_url'),
+  assetType: text('asset_type').notNull(),
+  mimeType: text('mime_type'),
+  fileSize: integer('file_size'),
+  width: integer('width'),
+  height: integer('height'),
+  aspectRatio: text('aspect_ratio'),
+  durationSeconds: real('duration_seconds'),
+  tags: jsonb('tags').default([]),
+  description: text('description'),
+  source: text('source').default('upload'),
+  aiMetadata: jsonb('ai_metadata').default({}),
+  usageCount: integer('usage_count').default(0),
+  updatedAt: timestamp('updated_at', { mode: 'date' })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------
+// AUTOMATION RULE
+// -----------------------------------------------------------
+export const automationRuleSchema = pgTable('automation_rule', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: text('org_id')
+    .references(() => organizationSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  name: text('name').notNull(),
+  triggerType: text('trigger_type').notNull(),
+  triggerConfig: jsonb('trigger_config').default({}),
+  actionType: text('action_type').notNull(),
+  actionConfig: jsonb('action_config').default({}),
+  isActive: boolean('is_active').default(true),
+  lastRunAt: timestamp('last_run_at', { mode: 'date' }),
+  nextRunAt: timestamp('next_run_at', { mode: 'date' }),
+  runCount: integer('run_count').default(0),
+  updatedAt: timestamp('updated_at', { mode: 'date' })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------
+// ENGINE REQUEST LOG
+// -----------------------------------------------------------
+export const engineRequestLogSchema = pgTable('engine_request_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: text('org_id').notNull(),
+  contentItemId: uuid('content_item_id'),
+  campaignId: uuid('campaign_id'),
+  requestType: text('request_type').notNull(),
+  engineUrl: text('engine_url'),
+  modelUsed: text('model_used'),
+  requestPayloadSize: integer('request_payload_size'),
+  responsePayloadSize: integer('response_payload_size'),
+  durationMs: integer('duration_ms'),
+  status: text('status'),
+  errorMessage: text('error_message'),
+  costEstimate: real('cost_estimate'),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});

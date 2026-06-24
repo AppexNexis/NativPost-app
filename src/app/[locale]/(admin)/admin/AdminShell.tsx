@@ -15,6 +15,7 @@ import {
   BarChart3,
   BookOpen,
   ChevronRight,
+  Film,
   HeadphonesIcon,
   LayoutDashboard,
   Menu,
@@ -22,6 +23,8 @@ import {
   Settings,
   ShieldCheck,
   Tag,
+  Upload,
+  // Users,
 } from 'lucide-react';
 import NextImage from 'next/image';
 import Link from 'next/link';
@@ -53,6 +56,14 @@ const NAV = [
     group: 'Analytics',
     items: [
       { label: 'Support stats', href: '/admin/support/analytics', icon: BarChart3 },
+    ],
+  },
+  {
+    group: 'Content library',
+    items: [
+      { label: 'Curation queue', href: '/admin/curation', icon: Film },
+      { label: 'Bulk import', href: '/admin/import', icon: Upload },
+      { label: 'Curation stats', href: '/admin/stats', icon: BarChart3 },
     ],
   },
   {

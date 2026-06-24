@@ -36,6 +36,8 @@ import { NotificationBell } from '@/components/notifications/NotificationBell';
 import SupportWidget from '@/components/support/SupportWidget';
 import { getNavForRole, getUserRole, isTeamMember } from '@/lib/roles';
 import type { NavItem } from '@/lib/roles';
+import { BillingGate } from '@/features/dashboard/BillingGate';
+import { useOrgSync } from '@/hooks/useOrgSync';
 
 const ICONS: Record<string, typeof Calendar> = {
   BarChart3,
@@ -70,8 +72,8 @@ export default function DashboardClientLayout({
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentPlan, setCurrentPlan] = useState<string>(plan || 'starter');
+  const [billingStatus, setBillingStatus] = useState<{ planStatus: string; setupFeePaid: boolean } | null>(null);
 
-  const [billing, setBilling] = useState<any>(null);
 
   const role = getUserRole(orgRole);
   const navGroups = getNavForRole(role);
@@ -81,41 +83,30 @@ export default function DashboardClientLayout({
   const teamOrgId = process.env.NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID;
   const isNativPostStaff = !!(teamOrgId && orgId === teamOrgId && role === 'admin');
 
+  useOrgSync();
+
   // Fetch current plan if not passed from server (fallback)
+  // useEffect(() => {
+  //   if (plan) return;
+  //   fetch('/api/billing/status')
+  //     .then(r => r.ok ? r.json() : null)
+  //     .then((data: { plan?: string } | null) => {
+  //       if (data?.plan) setCurrentPlan(data.plan);
+  //     })
+  //     .catch(() => null);
+  // }, [plan]);
+
   useEffect(() => {
     if (plan) return;
     fetch('/api/billing/status')
       .then(r => r.ok ? r.json() : null)
-      .then((data: { plan?: string } | null) => {
+      .then((data: { plan?: string; planStatus?: string; setupFeePaid?: boolean } | null) => {
         if (data?.plan) setCurrentPlan(data.plan);
+        if (data) setBillingStatus({ planStatus: data.planStatus ?? '', setupFeePaid: data.setupFeePaid ?? false });
       })
       .catch(() => null);
   }, [plan]);
 
-  useEffect(() => {
-    fetch('/api/billing/status')
-      .then(r => (r.ok ? r.json() : null))
-      .then(setBilling)
-      .catch(() => null);
-  }, []);
-
-
-
-  useEffect(() => {
-    if (!billing) return;
-
-    const canAccess =
-      billing.isActive ||
-      (billing.isTrialing && !billing.trialExpired);
-
-    const isExempt =
-      pathname.startsWith('/dashboard/billing') ||
-      pathname.startsWith('/dashboard/settings');
-
-    if (!canAccess && !isExempt) {
-      window.location.replace('/subscribe?redirect=/dashboard');
-    }
-  }, [billing, pathname]);
   // Fix: use a proper RegExp literal — avoids the TS7053 index-type error
   // that occurred when the regex was written as a string escape sequence.
   const cleanPath = pathname.replace(/^\/[a-z]{2}(\/|$)/, '/');
@@ -242,6 +233,18 @@ export default function DashboardClientLayout({
               },
             }}
           />
+          {/* <OrganizationSwitcher
+            hidePersonal
+            afterSelectOrganizationUrl={pathname}
+            afterCreateOrganizationUrl={pathname}
+            appearance={{
+              elements: {
+                rootBox: 'w-full',
+                organizationSwitcherTrigger:
+                  'w-full justify-between rounded-lg border px-3 py-2 text-sm hover:bg-muted',
+              },
+            }}
+          /> */}
         </div>
 
         {/* Create post button — team only */}
@@ -334,7 +337,7 @@ export default function DashboardClientLayout({
             />
           </div>
         </header>
-
+        <BillingGate billing={billingStatus} />
         {/* Page content — only this area scrolls */}
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 lg:p-6">
           {children}

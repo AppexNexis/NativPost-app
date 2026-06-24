@@ -15,12 +15,16 @@ import {
   RefreshCw,
   Sparkles,
   Video,
+  Wand2,
+  // X,
 } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 import { PLATFORMS } from '@/components/icons/PlatformIcons';
+import type { ContentTemplate } from '@/types/v2';
 
 // -----------------------------------------------------------
 // TYPES
@@ -53,7 +57,6 @@ type Enrichment = {
   custom_mentions: string[];
 };
 
-// Generation progress state
 type GenerationProgress = {
   completed: number;
   total: number;
@@ -88,7 +91,6 @@ const EMPTY_ENRICHMENT: Enrichment = {
   custom_mentions: [],
 };
 
-// Progress messages shown at different % thresholds — makes the wait feel active
 const PROGRESS_MESSAGES = [
   { at: 0, message: 'Reading your Brand Profile...' },
   { at: 10, message: 'Crafting your first variant...' },
@@ -99,33 +101,43 @@ const PROGRESS_MESSAGES = [
   { at: 95, message: 'Almost there...' },
 ];
 
+const TEMPLATE_TYPE_MAP: Record<string, string> = {
+  slideshow: 'reel',
+  wall_of_text: 'text_only',
+  talking_head: 'ugc_ad',
+  green_screen_meme: 'single_image',
+  video_hook_demo: 'reel',
+  carousel: 'carousel',
+  ugc: 'ugc_ad',
+  custom: 'reel',
+};
+
 // -----------------------------------------------------------
 // HELPERS
 // -----------------------------------------------------------
 function scoreLabel(score: number): { text: string; color: string } {
-  if (score >= 0.9) {
-    return { text: 'Excellent', color: 'bg-emerald-50 text-emerald-700' };
-  }
-  if (score >= 0.8) {
-    return { text: 'Great', color: 'bg-green-50 text-green-700' };
-  }
-  if (score >= 0.7) {
-    return { text: 'Good', color: 'bg-yellow-50 text-yellow-700' };
-  }
-  if (score >= 0.5) {
-    return { text: 'Needs work', color: 'bg-orange-50 text-orange-700' };
-  }
+  if (score >= 0.9) return { text: 'Excellent', color: 'bg-emerald-50 text-emerald-700' };
+  if (score >= 0.8) return { text: 'Great', color: 'bg-green-50 text-green-700' };
+  if (score >= 0.7) return { text: 'Good', color: 'bg-yellow-50 text-yellow-700' };
+  if (score >= 0.5) return { text: 'Needs work', color: 'bg-orange-50 text-orange-700' };
   return { text: 'Poor', color: 'bg-red-50 text-red-700' };
 }
 
 function getProgressMessage(percent: number): string {
   let msg = PROGRESS_MESSAGES[0]!.message;
   for (const entry of PROGRESS_MESSAGES) {
-    if (percent >= entry.at) {
-      msg = entry.message;
-    }
+    if (percent >= entry.at) msg = entry.message;
   }
   return msg;
+}
+
+function platformFromTemplateSource(sourcePlatform: string): string {
+  switch (sourcePlatform) {
+    case 'tiktok': return 'tiktok';
+    case 'instagram': return 'instagram';
+    case 'youtube': return 'youtube';
+    default: return 'instagram';
+  }
 }
 
 // -----------------------------------------------------------
@@ -135,15 +147,15 @@ export default function ContentCreatePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const scheduledDate = searchParams.get('scheduledDate') || '';
+  const templateId = searchParams.get('templateId') || '';
+  const isRemix = !!templateId;
 
-  // Monthly Plan prefill — passed from the calendar day panel's "Create this post" CTA.
-  // When both are present we skip step 1 (type picker) and land directly on configure.
   const prefillTopic = searchParams.get('topic') || '';
   const prefillContentType = searchParams.get('contentType') || '';
   const fromMonthlyPlan = !!(prefillTopic && prefillContentType);
 
   const [step, setStep] = useState<'type' | 'configure' | 'review'>(
-    fromMonthlyPlan ? 'configure' : 'type',
+    fromMonthlyPlan || isRemix ? 'configure' : 'type',
   );
   const [contentType, setContentType] = useState(prefillContentType);
   const [topic, setTopic] = useState(prefillTopic);
@@ -151,6 +163,7 @@ export default function ContentCreatePage() {
   const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState<GenerationProgress>({ completed: 0, total: 3, percent: 0 });
+  const [displayPercent, setDisplayPercent] = useState(0);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -161,11 +174,15 @@ export default function ContentCreatePage() {
   const [refLinkInput, setRefLinkInput] = useState('');
   const [mentionInput, setMentionInput] = useState('');
 
-  // Track animated progress value separately for smooth CSS transitions
-  const [displayPercent, setDisplayPercent] = useState(0);
+  // Template state
+  const [template, setTemplate] = useState<ContentTemplate | null>(null);
+  const [_isLoadingTemplate, setIsLoadingTemplate] = useState(false);
+  const [remixLoading, setRemixLoading] = useState(false);
+
   const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
 
+  // Load connected accounts
   useEffect(() => {
     async function load() {
       try {
@@ -181,17 +198,59 @@ export default function ContentCreatePage() {
     load();
   }, []);
 
-  // Cleanup stream on unmount
+  // Load template if templateId is present
+  useEffect(() => {
+    if (!templateId) return;
+    async function loadTemplate() {
+      setIsLoadingTemplate(true);
+      try {
+        const res = await fetch(`/api/templates/${templateId}`);
+        if (res.ok) {
+          const data = await res.json();
+          const t = data.item as ContentTemplate;
+          setTemplate(t);
+
+          // Pre-fill form
+          const structure = t.structure || {};
+          const derivedTopic = [structure.hook?.text, structure.body?.text, structure.cta?.text]
+            .filter(Boolean)
+            .join(' — ') || t.sourceCreator || '';
+          setTopic(derivedTopic);
+
+          const mappedType = TEMPLATE_TYPE_MAP[t.contentType] || 'reel';
+          setContentType(mappedType);
+
+          const defaultPlatform = platformFromTemplateSource(t.sourcePlatform);
+          setSelectedPlatforms([defaultPlatform]);
+
+          // Pre-fill enrichment from template structure
+          if (structure.cta?.text) {
+            setEnrichment(prev => ({ ...prev, cta_label: structure.cta!.text }));
+          }
+          if (t.sourceUrl) {
+            setEnrichment(prev => ({ ...prev, reference_links: [t.sourceUrl] }));
+          }
+        } else {
+          console.error('Failed to load template');
+        }
+      } catch (err) {
+        console.error('Failed to load template:', err);
+      } finally {
+        setIsLoadingTemplate(false);
+      }
+    }
+    loadTemplate();
+  }, [templateId]);
+
+  // Cleanup
   useEffect(() => {
     return () => {
       streamAbortRef.current?.abort();
-      if (progressTimerRef.current) {
-        clearTimeout(progressTimerRef.current);
-      }
+      if (progressTimerRef.current) clearTimeout(progressTimerRef.current);
     };
   }, []);
 
-  // Smooth progress animation — never goes backwards, always catches up to real value
+  // Smooth progress
   useEffect(() => {
     if (displayPercent < progress.percent) {
       progressTimerRef.current = setTimeout(() => {
@@ -228,9 +287,7 @@ export default function ContentCreatePage() {
 
   const addMention = () => {
     let handle = mentionInput.trim();
-    if (handle && !handle.startsWith('@')) {
-      handle = `@${handle}`;
-    }
+    if (handle && !handle.startsWith('@')) handle = `@${handle}`;
     if (handle && !enrichment.custom_mentions.includes(handle)) {
       setEnrichment(prev => ({ ...prev, custom_mentions: [...prev.custom_mentions, handle] }));
       setMentionInput('');
@@ -242,7 +299,7 @@ export default function ContentCreatePage() {
   };
 
   // -----------------------------------------------------------
-  // Generate — SSE streaming with live progress + progressive variant rendering
+  // Generate
   // -----------------------------------------------------------
   const handleGenerate = async () => {
     if (selectedPlatforms.length === 0) {
@@ -250,7 +307,62 @@ export default function ContentCreatePage() {
       return;
     }
 
-    // Abort any existing stream
+    if (isRemix && templateId) {
+      // Use the remix endpoint
+      setRemixLoading(true);
+      setError(null);
+      setVariants([]);
+      setSelectedVariant(null);
+      setProgress({ completed: 0, total: 3, percent: 10 });
+      setDisplayPercent(0);
+
+      try {
+        const res = await fetch(`/api/templates/${templateId}/remix`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contentType,
+            targetPlatforms: selectedPlatforms,
+            contentMode,
+            aspectRatio: '9:16',
+            numVariants: 3,
+            enrichment: hasEnrichment() ? enrichment : undefined,
+            mediaOptions: { photoTier: 'unsplash' },
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error || 'Remix failed. Please try again.');
+          setRemixLoading(false);
+          return;
+        }
+
+        setProgress({ completed: data.variants?.length || 0, total: 3, percent: 100 });
+        setDisplayPercent(100);
+
+        const mappedVariants: Variant[] = (data.variants || []).map((v: any) => ({
+          id: v.id as string,
+          caption: v.caption as string,
+          hashtags: (v.hashtags as string[]) || [],
+          antiSlopScore: v.antiSlopScore as number | null,
+          qualityFlags: (v.qualityFlags as string[]) || [],
+          variantNumber: v.variantNumber as number,
+          platformSpecific: (v.platformSpecific as Record<string, string>) || {},
+          enrichmentApplied: (v.enrichmentApplied as string[]) || [],
+        }));
+
+        setVariants(mappedVariants);
+        setStep('review');
+      } catch (err: any) {
+        setError('Network error. Please check your connection.');
+      } finally {
+        setRemixLoading(false);
+      }
+      return;
+    }
+
+    // Standard SSE generation flow
     streamAbortRef.current?.abort();
     streamAbortRef.current = new AbortController();
 
@@ -262,7 +374,6 @@ export default function ContentCreatePage() {
     setDisplayPercent(0);
 
     const numVariants = 3;
-
     const payload: Record<string, unknown> = {
       topic: topic || undefined,
       contentType,
@@ -270,14 +381,10 @@ export default function ContentCreatePage() {
       numVariants,
       contentMode,
     };
-    if (hasEnrichment()) {
-      payload.enrichment = enrichment;
-    }
+    if (hasEnrichment()) payload.enrichment = enrichment;
 
     try {
-      // Use the SSE streaming GET endpoint — pass payload as a URL param
       const streamUrl = `/api/content/generate?body=${encodeURIComponent(JSON.stringify(payload))}`;
-
       const res = await fetch(streamUrl, {
         signal: streamAbortRef.current.signal,
         headers: { Accept: 'text/event-stream' },
@@ -297,24 +404,16 @@ export default function ContentCreatePage() {
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
+        if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n\n');
         buffer = lines.pop() ?? '';
 
         for (const line of lines) {
-          if (!line.startsWith('data: ')) {
-            continue;
-          }
+          if (!line.startsWith('data: ')) continue;
           let event: any;
-          try {
-            event = JSON.parse(line.slice(6));
-          } catch {
-            continue;
-          }
+          try { event = JSON.parse(line.slice(6)); } catch { continue; }
 
           if (event.type === 'progress') {
             setProgress({
@@ -323,7 +422,6 @@ export default function ContentCreatePage() {
               percent: event.percent ?? 0,
             });
           } else if (event.type === 'variant') {
-            // Map DB row → Variant shape the UI expects
             const v = event.variant;
             const mapped: Variant = {
               id: v.id as string,
@@ -336,12 +434,8 @@ export default function ContentCreatePage() {
               enrichmentApplied: (v.enrichmentApplied as string[]) || [],
             };
             receivedVariants = [...receivedVariants, mapped];
-            // Render variant immediately — don't wait for all 3
             setVariants([...receivedVariants]);
-            // Switch to review step as soon as the first variant arrives
-            if (receivedVariants.length === 1) {
-              setStep('review');
-            }
+            if (receivedVariants.length === 1) setStep('review');
           } else if (event.type === 'done') {
             setProgress({ completed: event.total ?? numVariants, total: numVariants, percent: 100 });
             setDisplayPercent(100);
@@ -353,24 +447,16 @@ export default function ContentCreatePage() {
         }
       }
 
-      // Stream ended without a done event — mark complete if we got something
-      if (receivedVariants.length > 0) {
-        setIsGenerating(false);
-      }
+      if (receivedVariants.length > 0) setIsGenerating(false);
     } catch (err: any) {
-      if (err?.name === 'AbortError') {
-        // User navigated away — not an error
-        return;
-      }
+      if (err?.name === 'AbortError') return;
       setError('Network error. Please check your connection.');
       setIsGenerating(false);
     }
   };
 
   const handleApprove = async () => {
-    if (!selectedVariant) {
-      return;
-    }
+    if (!selectedVariant) return;
     setIsApproving(true);
     try {
       await fetch(`/api/content/${selectedVariant}`, {
@@ -393,18 +479,20 @@ export default function ContentCreatePage() {
   // RENDER
   // -----------------------------------------------------------
   return (
-    <>
+    <div className="mx-auto max-w-7xl px-4 py-6">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Create a new post</h1>
+          <h1 className="text-xl font-semibold tracking-tight">
+            {isRemix ? 'Remix template' : 'Create a new post'}
+          </h1>
           {step !== 'type' && (
             <p className="mt-0.5 text-sm text-muted-foreground">
               {step === 'configure' ? 'Configure your post details' : 'Review generated variants'}
             </p>
           )}
         </div>
-        {step !== 'type' && !isGenerating && (
+        {step !== 'type' && !isGenerating && !remixLoading && (
           <button
             type="button"
             onClick={() => setStep(step === 'review' ? 'configure' : 'type')}
@@ -415,6 +503,20 @@ export default function ContentCreatePage() {
           </button>
         )}
       </div>
+
+      {/* Template badge */}
+      {isRemix && template && (
+        <div className="mb-4 flex items-center gap-3 rounded-lg border border-purple-200 bg-purple-50 px-4 py-3">
+          <Wand2 className="size-4 shrink-0 text-purple-600" />
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-purple-700">Template:</span>
+            <span className="text-sm text-purple-800">{template.sourceCreator || 'Trending content'}</span>
+            <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700 capitalize">
+              {template.contentType.replace(/_/g, ' ')}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Monthly Plan context banner */}
       {fromMonthlyPlan && step !== 'review' && (
@@ -433,594 +535,463 @@ export default function ContentCreatePage() {
         <div className="mb-5 flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
           <div className="size-1.5 shrink-0 rounded-full bg-violet-500" />
           <p className="text-sm text-muted-foreground">
-            This post will be scheduled for
-            {' '}
+            This post will be scheduled for{' '}
             <span className="font-medium text-foreground">
               {new Date(`${scheduledDate}T12:00:00`).toLocaleDateString('en-US', {
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric',
-                year: 'numeric',
+                weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
               })}
-            </span>
-            .
+            </span>.
           </p>
         </div>
       )}
 
-      {/* ── STEP 1: Choose content type ────────────────────── */}
-      {step === 'type' && (
-        <>
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-            {CONTENT_TYPES.map((type) => {
-              const Icon = type.icon;
-              // const supported = type.id === 'text_only'
-              //   ? ['facebook', 'twitter', 'linkedin']
-              //   : type.id === 'reel'
-              //     ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube']
-              //     : type.id === 'ugc_ad'
-              //       ? ['instagram', 'tiktok']
-              //       : type.id === 'data_story'
-              //         ? ['linkedin', 'instagram', 'youtube']
-              //         : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok'];
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Main content */}
+        <div className="lg:col-span-2">
+          {/* ── STEP 1: Choose content type ────────────────────── */}
+          {step === 'type' && (
+            <>
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
+                {CONTENT_TYPES.map((type) => {
+                  const Icon = type.icon;
+                  const supported = type.id === 'text_only'
+                    ? ['facebook', 'twitter', 'linkedin', 'whatsapp']
+                    : type.id === 'reel'
+                      ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube', 'snapchat', 'whatsapp']
+                      : type.id === 'ugc_ad'
+                        ? ['instagram', 'tiktok', 'whatsapp']
+                        : type.id === 'data_story'
+                          ? ['linkedin', 'instagram', 'youtube', 'whatsapp']
+                          : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'snapchat', 'whatsapp'];
 
-              // const supported = type.id === 'text_only'
-              //   ? ['facebook', 'twitter', 'linkedin']
-              //   : type.id === 'reel'
-              //     ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube', 'snapchat']
-              //     : type.id === 'ugc_ad'
-              //       ? ['instagram', 'tiktok']
-              //       : type.id === 'data_story'
-              //         ? ['linkedin', 'instagram', 'youtube']
-              //         : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'snapchat']; // single_image + carousel
+                  return (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => { setContentType(type.id); setStep('configure'); }}
+                      className="group flex flex-col items-center rounded-xl border-2 border-dashed border-border/60 bg-card p-5 text-center transition-all hover:border-primary/40 hover:bg-primary/5 sm:p-8"
+                    >
+                      <Icon className="mb-3 size-8 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground sm:mb-4 sm:size-10" strokeWidth={1.2} />
+                      <h3 className="text-sm font-semibold">{type.label}</h3>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{type.description}</p>
+                      <div className="mt-3 flex items-center gap-1 sm:mt-4 sm:gap-1.5">
+                        {supported.map((p) => {
+                          const platform = PLATFORMS.find(pl => pl.id === p);
+                          if (!platform) return null;
+                          const PIcon = platform.icon;
+                          return <PIcon key={p} className="size-3.5 text-muted-foreground/40 sm:size-4" />;
+                        })}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
 
-              const supported = type.id === 'text_only'
-                ? ['facebook', 'twitter', 'linkedin', 'whatsapp']
-                : type.id === 'reel'
-                  ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube', 'snapchat', 'whatsapp']
-                  : type.id === 'ugc_ad'
-                    ? ['instagram', 'tiktok', 'whatsapp']
-                    : type.id === 'data_story'
-                      ? ['linkedin', 'instagram', 'youtube', 'whatsapp']
-                      : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'snapchat', 'whatsapp'];
-
-              return (
-                <button
-                  key={type.id}
-                  type="button"
-                  onClick={() => {
-                    setContentType(type.id); setStep('configure');
-                  }}
-                  className="group flex flex-col items-center rounded-xl border-2 border-dashed border-border/60 bg-card p-5 text-center transition-all hover:border-primary/40 hover:bg-primary/5 sm:p-8"
-                >
-                  <Icon
-                    className="mb-3 size-8 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground sm:mb-4 sm:size-10"
-                    strokeWidth={1.2}
-                  />
-                  <h3 className="text-sm font-semibold">{type.label}</h3>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{type.description}</p>
-                  <div className="mt-3 flex items-center gap-1 sm:mt-4 sm:gap-1.5">
-                    {supported.map((p) => {
-                      const platform = PLATFORMS.find(pl => pl.id === p);
-                      if (!platform) {
-                        return null;
-                      }
-                      const PIcon = platform.icon;
-                      return <PIcon key={p} className="size-3.5 text-muted-foreground/40 sm:size-4" />;
-                    })}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {connectedAccounts.length === 0 && (
-            <div className="mt-6 flex flex-col gap-3 rounded-xl bg-muted/50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-muted-foreground">
-                Connect your social media accounts to publish content.
-              </p>
-              <Link
-                href="/dashboard/connections"
-                className="self-start rounded-lg bg-primary px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-primary/90 sm:self-auto"
-              >
-                Connect accounts
-              </Link>
-            </div>
+              {connectedAccounts.length === 0 && (
+                <div className="mt-6 flex flex-col gap-3 rounded-xl bg-muted/50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-muted-foreground">Connect your social media accounts to publish content.</p>
+                  <Link href="/dashboard/connections" className="self-start rounded-lg bg-primary px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-primary/90 sm:self-auto">
+                    Connect accounts
+                  </Link>
+                </div>
+              )}
+            </>
           )}
-        </>
-      )}
 
-      {/* ── STEP 2: Configure ──────────────────────────────── */}
-      {step === 'configure' && (
-        <div className="mx-auto max-w-2xl space-y-6">
-          {/* Current type indicator */}
-          <div className="flex items-center gap-2">
-            <span className="rounded-lg bg-muted px-3 py-1.5 text-xs font-medium">
-              {CONTENT_TYPES.find(t => t.id === contentType)?.label}
-            </span>
-            {/* Only show Change if not locked to a plan-prefilled type */}
-            {!fromMonthlyPlan && (
-              <button
-                type="button"
-                onClick={() => setStep('type')}
-                className="text-xs text-muted-foreground underline hover:text-foreground"
-              >
-                Change
-              </button>
-            )}
-          </div>
-
-          {/* Content mode */}
-          <div>
-            <label className="mb-2 block text-sm font-medium">Content mode</label>
-            <div className="flex rounded-lg border p-1">
-              {CONTENT_MODES.map(mode => (
-                <button
-                  key={mode.id}
-                  type="button"
-                  onClick={() => setContentMode(mode.id)}
-                  className={`flex-1 rounded-md px-3 py-2 text-left transition-colors ${contentMode === mode.id
-                    ? 'bg-foreground text-background'
-                    : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                >
-                  <span className="block text-xs font-semibold">{mode.label}</span>
-                  <span className={`mt-0.5 block text-[10px] leading-tight ${contentMode === mode.id ? 'opacity-70' : 'opacity-60'
-                    }`}
-                  >
-                    {mode.description}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Topic */}
-          <div>
-            <label className="mb-1.5 block text-sm font-medium">
-              Topic
-              <span className="ml-1 font-normal text-muted-foreground">(optional)</span>
-            </label>
-            <textarea
-              value={topic}
-              onChange={e => setTopic(e.target.value)}
-              placeholder="e.g. New product launch, Behind the scenes, Industry tip, Customer spotlight..."
-              rows={3}
-              className="w-full resize-none rounded-lg border bg-background px-3.5 py-2.5 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Leave blank and NativPost will choose a topic based on your Brand Profile.
-            </p>
-          </div>
-
-          {/* Platform selection */}
-          <div>
-            <label className="mb-2 block text-sm font-medium">Target platforms</label>
-            <div className="space-y-1.5">
-              {PLATFORMS.map((platform) => {
-                const PIcon = platform.icon;
-                const isConnected = connectedPlatformIds.includes(platform.id);
-                const isSelected = selectedPlatforms.includes(platform.id);
-
-                return (
-                  <button
-                    key={platform.id}
-                    type="button"
-                    onClick={() => togglePlatform(platform.id)}
-                    disabled={!isConnected}
-                    className={`flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left text-sm transition-all disabled:cursor-not-allowed disabled:opacity-40 ${isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted'
-                      }`}
-                  >
-                    <PIcon className={`size-4 shrink-0 sm:size-5 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
-                    <span className={`flex-1 ${isSelected ? 'font-medium' : ''}`}>{platform.name}</span>
-                    {!isConnected && (
-                      <span className="text-xs text-muted-foreground">Not connected</span>
-                    )}
-                    {isConnected && isSelected && (
-                      <Check className="size-4 shrink-0 text-primary" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            {connectedPlatformIds.length === 0 && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                No accounts connected.
-                {' '}
-                <Link href="/dashboard/connections" className="text-primary underline">
-                  Connect platforms
-                </Link>
-                {' '}
-                to select them here.
-              </p>
-            )}
-          </div>
-
-          {/* Post enrichment */}
-          <div className="overflow-hidden rounded-xl border bg-card">
-            <button
-              type="button"
-              onClick={() => setShowEnrichment(p => !p)}
-              className="flex w-full items-center justify-between px-4 py-3.5 text-left"
-            >
+          {/* ── STEP 2: Configure ──────────────────────────────── */}
+          {step === 'configure' && (
+            <div className="mx-auto max-w-2xl space-y-6">
+              {/* Current type indicator */}
               <div className="flex items-center gap-2">
-                <Link2 className="size-4 text-muted-foreground" />
-                <span className="text-sm font-medium">Post enrichment</span>
-                {hasEnrichment() && (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                    Active
-                  </span>
+                <span className="rounded-lg bg-muted px-3 py-1.5 text-xs font-medium">
+                  {CONTENT_TYPES.find(t => t.id === contentType)?.label}
+                </span>
+                {!fromMonthlyPlan && !isRemix && (
+                  <button type="button" onClick={() => setStep('type')} className="text-xs text-muted-foreground underline hover:text-foreground">
+                    Change
+                  </button>
+                )}
+                {isRemix && (
+                  <span className="text-xs text-muted-foreground">Locked to template type</span>
                 )}
               </div>
-              {showEnrichment
-                ? <ChevronUp className="size-4 text-muted-foreground" />
-                : <ChevronDown className="size-4 text-muted-foreground" />}
-            </button>
 
-            {showEnrichment && (
-              <div className="space-y-4 border-t p-4">
-                <p className="text-xs text-muted-foreground">
-                  Add links, promo codes, contact info, and other elements to weave into your post.
-                </p>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground">CTA URL</label>
-                    <input
-                      type="url"
-                      value={enrichment.cta_url}
-                      onChange={e => setEnrichment(prev => ({ ...prev, cta_url: e.target.value }))}
-                      placeholder="https://example.com/sale"
-                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground">CTA label</label>
-                    <input
-                      type="text"
-                      value={enrichment.cta_label}
-                      onChange={e => setEnrichment(prev => ({ ...prev, cta_label: e.target.value }))}
-                      placeholder="Shop the collection"
-                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Promo code</label>
-                  <input
-                    type="text"
-                    value={enrichment.promo_code}
-                    onChange={e => setEnrichment(prev => ({ ...prev, promo_code: e.target.value }))}
-                    placeholder="SAVE20"
-                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Contact info</label>
-                  <input
-                    type="text"
-                    value={enrichment.contact_info}
-                    onChange={e => setEnrichment(prev => ({ ...prev, contact_info: e.target.value }))}
-                    placeholder="email@company.com or booking link"
-                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Event details</label>
-                  <input
-                    type="text"
-                    value={enrichment.event_details}
-                    onChange={e => setEnrichment(prev => ({ ...prev, event_details: e.target.value }))}
-                    placeholder="March 15, 2026 at 7pm — Eko Hotel, Lagos"
-                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Reference links</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="url"
-                      value={refLinkInput}
-                      onChange={e => setRefLinkInput(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addRefLink())}
-                      placeholder="https://..."
-                      className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    />
-                    <button type="button" onClick={addRefLink} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">
-                      Add
-                    </button>
-                  </div>
-                  {enrichment.reference_links.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {enrichment.reference_links.map(link => (
-                        <span key={link} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-[11px]">
-                          {link.length > 35 ? `${link.slice(0, 35)}...` : link}
-                          <button type="button" onClick={() => removeRefLink(link)} className="ml-0.5 opacity-50 hover:opacity-100">×</button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Mentions</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={mentionInput}
-                      onChange={e => setMentionInput(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addMention())}
-                      placeholder="@handle"
-                      className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    />
-                    <button type="button" onClick={addMention} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">
-                      Add
-                    </button>
-                  </div>
-                  {enrichment.custom_mentions.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {enrichment.custom_mentions.map(handle => (
-                        <span key={handle} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-[11px]">
-                          {handle}
-                          <button type="button" onClick={() => removeMention(handle)} className="ml-0.5 opacity-50 hover:opacity-100">×</button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-
-          {/* Generate button */}
-          <button
-            type="button"
-            onClick={handleGenerate}
-            disabled={isGenerating || selectedPlatforms.length === 0}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-          >
-            <Sparkles className="size-4" />
-            Generate content
-          </button>
-        </div>
-      )}
-
-      {/* ── GENERATING STATE — progress UI shown over review step ── */}
-      {isGenerating && (
-        <div className="mx-auto mt-4 max-w-2xl">
-          <div className="rounded-xl border bg-card p-6">
-            {/* Percentage counter */}
-            <div className="mb-4 flex items-end justify-between">
-              <p className="text-sm font-medium text-foreground">
-                {getProgressMessage(displayPercent)}
-              </p>
-              <span className="text-2xl font-bold tabular-nums text-primary">
-                {displayPercent}
-                <span className="text-base font-medium">%</span>
-              </span>
-            </div>
-
-            {/* Progress bar */}
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
-                style={{ width: `${displayPercent}%` }}
-              />
-            </div>
-
-            {/* Variant counter */}
-            <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-              <span>
-                {progress.completed > 0
-                  ? `${progress.completed} of ${progress.total} variants ready`
-                  : 'Generating variants...'}
-              </span>
-              {variants.length > 0 && (
-                <span className="text-primary">
-                  {variants.length > 1 ? `${variants.length} variants below` : '1 variant below — more coming'}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── STEP 3: Review variants ─────────────────────────── */}
-      {step === 'review' && (
-        <div className="mx-auto max-w-3xl space-y-4">
-          {/* Only show the header row when generation is done */}
-          {!isGenerating && (
-            <div className="flex items-center justify-between gap-3">
+              {/* Content mode */}
               <div>
-                <h2 className="text-sm font-semibold">
-                  {variants.length}
-                  {' '}
-                  variant
-                  {variants.length !== 1 ? 's' : ''}
-                  {' '}
-                  generated
-                  {contentMode !== 'normal' && (
-                    <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                      {contentMode}
-                      {' '}
-                      mode
-                    </span>
-                  )}
-                </h2>
-                <p className="text-xs text-muted-foreground">Select the best one, then approve.</p>
+                <label className="mb-2 block text-sm font-medium">Content mode</label>
+                <div className="flex rounded-lg border p-1">
+                  {CONTENT_MODES.map(mode => (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      onClick={() => setContentMode(mode.id)}
+                      className={`flex-1 rounded-md px-3 py-2 text-left transition-colors ${contentMode === mode.id ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'}`}
+                    >
+                      <span className="block text-xs font-semibold">{mode.label}</span>
+                      <span className={`mt-0.5 block text-[10px] leading-tight ${contentMode === mode.id ? 'opacity-70' : 'opacity-60'}`}>
+                        {mode.description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {/* Topic */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">
+                  Topic
+                  <span className="ml-1 font-normal text-muted-foreground">(optional)</span>
+                </label>
+                <textarea
+                  value={topic}
+                  onChange={e => setTopic(e.target.value)}
+                  placeholder="e.g. New product launch, Behind the scenes, Industry tip, Customer spotlight..."
+                  rows={3}
+                  className="w-full resize-none rounded-lg border bg-background px-3.5 py-2.5 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Leave blank and NativPost will choose a topic based on your Brand Profile.
+                </p>
+              </div>
+
+              {/* Platform selection */}
+              <div>
+                <label className="mb-2 block text-sm font-medium">Target platforms</label>
+                <div className="space-y-1.5">
+                  {PLATFORMS.map((platform) => {
+                    const PIcon = platform.icon;
+                    const isConnected = connectedPlatformIds.includes(platform.id);
+                    const isSelected = selectedPlatforms.includes(platform.id);
+                    return (
+                      <button
+                        key={platform.id}
+                        type="button"
+                        onClick={() => togglePlatform(platform.id)}
+                        disabled={!isConnected}
+                        className={`flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left text-sm transition-all disabled:cursor-not-allowed disabled:opacity-40 ${isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
+                      >
+                        <PIcon className={`size-4 shrink-0 sm:size-5 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                        <span className={`flex-1 ${isSelected ? 'font-medium' : ''}`}>{platform.name}</span>
+                        {!isConnected && <span className="text-xs text-muted-foreground">Not connected</span>}
+                        {isConnected && isSelected && <Check className="size-4 shrink-0 text-primary" />}
+                      </button>
+                    );
+                  })}
+                </div>
+                {connectedPlatformIds.length === 0 && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    No accounts connected.{' '}
+                    <Link href="/dashboard/connections" className="text-primary underline">Connect platforms</Link>{' '}to select them here.
+                  </p>
+                )}
+              </div>
+
+              {/* Post enrichment */}
+              <div className="overflow-hidden rounded-xl border bg-card">
+                <button
+                  type="button"
+                  onClick={() => setShowEnrichment(p => !p)}
+                  className="flex w-full items-center justify-between px-4 py-3.5 text-left"
+                >
+                  <div className="flex items-center gap-2">
+                    <Link2 className="size-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Post enrichment</span>
+                    {hasEnrichment() && (
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Active</span>
+                    )}
+                  </div>
+                  {showEnrichment ? <ChevronUp className="size-4 text-muted-foreground" /> : <ChevronDown className="size-4 text-muted-foreground" />}
+                </button>
+
+                {showEnrichment && (
+                  <div className="space-y-4 border-t p-4">
+                    <p className="text-xs text-muted-foreground">Add links, promo codes, contact info, and other elements to weave into your post.</p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">CTA URL</label>
+                        <input type="url" value={enrichment.cta_url} onChange={e => setEnrichment(prev => ({ ...prev, cta_url: e.target.value }))} placeholder="https://example.com/sale" className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">CTA label</label>
+                        <input type="text" value={enrichment.cta_label} onChange={e => setEnrichment(prev => ({ ...prev, cta_label: e.target.value }))} placeholder="Shop the collection" className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted-foreground">Promo code</label>
+                      <input type="text" value={enrichment.promo_code} onChange={e => setEnrichment(prev => ({ ...prev, promo_code: e.target.value }))} placeholder="SAVE20" className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted-foreground">Contact info</label>
+                      <input type="text" value={enrichment.contact_info} onChange={e => setEnrichment(prev => ({ ...prev, contact_info: e.target.value }))} placeholder="email@company.com or booking link" className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted-foreground">Event details</label>
+                      <input type="text" value={enrichment.event_details} onChange={e => setEnrichment(prev => ({ ...prev, event_details: e.target.value }))} placeholder="March 15, 2026 at 7pm — Eko Hotel, Lagos" className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted-foreground">Reference links</label>
+                      <div className="flex gap-2">
+                        <input type="url" value={refLinkInput} onChange={e => setRefLinkInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addRefLink())} placeholder="https://..." className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                        <button type="button" onClick={addRefLink} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">Add</button>
+                      </div>
+                      {enrichment.reference_links.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {enrichment.reference_links.map(link => (
+                            <span key={link} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-[11px]">
+                              {link.length > 35 ? `${link.slice(0, 35)}...` : link}
+                              <button type="button" onClick={() => removeRefLink(link)} className="ml-0.5 opacity-50 hover:opacity-100">×</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted-foreground">Mentions</label>
+                      <div className="flex gap-2">
+                        <input type="text" value={mentionInput} onChange={e => setMentionInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addMention())} placeholder="@handle" className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                        <button type="button" onClick={addMention} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">Add</button>
+                      </div>
+                      {enrichment.custom_mentions.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {enrichment.custom_mentions.map(handle => (
+                            <span key={handle} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-[11px]">
+                              {handle}
+                              <button type="button" onClick={() => removeMention(handle)} className="ml-0.5 opacity-50 hover:opacity-100">×</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {error && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+              )}
+
               <button
                 type="button"
-                onClick={() => {
-                  setStep('configure'); setVariants([]);
-                }}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
+                onClick={handleGenerate}
+                disabled={isGenerating || remixLoading || selectedPlatforms.length === 0}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
-                <RefreshCw className="size-3" />
-                Regenerate
+                {isRemix ? <Wand2 className="size-4" /> : <Sparkles className="size-4" />}
+                {isRemix ? 'Remix from template' : 'Generate content'}
               </button>
             </div>
           )}
 
-          {/* Variants — render as they stream in */}
-          {variants.map(variant => (
-            <button
-              key={variant.id}
-              type="button"
-              onClick={() => setSelectedVariant(variant.id)}
-              className={`w-full rounded-xl border bg-card p-5 text-left transition-all ${selectedVariant === variant.id
-                ? 'border-primary ring-2 ring-primary/15'
-                : 'hover:border-muted-foreground/20'
-                }`}
-            >
-              {/* Variant header */}
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-semibold">
-                    {variant.variantNumber}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    Variant
-                    {' '}
-                    {variant.variantNumber}
+          {/* ── GENERATING STATE ─────────────────────────── */}
+          {(isGenerating || remixLoading) && (
+            <div className="mx-auto mt-4 max-w-2xl">
+              <div className="rounded-xl border bg-card p-6">
+                <div className="mb-4 flex items-end justify-between">
+                  <p className="text-sm font-medium text-foreground">{getProgressMessage(displayPercent)}</p>
+                  <span className="text-2xl font-bold tabular-nums text-primary">
+                    {displayPercent}<span className="text-base font-medium">%</span>
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  {variant.antiSlopScore !== null && (() => {
-                    const sl = scoreLabel(variant.antiSlopScore!);
-                    return (
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${sl.color}`}>
-                        {Math.round(variant.antiSlopScore! * 100)}
-                        %
-                        {' '}
-                        {sl.text}
-                      </span>
-                    );
-                  })()}
+                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-primary transition-all duration-300 ease-out" style={{ width: `${displayPercent}%` }} />
+                </div>
+                <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{progress.completed > 0 ? `${progress.completed} of ${progress.total} variants ready` : 'Generating variants...'}</span>
+                  {variants.length > 0 && (
+                    <span className="text-primary">{variants.length > 1 ? `${variants.length} variants below` : '1 variant below — more coming'}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── STEP 3: Review variants ─────────────────────────── */}
+          {step === 'review' && (
+            <div className="mx-auto max-w-3xl space-y-4">
+              {!isGenerating && !remixLoading && (
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-semibold">
+                      {variants.length} variant{variants.length !== 1 ? 's' : ''} generated
+                      {contentMode !== 'normal' && (
+                        <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{contentMode} mode</span>
+                      )}
+                    </h2>
+                    <p className="text-xs text-muted-foreground">Select the best one, then approve.</p>
+                  </div>
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation(); navigator.clipboard.writeText(variant.caption);
-                    }}
-                    className="rounded p-1.5 hover:bg-muted"
-                    title="Copy"
+                    onClick={() => { setStep('configure'); setVariants([]); }}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
                   >
-                    <Copy className="size-3.5 text-muted-foreground" />
+                    <RefreshCw className="size-3" />
+                    Regenerate
                   </button>
                 </div>
-              </div>
-
-              {/* Caption */}
-              <p className="whitespace-pre-wrap text-sm leading-relaxed">{variant.caption}</p>
-
-              {/* Hashtags */}
-              {variant.hashtags.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {variant.hashtags.map(tag => (
-                    <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{tag}</span>
-                  ))}
-                </div>
               )}
 
-              {/* Enrichment applied */}
-              {variant.enrichmentApplied && variant.enrichmentApplied.length > 0 && (
-                <div className="mt-3 flex items-center gap-1.5 border-t pt-3">
-                  <Link2 className="size-3 text-muted-foreground" />
-                  <span className="text-[11px] text-muted-foreground">
-                    Enrichment applied:
-                    {' '}
-                    {variant.enrichmentApplied.map(e => e.replace(/_/g, ' ')).join(', ')}
-                  </span>
-                </div>
+              {variants.map(variant => (
+                <button
+                  key={variant.id}
+                  type="button"
+                  onClick={() => setSelectedVariant(variant.id)}
+                  className={`w-full rounded-xl border bg-card p-5 text-left transition-all ${selectedVariant === variant.id ? 'border-primary ring-2 ring-primary/15' : 'hover:border-muted-foreground/20'}`}
+                >
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-semibold">{variant.variantNumber}</span>
+                      <span className="text-xs text-muted-foreground">Variant {variant.variantNumber}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {variant.antiSlopScore !== null && (() => {
+                        const sl = scoreLabel(variant.antiSlopScore!);
+                        return (
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${sl.color}`}>
+                            {Math.round(variant.antiSlopScore! * 100)}% {sl.text}
+                          </span>
+                        );
+                      })()}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(variant.caption); }}
+                        className="rounded p-1.5 hover:bg-muted"
+                        title="Copy"
+                      >
+                        <Copy className="size-3.5 text-muted-foreground" />
+                      </button>
+                    </div>
+                  </div>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed">{variant.caption}</p>
+                  {variant.hashtags.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {variant.hashtags.map(tag => (
+                        <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{tag}</span>
+                      ))}
+                    </div>
+                  )}
+                  {variant.enrichmentApplied && variant.enrichmentApplied.length > 0 && (
+                    <div className="mt-3 flex items-center gap-1.5 border-t pt-3">
+                      <Link2 className="size-3 text-muted-foreground" />
+                      <span className="text-[11px] text-muted-foreground">Enrichment applied: {variant.enrichmentApplied.map(e => e.replace(/_/g, ' ')).join(', ')}</span>
+                    </div>
+                  )}
+                  {variant.qualityFlags && variant.qualityFlags.length > 0 && (
+                    <div className="mt-2 space-y-1 border-t pt-3">
+                      <span className="text-[10px] font-medium uppercase tracking-wider text-orange-500/70">Quality notes</span>
+                      {variant.qualityFlags.slice(0, 3).map((flag, i) => (
+                        <p key={i} className="text-[11px] text-muted-foreground">{flag}</p>
+                      ))}
+                    </div>
+                  )}
+                </button>
+              ))}
+
+              {(isGenerating || remixLoading) && variants.length < 3 && (
+                Array.from({ length: 3 - variants.length }).map((_, i) => (
+                  <div key={`skeleton-${i}`} className="w-full animate-pulse rounded-xl border bg-card p-5">
+                    <div className="mb-3 flex items-center gap-2">
+                      <div className="size-6 rounded-full bg-muted" />
+                      <div className="h-3 w-16 rounded bg-muted" />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="h-3 w-full rounded bg-muted" />
+                      <div className="h-3 w-5/6 rounded bg-muted" />
+                      <div className="h-3 w-4/6 rounded bg-muted" />
+                    </div>
+                  </div>
+                ))
               )}
 
-              {/* Quality flags */}
-              {variant.qualityFlags && variant.qualityFlags.length > 0 && (
-                <div className="mt-2 space-y-1 border-t pt-3">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-orange-500/70">Quality notes</span>
-                  {variant.qualityFlags.slice(0, 3).map((flag, i) => (
-                    <p key={i} className="text-[11px] text-muted-foreground">{flag}</p>
-                  ))}
-                </div>
+              {!isGenerating && !remixLoading && selectedVariant && (
+                <button
+                  type="button"
+                  onClick={handleApprove}
+                  disabled={isApproving}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {isApproving ? <div className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <Check className="size-4" />}
+                  {scheduledDate ? 'Approve and set schedule' : 'Approve selected variant'}
+                </button>
               )}
 
-              {/* Platform versions */}
-              {Object.keys(variant.platformSpecific).filter(k => !['sourceImages', 'videoDurationSeconds', 'title'].includes(k)).length > 0 && (
-                <div className="mt-4 space-y-2 border-t pt-3">
-                  <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
-                    Platform versions
-                  </span>
-                  {Object.entries(variant.platformSpecific)
-                    .filter(([k]) => !['sourceImages', 'videoDurationSeconds', 'title'].includes(k))
-                    .map(([platform, text]) => {
-                      const PIcon = PLATFORMS.find(p => p.id === platform)?.icon;
-                      return (
-                        <div key={platform} className="rounded-lg bg-muted/40 p-3">
-                          <div className="mb-1 flex items-center gap-1.5">
-                            {PIcon && <PIcon className="size-3.5 text-muted-foreground" />}
-                            <span className="text-[11px] font-medium capitalize">{platform}</span>
-                          </div>
-                          <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">{text}</p>
-                        </div>
-                      );
-                    })}
-                </div>
+              {error && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
               )}
-            </button>
-          ))}
-
-          {/* Skeleton placeholder while streaming remaining variants */}
-          {isGenerating && variants.length < 3 && (
-            Array.from({ length: 3 - variants.length }).map((_, i) => (
-              <div
-                key={`skeleton-${i}`}
-                className="w-full animate-pulse rounded-xl border bg-card p-5"
-              >
-                <div className="mb-3 flex items-center gap-2">
-                  <div className="size-6 rounded-full bg-muted" />
-                  <div className="h-3 w-16 rounded bg-muted" />
-                </div>
-                <div className="space-y-2">
-                  <div className="h-3 w-full rounded bg-muted" />
-                  <div className="h-3 w-5/6 rounded bg-muted" />
-                  <div className="h-3 w-4/6 rounded bg-muted" />
-                </div>
-              </div>
-            ))
-          )}
-
-          {/* Approve button — only shown when done and a variant is selected */}
-          {!isGenerating && selectedVariant && (
-            <button
-              type="button"
-              onClick={handleApprove}
-              disabled={isApproving}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-            >
-              {isApproving
-                ? <div className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                : <Check className="size-4" />}
-              {scheduledDate ? 'Approve and set schedule' : 'Approve selected variant'}
-            </button>
-          )}
-
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
             </div>
           )}
         </div>
-      )}
-    </>
+
+        {/* ── Template Sidebar ──────────────────────────────── */}
+        {isRemix && template && step !== 'type' && (
+          <div className="hidden lg:block">
+            <div className="sticky top-6 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 5rem)' }}>
+              <div className="rounded-xl border bg-card p-5">
+                <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Template</h3>
+                <div className="relative mb-3 aspect-[9/16] overflow-hidden rounded-lg bg-muted">
+                  <Image src={template.thumbnailUrl} alt={template.contentType} fill className="object-cover" sizes="300px" />
+                </div>
+                <p className="text-sm font-medium">{template.sourceCreator || 'Trending content'}</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700 capitalize">
+                    {template.contentType.replace(/_/g, ' ')}
+                  </span>
+                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 capitalize">
+                    {template.sourcePlatform}
+                  </span>
+                </div>
+                {template.engagementScore && (
+                  <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                    {(template.engagementScore * 100).toFixed(0)}% engagement score
+                  </div>
+                )}
+                {template.remixCount > 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">{template.remixCount} remixes</p>
+                )}
+              </div>
+
+              {template.structure && Object.keys(template.structure).length > 0 && (
+                <div className="rounded-xl border bg-card p-5">
+                  <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Structure</h3>
+                  <div className="space-y-3">
+                    {template.structure.hook && (
+                      <div className="rounded-lg bg-muted/50 p-3">
+                        <div className="text-xs font-medium text-purple-600">Hook · {template.structure.hook.duration}s</div>
+                        <p className="mt-1 text-sm text-foreground">{template.structure.hook.text}</p>
+                      </div>
+                    )}
+                    {template.structure.body && (
+                      <div className="rounded-lg bg-muted/50 p-3">
+                        <div className="text-xs font-medium text-blue-600">Body · {template.structure.body.duration}s</div>
+                        <p className="mt-1 text-sm text-foreground">{template.structure.body.text}</p>
+                      </div>
+                    )}
+                    {template.structure.cta && (
+                      <div className="rounded-lg bg-muted/50 p-3">
+                        <div className="text-xs font-medium text-green-600">CTA · {template.structure.cta.duration}s</div>
+                        <p className="mt-1 text-sm text-foreground">{template.structure.cta.text}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {template.niches && template.niches.length > 0 && (
+                <div className="rounded-xl border bg-card p-5">
+                  <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Niches</h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {template.niches.map(niche => (
+                      <span key={niche} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                        {niche.replace(/_/g, ' ')}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
