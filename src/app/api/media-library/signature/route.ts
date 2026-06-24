@@ -19,7 +19,7 @@ import { getAuthContext } from '@/lib/auth';
 
 cloudinary.config({
   cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
+  api_key: process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
   secure: true,
 });
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       timestamp, // Pass the guaranteed timestamp to the frontend
       folder: enforced.folder,
       tags: enforced.tags,
-      apiKey: process.env.CLOUDINARY_API_KEY,
+      apiKey: process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY,
       cloudName: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
     });
   } catch (err) {

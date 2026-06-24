@@ -1087,6 +1087,7 @@ export default function MediaLibraryPage() {
     resourceType: 'auto',
     maxFileSize: 500_000_000,
     cropping: false,
+    language: 'en',
   };
 
   return (
