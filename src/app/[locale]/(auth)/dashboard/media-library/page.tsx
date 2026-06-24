@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import type { CloudinaryUploadWidgetOptions } from 'next-cloudinary';
 import { CldUploadWidget } from 'next-cloudinary';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   Tooltip,
@@ -33,10 +33,10 @@ import { CURATED_THEMES, type CuratedTheme } from '@/libs/curatedThemes';
 // TYPES
 // ---------------------------------------------------------------------------
 type MediaAsset = {
-  publicId: string;        // Cloudinary public_id — was: uuid
+  publicId: string;
   name: string;
-  url: string;             // optimised delivery URL — was: cdnUrl + ucVideoSrc/ucThumbnail
-  thumbnailUrl: string;    // pre-built 400x400 thumbnail
+  url: string;
+  thumbnailUrl: string;
   mimeType: string;
   size: number;
   isImage: boolean;
@@ -92,7 +92,7 @@ const VIDEO_CATEGORIES = [
 const ALL_CATEGORIES = [...IMAGE_CATEGORIES, ...VIDEO_CATEGORIES];
 
 // ---------------------------------------------------------------------------
-// UNSPLASH PREVIEW HELPER — unrelated to media storage, unchanged
+// UNSPLASH PREVIEW HELPER
 // ---------------------------------------------------------------------------
 function unsplashPreviewByTheme(themeId: string, w = 300, page = 1): string {
   return `/api/media-library/unsplash-preview?theme=${encodeURIComponent(themeId)}&w=${w}&page=${page}`;
@@ -119,7 +119,7 @@ function formatDuration(s: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// VIDEO CARD — hover autoplay
+// VIDEO CARD
 // ---------------------------------------------------------------------------
 function VideoCard({
   asset,
@@ -142,13 +142,12 @@ function VideoCard({
 
   return (
     <div
-      className={`group relative cursor-pointer overflow-hidden rounded-xl border bg-card transition-all duration-150 ${
-        isSelected ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-muted-foreground/30'
-      }`}
+      className={`group relative cursor-pointer overflow-hidden rounded-xl border bg-card transition-all duration-150 ${isSelected ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-muted-foreground/30'
+        }`}
       onClick={onClick}
       onMouseEnter={() => {
         setHovering(true);
-        videoRef.current?.play().catch(() => {});
+        videoRef.current?.play().catch(() => { });
       }}
       onMouseLeave={() => {
         setHovering(false);
@@ -232,9 +231,8 @@ function ImageCard({
 }) {
   return (
     <div
-      className={`group relative cursor-pointer overflow-hidden rounded-xl border bg-card transition-all duration-150 ${
-        isSelected ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-muted-foreground/30'
-      }`}
+      className={`group relative cursor-pointer overflow-hidden rounded-xl border bg-card transition-all duration-150 ${isSelected ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-muted-foreground/30'
+        }`}
       onClick={onClick}
     >
       <div className="relative aspect-[3/4] overflow-hidden bg-muted/30">
@@ -311,26 +309,15 @@ function AssetDetailModal({
         <div className="flex w-[55%] shrink-0 items-center justify-center bg-zinc-950 p-4">
           {asset.isImage ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={asset.url}
-              alt={asset.name}
-              className="max-h-[70vh] w-full rounded-lg object-contain"
-            />
+            <img src={asset.url} alt={asset.name} className="max-h-[70vh] w-full rounded-lg object-contain" />
           ) : asset.isVideo ? (
-            <video
-              src={asset.url}
-              className="max-h-[70vh] w-full rounded-lg object-contain"
-              controls
-              preload="metadata"
-              playsInline
-            />
+            <video src={asset.url} className="max-h-[70vh] w-full rounded-lg object-contain" controls preload="metadata" playsInline />
           ) : (
             <div className="flex aspect-square w-full items-center justify-center rounded-lg bg-muted/30">
               <FileVideo className="size-12 text-muted-foreground/40" />
             </div>
           )}
         </div>
-
         <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
           <div className="flex items-center justify-between border-b px-5 py-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Asset details</p>
@@ -338,13 +325,11 @@ function AssetDetailModal({
               <X className="size-4 text-muted-foreground" />
             </button>
           </div>
-
           <div className="flex-1 space-y-5 p-5">
             <div>
               <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Filename</p>
               <p className="break-all text-xs font-medium">{asset.name}</p>
             </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg border bg-muted/30 p-3">
                 <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Type</p>
@@ -365,7 +350,6 @@ function AssetDetailModal({
                 <p className="text-xs font-medium">{formatDate(asset.uploadedAt)}</p>
               </div>
             </div>
-
             <div>
               <div className="mb-2 flex items-center gap-1.5">
                 <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Categories</p>
@@ -384,11 +368,10 @@ function AssetDetailModal({
                     key={cat}
                     type="button"
                     onClick={() => toggle(cat)}
-                    className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                      selected.includes(cat)
+                    className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${selected.includes(cat)
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border text-muted-foreground hover:border-muted-foreground/40'
-                    }`}
+                      }`}
                   >
                     {selected.includes(cat) && <Check className="mr-1 inline size-2.5" />}
                     {cat}
@@ -397,7 +380,6 @@ function AssetDetailModal({
               </div>
             </div>
           </div>
-
           <div className="space-y-2 border-t p-5">
             <button
               type="button"
@@ -408,8 +390,8 @@ function AssetDetailModal({
               {saving ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
               Save categories
             </button>
-            
-             <a href={asset.url}
+
+            <a href={asset.url}
               target="_blank"
               rel="noopener noreferrer"
               className="flex w-full items-center justify-center rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
@@ -433,7 +415,7 @@ function AssetDetailModal({
 }
 
 // ---------------------------------------------------------------------------
-// NEW SET MODAL  — unchanged
+// NEW SET MODAL
 // ---------------------------------------------------------------------------
 function NewSetModal({
   onClose,
@@ -500,7 +482,7 @@ function NewSetModal({
 }
 
 // ---------------------------------------------------------------------------
-// CURATED PICKER MODAL — unchanged
+// CURATED PICKER MODAL
 // ---------------------------------------------------------------------------
 function CuratedPickerModal({
   existing,
@@ -514,7 +496,6 @@ function CuratedPickerModal({
   const [selected, setSelected] = useState<string[]>([]);
   const toggle = (id: string) =>
     setSelected((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
-
   const available = CURATED_THEMES.filter((t) => !existing.includes(t.id));
 
   return (
@@ -533,7 +514,6 @@ function CuratedPickerModal({
             </button>
           </div>
         </div>
-
         <div className="flex-1 overflow-y-auto p-6">
           <div className="grid grid-cols-3 gap-3">
             {available.map((theme) => {
@@ -547,12 +527,7 @@ function CuratedPickerModal({
                 >
                   <div className="aspect-[4/3] overflow-hidden bg-muted">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={unsplashPreviewByTheme(theme.id, 300, 1)}
-                      alt={theme.name}
-                      className="size-full object-cover"
-                      loading="lazy"
-                    />
+                    <img src={unsplashPreviewByTheme(theme.id, 300, 1)} alt={theme.name} className="size-full object-cover" loading="lazy" />
                   </div>
                   <div className="p-2.5">
                     <p className="text-xs font-medium">{theme.name}</p>
@@ -567,7 +542,6 @@ function CuratedPickerModal({
             })}
           </div>
         </div>
-
         <div className="flex items-center justify-end gap-3 border-t px-6 py-4">
           <button type="button" onClick={onClose} className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-muted">Cancel</button>
           <button
@@ -585,7 +559,7 @@ function CuratedPickerModal({
 }
 
 // ---------------------------------------------------------------------------
-// CURATED PREVIEW MODAL — unchanged
+// CURATED PREVIEW MODAL
 // ---------------------------------------------------------------------------
 function CuratedPreviewModal({
   theme,
@@ -613,23 +587,16 @@ function CuratedPreviewModal({
             </button>
           </div>
         </div>
-
         <div className="flex-1 overflow-y-auto p-6">
           <div className="grid grid-cols-4 gap-2">
             {pages.map((page) => (
               <div key={page} className="aspect-square overflow-hidden rounded-lg bg-muted">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={unsplashPreviewByTheme(theme.id, 200, page)}
-                  alt={`${theme.name} ${page}`}
-                  className="size-full object-cover"
-                  loading="lazy"
-                />
+                <img src={unsplashPreviewByTheme(theme.id, 200, page)} alt={`${theme.name} ${page}`} className="size-full object-cover" loading="lazy" />
               </div>
             ))}
           </div>
         </div>
-
         <div className="flex items-center justify-between border-t px-6 py-4">
           <button
             type="button"
@@ -649,7 +616,7 @@ function CuratedPreviewModal({
 }
 
 // ---------------------------------------------------------------------------
-// WHAT IS THIS MODAL — unchanged
+// WHAT IS THIS MODAL
 // ---------------------------------------------------------------------------
 function WhatIsThisModal({ onClose }: { onClose: () => void }) {
   return (
@@ -673,7 +640,7 @@ function WhatIsThisModal({ onClose }: { onClose: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// BULK ACTION BAR — unchanged
+// BULK ACTION BAR
 // ---------------------------------------------------------------------------
 function BulkBar({
   count,
@@ -721,7 +688,7 @@ function BulkBar({
 }
 
 // ---------------------------------------------------------------------------
-// SET CARD — unchanged
+// SET CARD
 // ---------------------------------------------------------------------------
 function SetCard({ set, onClick, onDelete }: { set: UserSet; onClick: () => void; onDelete: () => void }) {
   return (
@@ -767,7 +734,7 @@ function SetCard({ set, onClick, onDelete }: { set: UserSet; onClick: () => void
 }
 
 // ---------------------------------------------------------------------------
-// CATEGORY DROPDOWN — unchanged
+// CATEGORY DROPDOWN
 // ---------------------------------------------------------------------------
 function CategoryDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -812,7 +779,7 @@ function CategoryDropdown({ value, onChange }: { value: string; onChange: (v: st
 }
 
 // ---------------------------------------------------------------------------
-// CREATE SET BOTTOM BAR — unchanged
+// CREATE SET BOTTOM BAR
 // ---------------------------------------------------------------------------
 function CreateSetBar({
   type,
@@ -887,6 +854,21 @@ export default function MediaLibraryPage() {
   const [newSetName, setNewSetName] = useState('');
   const [savingSet, setSavingSet] = useState(false);
 
+  // ── NEW: fetch org-scoped folder/tags for the upload widget ──────────────
+  const [uploadFolder, setUploadFolder] = useState<string | null>(null);
+  const [uploadTags, setUploadTags] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/media-library/signature')
+      .then((r) => r.json())
+      .then((d) => {
+        setUploadFolder(d.folder);
+        setUploadTags(d.tags);
+      })
+      .catch(() => { });
+  }, []);
+  // ─────────────────────────────────────────────────────────────────────────
+
   const fetchAssets = useCallback(async (type: FilterType, category: string, offset = 0) => {
     const params = new URLSearchParams({
       type,
@@ -906,7 +888,7 @@ export default function MediaLibraryPage() {
         const data = await res.json();
         setSets(data.sets || []);
       }
-    } catch {}
+    } catch { }
   }, []);
 
   const load = useCallback(async (type: FilterType, category: string) => {
@@ -940,12 +922,6 @@ export default function MediaLibraryPage() {
   useEffect(() => { load(filter, categoryFilter); }, [filter, categoryFilter, load]);
   useEffect(() => { fetchSets(); }, [fetchSets]);
 
-  // ---------------------------------------------------------------------------
-  // Upload — Cloudinary signed widget.
-  // No separate "tag" call is needed: the signature endpoint already pins
-  // every upload into the org's isolated folder (nativpost/{orgId}) server-side.
-  // We just wait for the queue to finish, then refresh the grid.
-  // ---------------------------------------------------------------------------
   const handleQueuesEnd = async () => {
     setIsFinalizingUpload(true);
     try {
@@ -1018,8 +994,6 @@ export default function MediaLibraryPage() {
       const res = await fetch('/api/media-library/sets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // NOTE: field is still named `assetUuids` to match the existing sets
-        // route — values are now Cloudinary public_ids, not Uploadcare uuids.
         body: JSON.stringify({ name: newSetName.trim(), type: creatingSetType, assetUuids: [...selectedIds] }),
       });
       if (res.ok) {
@@ -1072,23 +1046,23 @@ export default function MediaLibraryPage() {
 
   const curatedSetIds = sets.filter((s) => s.type === 'curated').map((s) => s.curatedThemeId ?? '');
 
-  // Cloudinary signed upload widget options.
-  // TODO: verify uploads land in nativpost/{orgId}/ in your Cloudinary console.
-  // If they don't, the signature endpoint's folder override isn't being
-  // applied to the actual upload request by this next-cloudinary version —
-  // in that case set `folder` here too so client + signed params match.
   const uploadSources: CloudinaryUploadWidgetOptions['sources'] = [
     'local', 'url', 'camera', 'dropbox', 'google_drive',
   ];
 
-  const uploadWidgetOptions: CloudinaryUploadWidgetOptions = {
+  // ── NEW: include folder + tags so they're in paramsToSign when the widget
+  // calls the signature endpoint — making the signature cover all fields ────
+  const uploadWidgetOptions: CloudinaryUploadWidgetOptions = useMemo(() => ({
     sources: uploadSources,
     multiple: true,
     resourceType: 'auto',
     maxFileSize: 500_000_000,
     cropping: false,
     language: 'en',
-  };
+    ...(uploadFolder ? { folder: uploadFolder } : {}),
+    ...(uploadTags ? { tags: [uploadTags] } : {}),
+  }), [uploadFolder, uploadTags]);
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -1115,7 +1089,6 @@ export default function MediaLibraryPage() {
               </TooltipContent>
             </Tooltip>
           </div>
-
           <div className="flex items-start gap-3 overflow-x-auto pb-2">
             <button
               type="button"
@@ -1126,7 +1099,6 @@ export default function MediaLibraryPage() {
               <Plus className="size-4 text-muted-foreground" />
               <span className="text-[11px] text-muted-foreground">New set</span>
             </button>
-
             {sets.map((set) => (
               <SetCard
                 key={set.id}
@@ -1214,9 +1186,7 @@ export default function MediaLibraryPage() {
                 </button>
               ))}
             </div>
-
             <CategoryDropdown value={categoryFilter} onChange={setCategoryFilter} />
-
             <Tooltip>
               <TooltipTrigger asChild>
                 <button type="button" className="rounded-full p-1 text-muted-foreground/60 hover:text-muted-foreground">
@@ -1227,24 +1197,18 @@ export default function MediaLibraryPage() {
                 Categories control how NativPost uses your media. Filter here to review what is tagged where.
               </TooltipContent>
             </Tooltip>
-
             <div className="flex-1" />
-
             <span className="text-xs text-muted-foreground">{total} {total === 1 ? 'item' : 'items'}</span>
-
             <button type="button" onClick={() => load(filter, categoryFilter)} className="rounded-lg border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" title="Refresh">
               <RefreshCw className="size-3.5" />
             </button>
-
             <button type="button" onClick={() => setShowUploader(true)} className="flex items-center gap-1.5 rounded-lg border bg-card px-3 py-1.5 text-xs font-medium hover:bg-muted">
               <Upload className="size-3.5" />
               Upload
             </button>
-
             <button type="button" onClick={() => setSelectMode(true)} className="rounded-lg border bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:opacity-90">
               Select
             </button>
-
             <button type="button" onClick={() => setModal({ kind: 'what-is-this' })} className="flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted">
               <HelpCircle className="size-3.5" />
               <span className="hidden sm:inline">What is this?</span>
@@ -1296,7 +1260,6 @@ export default function MediaLibraryPage() {
                 )
               )}
             </div>
-
             {nextOffset !== null && (
               <div className="mt-8 flex justify-center">
                 <button type="button" onClick={loadMore} disabled={isLoadingMore} className="flex items-center gap-2 rounded-lg border px-5 py-2.5 text-sm font-medium hover:bg-muted disabled:opacity-60">

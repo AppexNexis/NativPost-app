@@ -1,14 +1,3 @@
-/**
- * /api/media-library/signature
- *
- * Generates a signed upload signature for the Cloudinary Upload Widget.
- *
- * The widget sends paramsToSign (e.g. {timestamp, source}).
- * We inject folder + tags into the params BEFORE signing, so the signature
- * covers all fields. The widget then receives folder + tags and includes
- * them in the actual upload request — making the signature valid.
- */
-
 import { v2 as cloudinary } from 'cloudinary';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -17,46 +6,50 @@ import { getAuthContext } from '@/lib/auth';
 
 cloudinary.config({
   cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY,
+  api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
   secure: true,
 });
 
-export async function POST(request: NextRequest) {
+// GET — returns the folder prefix for this org so the frontend
+// can set it in uploadWidgetOptions before opening the widget
+export async function GET() {
   const { error, orgId } = await getAuthContext();
+  if (error) return error;
+
+  return NextResponse.json({
+    folder: `nativpost/${orgId}`,
+    tags: `org:${orgId}`,
+  });
+}
+
+export async function POST(request: NextRequest) {
+  // const { error, orgId } = await getAuthContext();
+  const { error } = await getAuthContext();
   if (error) return error;
 
   const body = await request.json().catch(() => ({}));
   const paramsToSign: Record<string, any> = body.paramsToSign ?? {};
 
   const timestamp = paramsToSign.timestamp ?? Math.round(Date.now() / 1000);
-  const folder = `nativpost/${orgId}`;
-  const tags = `org:${orgId}`;
 
-  // Sign ALL params including folder + tags so the signature matches
-  // what will actually be sent to Cloudinary in the upload request
-  const enforced: Record<string, any> = {
+  // Sign exactly what the widget sends — folder and tags will be in
+  // paramsToSign because we set them in uploadWidgetOptions on the frontend
+  const signingParams: Record<string, any> = {
     ...paramsToSign,
     timestamp,
-    folder,
-    tags,
   };
 
   try {
     const signature = cloudinary.utils.api_sign_request(
-      enforced,
+      signingParams,
       process.env.CLOUDINARY_API_SECRET!,
     );
 
-    // Return signature + all enforced params so the widget sends them all
-    // The widget will include folder + tags in the upload request,
-    // which means the signature will match what Cloudinary verifies
     return NextResponse.json({
       signature,
       timestamp,
-      folder,
-      tags,
-      apiKey: process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY,
+      apiKey: process.env.CLOUDINARY_API_KEY,
       cloudName: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
     });
   } catch (err) {
