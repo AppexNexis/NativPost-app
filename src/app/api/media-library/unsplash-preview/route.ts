@@ -247,19 +247,26 @@ export async function GET(request: NextRequest) {
   for (const query of queries) {
     let innerPage = page;
 
-    // For theme-rotated queries, keep the real page small to stay within API caps.
+    // For theme-rotated queries, keep the real page small to stay within API caps
+    // AND to avoid running out of results — Unsplash result pools for a given
+    // query can be limited, and paging too deep returns genuinely empty pages.
     if (themeId) {
-      innerPage = ((page - 1) % 10) + 1;
+      innerPage = ((page - 1) % 3) + 1;
     }
 
     try {
       // Step 1: Search Unsplash for the photo URL.
       // NOTE: cache: 'no-store' — never let a transient empty/error result
-      // get cached and served as if it were real data. Search calls are
-      // cheap; the cost we actually want to avoid is re-fetching image
-      // bytes, which is handled below.
+      // get cached and served as if it were real data.
+      //
+      // NOTE: no `orientation` filter here on purpose. Filtering to
+      // "squarish" shrinks the candidate pool drastically (most queries have
+      // far fewer pre-tagged-squarish photos than total photos), which was
+      // causing genuinely empty results on deeper pages. We don't need the
+      // filter anyway — every photo is already force-cropped to a perfect
+      // square below via `fit=crop` with equal w/h.
       const searchRes = await fetch(
-        `${UNSPLASH_API}/search/photos?query=${encodeURIComponent(query)}&page=${innerPage}&per_page=${PER_PAGE}&orientation=squarish`,
+        `${UNSPLASH_API}/search/photos?query=${encodeURIComponent(query)}&page=${innerPage}&per_page=${PER_PAGE}`,
         {
           headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` },
           cache: 'no-store',
