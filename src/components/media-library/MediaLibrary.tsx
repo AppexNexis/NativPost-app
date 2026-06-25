@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState } from 'react';
 import Image from 'next/image';
 import { Upload, Search, ImageIcon, Video, Wand2, Grid3X3, List, Clock, Maximize2, Trash2 } from 'lucide-react';
