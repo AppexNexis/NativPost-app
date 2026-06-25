@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+// import { useRouter } from "next/navigation";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import {
   Table,
@@ -62,13 +62,65 @@ import {
   ThumbsUp,
   ThumbsDown,
   Zap,
-  Instagram,
-  Youtube,
-  TikTok,
-  Trash2,
+  // Trash2,
   ArrowUpDown,
   Loader2,
 } from "lucide-react";
+
+/* ─────────────────── Brand Icons ─────────────────── */
+// lucide-react has removed/deprecated brand logo icons (trademark reasons).
+// TikTok was removed entirely and Instagram is deprecated, so these platform
+// marks are implemented as small inline SVGs instead of lucide imports.
+
+function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+    </svg>
+  );
+}
+
+function YoutubeIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17z" />
+      <polygon points="10 15 15 12 10 9 10 15" />
+    </svg>
+  );
+}
+
+function TikTokIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M16.6 5.82c-.9-.6-1.55-1.49-1.78-2.52h-3.04v13.1c0 1.4-1.13 2.54-2.53 2.54a2.54 2.54 0 0 1-2.53-2.54c0-1.4 1.13-2.53 2.53-2.53.27 0 .53.04.77.11v-3.1a5.6 5.6 0 0 0-.77-.05A5.62 5.62 0 0 0 3.7 16.4a5.62 5.62 0 0 0 5.62 5.62 5.62 5.62 0 0 0 5.62-5.62V9.4a7.34 7.34 0 0 0 4.26 1.36V7.7a4.85 4.85 0 0 1-2.6-1.88z" />
+    </svg>
+  );
+}
 
 /* ─────────────────── Types ─────────────────── */
 
@@ -392,11 +444,11 @@ const formatDuration = (seconds: number) => {
 const PlatformIcon = ({ platform }: { platform: Platform }) => {
   switch (platform) {
     case "TikTok":
-      return <TikTok className="h-4 w-4" />;
+      return <TikTokIcon className="h-4 w-4" />;
     case "Instagram":
-      return <Instagram className="h-4 w-4" />;
+      return <InstagramIcon className="h-4 w-4" />;
     case "YouTube":
-      return <Youtube className="h-4 w-4" />;
+      return <YoutubeIcon className="h-4 w-4" />;
     default:
       return null;
   }
@@ -447,7 +499,7 @@ const SuggestionBanner = ({ template }: { template: Template }) => {
 /* ─────────────────── Main Component ─────────────────── */
 
 export default function CurationQueue() {
-  const router = useRouter();
+  // const router = useRouter();
   const [templates, setTemplates] = useState<Template[]>(MOCK_TEMPLATES);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [drawerTemplate, setDrawerTemplate] = useState<Template | null>(null);

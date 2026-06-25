@@ -110,9 +110,8 @@ const StatCard = ({
         <p className="text-xs text-muted-foreground">{subtitle}</p>
         {trend !== undefined && (
           <span
-            className={`flex items-center text-xs font-medium ${
-              trendUp ? "text-green-600" : "text-red-600"
-            }`}
+            className={`flex items-center text-xs font-medium ${trendUp ? "text-green-600" : "text-red-600"
+              }`}
           >
             {trendUp ? (
               <ArrowUpRight className="h-3 w-3" />
@@ -144,6 +143,18 @@ export default function CurationStats() {
     const { approved, processed } = curationData.thisMonth;
     return processed > 0 ? Math.round((approved / processed) * 100) : 0;
   }, []);
+
+  // topNiches/topAngles are sorted descending in the mock data, so [0] is the
+  // max — but array indexing is always `T | undefined` under strict TS, so we
+  // derive these once with a safe fallback rather than indexing inline per-row.
+  const maxNicheCount = useMemo(
+    () => curationData.topNiches[0]?.count ?? 1,
+    [],
+  );
+  const maxAngleCount = useMemo(
+    () => curationData.topAngles[0]?.count ?? 1,
+    [],
+  );
 
   return (
     <AdminLayout>
@@ -320,7 +331,7 @@ export default function CurationStats() {
                         <div
                           className="h-full rounded-full transition-all"
                           style={{
-                            width: `${(niche.count / curationData.topNiches[0].count) * 100}%`,
+                            width: `${(niche.count / maxNicheCount) * 100}%`,
                             backgroundColor: COLORS[i % COLORS.length],
                           }}
                         />
@@ -353,7 +364,7 @@ export default function CurationStats() {
                         <div
                           className="h-full rounded-full transition-all"
                           style={{
-                            width: `${(angle.count / curationData.topAngles[0].count) * 100}%`,
+                            width: `${(angle.count / maxAngleCount) * 100}%`,
                             backgroundColor: COLORS[(i + 3) % COLORS.length],
                           }}
                         />
