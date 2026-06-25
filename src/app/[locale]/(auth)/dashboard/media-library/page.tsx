@@ -1,11 +1,7 @@
-import type { Metadata } from 'next';
+'use client';
+
 import { MediaLibrary } from '@/components/media-library/MediaLibrary';
 import type { MediaAsset } from '@/types/v2';
-
-export const metadata: Metadata = {
-  title: 'Media Library | NativPost',
-  description: 'Manage your images, videos, AI scenes, and assets',
-};
 
 const MOCK_ASSETS: MediaAsset[] = [
   {
