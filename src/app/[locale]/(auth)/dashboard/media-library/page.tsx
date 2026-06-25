@@ -22,8 +22,8 @@ const MOCK_ASSETS: MediaAsset[] = [
     source: 'upload',
     aiMetadata: {},
     usageCount: 12,
-    updatedAt: new Date().toISOString(),
-    createdAt: new Date().toISOString(),
+    updatedAt: '2026-06-25T00:00:00.000Z',
+    createdAt: '2026-06-25T00:00:00.000Z',
   },
   {
     id: '2',
@@ -47,8 +47,8 @@ const MOCK_ASSETS: MediaAsset[] = [
       stylePreset: 'cinematic',
     },
     usageCount: 8,
-    updatedAt: new Date().toISOString(),
-    createdAt: new Date().toISOString(),
+    updatedAt: '2026-06-25T00:00:00.000Z',
+    createdAt: '2026-06-25T00:00:00.000Z',
   },
   {
     id: '3',
@@ -68,8 +68,8 @@ const MOCK_ASSETS: MediaAsset[] = [
     source: 'upload',
     aiMetadata: {},
     usageCount: 5,
-    updatedAt: new Date().toISOString(),
-    createdAt: new Date().toISOString(),
+    updatedAt: '2026-06-25T00:00:00.000Z',
+    createdAt: '2026-06-25T00:00:00.000Z',
   },
 ];
 
