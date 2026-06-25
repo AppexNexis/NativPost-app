@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
 import { RefreshCw, Pencil, Trash2, Clock, Calendar, Check, AlertTriangle } from 'lucide-react';
-import type { ContentItem, Campaign, CampaignContentItem } from '@/types/v2';
+import type { ContentItem, Campaign } from '@/types/v2';
 
 interface CampaignReviewGridProps {
   campaign: Campaign;
@@ -24,7 +24,7 @@ export function CampaignReviewGrid({
 }: CampaignReviewGridProps) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'calendar'>('grid');
-  const [editScheduleItem, setEditScheduleItem] = useState<string | null>(null);
+  // const [editScheduleItem, setEditScheduleItem] = useState<string | null>(null);
 
   const handleReRoll = (itemId: string) => {
     if (campaign.reRollsRemaining > 0) {
@@ -319,7 +319,7 @@ function CalendarView({
   onEdit,
   onReRoll,
   onDelete,
-  onApprove,
+  // onApprove,
 }: {
   contentItems: (ContentItem & { sequenceIndex?: number; scheduledDate?: string })[];
   campaign: Campaign;

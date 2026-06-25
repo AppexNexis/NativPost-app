@@ -1,17 +1,18 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { ChevronLeft, ChevronRight, Sparkles, Check } from 'lucide-react';
 import type { Campaign, ContentAngle, CampaignAngle, ContentMix, TargetAccount } from '@/types/v2';
-import type { SocialAccount } from '@/types'; // existing type
+import type { SocialAccount } from '@/types/v2';
 
 interface CampaignWizardProps {
   angles: ContentAngle[];
   accounts: SocialAccount[];
   influencers: { id: string; name: string }[];
-  onCreate: (campaign: Partial<Campaign>) => void;
-  onGenerate: (campaignId: string) => void;
-  onLaunch: (campaignId: string) => void;
+  onCreate: (campaign: Partial<Campaign>) => Promise<Campaign | null>;
+  onGenerate: (campaignId: string) => Promise<void>;
+  onLaunch: (campaignId: string) => Promise<void>;
+  isLoading?: boolean;
 }
 
 const STEPS = [
@@ -24,9 +25,18 @@ const STEPS = [
   { id: 'generate', label: 'Generate' },
   { id: 'review', label: 'Review' },
   { id: 'launch', label: 'Launch' },
-];
+]
+// ] as const satisfies readonly { id: string; label: string }[];
 
-export function CampaignWizard({ angles, accounts, influencers, onCreate, onGenerate, onLaunch }: CampaignWizardProps) {
+export function CampaignWizard({
+  angles,
+  accounts,
+  influencers,
+  onCreate,
+  onGenerate,
+  onLaunch,
+  isLoading,
+}: CampaignWizardProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [campaign, setCampaign] = useState<Partial<Campaign>>({
     name: '',
@@ -61,9 +71,22 @@ export function CampaignWizard({ angles, accounts, influencers, onCreate, onGene
     setCampaign((prev) => ({ ...prev, ...updates }));
   }, []);
 
+  const handleGenerate = async () => {
+    setIsGenerating(true);
+    try {
+      const created = await onCreate(campaign);
+      if (created?.id) {
+        setGeneratedCampaignId(created.id);
+        await onGenerate(created.id);
+        setCurrentStep(7);
+      }
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const handleNext = () => {
     if (currentStep === 6) {
-      // Generate step — create campaign first, then trigger generation
       handleGenerate();
       return;
     }
@@ -78,36 +101,21 @@ export function CampaignWizard({ angles, accounts, influencers, onCreate, onGene
     }
   };
 
-  const handleGenerate = async () => {
-    setIsGenerating(true);
-    try {
-      // Create the campaign first
-      const created = await onCreate(campaign);
-      if (created && created.id) {
-        setGeneratedCampaignId(created.id);
-        await onGenerate(created.id);
-        setCurrentStep(7); // Move to review
-      }
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
   const handleLaunch = async () => {
     if (generatedCampaignId) {
       await onLaunch(generatedCampaignId);
-      setCurrentStep(8); // Move to launch confirmation
+      setCurrentStep(8);
     }
   };
 
-  const StepComponent = STEP_COMPONENTS[currentStep];
-
+  const StepComponent = STEP_COMPONENTS[currentStep] ?? null;
   return (
     <div className="mx-auto max-w-3xl">
       {/* Progress Bar */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-gray-900">{STEPS[currentStep].label}</span>
+          <span className="text-sm font-medium text-gray-900">{STEPS[currentStep]?.label ?? ''}</span>
+          {/* <span className="text-sm font-medium text-gray-900">{STEPS[currentStep as 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8]?.label ?? ''}</span> */}
           <span className="text-sm text-gray-500">
             {currentStep + 1} / {totalSteps}
           </span>
@@ -124,7 +132,14 @@ export function CampaignWizard({ angles, accounts, influencers, onCreate, onGene
       <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
         <div className="p-8">
           {StepComponent && (
-            <StepComponent campaign={campaign} angles={angles} accounts={accounts} influencers={influencers} onUpdate={updateCampaign} />
+            <StepComponent
+              campaign={campaign}
+              angles={angles}
+              accounts={accounts}
+              influencers={influencers}
+              isLoading={isLoading ?? false}
+              onUpdate={updateCampaign}
+            />
           )}
         </div>
 
@@ -132,7 +147,7 @@ export function CampaignWizard({ angles, accounts, influencers, onCreate, onGene
         <div className="flex items-center justify-between border-t border-gray-100 px-8 py-4">
           <button
             onClick={handleBack}
-            disabled={currentStep === 0 || isGenerating}
+            disabled={currentStep === 0 || isGenerating || isLoading}
             className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -142,7 +157,8 @@ export function CampaignWizard({ angles, accounts, influencers, onCreate, onGene
           {currentStep === 7 ? (
             <button
               onClick={handleLaunch}
-              className="flex items-center gap-2 rounded-lg bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-600"
+              disabled={isLoading}
+              className="flex items-center gap-2 rounded-lg bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-600 disabled:opacity-60"
             >
               Continue to launch
               <ChevronRight className="h-4 w-4" />
@@ -150,7 +166,7 @@ export function CampaignWizard({ angles, accounts, influencers, onCreate, onGene
           ) : currentStep === 6 ? (
             <button
               onClick={handleNext}
-              disabled={isGenerating}
+              disabled={isGenerating || isLoading}
               className="flex items-center gap-2 rounded-lg bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-600 disabled:opacity-60"
             >
               {isGenerating ? (
@@ -165,10 +181,11 @@ export function CampaignWizard({ angles, accounts, influencers, onCreate, onGene
                 </>
               )}
             </button>
-          ) : (
+          ) : currentStep === 8 ? null : (
             <button
               onClick={handleNext}
-              className="flex items-center gap-2 rounded-lg bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-600"
+              disabled={isLoading}
+              className="flex items-center gap-2 rounded-lg bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-600 disabled:opacity-60"
             >
               Continue
               <ChevronRight className="h-4 w-4" />
@@ -181,25 +198,38 @@ export function CampaignWizard({ angles, accounts, influencers, onCreate, onGene
 }
 
 // ============================================================
+// Shared step props interface
+// ============================================================
+
+interface StepProps {
+  campaign: Partial<Campaign>;
+  angles: ContentAngle[];
+  accounts: SocialAccount[];
+  influencers: { id: string; name: string }[];
+  isLoading: boolean;
+  onUpdate: (u: Partial<Campaign>) => void;
+}
+
+// ============================================================
 // STEP 1: BASICS
 // ============================================================
-function StepBasics({ campaign, onUpdate }: { campaign: Partial<Campaign>; onUpdate: (u: Partial<Campaign>) => void }) {
-  const mix = campaign.contentMix || {};
-  const totalMix = Object.values(mix).reduce((a, b) => (a || 0) + (b || 0), 0) as number;
+function StepBasics({ campaign, onUpdate }: StepProps) {
+  const mix = campaign.contentMix ?? {};
+  const totalMix = Object.values(mix).reduce<number>((a, b) => a + (b ?? 0), 0);
 
   const handleMixChange = (key: keyof ContentMix, delta: number) => {
-    const current = (mix[key] || 0) + delta;
+    const current = (mix[key] ?? 0) + delta;
     if (current < 0 || current > 100) return;
-    onUpdate({
-      contentMix: { ...mix, [key]: current },
-    });
+    onUpdate({ contentMix: { ...mix, [key]: current } });
   };
 
   return (
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold text-gray-900">What's this campaign about?</h3>
-        <p className="text-sm text-gray-500">Name your campaign and set the content mix. We'll use your brand context to generate every post.</p>
+        <p className="text-sm text-gray-500">
+          Name your campaign and set the content mix. We'll use your brand context to generate every post.
+        </p>
       </div>
 
       <div>
@@ -209,7 +239,7 @@ function StepBasics({ campaign, onUpdate }: { campaign: Partial<Campaign>; onUpd
         <input
           type="text"
           placeholder="23rd June 2026 Campaign"
-          value={campaign.name || ''}
+          value={campaign.name ?? ''}
           onChange={(e) => onUpdate({ name: e.target.value })}
           className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
         />
@@ -226,7 +256,7 @@ function StepBasics({ campaign, onUpdate }: { campaign: Partial<Campaign>; onUpd
               ['slideshow', 'Slideshow', 'bg-yellow-400'],
               ['wallOfText', 'Wall of text', 'bg-blue-500'],
               ['greenScreen', 'Green screen', 'bg-green-500'],
-              ['videoHook', 'Video hook', 'bg-yellow-400'],
+              ['videoHook', 'Video hook', 'bg-orange-400'],
             ] as [keyof ContentMix, string, string][]
           ).map(([key, label, color]) => (
             <div key={key} className="flex items-center gap-4">
@@ -239,7 +269,7 @@ function StepBasics({ campaign, onUpdate }: { campaign: Partial<Campaign>; onUpd
                 >
                   -
                 </button>
-                <span className="w-10 text-center text-sm font-medium">{mix[key] || 0}%</span>
+                <span className="w-10 text-center text-sm font-medium">{mix[key] ?? 0}%</span>
                 <button
                   onClick={() => handleMixChange(key, 5)}
                   className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50"
@@ -264,7 +294,7 @@ function StepBasics({ campaign, onUpdate }: { campaign: Partial<Campaign>; onUpd
           type="range"
           min={0}
           max={100}
-          value={campaign.remixRatio || 50}
+          value={campaign.remixRatio ?? 50}
           onChange={(e) => onUpdate({ remixRatio: parseInt(e.target.value) })}
           className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 accent-orange-500"
         />
@@ -280,29 +310,21 @@ function StepBasics({ campaign, onUpdate }: { campaign: Partial<Campaign>; onUpd
 // ============================================================
 // STEP 2: ANGLES
 // ============================================================
-function StepAngles({
-  campaign,
-  angles,
-  onUpdate,
-}: {
-  campaign: Partial<Campaign>;
-  angles: ContentAngle[];
-  onUpdate: (u: Partial<Campaign>) => void;
-}) {
-  const campaignAngles = (campaign.angles || []) as CampaignAngle[];
-  const totalWeight = campaignAngles.reduce((sum, a) => sum + (a.weight || 0), 0);
+function StepAngles({ campaign, angles, onUpdate }: StepProps) {
+  const campaignAngles = (campaign.angles ?? []) as CampaignAngle[];
+  const totalWeight = campaignAngles.reduce((sum, a) => sum + (a.weight ?? 0), 0);
 
   const handleWeightChange = (angleId: string, weight: number) => {
-    const updated = campaignAngles.map((a) => (a.angleId === angleId ? { ...a, weight } : a));
-    // If this angle doesn't exist yet, add it
-    if (!updated.find((a) => a.angleId === angleId)) {
-      updated.push({ angleId, weight });
-    }
+    const exists = campaignAngles.find((a) => a.angleId === angleId);
+    const updated = exists
+      ? campaignAngles.map((a) => (a.angleId === angleId ? { ...a, weight } : a))
+      : [...campaignAngles, { angleId, weight }];
     onUpdate({ angles: updated });
   };
 
   const equalize = () => {
     const count = angles.length;
+    if (count === 0) return;
     const weight = Math.floor(100 / count);
     const remainder = 100 - weight * count;
     const updated = angles.map((angle, i) => ({
@@ -317,7 +339,7 @@ function StepAngles({
       <div>
         <h3 className="text-lg font-semibold text-gray-900">How should we balance your angles?</h3>
         <p className="text-sm text-gray-500">
-          Set how often each content angle appears across the campaign. Weights are a guide. We spread the posts across your angles accordingly.
+          Set how often each content angle appears across the campaign. Weights are a guide — we spread posts across your angles accordingly.
         </p>
       </div>
 
@@ -333,28 +355,33 @@ function StepAngles({
         </div>
       </div>
 
-      <div className="space-y-4">
-        {angles.map((angle) => {
-          const campaignAngle = campaignAngles.find((a) => a.angleId === angle.id);
-          const weight = campaignAngle?.weight || 0;
-          const angleInfo = angles.find((a) => a.id === angle.id);
-          return (
-            <div key={angle.id} className="flex items-center gap-4">
-              <div className="h-3 w-3 rounded-full" style={{ backgroundColor: angleInfo?.color || '#ccc' }} />
-              <span className="flex-1 truncate text-sm text-gray-700">{angle.name}</span>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={weight}
-                onChange={(e) => handleWeightChange(angle.id, parseInt(e.target.value))}
-                className="w-48 accent-orange-500"
-              />
-              <span className="w-10 text-right text-sm font-medium">{weight}%</span>
-            </div>
-          );
-        })}
-      </div>
+      {angles.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-gray-200 p-8 text-center">
+          <p className="text-sm text-gray-500">No content angles configured yet.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {angles.map((angle) => {
+            const campaignAngle = campaignAngles.find((a) => a.angleId === angle.id);
+            const weight = campaignAngle?.weight ?? 0;
+            return (
+              <div key={angle.id} className="flex items-center gap-4">
+                <div className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: angle.color ?? '#ccc' }} />
+                <span className="flex-1 truncate text-sm text-gray-700">{angle.name}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={weight}
+                  onChange={(e) => handleWeightChange(angle.id, parseInt(e.target.value))}
+                  className="w-48 accent-orange-500"
+                />
+                <span className="w-10 text-right text-sm font-medium">{weight}%</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -362,7 +389,7 @@ function StepAngles({
 // ============================================================
 // STEP 3: VOICE
 // ============================================================
-function StepVoice({ campaign, onUpdate }: { campaign: Partial<Campaign>; onUpdate: (u: Partial<Campaign>) => void }) {
+function StepVoice({ campaign, onUpdate }: StepProps) {
   const frequencies: { value: string; label: string }[] = [
     { value: 'never', label: 'Never' },
     { value: 'rarely', label: 'Rarely' },
@@ -389,12 +416,11 @@ function StepVoice({ campaign, onUpdate }: { campaign: Partial<Campaign>; onUpda
           {frequencies.map((freq) => (
             <button
               key={freq.value}
-              onClick={() => onUpdate({ mentionFrequency: freq.value as any })}
-              className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
-                campaign.mentionFrequency === freq.value
+              onClick={() => onUpdate({ mentionFrequency: freq.value as Campaign['mentionFrequency'] })}
+              className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${campaign.mentionFrequency === freq.value
                   ? 'border-orange-500 bg-orange-50 text-orange-700'
                   : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'
-              }`}
+                }`}
             >
               {freq.label}
             </button>
@@ -408,19 +434,20 @@ function StepVoice({ campaign, onUpdate }: { campaign: Partial<Campaign>; onUpda
         </label>
         <p className="mb-3 text-sm text-gray-400">Filter platform videos by gender. No selection shows all.</p>
         <div className="flex gap-2">
-          {[
-            { value: null, label: 'All' },
-            { value: 'men', label: 'Only Men' },
-            { value: 'women', label: 'Only Women' },
-          ].map((option) => (
+          {(
+            [
+              { value: null, label: 'All' },
+              { value: 'men', label: 'Only Men' },
+              { value: 'women', label: 'Only Women' },
+            ] as { value: Campaign['genderPreference']; label: string }[]
+          ).map((option) => (
             <button
-              key={option.value || 'all'}
-              onClick={() => onUpdate({ genderPreference: option.value as any })}
-              className={`rounded-lg border px-6 py-2.5 text-sm font-medium transition-colors ${
-                campaign.genderPreference === option.value
+              key={option.value ?? 'all'}
+              onClick={() => onUpdate({ genderPreference: option.value })}
+              className={`rounded-lg border px-6 py-2.5 text-sm font-medium transition-colors ${campaign.genderPreference === option.value
                   ? 'border-orange-500 bg-orange-50 text-orange-700'
                   : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'
-              }`}
+                }`}
             >
               {option.label}
             </button>
@@ -434,15 +461,7 @@ function StepVoice({ campaign, onUpdate }: { campaign: Partial<Campaign>; onUpda
 // ============================================================
 // STEP 4: SOURCES
 // ============================================================
-function StepSources({
-  campaign,
-  influencers,
-  onUpdate,
-}: {
-  campaign: Partial<Campaign>;
-  influencers: { id: string; name: string }[];
-  onUpdate: (u: Partial<Campaign>) => void;
-}) {
+function StepSources({ campaign, influencers, isLoading, onUpdate }: StepProps) {
   return (
     <div className="space-y-6">
       <div>
@@ -464,7 +483,7 @@ function StepSources({
           type="range"
           min={0}
           max={100}
-          value={campaign.ownMediaMix || 50}
+          value={campaign.ownMediaMix ?? 50}
           onChange={(e) => onUpdate({ ownMediaMix: parseInt(e.target.value) })}
           className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 accent-orange-500"
         />
@@ -486,13 +505,15 @@ function StepSources({
           type="range"
           min={0}
           max={100}
-          value={campaign.influencerFrequency || 0}
+          value={campaign.influencerFrequency ?? 0}
           onChange={(e) => onUpdate({ influencerFrequency: parseInt(e.target.value) })}
-          disabled={influencers.length === 0}
+          disabled={influencers.length === 0 || isLoading}
           className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 accent-orange-500 disabled:opacity-40"
         />
         {influencers.length === 0 && (
-          <p className="mt-2 text-xs text-orange-600">Train at least one influencer in AI Studio to enable this feature.</p>
+          <p className="mt-2 text-xs text-orange-600">
+            Train at least one influencer in AI Studio to enable this feature.
+          </p>
         )}
       </div>
     </div>
@@ -502,19 +523,11 @@ function StepSources({
 // ============================================================
 // STEP 5: ACCOUNTS
 // ============================================================
-function StepAccounts({
-  campaign,
-  accounts,
-  onUpdate,
-}: {
-  campaign: Partial<Campaign>;
-  accounts: SocialAccount[];
-  onUpdate: (u: Partial<Campaign>) => void;
-}) {
-  const selectedIds = (campaign.targetAccounts || []).map((a) => a.accountId);
+function StepAccounts({ campaign, accounts, onUpdate }: StepProps) {
+  const selectedIds = (campaign.targetAccounts ?? []).map((a) => a.accountId);
 
   const toggleAccount = (account: SocialAccount) => {
-    const current = (campaign.targetAccounts || []) as TargetAccount[];
+    const current = (campaign.targetAccounts ?? []) as TargetAccount[];
     const exists = current.find((a) => a.accountId === account.id);
     if (exists) {
       onUpdate({ targetAccounts: current.filter((a) => a.accountId !== account.id) });
@@ -525,13 +538,10 @@ function StepAccounts({
     }
   };
 
-  // Group by platform
-  const grouped = accounts.reduce((acc, account) => {
-    const platform = account.platform;
-    if (!acc[platform]) acc[platform] = [];
-    acc[platform].push(account);
-    return acc;
-  }, {} as Record<string, SocialAccount[]>);
+  const grouped = accounts.reduce<Record<string, SocialAccount[]>>((acc, account) => {
+    const list = acc[account.platform] ?? [];
+    return { ...acc, [account.platform]: [...list, account] };
+  }, {});
 
   return (
     <div className="space-y-6">
@@ -542,51 +552,47 @@ function StepAccounts({
         </p>
       </div>
 
-      {Object.entries(grouped).map(([platform, platformAccounts]) => (
-        <div key={platform}>
-          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-500">
-            {platform}
-          </label>
-          <div className="space-y-2">
-            {platformAccounts.map((account) => {
-              const isSelected = selectedIds.includes(account.id);
-              return (
-                <button
-                  key={account.id}
-                  onClick={() => toggleAccount(account)}
-                  className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors ${
-                    isSelected
-                      ? 'border-orange-300 bg-orange-50'
-                      : 'border-gray-200 bg-white hover:bg-gray-50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
-                        isSelected ? 'border-orange-500 bg-orange-500' : 'border-gray-300'
-                      }`}
-                    >
-                      {isSelected && <Check className="h-3 w-3 text-white" />}
-                    </div>
-                    <span className="text-sm font-medium text-gray-900">
-                      @{account.platformUsername || account.platformUserId}
-                    </span>
-                  </div>
-                  <span className={`text-xs ${isSelected ? 'text-orange-600' : 'text-gray-400'}`}>
-                    {isSelected ? 'Selected' : 'Connected'}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-
-      {accounts.length === 0 && (
+      {accounts.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-200 p-8 text-center">
           <p className="text-sm text-gray-500">No accounts connected yet.</p>
           <p className="mt-1 text-xs text-gray-400">Connect your social accounts in Settings to enable posting.</p>
         </div>
+      ) : (
+        Object.entries(grouped).map(([platform, platformAccounts]) => (
+          <div key={platform}>
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              {platform}
+            </label>
+            <div className="space-y-2">
+              {platformAccounts.map((account) => {
+                const isSelected = selectedIds.includes(account.id);
+                return (
+                  <button
+                    key={account.id}
+                    onClick={() => toggleAccount(account)}
+                    className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors ${isSelected ? 'border-orange-300 bg-orange-50' : 'border-gray-200 bg-white hover:bg-gray-50'
+                      }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${isSelected ? 'border-orange-500 bg-orange-500' : 'border-gray-300'
+                          }`}
+                      >
+                        {isSelected && <Check className="h-3 w-3 text-white" />}
+                      </div>
+                      <span className="text-sm font-medium text-gray-900">
+                        @{account.platformUsername ?? account.platformUserId}
+                      </span>
+                    </div>
+                    <span className={`text-xs ${isSelected ? 'text-orange-600' : 'text-gray-400'}`}>
+                      {isSelected ? 'Selected' : 'Connected'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))
       )}
     </div>
   );
@@ -595,7 +601,7 @@ function StepAccounts({
 // ============================================================
 // STEP 6: CADENCE
 // ============================================================
-function StepCadence({ campaign, onUpdate }: { campaign: Partial<Campaign>; onUpdate: (u: Partial<Campaign>) => void }) {
+function StepCadence({ campaign, onUpdate }: StepProps) {
   const totalPosts = calculateTotalPosts(campaign);
   const lengthOptions = [
     { value: 7, label: '1 week' },
@@ -616,14 +622,14 @@ function StepCadence({ campaign, onUpdate }: { campaign: Partial<Campaign>; onUp
           <label className="text-sm font-medium text-gray-900">Posts per account per day</label>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => onUpdate({ postsPerDay: Math.max(1, (campaign.postsPerDay || 3) - 1) })}
+              onClick={() => onUpdate({ postsPerDay: Math.max(1, (campaign.postsPerDay ?? 3) - 1) })}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50"
             >
               -
             </button>
-            <span className="text-lg font-semibold text-gray-900">{campaign.postsPerDay || 3}</span>
+            <span className="text-lg font-semibold text-gray-900">{campaign.postsPerDay ?? 3}</span>
             <button
-              onClick={() => onUpdate({ postsPerDay: Math.min(10, (campaign.postsPerDay || 3) + 1) })}
+              onClick={() => onUpdate({ postsPerDay: Math.min(10, (campaign.postsPerDay ?? 3) + 1) })}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50"
             >
               +
@@ -640,11 +646,10 @@ function StepCadence({ campaign, onUpdate }: { campaign: Partial<Campaign>; onUp
             <button
               key={opt.value}
               onClick={() => onUpdate({ campaignLengthDays: opt.value })}
-              className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
-                campaign.campaignLengthDays === opt.value
+              className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${campaign.campaignLengthDays === opt.value
                   ? 'border-orange-500 bg-orange-50 text-orange-700'
                   : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-              }`}
+                }`}
             >
               {opt.label}
             </button>
@@ -656,8 +661,8 @@ function StepCadence({ campaign, onUpdate }: { campaign: Partial<Campaign>; onUp
         <label className="mb-2 block text-sm font-medium text-gray-900">Start date</label>
         <input
           type="date"
-          value={campaign.startDate ? new Date(campaign.startDate).toISOString().split('T')[0] : ''}
-          onChange={(e) => onUpdate({ startDate: e.target.value ? new Date(e.target.value) : null })}
+          value={campaign.startDate ?? ''}
+          onChange={(e) => onUpdate({ startDate: e.target.value || null })}
           className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
         />
         <p className="mt-1 text-xs text-gray-400">
@@ -672,7 +677,8 @@ function StepCadence({ campaign, onUpdate }: { campaign: Partial<Campaign>; onUp
             <div className="text-2xl font-bold text-gray-900">{totalPosts} posts</div>
           </div>
           <div className="text-right text-xs text-gray-500">
-            {(campaign.targetAccounts || []).length} account × {campaign.postsPerDay || 3}/day × {campaign.campaignLengthDays || 7} days
+            {(campaign.targetAccounts ?? []).length} account{(campaign.targetAccounts ?? []).length !== 1 ? 's' : ''} ×{' '}
+            {campaign.postsPerDay ?? 3}/day × {campaign.campaignLengthDays ?? 7} days
           </div>
         </div>
       </div>
@@ -683,7 +689,7 @@ function StepCadence({ campaign, onUpdate }: { campaign: Partial<Campaign>; onUp
 // ============================================================
 // STEP 7: GENERATE
 // ============================================================
-function StepGenerate({ campaign }: { campaign: Partial<Campaign> }) {
+function StepGenerate({ campaign }: StepProps) {
   const totalPosts = calculateTotalPosts(campaign);
 
   return (
@@ -698,25 +704,23 @@ function StepGenerate({ campaign }: { campaign: Partial<Campaign> }) {
       <div className="mx-auto grid max-w-md grid-cols-4 gap-4 rounded-xl border border-gray-200 p-4">
         <div className="text-center">
           <div className="text-xl font-bold text-gray-900">{totalPosts}</div>
-          <div className="text-xs text-gray-500 uppercase">Posts</div>
+          <div className="text-xs uppercase text-gray-500">Posts</div>
         </div>
         <div className="text-center">
-          <div className="text-xl font-bold text-gray-900">{(campaign.targetAccounts || []).length}</div>
-          <div className="text-xs text-gray-500 uppercase">Account</div>
+          <div className="text-xl font-bold text-gray-900">{(campaign.targetAccounts ?? []).length}</div>
+          <div className="text-xs uppercase text-gray-500">Accounts</div>
         </div>
         <div className="text-center">
-          <div className="text-xl font-bold text-gray-900">{campaign.postsPerDay || 3}/day</div>
-          <div className="text-xs text-gray-500 uppercase">Per account</div>
+          <div className="text-xl font-bold text-gray-900">{campaign.postsPerDay ?? 3}/day</div>
+          <div className="text-xs uppercase text-gray-500">Per account</div>
         </div>
         <div className="text-center">
-          <div className="text-xl font-bold text-gray-900">{campaign.campaignLengthDays || 7} days</div>
-          <div className="text-xs text-gray-500 uppercase">Length</div>
+          <div className="text-xl font-bold text-gray-900">{campaign.campaignLengthDays ?? 7} days</div>
+          <div className="text-xs uppercase text-gray-500">Length</div>
         </div>
       </div>
 
-      <div className="text-sm text-gray-500">
-        Your plan includes 25 content pieces per campaign.
-      </div>
+      <div className="text-sm text-gray-500">Your plan includes 25 content pieces per campaign.</div>
     </div>
   );
 }
@@ -724,22 +728,25 @@ function StepGenerate({ campaign }: { campaign: Partial<Campaign> }) {
 // ============================================================
 // STEP 8: REVIEW
 // ============================================================
-function StepReview({ campaign }: { campaign: Partial<Campaign> }) {
+function StepReview({ campaign }: StepProps) {
+  const totalPosts = campaign.totalPosts ?? 0;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold text-gray-900">Review your campaign</h3>
-          <p className="text-sm text-gray-500">{campaign.generatedPosts || 0} of {campaign.totalPosts || 0} posts generated</p>
+          <p className="text-sm text-gray-500">
+            {campaign.generatedPosts ?? 0} of {totalPosts} posts generated
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-gray-900">{campaign.reRollsRemaining || 0} re-rolls left</span>
+          <span className="text-sm font-medium text-gray-900">{campaign.reRollsRemaining ?? 0} re-rolls left</span>
         </div>
       </div>
 
-      {/* Placeholder for review grid — will be populated with actual generated content */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-        {Array.from({ length: campaign.totalPosts || 0 }).map((_, i) => (
+        {Array.from({ length: totalPosts }).map((_, i) => (
           <div key={i} className="aspect-[9/16] rounded-xl border border-gray-200 bg-gray-50" />
         ))}
       </div>
@@ -750,7 +757,7 @@ function StepReview({ campaign }: { campaign: Partial<Campaign> }) {
 // ============================================================
 // STEP 9: LAUNCH
 // ============================================================
-function StepLaunch({ campaign }: { campaign: Partial<Campaign> }) {
+function StepLaunch({ campaign }: StepProps) {
   return (
     <div className="space-y-6 text-center">
       <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
@@ -759,7 +766,10 @@ function StepLaunch({ campaign }: { campaign: Partial<Campaign> }) {
       <div>
         <h3 className="text-lg font-semibold text-gray-900">Campaign scheduled!</h3>
         <p className="text-sm text-gray-500">
-          {campaign.name || 'Your campaign'} is now {campaign.status}. We'll start posting on {campaign.startDate ? new Date(campaign.startDate).toLocaleDateString() : 'the scheduled date'}.
+          {campaign.name || 'Your campaign'} is now {campaign.status ?? 'scheduled'}. We'll start posting on{' '}
+          {campaign.startDate
+            ? new Date(campaign.startDate).toLocaleDateString()
+            : 'the scheduled date'}.
         </p>
       </div>
     </div>
@@ -770,14 +780,13 @@ function StepLaunch({ campaign }: { campaign: Partial<Campaign> }) {
 // UTILS
 // ============================================================
 function calculateTotalPosts(campaign: Partial<Campaign>): number {
-  const accounts = (campaign.targetAccounts || []).length || 1;
-  const postsPerDay = campaign.postsPerDay || 3;
-  const days = campaign.campaignLengthDays || 7;
+  const accounts = (campaign.targetAccounts ?? []).length || 1;
+  const postsPerDay = campaign.postsPerDay ?? 3;
+  const days = campaign.campaignLengthDays ?? 7;
   return accounts * postsPerDay * days;
 }
 
-// Map step index to component
-const STEP_COMPONENTS = [
+const STEP_COMPONENTS: React.FC<StepProps>[] = [
   StepBasics,
   StepAngles,
   StepVoice,

@@ -88,6 +88,71 @@ export interface ContentTemplate {
 }
 
 // ============================================================
+// CONTENT ITEM (existing schema + v2 additions)
+// ============================================================
+
+export interface ContentItem {
+  id: string;
+  orgId: string;
+  brandProfileId: string | null;
+  caption: string;
+  hashtags: string[];
+  contentType: string; // single_image, carousel, story, text_only, reel
+  topic: string | null;
+  graphicUrls: string[];
+  graphicTemplateId: string | null;
+  variantGroupId: string | null;
+  variantNumber: number;
+  isSelectedVariant: boolean;
+  targetPlatforms: string[];
+  platformSpecific: Record<string, unknown>;
+  status: string; // draft, pending_review, approved, scheduled, published, rejected
+  scheduledFor: string | null;
+  publishedAt: string | null;
+  rejectionFeedback: string | null;
+  antiSlopScore: number | null;
+  qualityFlags: string[];
+  contentMode: string | null;
+  enrichmentData: Record<string, unknown>;
+  enrichmentApplied: string[];
+  engagementData: Record<string, unknown>;
+  // v2 additions
+  campaignId: string | null;
+  templateId: string | null;
+  influencerId: string | null;
+  angleId: string | null;
+  generationParams: GenerationParams;
+  contentFormat: string | null;
+  aspectRatio: string | null;
+  durationSeconds: number | null;
+  aiModelUsed: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+
+// ============================================================
+// SOCIAL ACCOUNT
+// ============================================================
+
+export interface SocialAccount {
+  id: string;
+  orgId: string;
+  platform: string; // instagram, facebook, linkedin, twitter, tiktok, whatsapp, ...
+  platformUserId: string | null;
+  platformUsername: string | null;
+  accessToken: string | null;
+  refreshToken: string | null;
+  tokenExpiresAt: string | null;
+  accountType: string | null; // personal, page, company, business
+  profileImageUrl: string | null;
+  isActive: boolean;
+  connectedAt: string;
+  oauthToken: string | null;
+  oauthTokenSecret: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+// ============================================================
 // CAMPAIGN
 // ============================================================
 

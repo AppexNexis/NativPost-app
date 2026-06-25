@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import { Plus, Calendar, BarChart3 } from "lucide-react";
+import { Plus, Calendar, BarChart3, AlertTriangle } from "lucide-react";
 import { CampaignWizard } from "@/components/campaigns/CampaignWizard";
-import { CampaignReviewGrid } from "@/components/campaigns/CampaignReviewGrid";
-import type { Campaign, ContentItem, ContentAngle, SocialAccount } from "@/types/v2";
+// import { CampaignReviewGrid } from "@/components/campaigns/CampaignReviewGrid";
+import type { Campaign, ContentAngle, SocialAccount } from "@/types/v2";
 
 interface CampaignsPageProps {
   campaigns: Campaign[];
@@ -24,32 +24,103 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
     return true;
   });
 
-  const handleCreate = (campaign: Partial<Campaign>) => {
-    // TODO: API call to create campaign
-    console.log("Create campaign", campaign);
-    return Promise.resolve({ id: "new-campaign-id", ...campaign } as Campaign);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleCreate = async (campaign: Partial<Campaign>): Promise<Campaign> => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(campaign),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: "Failed to create campaign" }));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+
+      const { item } = await res.json() as { item: Campaign };
+      return item;
+    } catch (err: any) {
+      const message = err.message || "Failed to create campaign";
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleGenerate = (campaignId: string) => {
-    // TODO: Trigger batch generation
-    console.log("Generate campaign", campaignId);
-    return Promise.resolve();
+  const handleGenerate = async (campaignId: string): Promise<void> => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: "Failed to generate campaign posts" }));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+
+      const result = await res.json() as { totalPosts: number; generatedPosts: number; failedPosts: number };
+      console.log("Campaign generation complete:", result);
+    } catch (err: any) {
+      const message = err.message || "Failed to generate campaign posts";
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleLaunch = (campaignId: string) => {
-    // TODO: Schedule/launch campaign
-    console.log("Launch campaign", campaignId);
-    return Promise.resolve();
+  const handleLaunch = async (campaignId: string): Promise<void> => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}/launch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: "Failed to launch campaign" }));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+
+      const result = await res.json() as { success: boolean; scheduledPosts: number };
+      console.log("Campaign launched:", result);
+    } catch (err: any) {
+      const message = err.message || "Failed to launch campaign";
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (activeTab === "new" || selectedCampaign) {
     return (
       <div className="space-y-6">
+        {error && (
+          <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+            {error}
+          </div>
+        )}
         <div className="flex items-center gap-4">
           <button
             onClick={() => {
               setActiveTab("active");
               setSelectedCampaign(null);
+              setError(null);
             }}
             className="text-sm text-gray-500 hover:text-gray-700"
           >
@@ -63,6 +134,7 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
           onCreate={handleCreate}
           onGenerate={handleGenerate}
           onLaunch={handleLaunch}
+          isLoading={isLoading}
         />
       </div>
     );
