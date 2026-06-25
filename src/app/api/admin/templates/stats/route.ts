@@ -1,102 +1,306 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { auth } from "@clerk/nextjs/server";
+import { getDb } from "@/libs/DB";
+import { contentTemplateSchema } from "@/models/Schema";
+import { eq, and, gte, count, sql, avg, max } from "drizzle-orm";
 
-const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(",") || [
-  "admin@nativpost.com",
-];
+/**
+ * NativPost admin guard — same check as middleware + AdminShell.
+ * Must be org:admin AND the org must be the NativPost team org.
+ */
+async function requireAdmin() {
+  const { userId, orgId, orgRole } = await auth();
 
-async function isAdmin(req: NextRequest): Promise<boolean> {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("session")?.value;
-  const authHeader = req.headers.get("Authorization");
-  const bearerToken = authHeader?.replace("Bearer ", "");
+  if (!userId || !orgId) {
+    return {
+      error: NextResponse.json(
+        { error: "Unauthorized — sign in and select an organization" },
+        { status: 401 }
+      ),
+      orgId: null,
+    };
+  }
 
-  // In production, verify the session token against your auth service
-  // and check the user's role or email against ADMIN_EMAILS
-  // Example:
-  // const user = await getUserFromSession(sessionToken);
-  // return user && (ADMIN_EMAILS.includes(user.email) || user.role === "admin");
+  const teamOrgId = process.env.NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID;
+  const isNativPostStaff = !!(
+    teamOrgId && orgId === teamOrgId && orgRole === "org:admin"
+  );
 
-  return true;
+  if (!isNativPostStaff) {
+    return {
+      error: NextResponse.json(
+        { error: "Forbidden — NativPost admin access required" },
+        { status: 403 }
+      ),
+      orgId: null,
+    };
+  }
+
+  return { error: null, orgId };
 }
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
+  const { error } = await requireAdmin();
+  if (error) return error;
+
+  const db = await getDb();
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - today.getDay());
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
   try {
-    if (!(await isAdmin(req))) {
-      return NextResponse.json(
-        { error: "Forbidden: Admin access required" },
-        { status: 403 }
+    // ── Today ────────────────────────────────────────────────────────────
+    const todayProcessed = await db
+      .select({ count: count() })
+      .from(contentTemplateSchema)
+      .where(
+        and(
+          gte(contentTemplateSchema.updatedAt, today),
+          sql`${contentTemplateSchema.curationStatus} IS NOT NULL`
+        )
       );
+
+    const todayApproved = await db
+      .select({ count: count() })
+      .from(contentTemplateSchema)
+      .where(
+        and(
+          gte(contentTemplateSchema.updatedAt, today),
+          eq(contentTemplateSchema.curationStatus, "approved")
+        )
+      );
+
+    const todayRejected = await db
+      .select({ count: count() })
+      .from(contentTemplateSchema)
+      .where(
+        and(
+          gte(contentTemplateSchema.updatedAt, today),
+          eq(contentTemplateSchema.curationStatus, "rejected")
+        )
+      );
+
+    // ── This week ──────────────────────────────────────────────────────
+    const weekProcessed = await db
+      .select({ count: count() })
+      .from(contentTemplateSchema)
+      .where(
+        and(
+          gte(contentTemplateSchema.updatedAt, weekStart),
+          sql`${contentTemplateSchema.curationStatus} IS NOT NULL`
+        )
+      );
+
+    const weekApproved = await db
+      .select({ count: count() })
+      .from(contentTemplateSchema)
+      .where(
+        and(
+          gte(contentTemplateSchema.updatedAt, weekStart),
+          eq(contentTemplateSchema.curationStatus, "approved")
+        )
+      );
+
+    const weekRejected = await db
+      .select({ count: count() })
+      .from(contentTemplateSchema)
+      .where(
+        and(
+          gte(contentTemplateSchema.updatedAt, weekStart),
+          eq(contentTemplateSchema.curationStatus, "rejected")
+        )
+      );
+
+    // ── This month ───────────────────────────────────────────────────────
+    const monthProcessed = await db
+      .select({ count: count() })
+      .from(contentTemplateSchema)
+      .where(
+        and(
+          gte(contentTemplateSchema.updatedAt, monthStart),
+          sql`${contentTemplateSchema.curationStatus} IS NOT NULL`
+        )
+      );
+
+    const monthApproved = await db
+      .select({ count: count() })
+      .from(contentTemplateSchema)
+      .where(
+        and(
+          gte(contentTemplateSchema.updatedAt, monthStart),
+          eq(contentTemplateSchema.curationStatus, "approved")
+        )
+      );
+
+    const monthRejected = await db
+      .select({ count: count() })
+      .from(contentTemplateSchema)
+      .where(
+        and(
+          gte(contentTemplateSchema.updatedAt, monthStart),
+          eq(contentTemplateSchema.curationStatus, "rejected")
+        )
+      );
+
+    // ── Queue health ─────────────────────────────────────────────────────
+    const pendingCount = await db
+      .select({ count: count() })
+      .from(contentTemplateSchema)
+      .where(eq(contentTemplateSchema.curationStatus, "pending"));
+
+    const avgTimeInQueue = await db
+      .select({ avg: avg(sql`EXTRACT(EPOCH FROM (${contentTemplateSchema.updatedAt} - ${contentTemplateSchema.createdAt})) / 3600`) })
+      .from(contentTemplateSchema)
+      .where(eq(contentTemplateSchema.curationStatus, "pending"));
+
+    const oldestPending = await db
+      .select({ max: max(sql`EXTRACT(EPOCH FROM (NOW() - ${contentTemplateSchema.createdAt})) / 3600`) })
+      .from(contentTemplateSchema)
+      .where(eq(contentTemplateSchema.curationStatus, "pending"));
+
+    // ── Velocity (last 7 days) ───────────────────────────────────────────
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const velocity = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const nextDay = new Date(d);
+      nextDay.setDate(nextDay.getDate() + 1);
+
+      const row = await db
+        .select({ count: count() })
+        .from(contentTemplateSchema)
+        .where(
+          and(
+            gte(contentTemplateSchema.createdAt, d),
+            sql`${contentTemplateSchema.createdAt} < ${nextDay}`
+          )
+        );
+
+      velocity.push({
+        day: days[d.getDay()] ?? "—",
+        processed: row[0]?.count ?? 0,
+      });
     }
 
-    // In production, query your database for real metrics
-    // Example with Drizzle/Prisma:
-    // const today = new Date();
-    // today.setHours(0, 0, 0, 0);
-    // const todayProcessed = await db
-    //   .select({ count: count() })
-    //   .from(contentTemplateSchema)
-    //   .where(gte(contentTemplateSchema.updatedAt, today));
+    // ── Top niches ───────────────────────────────────────────────────────
+    const topNiches = await db
+      .select({
+        name: sql`unnest(${contentTemplateSchema.niches})`,
+        count: count(),
+      })
+      .from(contentTemplateSchema)
+      .groupBy(sql`unnest(${contentTemplateSchema.niches})`)
+      .orderBy(sql`count(*) DESC`)
+      .limit(8);
+
+    // ── Top angles ───────────────────────────────────────────────────────
+    const topAngles = await db
+      .select({
+        name: sql`unnest(${contentTemplateSchema.angles})`,
+        count: count(),
+      })
+      .from(contentTemplateSchema)
+      .groupBy(sql`unnest(${contentTemplateSchema.angles})`)
+      .orderBy(sql`count(*) DESC`)
+      .limit(8);
+
+    // ── Approval rate history (last 4 weeks) ───────────────────────────
+    const approvalRateHistory = [];
+    for (let w = 3; w >= 0; w--) {
+      const wStart = new Date(today);
+      wStart.setDate(wStart.getDate() - w * 7 - today.getDay());
+      const wEnd = new Date(wStart);
+      wEnd.setDate(wEnd.getDate() + 7);
+
+      const total = await db
+        .select({ count: count() })
+        .from(contentTemplateSchema)
+        .where(
+          and(
+            gte(contentTemplateSchema.updatedAt, wStart),
+            sql`${contentTemplateSchema.updatedAt} < ${wEnd}`
+          )
+        );
+
+      const approved = await db
+        .select({ count: count() })
+        .from(contentTemplateSchema)
+        .where(
+          and(
+            gte(contentTemplateSchema.updatedAt, wStart),
+            sql`${contentTemplateSchema.updatedAt} < ${wEnd}`,
+            eq(contentTemplateSchema.curationStatus, "approved")
+          )
+        );
+
+      const totalCount = total[0]?.count ?? 0;
+      const approvedCount = approved[0]?.count ?? 0;
+      const rate = totalCount > 0 ? Math.round((approvedCount / totalCount) * 100) : 0;
+
+      approvalRateHistory.push({ week: `W${4 - w}`, rate });
+    }
+
+    // ── Platform breakdown ─────────────────────────────────────────────
+    const platformBreakdown = await db
+      .select({
+        name: contentTemplateSchema.sourcePlatform,
+        value: count(),
+      })
+      .from(contentTemplateSchema)
+      .groupBy(contentTemplateSchema.sourcePlatform)
+      .orderBy(sql`count(*) DESC`);
+
+    const colors: Record<string, string> = {
+      tiktok: "#0f172a",
+      instagram: "#e11d48",
+      youtube: "#ef4444",
+      facebook: "#3b82f6",
+      linkedin: "#0a66c2",
+      twitter: "#1da1f2",
+    };
 
     const metrics = {
       today: {
-        processed: 58,
-        approved: 45,
-        rejected: 13,
+        processed: todayProcessed[0]?.count ?? 0,
+        approved: todayApproved[0]?.count ?? 0,
+        rejected: todayRejected[0]?.count ?? 0,
       },
       thisWeek: {
-        processed: 312,
-        approved: 245,
-        rejected: 67,
+        processed: weekProcessed[0]?.count ?? 0,
+        approved: weekApproved[0]?.count ?? 0,
+        rejected: weekRejected[0]?.count ?? 0,
       },
       thisMonth: {
-        processed: 1240,
-        approved: 980,
-        rejected: 260,
+        processed: monthProcessed[0]?.count ?? 0,
+        approved: monthApproved[0]?.count ?? 0,
+        rejected: monthRejected[0]?.count ?? 0,
       },
-      avgTimeInQueue: 4.2,
-      oldestPending: 18.5,
-      avgQueueLength: 23,
-      velocity: [
-        { day: "Mon", processed: 42 },
-        { day: "Tue", processed: 58 },
-        { day: "Wed", processed: 65 },
-        { day: "Thu", processed: 48 },
-        { day: "Fri", processed: 72 },
-        { day: "Sat", processed: 38 },
-        { day: "Sun", processed: 31 },
-      ],
-      topNiches: [
-        { name: "SaaS", count: 156 },
-        { name: "E-commerce", count: 134 },
-        { name: "Personal Brand", count: 112 },
-        { name: "Paid Ads", count: 98 },
-        { name: "SEO", count: 87 },
-        { name: "Copywriting", count: 76 },
-        { name: "Email Marketing", count: 65 },
-        { name: "Branding", count: 54 },
-      ],
-      topAngles: [
-        { name: "Pain Point", count: 203 },
-        { name: "Social Proof", count: 178 },
-        { name: "Tutorial", count: 156 },
-        { name: "Before/After", count: 134 },
-        { name: "Myth Busting", count: 122 },
-        { name: "Storytelling", count: 109 },
-        { name: "Listicle", count: 98 },
-        { name: "Hack", count: 87 },
-      ],
-      approvalRateHistory: [
-        { week: "W1", rate: 78 },
-        { week: "W2", rate: 82 },
-        { week: "W3", rate: 75 },
-        { week: "W4", rate: 79 },
-      ],
-      platformBreakdown: [
-        { name: "TikTok", value: 540, color: "#0f172a" },
-        { name: "Instagram", value: 420, color: "#e11d48" },
-        { name: "YouTube", value: 280, color: "#ef4444" },
-      ],
+      avgTimeInQueue: avgTimeInQueue[0]?.avg
+        ? Number(parseFloat(String(avgTimeInQueue[0].avg)).toFixed(1))
+        : 0,
+      oldestPending: oldestPending[0]?.max
+        ? Number(parseFloat(String(oldestPending[0].max)).toFixed(1))
+        : 0,
+      avgQueueLength: pendingCount[0]?.count ?? 0,
+      velocity,
+      topNiches: topNiches.map((n) => ({
+        name: String(n.name),
+        count: Number(n.count),
+      })),
+      topAngles: topAngles.map((a) => ({
+        name: String(a.name),
+        count: Number(a.count),
+      })),
+      approvalRateHistory,
+      platformBreakdown: platformBreakdown.map((p) => ({
+        name: String(p.name ?? "unknown"),
+        value: Number(p.value),
+        color: colors[String(p.name ?? "unknown")] ?? "#6b7280",
+      })),
     };
 
     return NextResponse.json(metrics, { status: 200 });

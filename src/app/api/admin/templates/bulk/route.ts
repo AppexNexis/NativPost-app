@@ -1,83 +1,135 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { auth } from "@clerk/nextjs/server";
+import { getDb } from "@/libs/DB";
+import { contentTemplateSchema } from "@/models/Schema";
 
-const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(",") || [
-  "admin@nativpost.com",
-];
+/**
+ * NativPost admin guard — same check as middleware + AdminShell.
+ * Must be org:admin AND the org must be the NativPost team org.
+ */
+async function requireAdmin() {
+  const { userId, orgId, orgRole } = await auth();
 
-interface TemplateStructure {
-  hook: string;
-  hookTime: number;
-  body: string;
-  bodyTime: number;
-  cta: string;
-  ctaTime: number;
+  if (!userId || !orgId) {
+    return {
+      error: NextResponse.json(
+        { error: "Unauthorized — sign in and select an organization" },
+        { status: 401 }
+      ),
+      orgId: null,
+    };
+  }
+
+  const teamOrgId = process.env.NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID;
+  const isNativPostStaff = !!(
+    teamOrgId && orgId === teamOrgId && orgRole === "org:admin"
+  );
+
+  if (!isNativPostStaff) {
+    return {
+      error: NextResponse.json(
+        { error: "Forbidden — NativPost admin access required" },
+        { status: 403 }
+      ),
+      orgId: null,
+    };
+  }
+
+  return { error: null, orgId };
+}
+
+// ── Input types ───────────────────────────────────────────────────────────
+
+interface TemplateStructureInput {
+  hook?: string;
+  hookTime?: number;
+  body?: string;
+  bodyTime?: number;
+  cta?: string;
+  ctaTime?: number;
 }
 
 interface ImportTemplatePayload {
   sourceUrl: string;
-  sourcePlatform: "TikTok" | "Instagram" | "YouTube";
-  contentType: "Video" | "Reel" | "Short" | "Long-form";
+  sourcePlatform: "tiktok" | "instagram" | "youtube" | "facebook" | "linkedin" | "twitter";
+  contentType: "slideshow" | "wall_of_text" | "talking_head" | "green_screen_meme" | "video_hook_demo" | "carousel" | "ugc" | "custom";
   thumbnailUrl: string;
   creatorName?: string;
   niches?: string[];
   angles?: string[];
   engagementScore?: number;
-  duration?: number;
+  durationSeconds?: number;
   transcript?: string;
-  structure?: TemplateStructure;
+  structure?: TemplateStructureInput;
 }
 
-async function isAdmin(req: NextRequest): Promise<boolean> {
-  // Check session token from cookies or Authorization header
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("session")?.value;
+const VALID_PLATFORMS = [
+  "tiktok",
+  "instagram",
+  "youtube",
+  "facebook",
+  "linkedin",
+  "twitter",
+];
 
-  // In production, verify the session token against your auth service
-  // and check the user's role or email against ADMIN_EMAILS
-  const authHeader = req.headers.get("Authorization");
-  const bearerToken = authHeader?.replace("Bearer ", "");
-
-  // Mock admin check for demo
-  return true;
-}
+const VALID_CONTENT_TYPES = [
+  "slideshow",
+  "wall_of_text",
+  "talking_head",
+  "green_screen_meme",
+  "video_hook_demo",
+  "carousel",
+  "ugc",
+  "custom",
+];
 
 function validateTemplate(
-  t: ImportTemplatePayload,
-  index: number
+  t: ImportTemplatePayload
 ): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
   if (!t.sourceUrl || typeof t.sourceUrl !== "string") {
-    errors.push("sourceUrl is required and must be a string");
+    errors.push("sourceUrl is required");
   } else if (!t.sourceUrl.startsWith("http")) {
     errors.push("sourceUrl must be a valid URL");
   }
 
   if (!t.sourcePlatform) {
     errors.push("sourcePlatform is required");
-  } else if (!["TikTok", "Instagram", "YouTube"].includes(t.sourcePlatform)) {
-    errors.push("sourcePlatform must be TikTok, Instagram, or YouTube");
+  } else if (!VALID_PLATFORMS.includes(t.sourcePlatform)) {
+    errors.push(
+      `sourcePlatform must be one of: ${VALID_PLATFORMS.join(", ")}`
+    );
   }
 
   if (!t.contentType) {
     errors.push("contentType is required");
-  } else if (!["Video", "Reel", "Short", "Long-form"].includes(t.contentType)) {
-    errors.push("contentType must be Video, Reel, Short, or Long-form");
+  } else if (!VALID_CONTENT_TYPES.includes(t.contentType)) {
+    errors.push(
+      `contentType must be one of: ${VALID_CONTENT_TYPES.join(", ")}`
+    );
   }
 
   if (!t.thumbnailUrl || typeof t.thumbnailUrl !== "string") {
-    errors.push("thumbnailUrl is required and must be a string");
+    errors.push("thumbnailUrl is required");
   } else if (!t.thumbnailUrl.startsWith("http")) {
     errors.push("thumbnailUrl must be a valid URL");
   }
 
-  if (t.engagementScore !== undefined && (typeof t.engagementScore !== "number" || t.engagementScore < 0 || t.engagementScore > 100)) {
-    errors.push("engagementScore must be a number between 0 and 100");
+  if (
+    t.engagementScore !== undefined &&
+    (typeof t.engagementScore !== "number" ||
+      t.engagementScore < 0 ||
+      t.engagementScore > 1)
+  ) {
+    errors.push("engagementScore must be a number between 0 and 1");
   }
 
-  if (t.duration !== undefined && (typeof t.duration !== "number" || t.duration < 0)) {
-    errors.push("duration must be a non-negative number");
+  if (
+    t.durationSeconds !== undefined &&
+    (typeof t.durationSeconds !== "number" || t.durationSeconds < 0)
+  ) {
+    errors.push("durationSeconds must be a non-negative number");
   }
 
   if (t.niches !== undefined && !Array.isArray(t.niches)) {
@@ -91,15 +143,15 @@ function validateTemplate(
   return { valid: errors.length === 0, errors };
 }
 
-export async function POST(req: NextRequest) {
-  try {
-    if (!(await isAdmin(req))) {
-      return NextResponse.json(
-        { error: "Forbidden: Admin access required" },
-        { status: 403 }
-      );
-    }
+// ── Route handler ─────────────────────────────────────────────────────────
 
+export async function POST(req: NextRequest) {
+  const { error, orgId } = await requireAdmin();
+  if (error) return error;
+
+  const db = await getDb();
+
+  try {
     const body = await req.json();
     const { templates } = body as { templates: ImportTemplatePayload[] };
 
@@ -128,7 +180,7 @@ export async function POST(req: NextRequest) {
     const validTemplates: ImportTemplatePayload[] = [];
 
     templates.forEach((t, index) => {
-      const result = validateTemplate(t, index);
+      const result = validateTemplate(t);
       if (result.valid) {
         validTemplates.push(t);
       } else {
@@ -136,30 +188,52 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    // In production, insert into database using your ORM
-    // Example with Drizzle/Prisma:
-    // const inserted = await db.insert(contentTemplateSchema).values(
-    //   validTemplates.map(t => ({
-    //     id: generateId(),
-    //     ...t,
-    //     status: "pending",
-    //     createdAt: new Date(),
-    //     updatedAt: new Date(),
-    //   }))
-    // ).returning();
-
-    // Mock insertion for demo
-    const mockInserted = validTemplates.map((t) => ({
-      id: `t-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      ...t,
-      status: "pending" as const,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }));
+    // Insert valid templates into the database
+    const inserted = validTemplates.length > 0
+      ? await db
+          .insert(contentTemplateSchema)
+          .values(
+            validTemplates.map((t) => ({
+              id: crypto.randomUUID(),
+              orgId: orgId!,
+              name: `Imported from ${t.sourcePlatform}`,
+              description: t.transcript?.slice(0, 200) || null,
+              contentType: t.contentType,
+              sourcePlatform: t.sourcePlatform,
+              sourceUrl: t.sourceUrl,
+              sourceCreator: t.creatorName || null,
+              thumbnailUrl: t.thumbnailUrl,
+              mediaUrl: t.sourceUrl, // fallback for video URL
+              durationSeconds: t.durationSeconds || null,
+              niches: t.niches || [],
+              angles: t.angles || [],
+              contentStructure: t.structure
+                ? {
+                    hook: { text: t.structure.hook || "", timestamp: t.structure.hookTime || 0 },
+                    body: { text: t.structure.body || "", timestamp: t.structure.bodyTime || 0 },
+                    cta: { text: t.structure.cta || "", timestamp: t.structure.ctaTime || 0 },
+                  }
+                : {},
+              engagementScore: t.engagementScore || null,
+              likes: null,
+              views: null,
+              remixCount: 0,
+              publishCount: 0,
+              avgRemixPerformance: null,
+              curationStatus: "pending" as const,
+              isActive: true,
+              curatedBy: null,
+              curatedAt: null,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            }))
+          )
+          .returning()
+      : [];
 
     return NextResponse.json(
       {
-        imported: mockInserted.length,
+        imported: inserted.length,
         errors,
         total: templates.length,
       },
