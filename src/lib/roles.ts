@@ -69,7 +69,6 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Content Library', href: '/dashboard/content-library', icon: 'BookOpen', roles: ['admin', 'editor', 'member'], group: 'Library' },
   { label: 'Campaigns', href: '/dashboard/campaigns', icon: 'Megaphone', roles: ['admin', 'editor', 'member'], group: 'Library' },
   { label: 'AI Studio', href: '/dashboard/ai-studio', icon: 'Sparkles', roles: ['admin', 'editor', 'member'], group: 'Library' },
-  { label: 'Media library', href: '/dashboard/media-library', icon: 'Image', roles: ['admin', 'editor', 'member'], group: 'Library' },
 
   // --- Workspace ---
   { label: 'Connections', href: '/dashboard/connections', icon: 'Link2', roles: ['admin', 'editor', 'member'], group: 'Workspace' },
