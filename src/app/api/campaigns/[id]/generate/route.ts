@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { checkFeatureAccess, checkPostLimit, hasActiveSubscription } from '@/lib/billing';
 import { getDb } from '@/libs/DB';
 import { campaignSchema } from '@/models/Schema';
 import { generateCampaignPosts } from '../../utils';
@@ -44,19 +45,46 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // 2. Read optional overrides from request body
+    // 2. Billing / quota checks
+    const active = await hasActiveSubscription(orgId!);
+    if (!active) {
+      return NextResponse.json(
+        { error: 'Your subscription has expired. Please subscribe to continue generating content.' },
+        { status: 403 },
+      );
+    }
+
+    const postLimit = await checkPostLimit(orgId!);
+    if (!postLimit.allowed) {
+      return NextResponse.json({ error: postLimit.reason }, { status: 403 });
+    }
+
+    const mix = (campaign.contentMix as Record<string, number>) || {};
+    const hasImages = (mix.carousel ?? 0) > 0 || (mix.slideshow ?? 0) > 0;
+    const hasVideo = (mix.videoHook ?? 0) > 0 || (mix.greenScreen ?? 0) > 0 || (mix.talkingHead ?? 0) > 0 || (mix.wallOfText ?? 0) > 0;
+
+    if (hasImages) {
+      const imageCheck = await checkFeatureAccess(orgId!, 'imagePosts');
+      if (!imageCheck.allowed) return NextResponse.json({ error: imageCheck.reason }, { status: 403 });
+    }
+    if (hasVideo) {
+      const videoCheck = await checkFeatureAccess(orgId!, 'videoGeneration');
+      if (!videoCheck.allowed) return NextResponse.json({ error: videoCheck.reason }, { status: 403 });
+    }
+
+    // 3. Read optional overrides from request body
     let body: Record<string, unknown> = {};
     try { body = await request.json(); } catch { /* no body is fine */ }
 
     const topicOverride = (body.topic as string) || undefined;
     const targetPlatformsOverride = (body.targetPlatforms as string[]) || undefined;
 
-    // 3. Update status to generating
+    // 4. Update status to generating
     await db.update(campaignSchema)
       .set({ status: 'generating', updatedAt: new Date() })
       .where(eq(campaignSchema.id, id));
 
-    // 4. Generate all posts
+    // 5. Generate all posts
     const result = await generateCampaignPosts(
       db,
       orgId!,
@@ -65,7 +93,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       targetPlatformsOverride,
     );
 
-    // 5. Update campaign status and counts
+    // 6. Update campaign status and counts
     const finalStatus = result.failedPosts === result.totalPosts ? 'draft' : 'review';
     await db.update(campaignSchema)
       .set({

@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -17,18 +17,24 @@ export async function GET(request: NextRequest) {
   if (error) return error;
 
   const { searchParams } = new URL(request.url);
-  const assetType = searchParams.get('assetType');
+  const assetTypeParam = searchParams.get('assetType');
   const aspectRatio = searchParams.get('aspectRatio');
   const tag = searchParams.get('tag');
   const source = searchParams.get('source');
   const limit = Math.min(Number(searchParams.get('limit')) || 20, 100);
   const offset = Number(searchParams.get('offset')) || 0;
 
+  const assetTypes = assetTypeParam
+    ? [...new Set(assetTypeParam.split(',').map((s) => s.trim()).filter(Boolean))]
+    : [];
+
   try {
     const conditions = [eq(mediaAssetSchema.orgId, orgId!)];
 
-    if (assetType) {
-      conditions.push(eq(mediaAssetSchema.assetType, assetType));
+    if (assetTypes.length === 1) {
+      conditions.push(eq(mediaAssetSchema.assetType, assetTypes[0]!));
+    } else if (assetTypes.length > 1) {
+      conditions.push(inArray(mediaAssetSchema.assetType, assetTypes));
     }
     if (aspectRatio) {
       conditions.push(eq(mediaAssetSchema.aspectRatio, aspectRatio));

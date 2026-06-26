@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { applyRemixEdits, getRemixEditsFromGenerationParams } from '@/lib/remix-edits';
 import { getDb } from '@/libs/DB';
 import { brandProfileSchema, contentItemSchema } from '@/models/Schema';
 
@@ -120,7 +121,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       templateFields.eyebrow = body.eyebrow;
     }
 
-    const payload = {
+    const remixEdits = getRemixEditsFromGenerationParams(item.generationParams);
+
+    const basePayload = {
       template,
       style,
       formats,
@@ -130,6 +133,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       ...(profile?.logoUrl ? { logoUrl: profile.logoUrl } : {}),
       ...templateFields,
     };
+
+    const payload = applyRemixEdits(basePayload, remixEdits, 'single_image');
 
     console.log('[Image] Generating:', template, 'formats:', formats.join(','));
 
@@ -166,17 +171,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const renderData = await renderRes.json() as {
-      square?: string;
-      vertical?: string;
+      square?: { url: string; publicId: string };
+      vertical?: { url: string; publicId: string };
       template: string;
       style: string;
       renderMs: number;
     };
 
-    console.log('[Image] Generated:', renderData.square, renderData.vertical, `${renderData.renderMs}ms`);
+    console.log('[Image] Generated:', renderData.square?.url, renderData.vertical?.url, `${renderData.renderMs}ms`);
 
     // Collect all returned URLs (square + vertical)
-    const imageUrls = [renderData.square, renderData.vertical].filter(Boolean) as string[];
+    const imageUrls = [renderData.square?.url, renderData.vertical?.url].filter(Boolean) as string[];
+    const publicIds = [renderData.square?.publicId, renderData.vertical?.publicId].filter(Boolean) as string[];
 
     if (imageUrls.length === 0) {
       return NextResponse.json({ error: 'Image engine returned no URLs' }, { status: 502 });
@@ -191,6 +197,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           ...(item.platformSpecific as object),
           imageTemplate: template,
           imageStyle: style,
+          cloudinaryPublicIds: publicIds,
         },
         updatedAt: new Date(),
       })
@@ -198,8 +205,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({
       success: true,
-      square: renderData.square,
-      vertical: renderData.vertical,
+      square: renderData.square?.url,
+      vertical: renderData.vertical?.url,
+      squarePublicId: renderData.square?.publicId,
+      verticalPublicId: renderData.vertical?.publicId,
       template: renderData.template,
       renderMs: renderData.renderMs,
     });

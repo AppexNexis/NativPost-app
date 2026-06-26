@@ -18,6 +18,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { applyRemixEdits, getRemixEditsFromGenerationParams } from '@/lib/remix-edits';
 import { getDb } from '@/libs/DB';
 import { brandProfileSchema, contentItemSchema } from '@/models/Schema';
 
@@ -89,7 +90,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .where(eq(brandProfileSchema.orgId, orgId!))
       .limit(1);
 
-    const payload = {
+    const remixEdits = getRemixEditsFromGenerationParams(item.generationParams);
+
+    const basePayload = {
       stats,
       headline,
       caption: item.caption,
@@ -99,6 +102,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       formats,
       ...(profile?.logoUrl ? { logoUrl: profile.logoUrl } : {}),
     };
+
+    const payload = applyRemixEdits(basePayload, remixEdits, 'data_story');
 
     console.log('[DataStory] Calling renderer for item:', id);
     console.log('[DataStory] Stats count:', stats.length, '| Formats:', formats);
@@ -145,8 +150,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const renderData = await renderRes.json() as {
       vertical?: string;
+      verticalPublicId?: string;
       square?: string;
+      squarePublicId?: string;
       landscape?: string;
+      landscapePublicId?: string;
       durationSeconds?: number;
       statCount?: number;
     };
@@ -157,6 +165,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       renderData.square,
       renderData.landscape,
     ].filter((u): u is string => typeof u === 'string' && u.length > 0);
+
+    const videoPublicIds = [
+      renderData.verticalPublicId,
+      renderData.squarePublicId,
+      renderData.landscapePublicId,
+    ].filter((id): id is string => typeof id === 'string' && id.length > 0);
 
     if (videoUrls.length === 0) {
       return NextResponse.json(
@@ -174,6 +188,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           videoDurationSeconds: renderData.durationSeconds ?? 0,
           dataStoryStatCount: renderData.statCount ?? stats.length,
           dataStoryFormats: formats,
+          cloudinaryPublicIds: videoPublicIds,
         },
         updatedAt: new Date(),
       })
@@ -182,8 +197,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({
       success: true,
       vertical: renderData.vertical,
+      verticalPublicId: renderData.verticalPublicId,
       square: renderData.square,
+      squarePublicId: renderData.squarePublicId,
       landscape: renderData.landscape,
+      landscapePublicId: renderData.landscapePublicId,
       durationSeconds: renderData.durationSeconds ?? 0,
       statCount: renderData.statCount ?? stats.length,
     });

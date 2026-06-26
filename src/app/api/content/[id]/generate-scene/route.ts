@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { applyRemixEdits, getRemixEditsFromGenerationParams } from '@/lib/remix-edits';
 import { getDb } from '@/libs/DB';
 import { brandProfileSchema, contentItemSchema } from '@/models/Schema';
 
@@ -91,7 +92,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const subtext = (body.subtext as string) || undefined;
     const eyebrow = (body.eyebrow as string) || undefined;
 
-    const payload = {
+    const remixEdits = getRemixEditsFromGenerationParams(item.generationParams);
+
+    const basePayload = {
       caption: item.caption,
       industry: profile?.industry || undefined,
       brandTone,
@@ -108,6 +111,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       brandSecondary: profile?.secondaryColor || '#0D0D0D',
       ...(profile?.logoUrl ? { logoUrl: profile.logoUrl } : {}),
     };
+
+    const payload = applyRemixEdits(basePayload, remixEdits, 'scene');
 
     console.log('[Scene] Generating for content:', id, '| industry:', profile?.industry, '| tone:', brandTone);
 
@@ -143,8 +148,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const renderData = await renderRes.json() as {
-      square?: string;
-      vertical?: string;
+      square?: { url: string; publicId: string };
+      vertical?: { url: string; publicId: string };
       promptUsed?: string;
       modelUsed?: string;
       fallback?: boolean;
@@ -152,7 +157,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       totalMs?: number;
     };
 
-    const imageUrls = [renderData.square, renderData.vertical].filter(Boolean) as string[];
+    const imageUrls = [renderData.square?.url, renderData.vertical?.url].filter(Boolean) as string[];
+    const publicIds = [renderData.square?.publicId, renderData.vertical?.publicId].filter(Boolean) as string[];
 
     if (!imageUrls.length) {
       return NextResponse.json({ error: 'Scene engine returned no images' }, { status: 502 });
@@ -169,6 +175,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           sceneModelUsed: renderData.modelUsed,
           promptUsed: renderData.promptUsed,
           isFallback: renderData.fallback ?? false,
+          cloudinaryPublicIds: publicIds,
         },
         updatedAt: new Date(),
       })
@@ -176,14 +183,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({
       success: true,
-      square: renderData.square,
-      vertical: renderData.vertical,
+      square: renderData.square?.url,
+      vertical: renderData.vertical?.url,
+      squarePublicId: renderData.square?.publicId,
+      verticalPublicId: renderData.vertical?.publicId,
       promptUsed: renderData.promptUsed,
       modelUsed: renderData.modelUsed,
       fallback: renderData.fallback ?? false,
       fallbackReason: renderData.fallbackReason,
       totalMs: renderData.totalMs,
     });
+
   } catch (err) {
     console.error('[Scene] generate-scene failed:', err);
     return NextResponse.json({ error: `Scene generation failed: ${String(err)}` }, { status: 500 });

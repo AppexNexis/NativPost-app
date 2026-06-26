@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { applyRemixEdits, getRemixEditsFromGenerationParams } from '@/lib/remix-edits';
 import { getDb } from '@/libs/DB';
 import { brandProfileSchema, contentItemSchema } from '@/models/Schema';
 
@@ -148,7 +149,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       slides = slides.slice(0, 10);
     }
 
-    const payload = {
+    const remixEdits = getRemixEditsFromGenerationParams(item.generationParams);
+
+    const basePayload = {
       slides,
       style,
       aspectRatio,
@@ -157,6 +160,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       brandSecondary: profile?.secondaryColor || '#0D0D0D',
       ...(profile?.logoUrl ? { logoUrl: profile.logoUrl } : {}),
     };
+
+    const payload = applyRemixEdits(basePayload, remixEdits, 'carousel');
 
     console.log('[Carousel] Generating', slides.length, 'slides, style:', style, 'ar:', aspectRatio);
 
@@ -193,7 +198,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const renderData = await renderRes.json() as {
-      slides: string[];
+      slides: { url: string; publicId: string }[];
       slideCount: number;
       aspectRatio: string;
       renderMs: number;
@@ -205,16 +210,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Carousel engine returned no slides' }, { status: 502 });
     }
 
+    const slideUrls = renderData.slides.map((s) => s.url);
+    const slidePublicIds = renderData.slides.map((s) => s.publicId);
+
     // Save all slide URLs to DB
     await db
       .update(contentItemSchema)
       .set({
-        graphicUrls: renderData.slides,
+        graphicUrls: slideUrls,
         platformSpecific: {
           ...(item.platformSpecific as object),
           carouselAspectRatio: aspectRatio,
           carouselStyle: style,
           carouselSlideCount: renderData.slideCount,
+          cloudinaryPublicIds: slidePublicIds,
         },
         updatedAt: new Date(),
       })
@@ -222,7 +231,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({
       success: true,
-      slides: renderData.slides,
+      slides: slideUrls,
+      slidePublicIds,
       slideCount: renderData.slideCount,
       aspectRatio: renderData.aspectRatio,
       renderMs: renderData.renderMs,

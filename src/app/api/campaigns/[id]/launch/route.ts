@@ -44,8 +44,8 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // 2. Schedule all posts in the publishing queue
-    const scheduledPosts = await scheduleCampaignPosts(db, orgId!, id);
+    // 2. Schedule only approved posts in the publishing queue
+    const { scheduled, skipped } = await scheduleCampaignPosts(db, orgId!, id);
 
     // 3. Update campaign status to active
     await db.update(campaignSchema)
@@ -54,7 +54,8 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({
       success: true,
-      scheduledPosts,
+      scheduledPosts: scheduled,
+      skippedPosts: skipped,
       campaignId: id,
       status: 'active',
     }, { status: 200 });

@@ -129,6 +129,7 @@ async function saveVariant(
       aspectRatio,
       contentFormat,
       remixSource: body.sourceUrl,
+      remixEdits: body.remixEdits,
     } as any,
     contentFormat: contentFormat || null,
   };
@@ -176,8 +177,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       generatorEndpoint = CUSTOM_GENERATOR_MAP[contentType] || 'generate-video';
     }
 
-    // 3. Derive topic from template structure
-    const structure = (template.structure || {}) as Record<string, any>;
+    // 3. Apply user remix edits if provided
+    const remixEdits = body.remixEdits as Record<string, any> | undefined;
+    const userStructure = (remixEdits?.structure || {}) as Record<string, any>;
+    const templateStructure = (template.structure || {}) as Record<string, any>;
+    const structure = {
+      ...templateStructure,
+      ...userStructure,
+      hook: userStructure.hook ? { ...templateStructure.hook, ...userStructure.hook } : templateStructure.hook,
+      body: userStructure.body ? { ...templateStructure.body, ...userStructure.body } : templateStructure.body,
+      cta: userStructure.cta ? { ...templateStructure.cta, ...userStructure.cta } : templateStructure.cta,
+    };
+
     const topic = [
       structure.hook?.text,
       structure.body?.text,
@@ -275,6 +286,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           contentMode: body.contentMode || 'normal',
           enrichment: Object.keys(enrichment).length > 0 ? enrichment : null,
           sourceUrl: template.sourceUrl,
+          remixEdits,
         }, template.id, aspectRatio, template.contentType),
       ),
     );

@@ -25,6 +25,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { applyRemixEdits, getRemixEditsFromGenerationParams } from '@/lib/remix-edits';
 import { getDb } from '@/libs/DB';
 import { brandProfileSchema, contentItemSchema } from '@/models/Schema';
 
@@ -119,7 +120,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .where(eq(brandProfileSchema.orgId, orgId!))
       .limit(1);
 
-    const payload = {
+    const remixEdits = getRemixEditsFromGenerationParams(item.generationParams);
+
+    const basePayload = {
       hook,
       problem,
       solution,
@@ -133,6 +136,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       photoTier: requestedPhotoTier || (imageUrls.length < 4 ? 'unsplash' : 'none'),
       industry: (profile as any)?.industry || undefined,
     };
+
+    const payload = applyRemixEdits(basePayload, remixEdits, 'ugc_ad');
 
     console.log('[UGCAd] Calling renderer for item:', id);
     console.log('[UGCAd] Sections:', { hook: hook.slice(0, 40), problem: problem.slice(0, 40) });
@@ -179,6 +184,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const renderData = await renderRes.json() as {
       vertical?: string;
+      verticalPublicId?: string;
       durationSeconds?: number;
       photoTier?: string;
       credits?: Array<{ name: string; link: string }>;
@@ -205,6 +211,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           ugcCta: cta,
           photoTier: renderData.photoTier ?? 'none',
           unsplashCredits: renderData.credits ?? [],
+          cloudinaryPublicIds: renderData.verticalPublicId ? [renderData.verticalPublicId] : [],
         },
         updatedAt: new Date(),
       })
@@ -213,6 +220,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({
       success: true,
       vertical,
+      verticalPublicId: renderData.verticalPublicId,
       durationSeconds: renderData.durationSeconds ?? 10,
       photoTier: renderData.photoTier ?? 'none',
       credits: renderData.credits ?? [],

@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ChevronLeft, ChevronRight, Sparkles, Check } from 'lucide-react';
-import type { Campaign, ContentAngle, CampaignAngle, ContentMix, TargetAccount } from '@/types/v2';
+import type { Campaign, ContentAngle, CampaignAngle, ContentMix, TargetAccount, ContentItem } from '@/types/v2';
 import type { SocialAccount } from '@/types/v2';
+import { CampaignReviewGrid } from './CampaignReviewGrid';
 
 interface CampaignWizardProps {
   angles: ContentAngle[];
@@ -25,8 +27,7 @@ const STEPS = [
   { id: 'generate', label: 'Generate' },
   { id: 'review', label: 'Review' },
   { id: 'launch', label: 'Launch' },
-]
-// ] as const satisfies readonly { id: string; label: string }[];
+];
 
 export function CampaignWizard({
   angles,
@@ -37,6 +38,7 @@ export function CampaignWizard({
   onLaunch,
   isLoading,
 }: CampaignWizardProps) {
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
   const [campaign, setCampaign] = useState<Partial<Campaign>>({
     name: '',
@@ -63,6 +65,8 @@ export function CampaignWizard({
   });
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedCampaignId, setGeneratedCampaignId] = useState<string | null>(null);
+  const [contentItems, setContentItems] = useState<(ContentItem & { sequenceIndex?: number; scheduledDate?: string; scheduledTime?: string; isRolled?: boolean })[]>([]);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   const totalSteps = STEPS.length;
   const progress = ((currentStep + 1) / totalSteps) * 100;
@@ -71,15 +75,41 @@ export function CampaignWizard({
     setCampaign((prev) => ({ ...prev, ...updates }));
   }, []);
 
+  const fetchCampaignItems = async (campaignId: string) => {
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}`);
+      if (!res.ok) throw new Error('Failed to fetch campaign items');
+      const data = await res.json();
+      const loaded = (data.contentItems || []).map((cc: any) => ({
+        ...(cc.contentItem || {}),
+        sequenceIndex: cc.sequenceIndex,
+        scheduledDate: cc.scheduledDate ? new Date(cc.scheduledDate).toISOString().slice(0, 10) : undefined,
+        scheduledTime: cc.scheduledTime,
+        isRolled: cc.isRolled,
+      }));
+      setContentItems(loaded);
+    } catch (err: any) {
+      setReviewError(err.message || 'Failed to load generated posts');
+    }
+  };
+
+  const refreshCampaign = async (campaignId: string) => {
+    await fetchCampaignItems(campaignId);
+  };
+
   const handleGenerate = async () => {
     setIsGenerating(true);
+    setReviewError(null);
     try {
       const created = await onCreate(campaign);
       if (created?.id) {
         setGeneratedCampaignId(created.id);
         await onGenerate(created.id);
+        await fetchCampaignItems(created.id);
         setCurrentStep(7);
       }
+    } catch (err: any) {
+      setReviewError(err.message || 'Generation failed');
     } finally {
       setIsGenerating(false);
     }
@@ -108,14 +138,109 @@ export function CampaignWizard({
     }
   };
 
-  const StepComponent = STEP_COMPONENTS[currentStep] ?? null;
+  const handleEdit = (itemId: string) => {
+    router.push(`/dashboard/content/${itemId}/edit`);
+  };
+
+  const handleReRoll = async (itemId: string) => {
+    if (!generatedCampaignId) return;
+    try {
+      const res = await fetch(`/api/campaigns/${generatedCampaignId}/re-roll`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contentItemId: itemId, keepText: false }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Re-roll failed');
+      }
+      await refreshCampaign(generatedCampaignId);
+    } catch (err: any) {
+      setReviewError(err.message || 'Re-roll failed');
+    }
+  };
+
+  const handleDelete = async (itemId: string) => {
+    try {
+      const res = await fetch(`/api/content/${itemId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+      setContentItems((prev) => prev.filter((i) => i.id !== itemId));
+    } catch (err: any) {
+      setReviewError(err.message || 'Delete failed');
+    }
+  };
+
+  const handleApprove = async (itemId: string) => {
+    try {
+      const res = await fetch(`/api/content/${itemId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'approved' }),
+      });
+      if (!res.ok) throw new Error('Approve failed');
+      const data = await res.json();
+      setContentItems((prev) =>
+        prev.map((i) => (i.id === itemId ? { ...i, ...data.item } : i))
+      );
+    } catch (err: any) {
+      setReviewError(err.message || 'Approve failed');
+    }
+  };
+
+  const handleScheduleChange = async (itemId: string, date: string, time: string) => {
+    if (!generatedCampaignId) return;
+    try {
+      const res = await fetch(`/api/campaigns/${generatedCampaignId}/content/${itemId}/schedule`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduledDate: date, scheduledTime: time }),
+      });
+      if (!res.ok) throw new Error('Schedule update failed');
+      setContentItems((prev) =>
+        prev.map((i) => (i.id === itemId ? { ...i, scheduledDate: date, scheduledTime: time } : i))
+      );
+    } catch (err: any) {
+      setReviewError(err.message || 'Schedule update failed');
+    }
+  };
+
+  const renderStep = () => {
+    const props = {
+      campaign,
+      angles,
+      accounts,
+      influencers,
+      isLoading: isLoading ?? false,
+      onUpdate: updateCampaign,
+    };
+
+    switch (currentStep) {
+      case 7:
+        return (
+          <StepReview
+            {...props}
+            contentItems={contentItems}
+            reviewError={reviewError}
+            onEdit={handleEdit}
+            onReRoll={handleReRoll}
+            onDelete={handleDelete}
+            onApprove={handleApprove}
+            onScheduleChange={handleScheduleChange}
+          />
+        );
+      default: {
+        const StepComponent = STEP_COMPONENTS[currentStep];
+        return StepComponent ? <StepComponent {...props} /> : null;
+      }
+    }
+  };
+
   return (
     <div className="mx-auto max-w-3xl">
       {/* Progress Bar */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium text-gray-900">{STEPS[currentStep]?.label ?? ''}</span>
-          {/* <span className="text-sm font-medium text-gray-900">{STEPS[currentStep as 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8]?.label ?? ''}</span> */}
           <span className="text-sm text-gray-500">
             {currentStep + 1} / {totalSteps}
           </span>
@@ -131,16 +256,7 @@ export function CampaignWizard({
       {/* Step Content */}
       <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
         <div className="p-8">
-          {StepComponent && (
-            <StepComponent
-              campaign={campaign}
-              angles={angles}
-              accounts={accounts}
-              influencers={influencers}
-              isLoading={isLoading ?? false}
-              onUpdate={updateCampaign}
-            />
-          )}
+          {renderStep()}
         </div>
 
         {/* Footer */}
@@ -728,28 +844,40 @@ function StepGenerate({ campaign }: StepProps) {
 // ============================================================
 // STEP 8: REVIEW
 // ============================================================
-function StepReview({ campaign }: StepProps) {
-  const totalPosts = campaign.totalPosts ?? 0;
-
+function StepReview({
+  campaign,
+  contentItems,
+  reviewError,
+  onEdit,
+  onReRoll,
+  onDelete,
+  onApprove,
+  onScheduleChange,
+}: StepProps & {
+  contentItems: (ContentItem & { sequenceIndex?: number; scheduledDate?: string; scheduledTime?: string; isRolled?: boolean })[];
+  reviewError: string | null;
+  onEdit: (itemId: string) => void;
+  onReRoll: (itemId: string) => void;
+  onDelete: (itemId: string) => void;
+  onApprove: (itemId: string) => void;
+  onScheduleChange: (itemId: string, date: string, time: string) => void;
+}) {
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900">Review your campaign</h3>
-          <p className="text-sm text-gray-500">
-            {campaign.generatedPosts ?? 0} of {totalPosts} posts generated
-          </p>
+      {reviewError && (
+        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          {reviewError}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-gray-900">{campaign.reRollsRemaining ?? 0} re-rolls left</span>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-        {Array.from({ length: totalPosts }).map((_, i) => (
-          <div key={i} className="aspect-[9/16] rounded-xl border border-gray-200 bg-gray-50" />
-        ))}
-      </div>
+      )}
+      <CampaignReviewGrid
+        campaign={campaign as Campaign}
+        contentItems={contentItems}
+        onEdit={onEdit}
+        onReRoll={onReRoll}
+        onDelete={onDelete}
+        onApprove={onApprove}
+        onScheduleChange={onScheduleChange}
+      />
     </div>
   );
 }
@@ -786,7 +914,7 @@ function calculateTotalPosts(campaign: Partial<Campaign>): number {
   return accounts * postsPerDay * days;
 }
 
-const STEP_COMPONENTS: React.FC<StepProps>[] = [
+const STEP_COMPONENTS: React.FC<any>[] = [
   StepBasics,
   StepAngles,
   StepVoice,
@@ -794,6 +922,7 @@ const STEP_COMPONENTS: React.FC<StepProps>[] = [
   StepAccounts,
   StepCadence,
   StepGenerate,
-  StepReview,
+  // Step 7 (Review) is rendered separately with extra props
+  () => null,
   StepLaunch,
 ];

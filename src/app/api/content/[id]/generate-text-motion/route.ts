@@ -29,6 +29,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { applyRemixEdits, getRemixEditsFromGenerationParams } from '@/lib/remix-edits';
 import { getDb } from '@/libs/DB';
 import { brandProfileSchema, contentItemSchema } from '@/models/Schema';
 
@@ -167,7 +168,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const eyebrow  = body.eyebrow?.trim()  || undefined;
     const cta      = body.cta?.trim()      || undefined;
 
-    const payload = {
+    const remixEdits = getRemixEditsFromGenerationParams(item.generationParams);
+
+    const basePayload = {
       headline,
       subtext,
       eyebrow,
@@ -179,6 +182,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       style,
       formats,
     };
+
+    const payload = applyRemixEdits(basePayload, remixEdits, 'text_motion');
 
     console.log('[TextMotion] Headline:', headline);
     console.log('[TextMotion] Style:', style, '| Formats:', formats);
@@ -216,13 +221,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const renderData = await renderRes.json() as {
       vertical?: string;
+      verticalPublicId?: string;
       square?: string;
+      squarePublicId?: string;
       landscape?: string;
+      landscapePublicId?: string;
       durationSeconds?: number;
     };
 
     const videoUrls = [renderData.vertical, renderData.square, renderData.landscape]
       .filter((u): u is string => typeof u === 'string' && u.length > 0);
+
+    const videoPublicIds = [
+      renderData.verticalPublicId,
+      renderData.squarePublicId,
+      renderData.landscapePublicId,
+    ].filter((id): id is string => typeof id === 'string' && id.length > 0);
 
     if (videoUrls.length === 0) {
       return NextResponse.json({ error: 'Renderer returned no video URLs. Please try again.' }, { status: 502 });
@@ -239,6 +253,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           textMotionStyle: style,
           textMotionHeadline: headline,
           videoGenerated: true,
+          cloudinaryPublicIds: videoPublicIds,
         },
         updatedAt: new Date(),
       })
@@ -247,8 +262,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({
       success: true,
       vertical:  renderData.vertical,
+      verticalPublicId: renderData.verticalPublicId,
       square:    renderData.square,
+      squarePublicId: renderData.squarePublicId,
       landscape: renderData.landscape,
+      landscapePublicId: renderData.landscapePublicId,
       headlineUsed: headline,
       subtextUsed:  subtext,
       durationSeconds: renderData.durationSeconds ?? 0,

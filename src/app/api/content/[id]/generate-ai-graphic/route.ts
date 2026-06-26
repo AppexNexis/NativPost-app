@@ -39,6 +39,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { applyRemixEdits, getRemixEditsFromGenerationParams } from '@/lib/remix-edits';
 import { getDb } from '@/libs/DB';
 import { brandProfileSchema, contentItemSchema } from '@/models/Schema';
 
@@ -138,8 +139,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       profile?.toneEnergy ?? 5,
     );
 
+    const remixEdits = getRemixEditsFromGenerationParams(item.generationParams);
+
     // ── Build payload for image engine ───────────────────────────────────────
-    const payload: Record<string, unknown> = {
+    const basePayload: Record<string, unknown> = {
       // Content context — Claude uses these to write the visual prompt
       topic: item.topic || item.caption.split('\n')[0]?.slice(0, 120) || item.caption.slice(0, 120),
       postCaption: item.caption,
@@ -160,10 +163,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Manual overrides — passed straight through to the engine
     // If visualPrompt AND overlayHeadline are both provided, Claude is skipped entirely
-    if (body.visualPrompt) payload.visualPrompt = body.visualPrompt;
-    if (body.overlayHeadline) payload.overlayHeadline = body.overlayHeadline;
-    if (body.overlaySubtext) payload.overlaySubtext = body.overlaySubtext;
-    if (body.overlayEyebrow) payload.overlayEyebrow = body.overlayEyebrow;
+    if (body.visualPrompt) basePayload.visualPrompt = body.visualPrompt;
+    if (body.overlayHeadline) basePayload.overlayHeadline = body.overlayHeadline;
+    if (body.overlaySubtext) basePayload.overlaySubtext = body.overlaySubtext;
+    if (body.overlayEyebrow) basePayload.overlayEyebrow = body.overlayEyebrow;
+
+    const payload = applyRemixEdits(basePayload, remixEdits, 'ai_graphic');
 
     console.log(
       '[AI Graphic] Generating for content:', id,
@@ -217,6 +222,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const renderData = await renderRes.json() as {
       url: string;
+      publicId: string;
       format: string;
       quality: string;
       contentType: string;
@@ -237,12 +243,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Single URL — the engine returns one image per request (format: square OR vertical)
     // We store it in graphicUrls[0] (or append alongside existing images if regenerating)
     const existingUrls = (item.graphicUrls as string[]) || [];
+    const existingPublicIds = ((item.platformSpecific as Record<string, any>)?.cloudinaryPublicIds as string[]) || [];
 
     // Replace or append: if format matches an existing slot, replace it; otherwise append
     // slot 0 = square, slot 1 = vertical (same convention as generate-scene/generate-image)
     const slotIndex = format === 'square' ? 0 : 1;
     const updatedUrls = [...existingUrls];
+    const updatedPublicIds = [...existingPublicIds];
     updatedUrls[slotIndex] = renderData.url;
+    updatedPublicIds[slotIndex] = renderData.publicId;
 
     await db
       .update(contentItemSchema)
@@ -255,6 +264,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           aiGraphicQuality: quality,
           promptUsed: renderData.visualPrompt,
           headlineUsed: renderData.overlayHeadline,
+          cloudinaryPublicIds: updatedPublicIds.filter(Boolean),
         },
         updatedAt: new Date(),
       })
@@ -263,6 +273,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({
       success: true,
       url: renderData.url,
+      publicId: renderData.publicId,
       format: renderData.format,
       quality: renderData.quality,
       contentType: renderData.contentType,

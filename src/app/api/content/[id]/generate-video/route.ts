@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { applyRemixEdits, getRemixEditsFromGenerationParams } from '@/lib/remix-edits';
 import { getDb } from '@/libs/DB';
 import { brandProfileSchema, contentItemSchema } from '@/models/Schema';
 
@@ -130,7 +131,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       contentMode:   item.contentMode,
     });
 
-    const payload = {
+    const remixEdits = getRemixEditsFromGenerationParams(item.generationParams);
+
+    const basePayload = {
       // Content
       images:      imageUrls,
       caption:     item.caption,
@@ -151,6 +154,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       // Photo tier
       photoTier: requestBody.photoTier || (imageUrls.length === 0 ? 'unsplash' : 'none'),
     };
+
+    const payload = applyRemixEdits(basePayload, remixEdits, 'slideshow');
 
     console.log('[Video] Brand context → industry:', payload.industry, '| style:', payload.imageStyle, '| mode:', payload.contentMode);
     console.log('[Video] Calling renderer at:', `${VIDEO_RENDERER_URL}/render`);
@@ -199,7 +204,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const renderData = await renderRes.json() as {
       vertical?: string;
+      verticalPublicId?: string;
       square?: string;
+      squarePublicId?: string;
       durationSeconds?: number;
       imageCount?: number;
       renderSeconds?: number;
@@ -223,6 +230,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const videoUrls = [vertical, square];
+    const videoPublicIds = [renderData.verticalPublicId, renderData.squarePublicId].filter(
+      (id): id is string => typeof id === 'string' && id.length > 0,
+    );
 
     await db
       .update(contentItemSchema)
@@ -235,6 +245,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           photoTier:            renderData.photoTier ?? 'none',
           unsplashCredits:      renderData.credits ?? [],
           videoGenerated:       true,
+          cloudinaryPublicIds:  videoPublicIds,
           // stylePresetUsed is intentionally not stored in platformSpecific
           // to keep the platform adaptations panel clean
         },
@@ -246,11 +257,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       success: true,
       vertical,
       square,
-      durationSeconds: renderData.durationSeconds ?? 0,
-      imageCount:      renderData.imageCount ?? imageUrls.length,
-      renderSeconds:   renderData.renderSeconds ?? 0,
-      photoTier:       renderData.photoTier ?? 'none',
-      credits:         renderData.credits ?? [],
+      verticalPublicId: renderData.verticalPublicId,
+      squarePublicId:   renderData.squarePublicId,
+      durationSeconds:  renderData.durationSeconds ?? 0,
+      imageCount:       renderData.imageCount ?? imageUrls.length,
+      renderSeconds:    renderData.renderSeconds ?? 0,
+      photoTier:        renderData.photoTier ?? 'none',
+      credits:          renderData.credits ?? [],
     });
   } catch (err) {
     console.error('[Video] generate-video failed:', err);

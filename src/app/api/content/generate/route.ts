@@ -142,7 +142,7 @@ async function saveVariant(
   platforms: string[],
   body: Record<string, any>,
 ) {
-  const { contentType, topic, contentMode, enrichment } = body;
+  const { contentType, topic, contentMode, enrichment, campaignId, angleId, influencerId, templateId } = body;
   const needsTitle = platforms.some((p: string) => TITLE_PLATFORMS.includes(p as any));
 
   const platformSpecific: Record<string, unknown> = variant.platform_specific || {};
@@ -171,6 +171,15 @@ async function saveVariant(
       contentMode: contentMode || 'normal',
       enrichmentData: enrichment || {},
       enrichmentApplied: variant.enrichment_applied || [],
+      campaignId: campaignId || null,
+      angleId: angleId || null,
+      influencerId: influencerId || null,
+      generationParams: {
+        campaignId,
+        angleId,
+        influencerId,
+        templateId,
+      },
     })
     .returning();
 

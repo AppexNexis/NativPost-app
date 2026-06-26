@@ -6,83 +6,69 @@ import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { contentTemplateSchema } from '@/models/Schema';
 
-type RouteParams = { params: Promise<{ id: string }> };
+const ADMIN_ORG_ID = process.env.NATIVPOST_TEAM_ORG_ID;
 
-// -----------------------------------------------------------
-// POST /api/templates/[id]/curate
-// Approve, reject, or feature a template
-// Body: { action: 'approve' | 'reject' | 'feature', feedback?: string }
-// -----------------------------------------------------------
-export async function POST(request: NextRequest, { params }: RouteParams) {
+function forbidden(message: string) {
+  return NextResponse.json({ error: message }, { status: 403 });
+}
+
+/**
+ * PATCH /api/templates/[id]/curate
+ *
+ * Update a single template's curation status.
+ * Body:
+ *   {
+ *     "status": "approved" | "rejected" | "pending",
+ *     "reviewedBy": "admin@nativpost.com" // optional
+ *   }
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const db = await getDb();
-  const { error, userId } = await getAuthContext();
+  const { error, orgId, userId } = await getAuthContext();
   if (error) return error;
+
+  if (!ADMIN_ORG_ID || orgId !== ADMIN_ORG_ID) {
+    return forbidden('Admin access required.');
+  }
 
   const { id } = await params;
 
   try {
     const body = await request.json();
-    const { action, feedback } = body as {
-      action: 'approve' | 'reject' | 'feature';
-      feedback?: string;
-    };
+    const { status, reviewedBy } = body;
 
-    if (!['approve', 'reject', 'feature'].includes(action)) {
-      return NextResponse.json(
-        { error: "Invalid action. Must be 'approve', 'reject', or 'feature'" },
-        { status: 400 }
-      );
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
+      return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
     }
 
-    const updates: Record<string, any> = {
-      curatedBy: userId,
-      curatedAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    if (action === 'approve') {
-      updates.curationStatus = 'approved';
-      updates.isActive = true;
-    } else if (action === 'reject') {
-      updates.curationStatus = 'rejected';
-      updates.isActive = false;
-    } else if (action === 'feature') {
-      updates.curationStatus = 'featured';
-      updates.isActive = true;
-      // Store featured flag in structure metadata
-      const [existing] = await db
-        .select({ structure: contentTemplateSchema.structure })
-        .from(contentTemplateSchema)
-        .where(eq(contentTemplateSchema.id, id))
-        .limit(1);
-      const existingStructure = (existing?.structure as Record<string, any>) || {};
-      updates.structure = { ...existingStructure, featured: true, curationFeedback: feedback || null };
-    }
-
-    // If feedback provided and not feature (which already stores it), add to structure
-    if (feedback && action !== 'feature') {
-      const [existing] = await db
-        .select({ structure: contentTemplateSchema.structure })
-        .from(contentTemplateSchema)
-        .where(eq(contentTemplateSchema.id, id))
-        .limit(1);
-      const existingStructure = (existing?.structure as Record<string, any>) || {};
-      updates.structure = { ...existingStructure, curationFeedback: feedback };
-    }
-
-    const [updated] = await db
-      .update(contentTemplateSchema)
-      .set(updates)
+    const [existing] = await db
+      .select({ id: contentTemplateSchema.id })
+      .from(contentTemplateSchema)
       .where(eq(contentTemplateSchema.id, id))
-      .returning();
+      .limit(1);
 
-    if (!updated) {
+    if (!existing) {
       return NextResponse.json({ error: 'Template not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ item: updated }, { status: 200 });
+    const now = new Date();
+    const [updated] = await db
+      .update(contentTemplateSchema)
+      .set({
+        curationStatus: status,
+        curatedBy: reviewedBy ?? userId ?? 'admin',
+        curatedAt: status === 'pending' ? null : now,
+        updatedAt: now,
+      })
+      .where(eq(contentTemplateSchema.id, id))
+      .returning();
+
+    return NextResponse.json({ item: updated });
   } catch (err) {
-    console.error('Failed to curate template:', err);
-    return NextResponse.json({ error: 'Failed to curate template' }, { status: 500 });
+    console.error('[Curate Template] PATCH failed:', err);
+    return NextResponse.json({ error: 'Failed to update template' }, { status: 500 });
   }
 }

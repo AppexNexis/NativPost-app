@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
-import { campaignSchema, campaignContentSchema } from '@/models/Schema';
+import { campaignSchema, campaignContentSchema, contentAngleSchema, contentItemSchema } from '@/models/Schema';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -30,11 +30,25 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
     }
 
-    const contentItems = await db
-      .select()
+    const rows = await db
+      .select({
+        cc: campaignContentSchema,
+        ci: contentItemSchema,
+        angle: contentAngleSchema,
+      })
       .from(campaignContentSchema)
+      .leftJoin(contentItemSchema, eq(campaignContentSchema.contentItemId, contentItemSchema.id))
+      .leftJoin(contentAngleSchema, eq(contentItemSchema.angleId, contentAngleSchema.id))
       .where(eq(campaignContentSchema.campaignId, id))
       .orderBy(campaignContentSchema.sequenceIndex);
+
+    const contentItems = rows.map((row: any) => ({
+      ...row.cc,
+      contentItem: {
+        ...(row.ci || {}),
+        angleName: row.angle?.name || null,
+      },
+    }));
 
     return NextResponse.json({ campaign, contentItems }, { status: 200 });
   } catch (err) {

@@ -7,6 +7,7 @@ import { LayoutDashboard, Sparkles, Library, Megaphone, Image, BarChart3, Settin
 
 const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'Blitz', href: '/dashboard/blitz', icon: Zap },
   { label: 'AI Studio', href: '/dashboard/ai-studio', icon: Sparkles },
   { label: 'Content Library', href: '/dashboard/content-library', icon: Library },
   { label: 'Campaigns', href: '/dashboard/campaigns', icon: Megaphone },

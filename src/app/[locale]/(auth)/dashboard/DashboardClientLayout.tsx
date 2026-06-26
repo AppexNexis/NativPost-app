@@ -3,6 +3,7 @@
 import { OrganizationSwitcher, useAuth, useOrganization, UserButton } from '@clerk/nextjs';
 import {
   BarChart3,
+  BookOpen,
   Calendar,
   CheckCircle2,
   CircleCheck,
@@ -15,11 +16,13 @@ import {
   LayoutList,
   LifeBuoy,
   Link2,
+  Megaphone,
   Menu,
   PenLine,
   Plus,
   Settings,
   ShieldCheck,
+  Sparkles,
   Users,
   Gift,
   MessageCircle,
@@ -41,6 +44,7 @@ import { useOrgSync } from '@/hooks/useOrgSync';
 
 const ICONS: Record<string, typeof Calendar> = {
   BarChart3,
+  BookOpen,
   Calendar,
   CheckCircle2,
   CircleCheck,
@@ -53,8 +57,10 @@ const ICONS: Record<string, typeof Calendar> = {
   LayoutList,
   LifeBuoy,
   Link2,
+  Megaphone,
   PenLine,
   Settings,
+  Sparkles,
   Users,
   Gift,
   MessageCircle,

@@ -179,6 +179,24 @@ export const contentItemSchema = pgTable('content_item', {
   enrichmentData: jsonb('enrichment_data').default({}),
   enrichmentApplied: jsonb('enrichment_applied').default([]),
   engagementData: jsonb('engagement_data').default({}),
+  // v2 fields
+  campaignId: uuid('campaign_id').references(() => campaignSchema.id, {
+    onDelete: 'set null',
+  }),
+  templateId: uuid('template_id').references(() => contentTemplateSchema.id, {
+    onDelete: 'set null',
+  }),
+  influencerId: uuid('influencer_id').references(() => aiInfluencerSchema.id, {
+    onDelete: 'set null',
+  }),
+  angleId: uuid('angle_id').references(() => contentAngleSchema.id, {
+    onDelete: 'set null',
+  }),
+  generationParams: jsonb('generation_params').default({}),
+  contentFormat: text('content_format'),
+  aspectRatio: text('aspect_ratio'),
+  durationSeconds: integer('duration_seconds'),
+  aiModelUsed: text('ai_model_used'),
   updatedAt: timestamp('updated_at', { mode: 'date' })
     .defaultNow()
     .$onUpdate(() => new Date())

@@ -24,6 +24,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 import { PLATFORMS } from '@/components/icons/PlatformIcons';
+import { RemixEditor, type RemixEdits } from '@/components/content-library/RemixEditor';
 import type { ContentTemplate } from '@/types/v2';
 
 // -----------------------------------------------------------
@@ -154,9 +155,10 @@ export default function ContentCreatePage() {
   const prefillContentType = searchParams.get('contentType') || '';
   const fromMonthlyPlan = !!(prefillTopic && prefillContentType);
 
-  const [step, setStep] = useState<'type' | 'configure' | 'review'>(
+  const [step, setStep] = useState<'type' | 'configure' | 'edit' | 'review'>(
     fromMonthlyPlan || isRemix ? 'configure' : 'type',
   );
+  const [remixEdits, setRemixEdits] = useState<RemixEdits | null>(null);
   const [contentType, setContentType] = useState(prefillContentType);
   const [topic, setTopic] = useState(prefillTopic);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
@@ -301,6 +303,17 @@ export default function ContentCreatePage() {
   // -----------------------------------------------------------
   // Generate
   // -----------------------------------------------------------
+  const handleContinueToEditor = () => {
+    if (selectedPlatforms.length === 0) {
+      setError('Select at least one platform.');
+      return;
+    }
+    if (isRemix && templateId) {
+      setStep('edit');
+      return;
+    }
+  };
+
   const handleGenerate = async () => {
     if (selectedPlatforms.length === 0) {
       setError('Select at least one platform.');
@@ -328,6 +341,7 @@ export default function ContentCreatePage() {
             numVariants: 3,
             enrichment: hasEnrichment() ? enrichment : undefined,
             mediaOptions: { photoTier: 'unsplash' },
+            remixEdits: remixEdits || undefined,
           }),
         });
 
@@ -488,14 +502,18 @@ export default function ContentCreatePage() {
           </h1>
           {step !== 'type' && (
             <p className="mt-0.5 text-sm text-muted-foreground">
-              {step === 'configure' ? 'Configure your post details' : 'Review generated variants'}
+              {step === 'configure'
+              ? 'Configure your post details'
+              : step === 'edit'
+              ? 'Customize the template before generating'
+              : 'Review generated variants'}
             </p>
           )}
         </div>
         {step !== 'type' && !isGenerating && !remixLoading && (
           <button
             type="button"
-            onClick={() => setStep(step === 'review' ? 'configure' : 'type')}
+            onClick={() => setStep(step === 'review' ? 'configure' : step === 'edit' ? 'configure' : 'type')}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-muted"
           >
             <ArrowLeft className="size-4" />
@@ -772,13 +790,26 @@ export default function ContentCreatePage() {
 
               <button
                 type="button"
-                onClick={handleGenerate}
+                onClick={isRemix ? handleContinueToEditor : handleGenerate}
                 disabled={isGenerating || remixLoading || selectedPlatforms.length === 0}
                 className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
                 {isRemix ? <Wand2 className="size-4" /> : <Sparkles className="size-4" />}
-                {isRemix ? 'Remix from template' : 'Generate content'}
+                {isRemix ? 'Continue to editor' : 'Generate content'}
               </button>
+            </div>
+          )}
+
+          {/* ── REMIX EDITOR STEP ─────────────────────────── */}
+          {step === 'edit' && isRemix && template && (
+            <div className="mx-auto max-w-5xl">
+              <RemixEditor
+                template={template}
+                initialEdits={remixEdits || undefined}
+                onChange={setRemixEdits}
+                onGenerate={handleGenerate}
+                isGenerating={remixLoading}
+              />
             </div>
           )}
 

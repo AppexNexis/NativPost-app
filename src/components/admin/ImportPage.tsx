@@ -26,6 +26,8 @@ import {
   AlertTitle,
 } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import ViralSeedPanel from "./ViralSeedPanel";
 import {
   Upload,
   FileJson,
@@ -199,6 +201,7 @@ export default function ImportPage() {
   const [importResult, setImportResult] = useState<{ imported: number; errors: number } | null>(null);
   const [showSampleDialog, setShowSampleDialog] = useState(false);
   const [history, setHistory] = useState<ImportHistory[]>(MOCK_HISTORY);
+  const [activeTab, setActiveTab] = useState("bulk");
 
   const handleFile = useCallback(async (file: File) => {
     const text = await file.text();
@@ -301,13 +304,20 @@ export default function ImportPage() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Bulk import</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Import content</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Import templates from CSV or JSON files
+          Bulk import files or seed trending viral templates
         </p>
       </div>
 
-      {/* Step 1: Upload */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="bulk">Bulk import</TabsTrigger>
+          <TabsTrigger value="seed">Viral seed</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="bulk" className="space-y-6">
+          {/* Step 1: Upload */}
       {step === 1 && (
         <Card>
           <CardHeader>
@@ -579,6 +589,12 @@ export default function ImportPage() {
           </Button>
         </DialogContent>
       </Dialog>
+        </TabsContent>
+
+        <TabsContent value="seed">
+          <ViralSeedPanel />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
