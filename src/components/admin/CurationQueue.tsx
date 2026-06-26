@@ -9,6 +9,7 @@ import {
   Clock,
   Copy,
   Filter,
+  Globe,
   Loader2,
   Play,
   Search,
@@ -122,7 +123,7 @@ function TikTokIcon({ className }: { className?: string }) {
 
 /* ─────────────────── Types ─────────────────── */
 
-type Platform = 'TikTok' | 'Instagram' | 'YouTube' | 'Unknown';
+type Platform = 'TikTok' | 'Instagram' | 'YouTube' | 'Pexels' | 'Unknown';
 type CurationStatus = 'pending' | 'approved' | 'rejected';
 
 type Template = {
@@ -185,7 +186,8 @@ function mapPlatform(platform: string): Platform {
     case 'tiktok': return 'TikTok';
     case 'instagram': return 'Instagram';
     case 'youtube': return 'YouTube';
-    default: return 'Unknown';
+    case 'pexels': return 'Pexels';
+    default: return platform ? platform.charAt(0).toUpperCase() + platform.slice(1) : 'Unknown';
   }
 }
 
@@ -212,7 +214,7 @@ const PlatformIcon = ({ platform }: { platform: Platform }) => {
     case 'YouTube':
       return <YoutubeIcon className="size-4" />;
     default:
-      return null;
+      return <Globe className="size-4 text-muted-foreground" />;
   }
 };
 
@@ -548,6 +550,7 @@ export default function CurationQueue() {
                     <SelectItem value="TikTok">TikTok</SelectItem>
                     <SelectItem value="Instagram">Instagram</SelectItem>
                     <SelectItem value="YouTube">YouTube</SelectItem>
+                    <SelectItem value="Pexels">Pexels</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select

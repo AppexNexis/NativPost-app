@@ -17,7 +17,7 @@ export type ContentType =
   | 'carousel'
   | 'custom';
 
-export type SourcePlatform = 'tiktok' | 'instagram' | 'youtube' | 'unknown';
+export type SourcePlatform = 'tiktok' | 'instagram' | 'youtube' | 'pexels' | 'unknown';
 
 export type CurationStatus = 'pending' | 'approved' | 'rejected' | 'featured';
 

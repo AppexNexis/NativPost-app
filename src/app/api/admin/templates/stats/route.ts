@@ -189,22 +189,22 @@ export async function GET(_req: NextRequest) {
     // ── Top niches ───────────────────────────────────────────────────────
     const topNiches = await db
       .select({
-        name: sql`unnest(${contentTemplateSchema.niches})`,
+        name: sql`jsonb_array_elements_text(${contentTemplateSchema.niches})`,
         count: count(),
       })
       .from(contentTemplateSchema)
-      .groupBy(sql`unnest(${contentTemplateSchema.niches})`)
+      .groupBy(sql`jsonb_array_elements_text(${contentTemplateSchema.niches})`)
       .orderBy(sql`count(*) DESC`)
       .limit(8);
 
     // ── Top angles ───────────────────────────────────────────────────────
     const topAngles = await db
       .select({
-        name: sql`unnest(${contentTemplateSchema.angles})`,
+        name: sql`jsonb_array_elements_text(${contentTemplateSchema.angles})`,
         count: count(),
       })
       .from(contentTemplateSchema)
-      .groupBy(sql`unnest(${contentTemplateSchema.angles})`)
+      .groupBy(sql`jsonb_array_elements_text(${contentTemplateSchema.angles})`)
       .orderBy(sql`count(*) DESC`)
       .limit(8);
 

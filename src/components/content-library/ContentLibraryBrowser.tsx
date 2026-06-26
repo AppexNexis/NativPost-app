@@ -175,9 +175,10 @@ export function ContentLibraryBrowser({ templates, onRemix }: ContentLibraryBrow
                 { value: 'tiktok', label: 'TikTok' },
                 { value: 'instagram', label: 'Instagram' },
                 { value: 'youtube', label: 'YouTube' },
+                { value: 'pexels', label: 'Pexels' },
               ]}
               onChange={v =>
-                handleFilterChange('platform', (v as 'tiktok' | 'instagram' | 'youtube') || undefined)}
+                handleFilterChange('platform', (v as 'tiktok' | 'instagram' | 'youtube' | 'pexels') || undefined)}
             />
             <FilterSelect
               label="Sort By"

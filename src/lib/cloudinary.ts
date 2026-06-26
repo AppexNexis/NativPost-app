@@ -217,6 +217,9 @@ export function getHdVideoUrl(
 
 /**
  * Build a high-quality poster frame URL from a Cloudinary video URL.
+ *
+ * For video URLs, this extracts a single frame as a JPG image so it can be
+ * used as an <img> src or <video> poster. For image URLs, it just optimizes.
  */
 export function getVideoPosterUrl(
   url: string | null | undefined,
@@ -238,14 +241,18 @@ export function getVideoPosterUrl(
     });
   }
 
+  // For video URLs, force a JPG frame extraction so the result is an image,
+  // not a one-frame video. f_auto on a video URL returns a video codec.
   return getOptimizedUrl(url, {
     crop: 'fill',
     width: options.width || 608,
     height: options.height || 1080,
     startOffset: options.startOffset ?? 0,
     qualityAuto: true,
-    formatAuto: true,
+    formatAuto: false,
+    codecAuto: false,
     ...options,
+    extra: [...(options.extra ?? []), 'f_jpg'],
   });
 }
 
