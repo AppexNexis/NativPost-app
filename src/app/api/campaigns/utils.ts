@@ -306,9 +306,10 @@ function buildEngineBrandProfile(profile: any) {
 
 async function fetchCampaignTemplates(
   db: any,
-  orgId: string,
+  _orgId: string,                    // prefix with _ to suppress unused warning
   contentMix: Record<string, number>,
 ): Promise<Array<{ id: string; contentType: string; sourceUrl: string | null; structure: any; angles: string[] }>> {
+  // ...existing query code...
   const mixKeys = Object.entries(contentMix)
     .filter(([, v]) => (v || 0) > 0)
     .map(([k]) => k);
@@ -338,8 +339,8 @@ async function fetchCampaignTemplates(
     .filter((t) => uniqueTypes.includes(t.contentType))
     .map((t) => ({
       id: t.id,
-      content_type: t.contentType,
-      source_url: t.sourceUrl,
+      contentType: t.contentType,    // ← camelCase, not content_type
+      sourceUrl: t.sourceUrl,        // ← camelCase, not source_url
       structure: t.structure || {},
       angles: (t.angles as string[]) || [],
     }));
@@ -351,7 +352,7 @@ export async function generateCampaignPosts(
   db: any,
   orgId: string,
   campaign: any,
-  topicOverride?: string,
+  _topicOverride?: string,
   targetPlatformsOverride?: string[],
   onProgress?: (progress: GenerationProgress) => void | Promise<void>,
   onPostComplete?: (event: PostCompleteEvent) => void | Promise<void>,
@@ -397,7 +398,7 @@ export async function generateCampaignPosts(
       .from(contentAngleSchema)
       .where(eq(contentAngleSchema.orgId, orgId));
 
-    const angleMap = new Map(angleRows.map((a: any) => [a.id, a]));
+    const angleMap = new Map<string, any>(angleRows.map((a: any) => [a.id, a]));
     anglesWithNames = campaignAngles.map((a) => {
       const row = angleMap.get(a.angleId);
       return {
@@ -486,8 +487,7 @@ export async function generateCampaignPosts(
   let failedPosts = 0;
   const contentItemIds: string[] = [];
 
-  for (let i = 0; i < engineResult.posts.length; i++) {
-    const post = engineResult.posts[i];
+  for (const [i, post] of engineResult.posts.entries()) {
     try {
       onProgress?.({
         postIndex: i,
