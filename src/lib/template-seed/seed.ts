@@ -68,31 +68,32 @@ function sanitizePublicId(input: string): string {
     .slice(0, 120);
 }
 
+/**
+ * FIXED: Replaced buggy Promise.race loop with a clean, 
+ * safe Worker Pool pattern to ensure all data is waited on.
+ */
 async function withConcurrency<T, R>(
   items: T[],
   concurrency: number,
   fn: (item: T, index: number) => Promise<R>,
 ): Promise<R[]> {
   const results: R[] = new Array(items.length);
-  const executing: Promise<void>[] = [];
+  let currentIndex = 0;
 
-  for (let i = 0; i < items.length; i++) {
-    const promise = (async (index: number) => {
+  async function worker() {
+    while (currentIndex < items.length) {
+      const index = currentIndex++;
       results[index] = await fn(items[index]!, index);
-    })(i);
-
-    executing.push(promise);
-
-    if (executing.length >= concurrency) {
-      await Promise.race(executing);
-      executing.splice(
-        executing.findIndex((p) => p === promise),
-        1,
-      );
     }
   }
 
-  await Promise.all(executing);
+  // Spawn parallel workers up to the concurrency limit
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) }, 
+    worker
+  );
+  
+  await Promise.all(workers);
   return results;
 }
 
@@ -130,22 +131,22 @@ async function fetchRawTemplates(
   }
 
   if (options.sources.includes('tiktok') && options.tiktok) {
-  const token = options.tiktok.apifyToken ?? options.apifyToken;
-  jobs.push({
-    provider: apifyTikTokProvider,
-    options: { ...options.tiktok, apifyToken: token },
-    label: 'TikTok (Apify)',
-  });
-}
+    const token = options.tiktok.apifyToken ?? options.apifyToken;
+    jobs.push({
+      provider: apifyTikTokProvider,
+      options: { ...options.tiktok, apifyToken: token },
+      label: 'TikTok (Apify)',
+    });
+  }
 
- if (options.sources.includes('instagram') && options.instagram) {
-  const token = options.instagram.apifyToken ?? options.apifyToken;
-  jobs.push({
-    provider: apifyInstagramProvider,
-    options: { ...options.instagram, apifyToken: token },
-    label: 'Instagram (Apify)',
-  });
-}
+  if (options.sources.includes('instagram') && options.instagram) {
+    const token = options.instagram.apifyToken ?? options.apifyToken;
+    jobs.push({
+      provider: apifyInstagramProvider,
+      options: { ...options.instagram, apifyToken: token },
+      label: 'Instagram (Apify)',
+    });
+  }
 
   if (jobs.length === 0) {
     return { raw: [], errors: [] };
@@ -193,7 +194,7 @@ async function uploadToCloudinary(
   templates: EnrichedTemplate[],
   options: SeedOptions,
 ): Promise<Map<string, UploadResult>> {
-   if (options.skipUpload || !options.cloudinary) {   // <-- add !options.cloudinary
+  if (options.skipUpload || !options.cloudinary) {   
     return new Map();
   }
   configureCloudinary(options.cloudinary);

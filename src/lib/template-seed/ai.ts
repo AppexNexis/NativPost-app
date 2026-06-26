@@ -74,7 +74,8 @@ Rules:
 
   try {
     const response = await client.messages.create({
-      model: 'claude-3-5-haiku-20241022',
+      // FIXED: Swapped the deprecated hardcoded snapshot for the auto-updating pointer
+      model: 'claude-3-5-haiku-latest',
       max_tokens: 1024,
       temperature: 0.5,
       messages: [{ role: 'user', content: prompt }],
@@ -125,7 +126,7 @@ Rules:
   structure.textOverlayStyle = structure.textOverlayStyle || 'bold_caption';
 
   return {
-    ...template,
+    ...template, // <--- NOTE HERE
     niches,
     angles,
     structure,
