@@ -13,6 +13,8 @@ export {
 export { searchYouTubeShorts, type YouTubeImporterOptions } from './providers/youtube';
 export { tiktokResearchProvider, type TikTokResearchOptions } from './providers/tiktok-research';
 export { instagramProvider, type InstagramOptions } from './providers/instagram';
+export { apifyTikTokProvider, type ApifyTikTokOptions } from './providers/apify-tiktok';
+export { apifyInstagramProvider, type ApifyInstagramOptions } from './providers/apify-instagram';
 export {
   tiktokCreativeCenterProvider,
   type TikTokCreativeCenterOptions,

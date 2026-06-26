@@ -92,33 +92,12 @@ async function main() {
         regionCode: process.env.YOUTUBE_REGION_CODE ?? 'US',
       }
       : undefined,
-    // Add to seedOptions:
-    tiktok: args.sources.includes('tiktok') ? {
-      apifyToken: requireEnv('APIFY_TOKEN'),
-      hashtags: ['viral', 'trending', 'smallbusiness', 'entrepreneur', 'africa'],
-      limit: args.limitPerSource ?? 50,
-      minViews: 10000,
-    } : undefined,
-
-    instagram: args.sources.includes('instagram') ? {
-      apifyToken: requireEnv('APIFY_TOKEN'),
-      hashtags: ['smallbusiness', 'entrepreneur', 'viral', 'africanbusiness'],
-      limit: args.limitPerSource ?? 30,
-      minLikes: 500,
-    } : undefined,
-
-    // cloudinary now optional — only require if not skip-upload:
-    cloudinary: !args.skipUpload ? {
+    anthropicApiKey,
+    cloudinary: {
       cloudName: requireEnv('NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME'),
       apiKey: requireEnv('NEXT_PUBLIC_CLOUDINARY_API_KEY'),
       apiSecret: requireEnv('CLOUDINARY_API_SECRET'),
-    } : undefined,
-    anthropicApiKey,
-    // cloudinary: {
-    //   cloudName: requireEnv('NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME'),
-    //   apiKey: requireEnv('NEXT_PUBLIC_CLOUDINARY_API_KEY'),
-    //   apiSecret: requireEnv('CLOUDINARY_API_SECRET'),
-    // },
+    },
     skipUpload: args.skipUpload,
     uploadConcurrency: args.concurrency,
     curationStatus: args.approve ? ('approved' as const) : ('pending' as const),
@@ -176,10 +155,9 @@ async function main() {
   }));
 
   const inserted = await db
-  .insert(contentTemplateSchema)
-  .values(values as any)
-  .onConflictDoNothing({ target: contentTemplateSchema.sourceUrl })  // needs unique constraint on sourceUrl
-  .returning({ id: contentTemplateSchema.id });
+    .insert(contentTemplateSchema)
+    .values(values as any)
+    .returning({ id: contentTemplateSchema.id });
 
   console.log(`\n✅ Inserted ${inserted.length} templates into content_template.`);
   console.log(`   Curation status: ${args.approve ? 'approved' : 'pending'}`);

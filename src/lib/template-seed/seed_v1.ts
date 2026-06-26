@@ -10,11 +10,9 @@ import { configureCloudinary, uploadVideoFromUrl, type UploadResult } from './cl
 import { enrichTemplateWithAI } from './ai';
 import { fetchPexelsTemplates, type PexelsImporterOptions } from './providers/pexels';
 import { searchYouTubeShorts, type YouTubeImporterOptions } from './providers/youtube';
-// import { tiktokResearchProvider, type TikTokResearchOptions } from './providers/tiktok-research';
-// import { instagramProvider, type InstagramOptions } from './providers/instagram';
-import { apifyTikTokProvider, type ApifyTikTokOptions } from './providers/apify-tiktok';
-import { apifyInstagramProvider, type ApifyInstagramOptions } from './providers/apify-instagram';
-import {  type TikTokCreativeCenterOptions } from './providers/tiktok-creative-center';
+import { tiktokResearchProvider, type TikTokResearchOptions } from './providers/tiktok-research';
+import { instagramProvider, type InstagramOptions } from './providers/instagram';
+import { tiktokCreativeCenterProvider, type TikTokCreativeCenterOptions } from './providers/tiktok-creative-center';
 import type { EnrichedTemplate, RawTemplate, SourcePlatform, ViralSourceProvider } from './types';
 
 export interface SeedOptions {
@@ -24,15 +22,16 @@ export interface SeedOptions {
   pexels?: PexelsImporterOptions;
   /** YouTube API options. */
   youtube?: YouTubeImporterOptions;
-  tiktok?: ApifyTikTokOptions;
-  instagram?: ApifyInstagramOptions;
-  apifyToken?: string; 
+  /** TikTok Research API options. */
+  tiktokResearch?: TikTokResearchOptions;
+  /** Instagram Basic Display / Graph API options. */
+  instagram?: InstagramOptions;
   /** Experimental TikTok Creative Center scraping fallback. */
   tiktokCreativeCenter?: TikTokCreativeCenterOptions;
   /** Anthropic API key for AI enrichment. */
   anthropicApiKey: string;
   /** Cloudinary config. */
-  cloudinary?: {
+  cloudinary: {
     cloudName: string;
     apiKey: string;
     apiSecret: string;
@@ -129,23 +128,30 @@ async function fetchRawTemplates(
     });
   }
 
-  if (options.sources.includes('tiktok') && options.tiktok) {
-  const token = options.tiktok.apifyToken ?? options.apifyToken;
-  jobs.push({
-    provider: apifyTikTokProvider,
-    options: { ...options.tiktok, apifyToken: token },
-    label: 'TikTok (Apify)',
-  });
-}
+  if (options.sources.includes('tiktok')) {
+    if (options.tiktokResearch) {
+      jobs.push({
+        provider: tiktokResearchProvider,
+        options: { ...options.tiktokResearch, limit: options.limitPerSource ?? options.tiktokResearch.limit } as Record<string, unknown>,
+        label: 'TikTok Research',
+      });
+    }
+    if (options.tiktokCreativeCenter) {
+      jobs.push({
+        provider: tiktokCreativeCenterProvider,
+        options: { ...options.tiktokCreativeCenter, limit: options.limitPerSource ?? options.tiktokCreativeCenter.limit } as Record<string, unknown>,
+        label: 'TikTok Creative Center',
+      });
+    }
+  }
 
- if (options.sources.includes('instagram') && options.instagram) {
-  const token = options.instagram.apifyToken ?? options.apifyToken;
-  jobs.push({
-    provider: apifyInstagramProvider,
-    options: { ...options.instagram, apifyToken: token },
-    label: 'Instagram (Apify)',
-  });
-}
+  if (options.sources.includes('instagram') && options.instagram) {
+    jobs.push({
+      provider: instagramProvider,
+      options: { ...options.instagram, limit: options.limitPerSource ?? options.instagram.limit } as Record<string, unknown>,
+      label: 'Instagram',
+    });
+  }
 
   if (jobs.length === 0) {
     return { raw: [], errors: [] };
@@ -193,9 +199,10 @@ async function uploadToCloudinary(
   templates: EnrichedTemplate[],
   options: SeedOptions,
 ): Promise<Map<string, UploadResult>> {
-   if (options.skipUpload || !options.cloudinary) {   // <-- add !options.cloudinary
+  if (options.skipUpload) {
     return new Map();
   }
+
   configureCloudinary(options.cloudinary);
 
   const uploadable = templates.filter(
@@ -233,22 +240,28 @@ async function uploadToCloudinary(
   return map;
 }
 
-async function runEnrichment(templates: RawTemplate[], options: SeedOptions): Promise<EnrichedTemplate[]> {
+async function runEnrichment(
+  templates: RawTemplate[],
+  options: SeedOptions,
+): Promise<EnrichedTemplate[]> {
   if (templates.length === 0) return [];
+
   options.onProgress?.(`Enriching ${templates.length} templates with AI...`);
 
-  const results = await withConcurrency(templates, 5, async (template, i) => {
+  const enriched: EnrichedTemplate[] = [];
+  for (let i = 0; i < templates.length; i++) {
+    const template = templates[i]!;
     try {
       const item = await enrichTemplateWithAI(template, options.anthropicApiKey);
+      enriched.push(item);
       options.onProgress?.(`Enriched ${i + 1}/${templates.length}: ${item.sourcePlatform}`);
-      return item;
     } catch (err) {
-      options.onProgress?.(`Enrichment failed for ${template.sourceUrl}: ${err instanceof Error ? err.message : err}`);
-      return null;
+      const message = err instanceof Error ? err.message : String(err);
+      options.onProgress?.(`Enrichment failed for ${template.sourceUrl}: ${message}`);
     }
-  });
+  }
 
-  return results.filter((t): t is EnrichedTemplate => t !== null);
+  return enriched;
 }
 
 async function runSeedPipelineInternal(
