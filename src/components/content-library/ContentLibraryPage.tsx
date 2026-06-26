@@ -1,69 +1,51 @@
-"use client";
+'use client';
 
-import React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from 'next/navigation';
+import React from 'react';
 
-import { ContentLibraryBrowser } from "@/components/content-library/ContentLibraryBrowser";
-import type { ContentTemplate } from "@/types/v2";
+import { ContentLibraryBrowser } from '@/components/content-library/ContentLibraryBrowser';
+import type { ContentTemplate } from '@/types/v2';
 
-interface ContentLibraryPageProps {
+type ContentLibraryPageProps = {
   templates: ContentTemplate[];
-  bookmarkedIds: Set<string>;
-}
+};
 
-export function ContentLibraryPage({ templates, bookmarkedIds }: ContentLibraryPageProps) {
+export function ContentLibraryPage({ templates }: ContentLibraryPageProps) {
   const router = useRouter();
-  const [localBookmarks, setLocalBookmarks] = React.useState<Set<string>>(bookmarkedIds);
   const [isRemixing, setIsRemixing] = React.useState<string | null>(null);
+  const [remixError, setRemixError] = React.useState<string | null>(null);
 
   const handleRemix = async (template: ContentTemplate) => {
-    if (isRemixing) return;
+    if (isRemixing) {
+      return;
+    }
     setIsRemixing(template.id);
+    setRemixError(null);
 
     try {
-      // Open the visual remix editor where the user can customize
-      // text, layout, media, and audio before generating variants.
       router.push(`/dashboard/content/create?templateId=${template.id}`);
     } catch (err) {
-      console.error("[Remix] Failed:", err);
-      alert("Remix failed. Please try again.");
-    } finally {
+      console.error('[Remix] Failed:', err);
+      setRemixError('Remix failed. Please try again.');
       setIsRemixing(null);
     }
   };
 
-  const handleBookmark = (templateId: string) => {
-    setLocalBookmarks((prev) => {
-      const next = new Set(prev);
-      if (next.has(templateId)) {
-        next.delete(templateId);
-      } else {
-        next.add(templateId);
-      }
-      return next;
-    });
-  };
-
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Content Library</h1>
-        <p className="text-sm text-gray-500">
-          Browse, remix, and save trending short-form content. Filter by niche, platform, and content type.
-        </p>
+    <div className="min-h-screen bg-background pb-12">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        {remixError && (
+          <div className="mb-4 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {remixError}
+          </div>
+        )}
+        <ContentLibraryBrowser templates={templates} onRemix={handleRemix} />
       </div>
-
-      <ContentLibraryBrowser
-        templates={templates}
-        onRemix={handleRemix}
-        onBookmark={handleBookmark}
-        bookmarkedIds={localBookmarks}
-      />
 
       {isRemixing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="rounded-xl bg-white p-6 shadow-xl">
-            <p className="text-sm font-medium text-gray-900">Remixing template...</p>
+          <div className="rounded-xl bg-card p-6 shadow-xl">
+            <p className="text-sm font-medium text-card-foreground">Opening remix editor...</p>
           </div>
         </div>
       )}

@@ -50,10 +50,8 @@ export default async function ContentLibrary() {
   })) as ContentTemplate[];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="mx-auto max-w-7xl px-4 py-8">
-        <ContentLibraryPage templates={templates} bookmarkedIds={new Set()} />
-      </div>
+    <div className="min-h-screen bg-background">
+      <ContentLibraryPage templates={templates} />
     </div>
   );
 }
