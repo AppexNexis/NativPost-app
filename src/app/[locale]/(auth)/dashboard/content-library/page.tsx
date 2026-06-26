@@ -36,6 +36,8 @@ export default async function ContentLibrary() {
   // Ensure timestamps are serialised as strings for the client.
   const templates: ContentTemplate[] = items.map((item) => ({
     ...item,
+    sourcePlatform: item.sourcePlatform as ContentTemplate['sourcePlatform'],
+    contentType: item.contentType as ContentTemplate['contentType'],
     niches: (item.niches ?? []) as ContentTemplate['niches'],
     angles: (item.angles ?? []) as string[],
     structure: (item.structure ?? {}) as ContentTemplate['structure'],
@@ -45,7 +47,7 @@ export default async function ContentLibrary() {
     lastRefreshedAt: item.lastRefreshedAt?.toISOString() ?? null,
     updatedAt: item.updatedAt?.toISOString() ?? new Date().toISOString(),
     createdAt: item.createdAt?.toISOString() ?? new Date().toISOString(),
-  }));
+  })) as ContentTemplate[];
 
   return (
     <div className="min-h-screen bg-gray-50">
