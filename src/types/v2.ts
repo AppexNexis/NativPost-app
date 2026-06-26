@@ -64,6 +64,7 @@ export interface ContentTemplate {
   thumbnailUrl: string;
   thumbnailUrls: Record<string, string>;
   durationSeconds: number | null;
+  aspectRatio: string | null;
   contentType: ContentType;
   niches: NicheTag[];
   angles: string[];
