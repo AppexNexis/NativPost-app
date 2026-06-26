@@ -55,6 +55,26 @@ export default withSentryConfig(
             protocol: 'https',
             hostname: 'plus.unsplash.com',
           },
+
+          // Pexels
+          {
+            protocol: 'https',
+            hostname: 'images.pexels.com',
+          },
+          {
+            protocol: 'https',
+            hostname: 'static.pexels.com',
+          },
+
+          // YouTube thumbnails
+          {
+            protocol: 'https',
+            hostname: 'i.ytimg.com',
+          },
+          {
+            protocol: 'https',
+            hostname: 'img.youtube.com',
+          },
         ],
       },
     }),

@@ -75,7 +75,8 @@ Rules:
   try {
     const response = await client.messages.create({
       // FIXED: Swapped the deprecated hardcoded snapshot for the auto-updating pointer
-      model: 'claude-3-5-haiku-latest',
+      model: 'claude-sonnet-4-6',
+      // model: 'claude-3-5-haiku-latest',
       max_tokens: 1024,
       temperature: 0.5,
       messages: [{ role: 'user', content: prompt }],
