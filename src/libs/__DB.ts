@@ -48,10 +48,16 @@ const g = globalThis as unknown as {
 async function initDb(): Promise<AnyDb> {
   // Production / local dev with real Postgres
   if (Env.DATABASE_URL) {
+    // const pool = new Pool({
+    //   connectionString: Env.DATABASE_URL,
+    //   max: 10,
+    //   idleTimeoutMillis: 30_000,
+    //   connectionTimeoutMillis: 5_000,
+    // });
     const pool = new Pool({
       connectionString: Env.DATABASE_URL,
-      max: 10,
-      idleTimeoutMillis: 30_000,
+      max: 1,              // was 10 — let Supavisor handle the real pooling
+      idleTimeoutMillis: 10_000,
       connectionTimeoutMillis: 5_000,
     });
 
