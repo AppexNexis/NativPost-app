@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS "content_template_source_url_idx" ON "content_template" USING btree ("source_url");
