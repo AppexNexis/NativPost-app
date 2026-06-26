@@ -450,41 +450,84 @@ export const userSettingsSchema = pgTable(
 // -----------------------------------------------------------
 // CONTENT TEMPLATE (Trending content library)
 // -----------------------------------------------------------
-export const contentTemplateSchema = pgTable('content_template', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  sourceUrl: text('source_url').notNull(),
-  sourcePlatform: text('source_platform').notNull(),
-  sourceCreator: text('source_creator'),
-  sourceVideoId: text('source_video_id'),
-  mediaUrl: text('media_url'),
-  thumbnailUrl: text('thumbnail_url').notNull(),
-  thumbnailUrls: jsonb('thumbnail_urls').default({}),
-  durationSeconds: integer('duration_seconds'),
-  contentType: text('content_type').notNull(),
-  niches: jsonb('niches').default([]),
-  angles: jsonb('angles').default([]),
-  structure: jsonb('structure').default({}),
-  engagementScore: real('engagement_score'),
-  viewCount: integer('view_count'),
-  likeCount: integer('like_count'),
-  shareCount: integer('share_count'),
-  commentCount: integer('comment_count'),
-  curationStatus: text('curation_status').default('pending'),
-  curatedBy: text('curated_by'),
-  curatedAt: timestamp('curated_at', { mode: 'date' }),
-  remixCount: integer('remix_count').default(0),
-  publishCount: integer('publish_count').default(0),
-  avgRemixPerformance: real('avg_remix_performance'),
-  addedAt: timestamp('added_at', { mode: 'date' }).defaultNow(),
-  lastRefreshedAt: timestamp('last_refreshed_at', { mode: 'date' }),
-  isActive: boolean('is_active').default(true),
-  trainingUsed: boolean('training_used').default(false),
-  updatedAt: timestamp('updated_at', { mode: 'date' })
-    .defaultNow()
-    .$onUpdate(() => new Date())
-    .notNull(),
-  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
-});
+// export const contentTemplateSchema = pgTable('content_template', {
+//   id: uuid('id').primaryKey().defaultRandom(),
+//   sourceUrl: text('source_url').notNull(),
+//   sourcePlatform: text('source_platform').notNull(),
+//   sourceCreator: text('source_creator'),
+//   sourceVideoId: text('source_video_id'),
+//   mediaUrl: text('media_url'),
+//   thumbnailUrl: text('thumbnail_url').notNull(),
+//   thumbnailUrls: jsonb('thumbnail_urls').default({}),
+//   durationSeconds: integer('duration_seconds'),
+//   contentType: text('content_type').notNull(),
+//   niches: jsonb('niches').default([]),
+//   angles: jsonb('angles').default([]),
+//   structure: jsonb('structure').default({}),
+//   engagementScore: real('engagement_score'),
+//   viewCount: integer('view_count'),
+//   likeCount: integer('like_count'),
+//   shareCount: integer('share_count'),
+//   commentCount: integer('comment_count'),
+//   curationStatus: text('curation_status').default('pending'),
+//   curatedBy: text('curated_by'),
+//   curatedAt: timestamp('curated_at', { mode: 'date' }),
+//   remixCount: integer('remix_count').default(0),
+//   publishCount: integer('publish_count').default(0),
+//   avgRemixPerformance: real('avg_remix_performance'),
+//   addedAt: timestamp('added_at', { mode: 'date' }).defaultNow(),
+//   lastRefreshedAt: timestamp('last_refreshed_at', { mode: 'date' }),
+//   isActive: boolean('is_active').default(true),
+//   trainingUsed: boolean('training_used').default(false),
+//   updatedAt: timestamp('updated_at', { mode: 'date' })
+//     .defaultNow()
+//     .$onUpdate(() => new Date())
+//     .notNull(),
+//   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+// });
+
+export const contentTemplateSchema = pgTable(
+  'content_template',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sourceUrl: text('source_url').notNull(),
+    sourcePlatform: text('source_platform').notNull(),
+    sourceCreator: text('source_creator'),
+    sourceVideoId: text('source_video_id'),
+    mediaUrl: text('media_url'),
+    thumbnailUrl: text('thumbnail_url').notNull(),
+    thumbnailUrls: jsonb('thumbnail_urls').default({}),
+    durationSeconds: integer('duration_seconds'),
+    contentType: text('content_type').notNull(),
+    niches: jsonb('niches').default([]),
+    angles: jsonb('angles').default([]),
+    structure: jsonb('structure').default({}),
+    engagementScore: real('engagement_score'),
+    viewCount: integer('view_count'),
+    likeCount: integer('like_count'),
+    shareCount: integer('share_count'),
+    commentCount: integer('comment_count'),
+    curationStatus: text('curation_status').default('pending'),
+    curatedBy: text('curated_by'),
+    curatedAt: timestamp('curated_at', { mode: 'date' }),
+    remixCount: integer('remix_count').default(0),
+    publishCount: integer('publish_count').default(0),
+    avgRemixPerformance: real('avg_remix_performance'),
+    addedAt: timestamp('added_at', { mode: 'date' }).defaultNow(),
+    lastRefreshedAt: timestamp('last_refreshed_at', { mode: 'date' }),
+    isActive: boolean('is_active').default(true),
+    trainingUsed: boolean('training_used').default(false),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => ({
+    // This creates the exact index Postgres needs for source_url upserts
+    sourceUrlIdx: uniqueIndex('content_template_source_url_idx').on(table.sourceUrl),
+  }),
+);
 
 // -----------------------------------------------------------
 // CAMPAIGN
