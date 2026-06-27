@@ -1,8 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
-import { getDb } from "@/libs/DB";
-import { contentTemplateSchema } from "@/models/Schema";
-import { eq, and, gte, count, sql, avg, max } from "drizzle-orm";
+import { auth } from '@clerk/nextjs/server';
+import { and, avg, count, eq, gte, max, sql } from 'drizzle-orm';
+import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
+
+import { getDb } from '@/libs/DB';
+import { contentTemplateSchema } from '@/models/Schema';
 
 /**
  * NativPost admin guard — same check as middleware + AdminShell.
@@ -14,8 +16,8 @@ async function requireAdmin() {
   if (!userId || !orgId) {
     return {
       error: NextResponse.json(
-        { error: "Unauthorized — sign in and select an organization" },
-        { status: 401 }
+        { error: 'Unauthorized — sign in and select an organization' },
+        { status: 401 },
       ),
       orgId: null,
     };
@@ -23,14 +25,14 @@ async function requireAdmin() {
 
   const teamOrgId = process.env.NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID;
   const isNativPostStaff = !!(
-    teamOrgId && orgId === teamOrgId && orgRole === "org:admin"
+    teamOrgId && orgId === teamOrgId && orgRole === 'org:admin'
   );
 
   if (!isNativPostStaff) {
     return {
       error: NextResponse.json(
-        { error: "Forbidden — NativPost admin access required" },
-        { status: 403 }
+        { error: 'Forbidden — NativPost admin access required' },
+        { status: 403 },
       ),
       orgId: null,
     };
@@ -41,7 +43,9 @@ async function requireAdmin() {
 
 export async function GET(_req: NextRequest) {
   const { error } = await requireAdmin();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const db = await getDb();
 
@@ -59,8 +63,8 @@ export async function GET(_req: NextRequest) {
       .where(
         and(
           gte(contentTemplateSchema.updatedAt, today),
-          sql`${contentTemplateSchema.curationStatus} IS NOT NULL`
-        )
+          sql`${contentTemplateSchema.curationStatus} IS NOT NULL`,
+        ),
       );
 
     const todayApproved = await db
@@ -69,8 +73,8 @@ export async function GET(_req: NextRequest) {
       .where(
         and(
           gte(contentTemplateSchema.updatedAt, today),
-          eq(contentTemplateSchema.curationStatus, "approved")
-        )
+          eq(contentTemplateSchema.curationStatus, 'approved'),
+        ),
       );
 
     const todayRejected = await db
@@ -79,8 +83,8 @@ export async function GET(_req: NextRequest) {
       .where(
         and(
           gte(contentTemplateSchema.updatedAt, today),
-          eq(contentTemplateSchema.curationStatus, "rejected")
-        )
+          eq(contentTemplateSchema.curationStatus, 'rejected'),
+        ),
       );
 
     // ── This week ──────────────────────────────────────────────────────
@@ -90,8 +94,8 @@ export async function GET(_req: NextRequest) {
       .where(
         and(
           gte(contentTemplateSchema.updatedAt, weekStart),
-          sql`${contentTemplateSchema.curationStatus} IS NOT NULL`
-        )
+          sql`${contentTemplateSchema.curationStatus} IS NOT NULL`,
+        ),
       );
 
     const weekApproved = await db
@@ -100,8 +104,8 @@ export async function GET(_req: NextRequest) {
       .where(
         and(
           gte(contentTemplateSchema.updatedAt, weekStart),
-          eq(contentTemplateSchema.curationStatus, "approved")
-        )
+          eq(contentTemplateSchema.curationStatus, 'approved'),
+        ),
       );
 
     const weekRejected = await db
@@ -110,8 +114,8 @@ export async function GET(_req: NextRequest) {
       .where(
         and(
           gte(contentTemplateSchema.updatedAt, weekStart),
-          eq(contentTemplateSchema.curationStatus, "rejected")
-        )
+          eq(contentTemplateSchema.curationStatus, 'rejected'),
+        ),
       );
 
     // ── This month ───────────────────────────────────────────────────────
@@ -121,8 +125,8 @@ export async function GET(_req: NextRequest) {
       .where(
         and(
           gte(contentTemplateSchema.updatedAt, monthStart),
-          sql`${contentTemplateSchema.curationStatus} IS NOT NULL`
-        )
+          sql`${contentTemplateSchema.curationStatus} IS NOT NULL`,
+        ),
       );
 
     const monthApproved = await db
@@ -131,8 +135,8 @@ export async function GET(_req: NextRequest) {
       .where(
         and(
           gte(contentTemplateSchema.updatedAt, monthStart),
-          eq(contentTemplateSchema.curationStatus, "approved")
-        )
+          eq(contentTemplateSchema.curationStatus, 'approved'),
+        ),
       );
 
     const monthRejected = await db
@@ -141,28 +145,28 @@ export async function GET(_req: NextRequest) {
       .where(
         and(
           gte(contentTemplateSchema.updatedAt, monthStart),
-          eq(contentTemplateSchema.curationStatus, "rejected")
-        )
+          eq(contentTemplateSchema.curationStatus, 'rejected'),
+        ),
       );
 
     // ── Queue health ─────────────────────────────────────────────────────
     const pendingCount = await db
       .select({ count: count() })
       .from(contentTemplateSchema)
-      .where(eq(contentTemplateSchema.curationStatus, "pending"));
+      .where(eq(contentTemplateSchema.curationStatus, 'pending'));
 
     const avgTimeInQueue = await db
       .select({ avg: avg(sql`EXTRACT(EPOCH FROM (${contentTemplateSchema.updatedAt} - ${contentTemplateSchema.createdAt})) / 3600`) })
       .from(contentTemplateSchema)
-      .where(eq(contentTemplateSchema.curationStatus, "pending"));
+      .where(eq(contentTemplateSchema.curationStatus, 'pending'));
 
     const oldestPending = await db
       .select({ max: max(sql`EXTRACT(EPOCH FROM (NOW() - ${contentTemplateSchema.createdAt})) / 3600`) })
       .from(contentTemplateSchema)
-      .where(eq(contentTemplateSchema.curationStatus, "pending"));
+      .where(eq(contentTemplateSchema.curationStatus, 'pending'));
 
     // ── Velocity (last 7 days) ───────────────────────────────────────────
-    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const velocity = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(today);
@@ -176,12 +180,12 @@ export async function GET(_req: NextRequest) {
         .where(
           and(
             gte(contentTemplateSchema.createdAt, d),
-            sql`${contentTemplateSchema.createdAt} < ${nextDay}`
-          )
+            sql`${contentTemplateSchema.createdAt} < ${nextDay}`,
+          ),
         );
 
       velocity.push({
-        day: days[d.getDay()] ?? "—",
+        day: days[d.getDay()] ?? '—',
         processed: row[0]?.count ?? 0,
       });
     }
@@ -222,8 +226,8 @@ export async function GET(_req: NextRequest) {
         .where(
           and(
             gte(contentTemplateSchema.updatedAt, wStart),
-            sql`${contentTemplateSchema.updatedAt} < ${wEnd}`
-          )
+            sql`${contentTemplateSchema.updatedAt} < ${wEnd}`,
+          ),
         );
 
       const approved = await db
@@ -233,8 +237,8 @@ export async function GET(_req: NextRequest) {
           and(
             gte(contentTemplateSchema.updatedAt, wStart),
             sql`${contentTemplateSchema.updatedAt} < ${wEnd}`,
-            eq(contentTemplateSchema.curationStatus, "approved")
-          )
+            eq(contentTemplateSchema.curationStatus, 'approved'),
+          ),
         );
 
       const totalCount = total[0]?.count ?? 0;
@@ -255,12 +259,12 @@ export async function GET(_req: NextRequest) {
       .orderBy(sql`count(*) DESC`);
 
     const colors: Record<string, string> = {
-      tiktok: "#0f172a",
-      instagram: "#e11d48",
-      youtube: "#ef4444",
-      facebook: "#3b82f6",
-      linkedin: "#0a66c2",
-      twitter: "#1da1f2",
+      tiktok: '#0f172a',
+      instagram: '#e11d48',
+      youtube: '#ef4444',
+      facebook: '#3b82f6',
+      linkedin: '#0a66c2',
+      twitter: '#1da1f2',
     };
 
     const metrics = {
@@ -280,35 +284,35 @@ export async function GET(_req: NextRequest) {
         rejected: monthRejected[0]?.count ?? 0,
       },
       avgTimeInQueue: avgTimeInQueue[0]?.avg
-        ? Number(parseFloat(String(avgTimeInQueue[0].avg)).toFixed(1))
+        ? Number(Number.parseFloat(String(avgTimeInQueue[0].avg)).toFixed(1))
         : 0,
       oldestPending: oldestPending[0]?.max
-        ? Number(parseFloat(String(oldestPending[0].max)).toFixed(1))
+        ? Number(Number.parseFloat(String(oldestPending[0].max)).toFixed(1))
         : 0,
       avgQueueLength: pendingCount[0]?.count ?? 0,
       velocity,
-      topNiches: topNiches.map((n) => ({
+      topNiches: topNiches.map(n => ({
         name: String(n.name),
         count: Number(n.count),
       })),
-      topAngles: topAngles.map((a) => ({
+      topAngles: topAngles.map(a => ({
         name: String(a.name),
         count: Number(a.count),
       })),
       approvalRateHistory,
-      platformBreakdown: platformBreakdown.map((p) => ({
-        name: String(p.name ?? "unknown"),
+      platformBreakdown: platformBreakdown.map(p => ({
+        name: String(p.name ?? 'unknown'),
         value: Number(p.value),
-        color: colors[String(p.name ?? "unknown")] ?? "#6b7280",
+        color: colors[String(p.name ?? 'unknown')] ?? '#6b7280',
       })),
     };
 
     return NextResponse.json(metrics, { status: 200 });
   } catch (err) {
-    console.error("Stats API error:", err);
+    console.error('Stats API error:', err);
     return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
+      { error: 'Internal server error' },
+      { status: 500 },
     );
   }
 }

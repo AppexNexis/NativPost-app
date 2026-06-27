@@ -187,7 +187,7 @@ function mapPlatform(platform: string): Platform {
     case 'instagram': return 'Instagram';
     case 'youtube': return 'YouTube';
     case 'pexels': return 'Pexels';
-    default: return platform ? platform.charAt(0).toUpperCase() + platform.slice(1) : 'Unknown';
+    default: return 'Unknown';
   }
 }
 
@@ -287,7 +287,7 @@ export default function CurationQueue() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/templates/admin?status=pending&limit=50&offset=0');
+      const res = await fetch('/api/templates/admin?status=pending&limit=100&offset=0');
       if (!res.ok) {
         throw new Error('Failed to load queue');
       }

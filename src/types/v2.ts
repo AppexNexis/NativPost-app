@@ -35,7 +35,7 @@ export type NicheTag =
   | 'travel'
   | 'fashion';
 
-export interface TemplateStructure {
+export type TemplateStructure = {
   hook?: {
     text: string;
     duration: number;
@@ -52,9 +52,9 @@ export interface TemplateStructure {
   transitions?: string[];
   musicStyle?: string;
   textOverlayStyle?: string;
-}
+};
 
-export interface ContentTemplate {
+export type ContentTemplate = {
   id: string;
   sourceUrl: string;
   sourcePlatform: SourcePlatform;
@@ -86,13 +86,13 @@ export interface ContentTemplate {
   trainingUsed: boolean;
   updatedAt: string;
   createdAt: string;
-}
+};
 
 // ============================================================
 // CONTENT ITEM (existing schema + v2 additions)
 // ============================================================
 
-export interface ContentItem {
+export type ContentItem = {
   id: string;
   orgId: string;
   brandProfileId: string | null;
@@ -129,13 +129,13 @@ export interface ContentItem {
   aiModelUsed: string | null;
   updatedAt: string;
   createdAt: string;
-}
+};
 
 // ============================================================
 // SOCIAL ACCOUNT
 // ============================================================
 
-export interface SocialAccount {
+export type SocialAccount = {
   id: string;
   orgId: string;
   platform: string; // instagram, facebook, linkedin, twitter, tiktok, whatsapp, ...
@@ -151,7 +151,7 @@ export interface SocialAccount {
   oauthToken: string | null;
   oauthTokenSecret: string | null;
   metadata: Record<string, unknown> | null;
-}
+};
 
 // ============================================================
 // CAMPAIGN
@@ -171,7 +171,7 @@ export type MentionFrequency = 'never' | 'rarely' | 'sometimes' | 'often' | 'alw
 
 export type GenderPreference = 'all' | 'men' | 'women' | null;
 
-export interface ContentMix {
+export type ContentMix = {
   slideshow?: number;
   wallOfText?: number;
   greenScreen?: number;
@@ -179,19 +179,19 @@ export interface ContentMix {
   talkingHead?: number;
   carousel?: number;
   ugc?: number;
-}
+};
 
-export interface CampaignAngle {
+export type CampaignAngle = {
   angleId: string;
   weight: number;
-}
+};
 
-export interface TargetAccount {
+export type TargetAccount = {
   accountId: string;
   platform: string;
-}
+};
 
-export interface Campaign {
+export type Campaign = {
   id: string;
   orgId: string;
   name: string;
@@ -216,9 +216,9 @@ export interface Campaign {
   avgEngagementRate: number | null;
   updatedAt: string;
   createdAt: string;
-}
+};
 
-export interface CampaignContentItem {
+export type CampaignContentItem = {
   id: string;
   campaignId: string;
   contentItemId: string;
@@ -226,13 +226,13 @@ export interface CampaignContentItem {
   scheduledDate: string | null;
   scheduledTime: string | null;
   isRolled: boolean;
-}
+};
 
 // ============================================================
 // AI INFLUENCER
 // ============================================================
 
-export interface AIInfluencer {
+export type AIInfluencer = {
   id: string;
   orgId: string;
   name: string;
@@ -253,13 +253,13 @@ export interface AIInfluencer {
   isActive: boolean;
   updatedAt: string;
   createdAt: string;
-}
+};
 
 // ============================================================
 // CONTENT ANGLE
 // ============================================================
 
-export interface ContentAngle {
+export type ContentAngle = {
   id: string;
   orgId: string | null;
   name: string;
@@ -268,7 +268,7 @@ export interface ContentAngle {
   isSystem: boolean;
   isActive: boolean;
   createdAt: string;
-}
+};
 
 // ============================================================
 // MEDIA ASSET
@@ -278,15 +278,15 @@ export type AssetType = 'image' | 'video' | 'audio' | 'lottie' | 'ai_scene';
 
 export type AssetSource = 'upload' | 'unsplash' | 'flux' | 'seedance' | 'ai_generated' | 'template';
 
-export interface AIMetadata {
+export type AIMetadata = {
   prompt?: string;
   model?: string;
   seed?: number;
   negativePrompt?: string;
   stylePreset?: string;
-}
+};
 
-export interface MediaAsset {
+export type MediaAsset = {
   id: string;
   orgId: string;
   uploadcareUuid: string | null;
@@ -306,7 +306,7 @@ export interface MediaAsset {
   usageCount: number;
   updatedAt: string;
   createdAt: string;
-}
+};
 
 // ============================================================
 // AUTOMATION
@@ -316,23 +316,23 @@ export type TriggerType = 'time_based' | 'event_based' | 'performance_based';
 
 export type ActionType = 'generate_campaign' | 'publish_post' | 'remix_template' | 'notify';
 
-export interface TriggerConfig {
+export type TriggerConfig = {
   cron?: string;
   timezone?: string;
   event?: string;
   threshold?: number;
   metric?: string;
-}
+};
 
-export interface ActionConfig {
+export type ActionConfig = {
   campaignTemplateId?: string;
   autoApprove?: boolean;
   targetPlatforms?: string[];
   contentType?: string;
   notifyChannels?: string[];
-}
+};
 
-export interface AutomationRule {
+export type AutomationRule = {
   id: string;
   orgId: string;
   name: string;
@@ -346,13 +346,13 @@ export interface AutomationRule {
   runCount: number;
   updatedAt: string;
   createdAt: string;
-}
+};
 
 // ============================================================
 // ENGINE LOG
 // ============================================================
 
-export interface EngineRequestLog {
+export type EngineRequestLog = {
   id: string;
   orgId: string;
   contentItemId: string | null;
@@ -367,13 +367,13 @@ export interface EngineRequestLog {
   errorMessage: string | null;
   costEstimate: number | null;
   createdAt: string;
-}
+};
 
 // ============================================================
 // ENHANCED CONTENT ITEM
 // ============================================================
 
-export interface GenerationParams {
+export type GenerationParams = {
   templateId?: string;
   campaignId?: string;
   angleId?: string;
@@ -384,7 +384,7 @@ export interface GenerationParams {
   aiModelUsed?: string;
   prompt?: string;
   remixSource?: string;
-}
+};
 
 export type AspectRatio = '9:16' | '3:4' | '1:1' | '4:3' | '16:9' | '2:3' | '3:2' | '21:9';
 
@@ -396,22 +396,22 @@ export type VideoDuration = 5 | 8 | 10;
 // UI / FILTER TYPES
 // ============================================================
 
-export interface TemplateFilters {
+export type TemplateFilters = {
   contentType?: ContentType;
   niche?: NicheTag;
   platform?: SourcePlatform;
   angle?: string;
   status?: CurationStatus;
   sort?: 'engagement' | 'remixes' | 'newest';
-}
+};
 
-export interface CampaignFilters {
+export type CampaignFilters = {
   status?: CampaignStatus;
-}
+};
 
-export interface MediaAssetFilters {
+export type MediaAssetFilters = {
   assetType?: AssetType;
   aspectRatio?: AspectRatio;
   tag?: string;
   source?: AssetSource;
-}
+};
