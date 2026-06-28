@@ -91,25 +91,36 @@ export async function searchYouTubeShorts(
     if (!pageToken) break;
   }
 
-  const videoIds = allItems.map((item) => item.id.videoId).filter(Boolean);
+  // Deduplicate items by videoId and drop any without an id.
+  const uniqueItems = Array.from(
+    new Map(allItems.filter((item) => item.id?.videoId).map((item) => [item.id.videoId, item])).values(),
+  );
+  const videoIds = uniqueItems.map((item) => item.id.videoId);
 
   if (videoIds.length === 0) return [];
 
-  // Fetch stats + duration
-  const statsUrl = new URL(`${YOUTUBE_API_BASE}/videos`);
-  statsUrl.searchParams.set('part', 'statistics,contentDetails');
-  statsUrl.searchParams.set('id', videoIds.join(','));
-  statsUrl.searchParams.set('key', options.apiKey);
+  // Fetch stats + duration in batches of 50 (YouTube API limit).
+  const statsById = new Map<string, YouTubeVideoStat>();
+  const batchSize = 50;
+  for (let i = 0; i < videoIds.length; i += batchSize) {
+    const batch = videoIds.slice(i, i + batchSize);
+    const statsUrl = new URL(`${YOUTUBE_API_BASE}/videos`);
+    statsUrl.searchParams.set('part', 'statistics,contentDetails');
+    statsUrl.searchParams.set('id', batch.join(','));
+    statsUrl.searchParams.set('key', options.apiKey);
 
-  const statsRes = await fetch(statsUrl.toString());
-  if (!statsRes.ok) {
-    throw new Error(`YouTube stats error: ${statsRes.status} ${await statsRes.text()}`);
+    const statsRes = await fetch(statsUrl.toString());
+    if (!statsRes.ok) {
+      throw new Error(`YouTube stats error: ${statsRes.status} ${await statsRes.text()}`);
+    }
+
+    const statsData = await statsRes.json() as { items: YouTubeVideoStat[] };
+    for (const stat of statsData.items) {
+      statsById.set(stat.id, stat);
+    }
   }
 
-  const statsData = await statsRes.json() as { items: YouTubeVideoStat[] };
-  const statsById = new Map(statsData.items.map((s) => [s.id, s]));
-
-  return allItems.map((item) => {
+  return uniqueItems.map((item) => {
     const stats = statsById.get(item.id.videoId);
     const bestThumbnail =
       item.snippet.thumbnails.maxres ||
