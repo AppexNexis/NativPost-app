@@ -13,8 +13,14 @@
  */
 
 import type { ContentType, RawTemplate, SourcePlatform, ViralSourceProvider } from '../types';
+import {
+  asNumber,
+  fetchApifyDataset,
+  startApifyRun,
+  waitForApifyRun,
+} from './apify-shared';
 
-export interface ApifyInstagramOptions {
+export type ApifyInstagramOptions = {
   /** Apify API token. Falls back to APIFY_TOKEN env var. */
   apifyToken?: string;
   /** Hashtags to scrape (with or without the # prefix — normalised internally). */
@@ -23,10 +29,9 @@ export interface ApifyInstagramOptions {
   limit?: number;
   /** Minimum like count to include a reel. */
   minLikes?: number;
-}
+};
 
 const ACTOR_ID = 'apify~instagram-reel-scraper';
-const APIFY_BASE = 'https://api.apify.com/v2';
 
 const DEFAULT_HASHTAGS = [
   'smallbusiness',
@@ -42,120 +47,127 @@ const DEFAULT_HASHTAGS = [
 // Helpers
 // ---------------------------------------------------------------------------
 
-function pickContentType(caption: string): ContentType {
+function pickContentType(caption: string, hasCarousel: boolean): ContentType {
+  if (hasCarousel) {
+    return 'carousel';
+  }
   const t = caption.toLowerCase();
-  if (t.includes('tutorial') || t.includes('how to') || t.includes('tips')) return 'video_hook_demo';
-  if (t.includes('story') || t.includes('slideshow') || t.includes('photo')) return 'slideshow';
-  if (t.includes('meme') || t.includes('green screen')) return 'green_screen_meme';
-  if (t.includes('ugc') || t.includes('review') || t.includes('unboxing')) return 'ugc';
-  if (t.includes('talk') || t.includes('advice') || t.includes('reminder')) return 'talking_head';
+  if (t.includes('tutorial') || t.includes('how to') || t.includes('tips')) {
+    return 'video_hook_demo';
+  }
+  if (t.includes('story') || t.includes('slideshow') || t.includes('photo')) {
+    return 'slideshow';
+  }
+  if (t.includes('meme') || t.includes('green screen')) {
+    return 'green_screen_meme';
+  }
+  if (t.includes('ugc') || t.includes('review') || t.includes('unboxing')) {
+    return 'ugc';
+  }
+  if (t.includes('talk') || t.includes('advice') || t.includes('reminder')) {
+    return 'talking_head';
+  }
   return 'wall_of_text';
 }
 
-function asNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const n = Number.parseInt(value, 10);
-    return Number.isFinite(n) ? n : null;
+function extractSlideUrls(item: Record<string, unknown>): string[] {
+  const candidates: unknown[] = [
+    ...(Array.isArray(item.carouselMedia) ? item.carouselMedia : []),
+    ...(Array.isArray(item.carousel_media) ? item.carousel_media : []),
+    ...(Array.isArray(item.media) ? item.media : []),
+    ...(Array.isArray(item.images) ? item.images : []),
+  ];
+
+  const urls: string[] = [];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string') {
+      if (candidate.startsWith('http')) {
+        urls.push(candidate);
+      }
+      continue;
+    }
+    if (!candidate || typeof candidate !== 'object') {
+      continue;
+    }
+    const media = candidate as Record<string, unknown>;
+    const url = String(
+      media.displayUrl ?? media.display_url ?? media.imageUrl ?? media.image_url ?? media.url ?? media.src ?? '',
+    );
+    if (url.startsWith('http')) {
+      urls.push(url);
+    }
   }
-  return null;
+
+  return Array.from(new Set(urls));
+}
+
+function extractSlideCaptions(item: Record<string, unknown>): string[] {
+  const captions: string[] = [];
+  const allMedia = [
+    ...(Array.isArray(item.carouselMedia) ? item.carouselMedia : []),
+    ...(Array.isArray(item.carousel_media) ? item.carousel_media : []),
+    ...(Array.isArray(item.media) ? item.media : []),
+  ];
+
+  for (const media of allMedia) {
+    if (!media || typeof media !== 'object') {
+      continue;
+    }
+    const caption = String((media as Record<string, unknown>).caption ?? (media as Record<string, unknown>).text ?? '');
+    if (caption) {
+      captions.push(caption);
+    }
+  }
+
+  return captions;
 }
 
 function mapItem(item: Record<string, unknown>): RawTemplate | null {
   // The reel scraper returns shortCode or id
   const id = String(item.id ?? item.shortCode ?? '').trim();
-  if (!id) return null;
+  if (!id) {
+    return null;
+  }
 
   const caption = String(item.caption ?? item.text ?? '');
   const title = caption.slice(0, 120) || 'Instagram Reel';
 
   const ownerUsername = String(item.ownerUsername ?? item.username ?? '');
 
-  const sourceUrl =
-    String(item.url ?? item.permalink ?? `https://www.instagram.com/reel/${id}/`);
+  const sourceUrl = String(item.url ?? item.permalink ?? `https://www.instagram.com/reel/${id}/`);
 
   // Video URL — actor exposes videoUrl for reels
   const mediaUrl = String(item.videoUrl ?? item.video_url ?? '');
 
   // Thumbnail — various field names across actor versions
-  const thumbnailUrl =
-    String(item.displayUrl ?? item.thumbnailUrl ?? item.thumbnail_url ?? item.displaySrc ?? '');
+  const thumbnailUrl = String(
+    item.displayUrl ?? item.thumbnailUrl ?? item.thumbnail_url ?? item.displaySrc ?? '',
+  );
 
-  if (!mediaUrl && !thumbnailUrl) return null;
+  const slideUrls = extractSlideUrls(item);
+  const isCarousel = slideUrls.length > 1;
+
+  if (!mediaUrl && !thumbnailUrl) {
+    return null;
+  }
 
   return {
     sourceUrl,
     sourcePlatform: 'instagram' as SourcePlatform,
     sourceCreator: ownerUsername || null,
     sourceVideoId: id,
+    sourcePostId: id,
     mediaUrl: mediaUrl || null,
-    thumbnailUrl,
+    thumbnailUrl: slideUrls[0] || thumbnailUrl,
+    thumbnailUrls: slideUrls.length > 0 ? slideUrls : {},
+    slideCaptions: extractSlideCaptions(item),
     durationSeconds: asNumber(item.videoDuration ?? item.video_duration),
-    contentType: pickContentType(caption),
+    contentType: pickContentType(caption, isCarousel),
     viewCount: asNumber(item.videoViewCount ?? item.video_view_count ?? item.playsCount),
     likeCount: asNumber(item.likesCount ?? item.likes_count ?? item.diggCount),
     title,
     description: caption,
   };
-}
-
-// ---------------------------------------------------------------------------
-// Apify run helpers (same pattern as apify-tiktok.ts)
-// ---------------------------------------------------------------------------
-
-async function startRun(
-  actorId: string,
-  token: string,
-  input: unknown,
-): Promise<{ id: string; defaultDatasetId: string }> {
-  const res = await fetch(`${APIFY_BASE}/acts/${actorId}/runs?token=${token}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Apify actor start failed (${res.status}): ${body.slice(0, 300)}`);
-  }
-
-  const json = (await res.json()) as { data: { id: string; defaultDatasetId: string } };
-  return json.data;
-}
-
-async function waitForRun(
-  runId: string,
-  token: string,
-  { pollMs = 6_000, maxMs = 300_000 } = {},
-): Promise<void> {
-  const deadline = Date.now() + maxMs;
-
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, pollMs));
-
-    const res = await fetch(`${APIFY_BASE}/actor-runs/${runId}?token=${token}`);
-    if (!res.ok) continue;
-
-    const { data } = (await res.json()) as { data: { status: string } };
-
-    if (data.status === 'SUCCEEDED') return;
-    if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(data.status)) {
-      throw new Error(`Apify run ${runId} ended with status: ${data.status}`);
-    }
-  }
-
-  throw new Error(`Apify run ${runId} timed out after ${maxMs / 1000}s`);
-}
-
-async function fetchDataset<T>(datasetId: string, token: string, limit: number): Promise<T[]> {
-  const url = `${APIFY_BASE}/datasets/${datasetId}/items?token=${token}&limit=${limit}&clean=true`;
-  const res = await fetch(url);
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch Apify dataset ${datasetId}: ${res.status}`);
-  }
-
-  return res.json() as Promise<T[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,29 +178,24 @@ export const apifyInstagramProvider: ViralSourceProvider = {
   name: 'instagram',
 
   async fetch(options): Promise<RawTemplate[]> {
-    const token =
-      (options.apifyToken as string | undefined) ??
-      process.env.APIFY_TOKEN ??
-      '';
+    const token
+      = (options.apifyToken as string | undefined)
+        ?? process.env.APIFY_TOKEN
+        ?? '';
 
     if (!token) {
       console.warn('[Apify/Instagram] Skipping: APIFY_TOKEN is not configured.');
       return [];
     }
 
-    const rawHashtags: string[] =
-      Array.isArray(options.hashtags)
-        ? (options.hashtags as string[])
-        : DEFAULT_HASHTAGS;
+    const rawHashtags: string[] = Array.isArray(options.hashtags)
+      ? (options.hashtags as string[])
+      : DEFAULT_HASHTAGS;
 
     // Normalise — actor expects them without the # prefix
-    const hashtags = rawHashtags.map((h) => h.replace(/^#/, ''));
+    const hashtags = rawHashtags.map(h => h.replace(/^#/, ''));
 
-    const limit = Math.min(
-      typeof options.limit === 'number' ? options.limit : 30,
-      200,
-    );
-
+    const limit = Math.min(typeof options.limit === 'number' ? options.limit : 30, 200);
     const minLikes = typeof options.minLikes === 'number' ? options.minLikes : 200;
 
     console.log(`[Apify/Instagram] Starting scrape — hashtags: [${hashtags.join(', ')}], limit: ${limit}`);
@@ -202,13 +209,13 @@ export const apifyInstagramProvider: ViralSourceProvider = {
         addParentData: false,
       };
 
-      const run = await startRun(ACTOR_ID, token, input);
+      const run = await startApifyRun(ACTOR_ID, token, input);
       console.log(`[Apify/Instagram] Run started: ${run.id}`);
 
-      await waitForRun(run.id, token);
-      console.log(`[Apify/Instagram] Run complete. Fetching dataset...`);
+      await waitForApifyRun(run.id, token);
+      console.log('[Apify/Instagram] Run complete. Fetching dataset...');
 
-      const items = await fetchDataset<Record<string, unknown>>(
+      const items = await fetchApifyDataset<Record<string, unknown>>(
         run.defaultDatasetId,
         token,
         limit * 2,

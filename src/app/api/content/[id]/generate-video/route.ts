@@ -5,12 +5,125 @@ import { NextResponse } from 'next/server';
 import { getAuthContext } from '@/lib/auth';
 import { applyRemixEdits, getRemixEditsFromGenerationParams } from '@/lib/remix-edits';
 import { getDb } from '@/libs/DB';
-import { brandProfileSchema, contentItemSchema } from '@/models/Schema';
+import { brandProfileSchema, contentItemSchema, contentTemplateSchema } from '@/models/Schema';
 
 const VIDEO_RENDERER_URL = process.env.NATIVPOST_VIDEO_URL || 'http://localhost:3001';
 const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 
 type RouteParams = { params: Promise<{ id: string }> };
+
+type TemplateContentType =
+  | 'wall_of_text'
+  | 'talking_head'
+  | 'video_hook_demo'
+  | 'green_screen_meme'
+  | 'carousel'
+  | 'slideshow';
+
+interface TemplateScript {
+  hook_text?: string;
+  body_text?: string;
+  cta_text?: string;
+  wall_text?: string;
+  spoken_script?: string;
+  visual_direction?: string;
+  suggested_audio_mood?: string;
+  slides?: Array<Record<string, unknown> | string>;
+}
+
+function isTemplateContentType(value: string): value is TemplateContentType {
+  return ['wall_of_text', 'talking_head', 'video_hook_demo', 'green_screen_meme', 'carousel', 'slideshow'].includes(value);
+}
+
+function getSlideUrls(template: typeof contentTemplateSchema.$inferSelect): string[] {
+  const thumbs = template.thumbnailUrls;
+  if (Array.isArray(thumbs)) return thumbs.filter((u): u is string => typeof u === 'string');
+  if (thumbs && typeof thumbs === 'object') {
+    return Object.values(thumbs as Record<string, unknown>)
+      .filter((u): u is string => typeof u === 'string');
+  }
+  return [];
+}
+
+function normalizeSlideCopy(slides?: TemplateScript['slides']): Array<{ text: string; durationSeconds?: number } | string> {
+  if (!Array.isArray(slides)) return [];
+  return slides.map((slide) => {
+    if (typeof slide === 'string') return slide;
+    if (slide && typeof slide === 'object') {
+      const text = (slide.text as string) || (slide.headline as string) || (slide.caption as string) || '';
+      const duration = typeof slide.durationSeconds === 'number' ? slide.durationSeconds : undefined;
+      return duration ? { text, durationSeconds: duration } : text;
+    }
+    return String(slide);
+  });
+}
+
+type BrandProfileFields = {
+  brandName: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  accentColor: string | null;
+  logoUrl: string | null;
+  industry: string | null;
+  imageStyle: string | null;
+  toneFormality: number | null;
+  toneHumor: number | null;
+  toneEnergy: number | null;
+  communicationStyle: string | null;
+  targetAudience: string | null;
+  growthStage: string | null;
+};
+
+function buildTemplateVideoPayload(
+  template: typeof contentTemplateSchema.$inferSelect,
+  script: TemplateScript,
+  profile: BrandProfileFields | undefined,
+  remixEdits?: import('@/lib/remix-edits').RemixEdits | null,
+): Record<string, unknown> {
+  const contentType = isTemplateContentType(template.contentType) ? template.contentType : 'talking_head';
+  const slideMediaUrls = getSlideUrls(template);
+
+  let hookText = script.hook_text || '';
+  let bodyText = script.body_text || '';
+  let ctaText = script.cta_text || '';
+  let wallText = script.wall_text || '';
+
+  // Apply remix text overrides
+  if (remixEdits?.structure?.hook?.text) hookText = remixEdits.structure.hook.text;
+  if (remixEdits?.structure?.body?.text) bodyText = remixEdits.structure.body.text;
+  if (remixEdits?.structure?.cta?.text) ctaText = remixEdits.structure.cta.text;
+
+  // Apply media replacements if provided
+  const replacementUrls = remixEdits?.mediaReplacements
+    ?.filter((r) => r.newUrl && ['background', 'slide', 'hook_video', 'b_roll'].includes(r.slot))
+    .map((r) => r.newUrl!)
+    .filter(Boolean) || [];
+
+  const backgroundMediaUrl = replacementUrls[0] || template.mediaUrl || null;
+  const slideReplacements = replacementUrls.slice(1).length > 0 ? replacementUrls.slice(1) : slideMediaUrls;
+
+  return {
+    contentType,
+    backgroundMediaUrl,
+    slideMediaUrls: ['carousel', 'slideshow'].includes(contentType) ? slideReplacements : undefined,
+    script: {
+      hookText,
+      bodyText,
+      ctaText,
+      wallText,
+      slideCopy: normalizeSlideCopy(script.slides),
+    },
+    brandPrimary: profile?.primaryColor || '#864FFE',
+    brandSecondary: profile?.secondaryColor || '#1A1A1C',
+    brandAccent: profile?.accentColor || undefined,
+    brandName: profile?.brandName || 'NativPost',
+    logoUrl: profile?.logoUrl || undefined,
+    soundtrackUrl: remixEdits?.audioTrack?.url || undefined,
+    durationSeconds: template.durationSeconds || undefined,
+    keepBackgroundAudio: !remixEdits?.audioTrack,
+    formats: ['vertical', 'square'],
+  };
+}
 
 /**
  * Maps brand tone sliders + content mode to a FLUX/Unsplash style preset.
@@ -67,6 +180,39 @@ function deriveStylePreset(params: {
   return 'cinematic';
 }
 
+async function renderVideoWithFallback(
+  url: string,
+  payload: Record<string, unknown>,
+  timeoutMs: number,
+): Promise<{ ok: boolean; data?: Record<string, unknown>; error?: string }> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${ENGINE_API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      return { ok: false, error: `Renderer returned ${res.status}: ${errText}` };
+    }
+
+    return { ok: true, data: (await res.json()) as Record<string, unknown> };
+  } catch (fetchErr: unknown) {
+    const isAbort = fetchErr instanceof Error && fetchErr.name === 'AbortError';
+    return { ok: false, error: isAbort ? 'Renderer timed out' : String(fetchErr) };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
@@ -86,13 +232,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     if (!item || item.orgId !== orgId) {
       return NextResponse.json({ error: 'Content item not found' }, { status: 404 });
-    }
-
-    if (item.contentType !== 'reel') {
-      return NextResponse.json(
-        { error: 'Video generation only available for reel content type' },
-        { status: 400 },
-      );
     }
 
     const imageUrls = (item.graphicUrls as string[]) || [];
@@ -119,7 +258,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .limit(1);
 
     // Parse request body — dashboard can override photoTier
-    let requestBody: { photoTier?: string } = {};
+    let requestBody: { photoTier?: string; forceLegacy?: boolean } = {};
     try { requestBody = await request.json(); } catch { /* no body */ }
 
     // Derive the visual style preset from brand personality
@@ -132,6 +271,97 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
 
     const remixEdits = getRemixEditsFromGenerationParams(item.generationParams);
+
+    // ── Template-driven rendering (Phase 3) ───────────────────────────────────
+    // When a content item was remixed from a template and has a generated script,
+    // use Shotstack to render the source template media + script instead of a
+    // generic stock-photo slideshow. This path is allowed for any content item
+    // that carries a video-capable template.
+    const generationParams = (item.generationParams || {}) as Record<string, unknown>;
+    const script = (generationParams.script || null) as TemplateScript | null;
+
+    if (item.templateId && script && !requestBody.forceLegacy) {
+      const [template] = await db
+        .select()
+        .from(contentTemplateSchema)
+        .where(eq(contentTemplateSchema.id, item.templateId))
+        .limit(1);
+
+      if (template) {
+        const hasMedia = template.mediaUrl || getSlideUrls(template).length > 0;
+        if (hasMedia) {
+          const templatePayload = buildTemplateVideoPayload(template, script, profile, remixEdits);
+
+          console.log('[Video] Template-driven render:', template.contentType, '| templateId:', template.id);
+          console.log('[Video] Calling renderer at:', `${VIDEO_RENDERER_URL}/render/template`);
+
+          const templateResult = await renderVideoWithFallback(
+            `${VIDEO_RENDERER_URL}/render/template`,
+            templatePayload,
+            300_000,
+          );
+
+          if (templateResult.ok && templateResult.data) {
+            const renderData = templateResult.data as {
+              vertical?: string;
+              verticalPublicId?: string;
+              square?: string;
+              squarePublicId?: string;
+              durationSeconds?: number;
+            };
+
+            const vertical = renderData.vertical;
+            const square = renderData.square;
+
+            if (vertical && square) {
+              const videoUrls = [vertical, square];
+              const videoPublicIds = [renderData.verticalPublicId, renderData.squarePublicId].filter(
+                (pid): pid is string => typeof pid === 'string' && pid.length > 0,
+              );
+
+              await db
+                .update(contentItemSchema)
+                .set({
+                  graphicUrls: videoUrls,
+                  platformSpecific: {
+                    ...(item.platformSpecific as object),
+                    sourceImages:         getSlideUrls(template),
+                    sourceTemplateMedia:  template.mediaUrl,
+                    videoDurationSeconds: renderData.durationSeconds ?? template.durationSeconds ?? 0,
+                    renderer:             'shotstack',
+                    videoGenerated:       true,
+                    cloudinaryPublicIds:  videoPublicIds,
+                    templateId:           template.id,
+                  },
+                  updatedAt: new Date(),
+                })
+                .where(eq(contentItemSchema.id, id));
+
+              return NextResponse.json({
+                success: true,
+                vertical,
+                square,
+                verticalPublicId: renderData.verticalPublicId,
+                squarePublicId:   renderData.squarePublicId,
+                durationSeconds:  renderData.durationSeconds ?? template.durationSeconds ?? 0,
+                renderer:         'shotstack',
+                templateId:       template.id,
+              });
+            }
+          }
+
+          console.warn('[Video] Template render failed or returned incomplete URLs; falling back to legacy slideshow renderer');
+        }
+      }
+    }
+
+    // Legacy path: generic stock-photo slideshow — only available for reels.
+    if (item.contentType !== 'reel') {
+      return NextResponse.json(
+        { error: 'Video generation only available for reel content type' },
+        { status: 400 },
+      );
+    }
 
     const basePayload = {
       // Content

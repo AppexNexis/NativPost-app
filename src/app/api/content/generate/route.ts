@@ -179,6 +179,7 @@ async function saveVariant(
         angleId,
         influencerId,
         templateId,
+        script: variant.script || null,
       },
     })
     .returning();

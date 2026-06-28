@@ -120,6 +120,13 @@
       "when": 1782496193654,
       "tag": "0016_thick_blazing_skull",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1782623874017,
+      "tag": "0017_eager_stryfe",
+      "breakpoints": true
     }
   ]
 }

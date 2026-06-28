@@ -1,6 +1,7 @@
 'use client';
 
-import { ExternalLink, Eye, Heart, Play, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, Eye, Heart, Play, X } from 'lucide-react';
+import { useState } from 'react';
 
 import { getHdVideoUrl, getVideoPosterUrl, isCloudinaryVideoUrl } from '@/lib/cloudinary';
 import type { ContentTemplate } from '@/types/v2';
@@ -19,6 +20,11 @@ export function TemplatePreviewModal({ template, onClose, onRemix }: TemplatePre
   const isPlayable = isCloudinaryVideoUrl(mediaUrl) || isDirectVideoFile(mediaUrl);
   const posterUrl = getVideoPosterUrl(template.thumbnailUrl, { width: 720, height: 1280 });
   const videoSrc = isPlayable ? getHdVideoUrl(mediaUrl) : null;
+
+  const slides = getSlideUrls(template);
+  const [activeSlide, setActiveSlide] = useState(0);
+
+  const hasSlides = slides.length > 1;
 
   return (
     <div
@@ -55,6 +61,13 @@ export function TemplatePreviewModal({ template, onClose, onRemix }: TemplatePre
               preload="metadata"
               className="size-full object-cover"
             />
+          ) : hasSlides ? (
+            <SlideViewer
+              slides={slides}
+              activeIndex={activeSlide}
+              onPrevious={() => setActiveSlide(i => Math.max(0, i - 1))}
+              onNext={() => setActiveSlide(i => Math.min(slides.length - 1, i + 1))}
+            />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -85,6 +98,33 @@ export function TemplatePreviewModal({ template, onClose, onRemix }: TemplatePre
               <Stat label="Likes" value={formatCount(template.likeCount)} icon={Heart} />
               <Stat label="Remixes" value={formatCount(template.remixCount)} icon={Play} />
             </div>
+
+            {hasSlides && (
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Slides
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {slides.map((url, idx) => (
+                    <button
+                      key={url}
+                      type="button"
+                      onClick={() => setActiveSlide(idx)}
+                      className={`relative size-12 overflow-hidden rounded-lg border-2 ${
+                        idx === activeSlide ? 'border-primary' : 'border-transparent'
+                      }`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={getVideoPosterUrl(url, { width: 120, height: 120 })}
+                        alt={`Slide ${idx + 1}`}
+                        className="size-full object-cover"
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {template.angles.length > 0 && (
               <div>
@@ -128,6 +168,67 @@ export function TemplatePreviewModal({ template, onClose, onRemix }: TemplatePre
       </div>
     </div>
   );
+}
+
+function SlideViewer({
+  slides,
+  activeIndex,
+  onPrevious,
+  onNext,
+}: {
+  slides: string[];
+  activeIndex: number;
+  onPrevious: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="relative size-full">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={getVideoPosterUrl(slides[activeIndex], { width: 720, height: 1280 })}
+        alt={`Slide ${activeIndex + 1} of ${slides.length}`}
+        className="size-full object-contain"
+      />
+      <div className="absolute inset-x-0 top-3 flex justify-center">
+        <span className="rounded-full bg-black/60 px-2.5 py-1 text-xs font-medium text-white">
+          {activeIndex + 1}
+          {' '}
+          /
+          {slides.length}
+        </span>
+      </div>
+      {activeIndex > 0 && (
+        <button
+          type="button"
+          onClick={onPrevious}
+          className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-1.5 text-white transition-colors hover:bg-black/70"
+          aria-label="Previous slide"
+        >
+          <ChevronLeft className="size-5" />
+        </button>
+      )}
+      {activeIndex < slides.length - 1 && (
+        <button
+          type="button"
+          onClick={onNext}
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-1.5 text-white transition-colors hover:bg-black/70"
+          aria-label="Next slide"
+        >
+          <ChevronRight className="size-5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function getSlideUrls(template: ContentTemplate): string[] {
+  if (Array.isArray(template.thumbnailUrls) && template.thumbnailUrls.length > 0) {
+    return template.thumbnailUrls;
+  }
+  if (template.thumbnailUrls && typeof template.thumbnailUrls === 'object') {
+    return Object.values(template.thumbnailUrls);
+  }
+  return [];
 }
 
 function Stat({

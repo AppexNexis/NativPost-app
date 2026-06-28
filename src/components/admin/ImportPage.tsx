@@ -23,6 +23,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -31,6 +32,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import {
   Table,
@@ -202,6 +204,13 @@ export default function ImportPage() {
   const [activeTab, setActiveTab] = useState('bulk');
   const [fileName, setFileName] = useState('manual-import.json');
 
+  // URL scraping state
+  const [scrapeUrls, setScrapeUrls] = useState('');
+  const [scrapeEnrich, setScrapeEnrich] = useState(true);
+  const [scraping, setScraping] = useState(false);
+  const [scrapeResult, setScrapeResult] = useState<{ imported: number; errors: number } | null>(null);
+  const [scrapeError, setScrapeError] = useState<string | null>(null);
+
   useEffect(() => {
     setHistory(loadHistory());
   }, []);
@@ -304,6 +313,65 @@ export default function ImportPage() {
     }
   }, [errors, templates, fileName]);
 
+  const handleScrapeUrls = useCallback(async () => {
+    const urls = scrapeUrls
+      .split('\n')
+      .map(u => u.trim())
+      .filter(u => u.startsWith('http'));
+
+    if (urls.length === 0) {
+      setScrapeError('Paste at least one Instagram or TikTok URL.');
+      return;
+    }
+
+    if (urls.length > 50) {
+      setScrapeError('Maximum 50 URLs per batch.');
+      return;
+    }
+
+    setScraping(true);
+    setScrapeError(null);
+    setScrapeResult(null);
+
+    try {
+      const res = await fetch('/api/admin/templates/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls, enrich: scrapeEnrich }),
+      });
+
+      const result = await res.json();
+      if (!res.ok) {
+        setScrapeError(result.error || 'Scrape request failed.');
+        return;
+      }
+
+      const importedCount = result.imported ?? 0;
+      const errorCount = result.errors?.length ?? 0;
+      setScrapeResult({ imported: importedCount, errors: errorCount });
+
+      const newEntry: ImportHistory = {
+        id: Date.now().toString(),
+        filename: `scrape-${urls.length}-urls`,
+        format: 'scrape',
+        total: urls.length,
+        imported: importedCount,
+        errors: errorCount,
+        status: errorCount > 0 ? 'partial' : 'completed',
+        createdAt: new Date().toISOString(),
+      };
+      setHistory((prev) => {
+        const next = [newEntry, ...prev];
+        saveHistory(next);
+        return next;
+      });
+    } catch (err) {
+      setScrapeError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setScraping(false);
+    }
+  }, [scrapeUrls, scrapeEnrich]);
+
   const clearHistory = () => {
     setHistory([]);
     saveHistory([]);
@@ -345,6 +413,7 @@ export default function ImportPage() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="bulk">Bulk import</TabsTrigger>
+          <TabsTrigger value="scrape">Scrape URLs</TabsTrigger>
           <TabsTrigger value="seed">Viral seed</TabsTrigger>
         </TabsList>
 
@@ -681,6 +750,90 @@ export default function ImportPage() {
               </Button>
             </DialogContent>
           </Dialog>
+        </TabsContent>
+
+        <TabsContent value="scrape" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Scrape Instagram / TikTok URLs</CardTitle>
+              <CardDescription>
+                Paste direct post URLs and Apify will extract carousel/slideshow assets and metadata.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="scrape-urls">URLs (one per line)</Label>
+                <textarea
+                  id="scrape-urls"
+                  value={scrapeUrls}
+                  onChange={e => setScrapeUrls(e.target.value)}
+                  placeholder="https://www.instagram.com/p/ABC123/&#10;https://www.tiktok.com/@creator/video/1234567890"
+                  className="min-h-[160px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  disabled={scraping}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Supports Instagram posts/reels and TikTok slideshows. Maximum 50 URLs.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="scrape-enrich"
+                  checked={scrapeEnrich}
+                  onCheckedChange={checked => setScrapeEnrich(Boolean(checked))}
+                  disabled={scraping}
+                />
+                <Label htmlFor="scrape-enrich" className="cursor-pointer">
+                  AI enrich scraped templates (niches, angles, structure)
+                </Label>
+              </div>
+
+              {scrapeError && (
+                <Alert variant="destructive">
+                  <AlertCircle className="size-4" />
+                  <AlertTitle>Error</AlertTitle>
+                  <AlertDescription>{scrapeError}</AlertDescription>
+                </Alert>
+              )}
+
+              {scrapeResult && (
+                <Alert variant={scrapeResult.imported > 0 ? 'default' : 'destructive'}>
+                  {scrapeResult.imported > 0 ? (
+                    <CheckCircle2 className="size-4 text-emerald-600" />
+                  ) : (
+                    <AlertCircle className="size-4" />
+                  )}
+                  <AlertTitle>
+                    {scrapeResult.imported > 0
+                      ? `Imported ${scrapeResult.imported} templates`
+                      : 'No templates imported'}
+                  </AlertTitle>
+                  <AlertDescription>
+                    {scrapeResult.errors > 0
+                      ? `${scrapeResult.errors} URL(s) failed or were skipped.`
+                      : 'All URLs scraped successfully.'}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <Button
+                onClick={handleScrapeUrls}
+                disabled={scraping || !scrapeUrls.trim()}
+              >
+                {scraping ? (
+                  <>
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                    Scraping...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mr-2 size-4" />
+                    Scrape & import
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="seed">

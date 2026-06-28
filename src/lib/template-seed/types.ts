@@ -28,22 +28,25 @@ export type NicheTag =
   | 'travel'
   | 'fashion';
 
-export interface RawTemplate {
+export type RawTemplate = {
   sourceUrl: string;
   sourcePlatform: SourcePlatform;
   sourceCreator: string | null;
   sourceVideoId: string | null;
+  sourcePostId?: string | null;
   mediaUrl: string | null;
   thumbnailUrl: string;
+  thumbnailUrls?: Record<string, string> | string[];
+  slideCaptions?: Record<string, string> | string[];
   durationSeconds: number | null;
   contentType: ContentType;
   viewCount: number | null;
   likeCount: number | null;
   title?: string;
   description?: string;
-}
+};
 
-export interface TemplateStructure {
+export type TemplateStructure = {
   hook?: {
     text: string;
     duration: number;
@@ -60,16 +63,16 @@ export interface TemplateStructure {
   transitions?: string[];
   musicStyle?: string;
   textOverlayStyle?: string;
-}
+};
 
-export interface EnrichedTemplate extends RawTemplate {
+export type EnrichedTemplate = {
   niches: NicheTag[];
   angles: string[];
   structure: TemplateStructure;
   engagementScore: number;
-}
+} & RawTemplate;
 
-export interface ViralSourceProvider {
+export type ViralSourceProvider = {
   name: SourcePlatform;
-  fetch(options: Record<string, unknown>): Promise<RawTemplate[]>;
-}
+  fetch: (options: Record<string, unknown>) => Promise<RawTemplate[]>;
+};

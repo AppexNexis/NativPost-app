@@ -5,6 +5,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+
 import type { EnrichedTemplate, NicheTag, RawTemplate, TemplateStructure } from './types';
 
 const VALID_NICHES: NicheTag[] = [
@@ -39,13 +40,22 @@ export async function enrichTemplateWithAI(
 ): Promise<EnrichedTemplate> {
   const client = new Anthropic({ apiKey });
 
-  const prompt = `You are a viral short-form content analyst. Given the following video metadata, extract a content structure and classify the template.
+  const slideCount = Array.isArray(template.thumbnailUrls)
+    ? template.thumbnailUrls.length
+    : Object.keys(template.thumbnailUrls ?? {}).length;
+
+  const slideCaptionsText = Array.isArray(template.slideCaptions)
+    ? template.slideCaptions.join('\n---\n')
+    : Object.values(template.slideCaptions ?? {}).join('\n---\n');
+
+  const prompt = `You are a viral short-form content analyst. Given the following content metadata, extract a content structure and classify the template.
 
 Source platform: ${template.sourcePlatform}
 Content type: ${template.contentType}
+Slide count: ${slideCount > 0 ? slideCount : 1}
 Title: ${template.title || 'N/A'}
 Description: ${template.description || 'N/A'}
-Duration: ${template.durationSeconds ?? 'unknown'} seconds
+${slideCaptionsText ? `Slide captions:\n${slideCaptionsText}\n` : ''}Duration: ${template.durationSeconds ?? 'unknown'} seconds
 
 Return ONLY valid JSON with this shape:
 {
@@ -83,13 +93,13 @@ Rules:
     });
 
     const text = response.content
-      .filter((c) => c.type === 'text')
-      .map((c) => c.text)
+      .filter(c => c.type === 'text')
+      .map(c => c.text)
       .join('\n');
 
     // Extract JSON from possible markdown code block.
-    const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/\{[\s\S]*\}/);
-    const jsonStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : text;
+    const jsonMatch = text.match(/```json([\s\S]*?)```/) || text.match(/\{[\s\S]*\}/);
+    const jsonStr = jsonMatch ? (jsonMatch[1] ? jsonMatch[1].trim() : jsonMatch[0]) : text;
     const parsed = JSON.parse(jsonStr);
 
     niches = (parsed.niches || []).filter((n: string) => VALID_NICHES.includes(n as NicheTag)) as NicheTag[];
@@ -100,8 +110,12 @@ Rules:
   }
 
   // Ensure we always have at least one niche and one angle.
-  if (niches.length === 0) niches = ['personal_brand'];
-  if (angles.length === 0) angles = ['educational'];
+  if (niches.length === 0) {
+    niches = ['personal_brand'];
+  }
+  if (angles.length === 0) {
+    angles = ['educational'];
+  }
 
   // Make sure structure has required fields with sensible defaults.
   const totalDuration = template.durationSeconds ?? 15;

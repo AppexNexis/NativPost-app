@@ -62,7 +62,8 @@ export type ContentTemplate = {
   sourceVideoId: string | null;
   mediaUrl: string | null;
   thumbnailUrl: string;
-  thumbnailUrls: Record<string, string>;
+  thumbnailUrls: Record<string, string> | string[];
+  slideCaptions: Record<string, string> | string[];
   durationSeconds: number | null;
   aspectRatio: string | null;
   contentType: ContentType;

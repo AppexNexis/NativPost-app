@@ -6,18 +6,18 @@
  * DB persistence into one pipeline.
  */
 
-import { configureCloudinary, uploadVideoFromUrl, type UploadResult } from './cloudinary';
 import { enrichTemplateWithAI } from './ai';
-import { fetchPexelsTemplates, type PexelsImporterOptions } from './providers/pexels';
-import { searchYouTubeShorts, type YouTubeImporterOptions } from './providers/youtube';
+import { configureCloudinary, type UploadResult, uploadVideoFromUrl } from './cloudinary';
+import { type ApifyInstagramOptions, apifyInstagramProvider } from './providers/apify-instagram';
 // import { tiktokResearchProvider, type TikTokResearchOptions } from './providers/tiktok-research';
 // import { instagramProvider, type InstagramOptions } from './providers/instagram';
-import { apifyTikTokProvider, type ApifyTikTokOptions } from './providers/apify-tiktok';
-import { apifyInstagramProvider, type ApifyInstagramOptions } from './providers/apify-instagram';
-import {  type TikTokCreativeCenterOptions } from './providers/tiktok-creative-center';
+import { type ApifyTikTokOptions, apifyTikTokProvider } from './providers/apify-tiktok';
+import { fetchPexelsTemplates, type PexelsImporterOptions } from './providers/pexels';
+import type { TikTokCreativeCenterOptions } from './providers/tiktok-creative-center';
+import { searchYouTubeShorts, type YouTubeImporterOptions } from './providers/youtube';
 import type { EnrichedTemplate, RawTemplate, SourcePlatform, ViralSourceProvider } from './types';
 
-export interface SeedOptions {
+export type SeedOptions = {
   /** Which sources to pull from. */
   sources: SourcePlatform[];
   /** Pexels API options. */
@@ -26,7 +26,7 @@ export interface SeedOptions {
   youtube?: YouTubeImporterOptions;
   tiktok?: ApifyTikTokOptions;
   instagram?: ApifyInstagramOptions;
-  apifyToken?: string; 
+  apifyToken?: string;
   /** Experimental TikTok Creative Center scraping fallback. */
   tiktokCreativeCenter?: TikTokCreativeCenterOptions;
   /** Anthropic API key for AI enrichment. */
@@ -47,17 +47,17 @@ export interface SeedOptions {
   limitPerSource?: number;
   /** Callback for progress updates. */
   onProgress?: (message: string) => void;
-}
+};
 
-export interface SeededTemplate extends EnrichedTemplate {
+export type SeededTemplate = {
   cloudinary?: UploadResult;
-}
+} & EnrichedTemplate;
 
-export interface SeedPipelineResult {
+export type SeedPipelineResult = {
   templates: SeededTemplate[];
   errors: string[];
   rawCount: number;
-}
+};
 
 function sanitizePublicId(input: string): string {
   // Cloudinary public IDs can only contain: a-z, A-Z, 0-9, _, -, /, .
@@ -69,7 +69,7 @@ function sanitizePublicId(input: string): string {
 }
 
 /**
- * FIXED: Replaced buggy Promise.race loop with a clean, 
+ * FIXED: Replaced buggy Promise.race loop with a clean,
  * safe Worker Pool pattern to ensure all data is waited on.
  */
 async function withConcurrency<T, R>(
@@ -77,7 +77,7 @@ async function withConcurrency<T, R>(
   concurrency: number,
   fn: (item: T, index: number) => Promise<R>,
 ): Promise<R[]> {
-  const results: R[] = new Array(items.length);
+  const results: R[] = Array.from({ length: items.length });
   let currentIndex = 0;
 
   async function worker() {
@@ -89,19 +89,19 @@ async function withConcurrency<T, R>(
 
   // Spawn parallel workers up to the concurrency limit
   const workers = Array.from(
-    { length: Math.min(concurrency, items.length) }, 
-    worker
+    { length: Math.min(concurrency, items.length) },
+    worker,
   );
-  
+
   await Promise.all(workers);
   return results;
 }
 
-interface ProviderJob {
+type ProviderJob = {
   provider: ViralSourceProvider;
   options: Record<string, unknown>;
   label: string;
-}
+};
 
 async function fetchRawTemplates(
   options: SeedOptions,
@@ -112,7 +112,7 @@ async function fetchRawTemplates(
     jobs.push({
       provider: {
         name: 'pexels',
-        fetch: async (opts) => fetchPexelsTemplates(opts as unknown as PexelsImporterOptions),
+        fetch: async opts => fetchPexelsTemplates(opts as unknown as PexelsImporterOptions),
       },
       options: options.pexels as unknown as Record<string, unknown>,
       label: 'Pexels',
@@ -123,7 +123,7 @@ async function fetchRawTemplates(
     jobs.push({
       provider: {
         name: 'youtube',
-        fetch: async (opts) => searchYouTubeShorts(opts as unknown as YouTubeImporterOptions),
+        fetch: async opts => searchYouTubeShorts(opts as unknown as YouTubeImporterOptions),
       },
       options: options.youtube as unknown as Record<string, unknown>,
       label: 'YouTube',
@@ -182,7 +182,9 @@ async function fetchRawTemplates(
 
   for (const template of all) {
     const key = template.sourceVideoId ?? template.sourceUrl;
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {
+      continue;
+    }
     seen.add(key);
     deduped.push(template);
   }
@@ -194,13 +196,13 @@ async function uploadToCloudinary(
   templates: EnrichedTemplate[],
   options: SeedOptions,
 ): Promise<Map<string, UploadResult>> {
-  if (options.skipUpload || !options.cloudinary) {   
+  if (options.skipUpload || !options.cloudinary) {
     return new Map();
   }
   configureCloudinary(options.cloudinary);
 
   const uploadable = templates.filter(
-    (t) => t.sourcePlatform === 'pexels' && t.mediaUrl,
+    t => t.sourcePlatform === 'pexels' && t.mediaUrl,
   );
 
   options.onProgress?.(`Uploading ${uploadable.length} videos to Cloudinary...`);
@@ -235,7 +237,9 @@ async function uploadToCloudinary(
 }
 
 async function runEnrichment(templates: RawTemplate[], options: SeedOptions): Promise<EnrichedTemplate[]> {
-  if (templates.length === 0) return [];
+  if (templates.length === 0) {
+    return [];
+  }
   options.onProgress?.(`Enriching ${templates.length} templates with AI...`);
 
   const results = await withConcurrency(templates, 5, async (template, i) => {
@@ -263,7 +267,9 @@ async function runSeedPipelineInternal(
     const counts = new Map<SourcePlatform, number>();
     limited = raw.filter((t) => {
       const count = counts.get(t.sourcePlatform) ?? 0;
-      if (count >= options.limitPerSource!) return false;
+      if (count >= options.limitPerSource!) {
+        return false;
+      }
       counts.set(t.sourcePlatform, count + 1);
       return true;
     });

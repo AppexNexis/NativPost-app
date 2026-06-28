@@ -1,0 +1,1 @@
+ALTER TABLE "content_template" ADD COLUMN "slide_captions" jsonb DEFAULT '{}'::jsonb;

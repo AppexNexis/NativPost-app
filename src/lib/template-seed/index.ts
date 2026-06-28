@@ -2,22 +2,30 @@
  * Public API for the trending content seed pipeline.
  */
 
-export * from './types';
-export * from './seed';
+export * from './ai';
+export * from './cloudinary';
+export { type ApifyInstagramOptions, apifyInstagramProvider } from './providers/apify-instagram';
+export {
+  type ApifyInstagramPostOptions,
+  scrapeInstagramPosts,
+} from './providers/apify-instagram-post';
+export { type ApifyTikTokOptions, apifyTikTokProvider } from './providers/apify-tiktok';
+export {
+  type ApifyTikTokSlideshowOptions,
+  scrapeTikTokSlideshows,
+} from './providers/apify-tiktok-slideshow';
+export { type InstagramOptions, instagramProvider } from './providers/instagram';
 export {
   fetchPexelsTemplates,
-  searchPexels,
-  type PexelsImporterOptions,
   mapAspectRatio,
+  type PexelsImporterOptions,
+  searchPexels,
 } from './providers/pexels';
-export { searchYouTubeShorts, type YouTubeImporterOptions } from './providers/youtube';
-export { tiktokResearchProvider, type TikTokResearchOptions } from './providers/tiktok-research';
-export { instagramProvider, type InstagramOptions } from './providers/instagram';
-export { apifyTikTokProvider, type ApifyTikTokOptions } from './providers/apify-tiktok';
-export { apifyInstagramProvider, type ApifyInstagramOptions } from './providers/apify-instagram';
 export {
-  tiktokCreativeCenterProvider,
   type TikTokCreativeCenterOptions,
+  tiktokCreativeCenterProvider,
 } from './providers/tiktok-creative-center';
-export * from './cloudinary';
-export * from './ai';
+export { type TikTokResearchOptions, tiktokResearchProvider } from './providers/tiktok-research';
+export { searchYouTubeShorts, type YouTubeImporterOptions } from './providers/youtube';
+export * from './seed';
+export * from './types';

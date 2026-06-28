@@ -497,6 +497,7 @@ export const contentTemplateSchema = pgTable(
     mediaUrl: text('media_url'),
     thumbnailUrl: text('thumbnail_url').notNull(),
     thumbnailUrls: jsonb('thumbnail_urls').default({}),
+    slideCaptions: jsonb('slide_captions').default({}),
     durationSeconds: integer('duration_seconds'),
     contentType: text('content_type').notNull(),
     niches: jsonb('niches').default([]),

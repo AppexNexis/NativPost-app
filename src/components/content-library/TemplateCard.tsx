@@ -1,6 +1,6 @@
 'use client';
 
-import { Eye, Heart, Play } from 'lucide-react';
+import { Eye, Heart, Images, Play } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { getOptimizedVideoUrl, getVideoPosterUrl, isCloudinaryVideoUrl } from '@/lib/cloudinary';
@@ -24,6 +24,10 @@ export function TemplateCard({ template, onRemix, onClick }: TemplateCardProps) 
   const isPlayable = isCloudinaryVideoUrl(mediaUrl) || isDirectVideoFile(mediaUrl);
   const posterUrl = getVideoPosterUrl(template.thumbnailUrl, { width: 608, height: 1080 });
   const videoSrc = isPlayable ? getOptimizedVideoUrl(mediaUrl) : null;
+
+  const slideCount = Array.isArray(template.thumbnailUrls)
+    ? template.thumbnailUrls.length
+    : Object.keys(template.thumbnailUrls ?? {}).length;
 
   useEffect(() => {
     const video = videoRef.current;
@@ -90,7 +94,15 @@ export function TemplateCard({ template, onRemix, onClick }: TemplateCardProps) 
             <Eye className="size-3" />
             <span>{formatCount(template.viewCount)}</span>
           </div>
-          <TemplateCategoryPill template={template} />
+          <div className="flex items-center gap-1.5">
+            {slideCount > 1 && (
+              <div className="flex items-center gap-1 rounded-full bg-black/50 px-2 py-1 text-xs font-medium text-white backdrop-blur-sm">
+                <Images className="size-3" />
+                <span>{slideCount}</span>
+              </div>
+            )}
+            <TemplateCategoryPill template={template} />
+          </div>
         </div>
 
         {/* Bottom overlay row */}

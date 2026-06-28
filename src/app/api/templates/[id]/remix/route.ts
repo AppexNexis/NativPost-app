@@ -80,6 +80,7 @@ function buildEnginePayload(profile: any, payload: Record<string, unknown>) {
       num_variants: payload.numVariants || 3,
       content_mode: payload.contentMode || 'normal',
       enrichment: payload.enrichment || null,
+      template_context: payload.templateContext || null,
     },
   };
 }
@@ -130,6 +131,7 @@ async function saveVariant(
       contentFormat,
       remixSource: body.sourceUrl,
       remixEdits: body.remixEdits,
+      script: variant.script || null,
     } as any,
     contentFormat: contentFormat || null,
   };
@@ -148,7 +150,9 @@ async function saveVariant(
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 
@@ -170,7 +174,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const mapping = TEMPLATE_TYPE_MAP[template.contentType] || DEFAULT_TEMPLATE_MAPPING;
     let contentType = mapping.contentType;
     let generatorEndpoint = mapping.generatorEndpoint;
-    let aspectRatio = (body.aspectRatio as string) || mapping.defaultAspectRatio;
+    const aspectRatio = (body.aspectRatio as string) || mapping.defaultAspectRatio;
 
     if (template.contentType === 'custom' && body.contentType) {
       contentType = body.contentType as string;
@@ -223,7 +227,26 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: 'No Brand Profile found. Complete your Brand Profile first.' }, { status: 400 });
     }
 
-    // 7. Call engine for text generation
+    // 7. Build template context for the engine
+    const templateContext = {
+      template_id: template.id,
+      content_type: template.contentType,
+      source_platform: template.sourcePlatform,
+      source_url: template.sourceUrl,
+      source_creator: template.sourceCreator,
+      structure,
+      transcript: [
+        structure.hook?.text,
+        structure.body?.text,
+        structure.cta?.text,
+      ].filter(Boolean).join(' — '),
+      niches: template.niches || [],
+      angles: template.angles || [],
+      visual_style: (template.structure as any)?.textOverlayStyle || null,
+      music_style: (template.structure as any)?.musicStyle || null,
+    };
+
+    // 8. Call engine for text generation
     const { payload } = buildEnginePayload(profile, {
       topic,
       contentType,
@@ -231,6 +254,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       numVariants: body.numVariants || 3,
       contentMode: body.contentMode || 'normal',
       enrichment: Object.keys(enrichment).length > 0 ? enrichment : null,
+      templateContext,
     });
 
     const controller = new AbortController();
