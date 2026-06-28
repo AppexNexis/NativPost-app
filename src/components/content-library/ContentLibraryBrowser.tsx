@@ -1,7 +1,7 @@
 'use client';
 
-import { Search, SlidersHorizontal, X } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import { Loader2, Search, SlidersHorizontal, X } from 'lucide-react';
+import React, { useState } from 'react';
 
 import type { ContentTemplate, ContentType, NicheTag, TemplateFilters } from '@/types/v2';
 
@@ -10,6 +10,15 @@ import { TemplatePreviewModal } from './TemplatePreviewModal';
 
 type ContentLibraryBrowserProps = {
   templates: ContentTemplate[];
+  total: number;
+  isLoading: boolean;
+  isLoadingMore: boolean;
+  hasMore: boolean;
+  filters: TemplateFilters;
+  searchQuery: string;
+  onFiltersChange: (filters: TemplateFilters) => void;
+  onSearchChange: (query: string) => void;
+  onLoadMore: () => void;
   onRemix: (template: ContentTemplate) => void;
 };
 
@@ -45,62 +54,32 @@ const SORT_OPTIONS = [
   { value: 'newest', label: 'Newest' },
 ];
 
-export function ContentLibraryBrowser({ templates, onRemix }: ContentLibraryBrowserProps) {
-  const [filters, setFilters] = useState<TemplateFilters>({});
-  const [searchQuery, setSearchQuery] = useState('');
+export function ContentLibraryBrowser({
+  templates,
+  total,
+  isLoading,
+  isLoadingMore,
+  hasMore,
+  filters,
+  searchQuery,
+  onFiltersChange,
+  onSearchChange,
+  onLoadMore,
+  onRemix,
+}: ContentLibraryBrowserProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<ContentTemplate | null>(null);
   const [showFilters, setShowFilters] = useState(false);
 
-  const filteredTemplates = useMemo(() => {
-    let result = [...templates];
-
-    if (filters.contentType) {
-      result = result.filter(t => t.contentType === filters.contentType);
-    }
-    if (filters.niche) {
-      result = result.filter(t => t.niches.includes(filters.niche!));
-    }
-    if (filters.platform) {
-      result = result.filter(t => t.sourcePlatform === filters.platform);
-    }
-    if (filters.angle) {
-      result = result.filter(t => t.angles.includes(filters.angle!));
-    }
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        t =>
-          t.sourceCreator?.toLowerCase().includes(q)
-          || t.contentType.toLowerCase().includes(q)
-          || t.niches.some(n => n.toLowerCase().includes(q))
-          || t.angles.some(a => a.toLowerCase().includes(q)),
-      );
-    }
-
-    switch (filters.sort) {
-      case 'remixes':
-        result.sort((a, b) => b.remixCount - a.remixCount);
-        break;
-      case 'newest':
-        result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        break;
-      default:
-        result.sort((a, b) => (b.engagementScore || 0) - (a.engagementScore || 0));
-    }
-
-    return result;
-  }, [templates, filters, searchQuery]);
-
   const handleFilterChange = React.useCallback(
     <K extends keyof TemplateFilters>(key: K, value: TemplateFilters[K]) => {
-      setFilters(prev => ({ ...prev, [key]: value }));
+      onFiltersChange({ ...filters, [key]: value });
     },
-    [],
+    [filters, onFiltersChange],
   );
 
   const clearFilters = () => {
-    setFilters({});
-    setSearchQuery('');
+    onFiltersChange({});
+    onSearchChange('');
   };
 
   const activeFilterCount
@@ -125,7 +104,7 @@ export function ContentLibraryBrowser({ templates, onRemix }: ContentLibraryBrow
               type="text"
               placeholder="Search templates..."
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+              onChange={e => onSearchChange(e.target.value)}
               className="h-10 w-full rounded-full border border-border bg-background pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
@@ -206,31 +185,63 @@ export function ContentLibraryBrowser({ templates, onRemix }: ContentLibraryBrow
 
       {/* Results count */}
       <div className="text-sm text-muted-foreground">
-        {filteredTemplates.length}
-        {' '}
-        template
-        {filteredTemplates.length !== 1 ? 's' : ''}
-        {' '}
-        found
+        {isLoading && templates.length === 0 ? 'Loading templates...' : (
+          <>
+            {total}
+            {' '}
+            template
+            {total !== 1 ? 's' : ''}
+            {' '}
+            found
+          </>
+        )}
       </div>
 
       {/* Grid */}
-      {filteredTemplates.length > 0 ? (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-          {filteredTemplates.map(template => (
-            <TemplateCard
-              key={template.id}
-              template={template}
-              onRemix={onRemix}
-              onClick={setSelectedTemplate}
-            />
-          ))}
+      {templates.length > 0 ? (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+            {templates.map(template => (
+              <TemplateCard
+                key={template.id}
+                template={template}
+                onRemix={onRemix}
+                onClick={setSelectedTemplate}
+              />
+            ))}
+          </div>
+
+          {hasMore && (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={onLoadMore}
+                disabled={isLoadingMore}
+                className="flex h-11 items-center gap-2 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {isLoadingMore ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Loading more...
+                  </>
+                ) : (
+                  <>Load more templates</>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card py-20 text-muted-foreground">
-          <Search className="mb-4 size-12 opacity-20" />
-          <p className="text-lg font-medium">No templates found</p>
-          <p className="text-sm">Try adjusting your filters or search query</p>
+          {isLoading ? (
+            <Loader2 className="mb-4 size-12 animate-spin opacity-20" />
+          ) : (
+            <Search className="mb-4 size-12 opacity-20" />
+          )}
+          <p className="text-lg font-medium">
+            {isLoading ? 'Loading templates...' : 'No templates found'}
+          </p>
+          {!isLoading && <p className="text-sm">Try adjusting your filters or search query</p>}
         </div>
       )}
 
