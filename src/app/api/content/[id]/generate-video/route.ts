@@ -50,7 +50,13 @@ function normalizeSlideCopy(slides?: TemplateScript['slides']): Array<{ text: st
   return slides.map((slide) => {
     if (typeof slide === 'string') return slide;
     if (slide && typeof slide === 'object') {
-      const text = (slide.text as string) || (slide.headline as string) || (slide.caption as string) || '';
+      const text =
+        (slide.text as string) ||
+        (slide.narration as string) ||
+        (slide.headline as string) ||
+        (slide.caption as string) ||
+        (slide.body as string) ||
+        '';
       const duration = typeof slide.durationSeconds === 'number' ? slide.durationSeconds : undefined;
       return duration ? { text, durationSeconds: duration } : text;
     }
