@@ -27,6 +27,8 @@ export type ApifyInstagramOptions = {
   hashtags?: string[];
   /** Max reels to fetch per run. */
   limit?: number;
+  /** Skip the first N results (pagination). */
+  offset?: number;
   /** Minimum like count to include a reel. */
   minLikes?: number;
 };
@@ -196,6 +198,7 @@ export const apifyInstagramProvider: ViralSourceProvider = {
     const hashtags = rawHashtags.map(h => h.replace(/^#/, ''));
 
     const limit = Math.min(typeof options.limit === 'number' ? options.limit : 30, 200);
+    const offset = Math.max(0, typeof options.offset === 'number' ? options.offset : 0);
     const minLikes = typeof options.minLikes === 'number' ? options.minLikes : 200;
 
     console.log(`[Apify/Instagram] Starting scrape — hashtags: [${hashtags.join(', ')}], limit: ${limit}`);
@@ -229,9 +232,10 @@ export const apifyInstagramProvider: ViralSourceProvider = {
           return likes === null || likes >= minLikes;
         })
         .map(mapItem)
-        .filter((t): t is RawTemplate => t !== null);
+        .filter((t): t is RawTemplate => t !== null)
+        .slice(offset);
 
-      console.log(`[Apify/Instagram] Mapped templates after filter: ${templates.length}`);
+      console.log(`[Apify/Instagram] Mapped templates after filter + offset ${offset}: ${templates.length}`);
       return templates;
     } catch (err) {
       console.error('[Apify/Instagram] Failed:', err instanceof Error ? err.message : err);

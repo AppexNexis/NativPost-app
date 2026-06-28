@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/libs/DB';
 import { contentTemplateSchema } from '@/models/Schema';
-import { runSeedPipeline } from '@/lib/template-seed/seed';
+import { runSeedPipelineWithErrors } from '@/lib/template-seed/seed';
 import type { SourcePlatform } from '@/lib/template-seed';
 
 // Ensure the route runs inside the Node.js runtime environment 
@@ -27,14 +27,15 @@ export async function GET(request: NextRequest) {
   
   const sourcesParam = searchParams.get('sources') ?? 'tiktok,instagram,pexels,youtube';
   const sources = sourcesParam.split(',').map((s) => s.trim()) as SourcePlatform[];
-  
+
   const autoApprove = searchParams.get('approve') === 'true';
   const limitPerSource = searchParams.get('limit') ? Number(searchParams.get('limit')) : 30;
   const concurrency = searchParams.get('concurrency') ? Number(searchParams.get('concurrency')) : 3;
+  const offset = searchParams.get('offset') ? Number(searchParams.get('offset')) : 0;
 
   const now = new Date();
   console.log(`[Cron Seed Pipeline] Triggered execution at ${now.toISOString()}`);
-  console.log(`[Cron Seed Pipeline] Core Config -> Sources: [${sources.join(', ')}], Limit: ${limitPerSource}, Auto-Approve: ${autoApprove}`);
+  console.log(`[Cron Seed Pipeline] Core Config -> Sources: [${sources.join(', ')}], Limit: ${limitPerSource}, Offset: ${offset}, Auto-Approve: ${autoApprove}`);
 
   try {
     // 3. Resolve environmental variations gracefully
@@ -53,6 +54,7 @@ export async function GET(request: NextRequest) {
         apifyToken,
         hashtags: ['viral', 'trending', 'smallbusiness', 'entrepreneur', 'africa'],
         limit: limitPerSource,
+        offset,
         minViews: 10000,
       } : undefined,
 
@@ -60,12 +62,16 @@ export async function GET(request: NextRequest) {
         apifyToken,
         hashtags: ['smallbusiness', 'entrepreneur', 'viral', 'africanbusiness'],
         limit: limitPerSource,
+        offset,
         minLikes: 500,
       } : undefined,
 
       pexels: sources.includes('pexels') ? {
         apiKey: process.env.PEXELS_API_KEY ?? '',
         perPage: 10,
+        // Pexels has 12 niche queries; each page returns 10 per query = ~120 per page-set.
+        // Fetch enough page-sets to cover the requested offset + limit.
+        pages: Math.max(1, Math.ceil((offset + limitPerSource) / 120)),
         minDuration: 3,
         maxDuration: 60,
       } : undefined,
@@ -73,6 +79,8 @@ export async function GET(request: NextRequest) {
       youtube: sources.includes('youtube') ? {
         apiKey: process.env.YOUTUBE_API_KEY ?? '',
         maxResults: 15,
+        // Each page returns up to 15 shorts. Fetch enough pages to cover offset + limit.
+        pages: Math.max(1, Math.ceil((offset + limitPerSource) / 15)),
         regionCode: process.env.YOUTUBE_REGION_CODE ?? 'US',
       } : undefined,
 
@@ -87,15 +95,25 @@ export async function GET(request: NextRequest) {
       uploadConcurrency: concurrency,
       curationStatus: autoApprove ? ('approved' as const) : ('pending' as const),
       limitPerSource,
+      offset,
       onProgress: (msg: string) => console.log(`  → [Pipeline Process]: ${msg}`),
     };
 
     // 5. Execute Core Pipeline Logic
-    const seeded = await runSeedPipeline(seedOptions);
+    const { templates: seeded, errors: pipelineErrors, rawCount, nextOffset } = await runSeedPipelineWithErrors(seedOptions);
     console.log(`[Cron Seed Pipeline] Framework execution finalized. Captured: ${seeded.length} enriched templates.`);
 
     if (seeded.length === 0) {
-      return NextResponse.json({ success: true, inserted: 0, message: 'No new unique content variants collected.' });
+      return NextResponse.json({
+        success: true,
+        inserted: 0,
+        scraped: rawCount,
+        nextOffset,
+        errors: pipelineErrors,
+        message: rawCount === 0
+          ? 'No raw templates found. Check API keys and sources.'
+          : 'All templates in this offset window already exist or were skipped.',
+      });
     }
 
     // 6. Map elements to table schema mapping
@@ -139,8 +157,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       scraped: seeded.length,
+      rawCount,
       inserted: inserted.length,
-      status: autoApprove ? 'approved' : 'pending'
+      status: autoApprove ? 'approved' : 'pending',
+      nextOffset,
+      errors: pipelineErrors.length ? pipelineErrors : undefined,
     });
 
   } catch (error: any) {

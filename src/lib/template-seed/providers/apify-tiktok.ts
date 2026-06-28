@@ -25,6 +25,8 @@ export type ApifyTikTokOptions = {
   hashtags?: string[];
   /** Max videos to fetch per run (capped at 200 by Apify pagination). */
   limit?: number;
+  /** Skip the first N results (pagination). */
+  offset?: number;
   /** Minimum play/view count to include a video. */
   minViews?: number;
 };
@@ -194,6 +196,7 @@ export const apifyTikTokProvider: ViralSourceProvider = {
       : DEFAULT_HASHTAGS;
 
     const limit = Math.min(typeof options.limit === 'number' ? options.limit : 50, 200);
+    const offset = Math.max(0, typeof options.offset === 'number' ? options.offset : 0);
     const minViews = typeof options.minViews === 'number' ? options.minViews : 5_000;
 
     console.log(`[Apify/TikTok] Starting scrape — hashtags: [${hashtags.join(', ')}], limit: ${limit}`);
@@ -230,9 +233,10 @@ export const apifyTikTokProvider: ViralSourceProvider = {
           return views === null || views >= minViews;
         })
         .map(mapItem)
-        .filter((t): t is RawTemplate => t !== null);
+        .filter((t): t is RawTemplate => t !== null)
+        .slice(offset);
 
-      console.log(`[Apify/TikTok] Mapped templates after filter: ${templates.length}`);
+      console.log(`[Apify/TikTok] Mapped templates after filter + offset ${offset}: ${templates.length}`);
       return templates;
     } catch (err) {
       console.error('[Apify/TikTok] Failed:', err instanceof Error ? err.message : err);

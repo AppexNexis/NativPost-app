@@ -14,6 +14,8 @@ export interface YouTubeImporterOptions {
   apiKey: string;
   maxResults?: number;
   regionCode?: string;
+  /** How many search pages to fetch. Default: 1. */
+  pages?: number;
 }
 
 interface YouTubeSearchItem {
@@ -61,23 +63,35 @@ export async function searchYouTubeShorts(
   options: YouTubeImporterOptions,
 ): Promise<RawTemplate[]> {
   const maxResults = options.maxResults ?? 25;
-  const searchUrl = new URL(`${YOUTUBE_API_BASE}/search`);
-  searchUrl.searchParams.set('part', 'snippet');
-  searchUrl.searchParams.set('type', 'video');
-  searchUrl.searchParams.set('videoDuration', 'short');
-  searchUrl.searchParams.set('order', 'viewCount');
-  searchUrl.searchParams.set('q', 'trending shorts');
-  searchUrl.searchParams.set('regionCode', options.regionCode ?? 'US');
-  searchUrl.searchParams.set('maxResults', String(maxResults));
-  searchUrl.searchParams.set('key', options.apiKey);
+  const pages = Math.max(1, options.pages ?? 1);
+  const allItems: YouTubeSearchItem[] = [];
+  let pageToken: string | undefined;
 
-  const searchRes = await fetch(searchUrl.toString());
-  if (!searchRes.ok) {
-    throw new Error(`YouTube search error: ${searchRes.status} ${await searchRes.text()}`);
+  for (let page = 1; page <= pages; page++) {
+    const searchUrl = new URL(`${YOUTUBE_API_BASE}/search`);
+    searchUrl.searchParams.set('part', 'snippet');
+    searchUrl.searchParams.set('type', 'video');
+    searchUrl.searchParams.set('videoDuration', 'short');
+    searchUrl.searchParams.set('order', 'viewCount');
+    searchUrl.searchParams.set('q', 'trending shorts');
+    searchUrl.searchParams.set('regionCode', options.regionCode ?? 'US');
+    searchUrl.searchParams.set('maxResults', String(maxResults));
+    searchUrl.searchParams.set('key', options.apiKey);
+    if (pageToken) searchUrl.searchParams.set('pageToken', pageToken);
+
+    const searchRes = await fetch(searchUrl.toString());
+    if (!searchRes.ok) {
+      throw new Error(`YouTube search error: ${searchRes.status} ${await searchRes.text()}`);
+    }
+
+    const searchData = await searchRes.json() as { items: YouTubeSearchItem[]; nextPageToken?: string };
+    allItems.push(...searchData.items);
+    pageToken = searchData.nextPageToken;
+
+    if (!pageToken) break;
   }
 
-  const searchData = await searchRes.json() as { items: YouTubeSearchItem[] };
-  const videoIds = searchData.items.map((item) => item.id.videoId).filter(Boolean);
+  const videoIds = allItems.map((item) => item.id.videoId).filter(Boolean);
 
   if (videoIds.length === 0) return [];
 
@@ -95,7 +109,7 @@ export async function searchYouTubeShorts(
   const statsData = await statsRes.json() as { items: YouTubeVideoStat[] };
   const statsById = new Map(statsData.items.map((s) => [s.id, s]));
 
-  return searchData.items.map((item) => {
+  return allItems.map((item) => {
     const stats = statsById.get(item.id.videoId);
     const bestThumbnail =
       item.snippet.thumbnails.maxres ||

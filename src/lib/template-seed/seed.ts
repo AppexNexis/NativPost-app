@@ -45,6 +45,8 @@ export type SeedOptions = {
   curationStatus?: 'pending' | 'approved' | 'rejected';
   /** Max templates to import per source. */
   limitPerSource?: number;
+  /** Skip the first N templates per source (pagination). */
+  offset?: number;
   /** Callback for progress updates. */
   onProgress?: (message: string) => void;
 };
@@ -57,6 +59,7 @@ export type SeedPipelineResult = {
   templates: SeededTemplate[];
   errors: string[];
   rawCount: number;
+  nextOffset: number;
 };
 
 function sanitizePublicId(input: string): string {
@@ -261,24 +264,28 @@ async function runSeedPipelineInternal(
 ): Promise<SeedPipelineResult> {
   const { raw, errors } = await fetchRawTemplates(options);
 
-  // Optional per-source limit
+  // Apply per-source offset (pagination) then per-source limit.
+  const offset = Math.max(0, options.offset ?? 0);
+  const limit = options.limitPerSource;
+
   let limited = raw;
-  if (options.limitPerSource) {
+  if (offset > 0 || limit) {
     const counts = new Map<SourcePlatform, number>();
     limited = raw.filter((t) => {
       const count = counts.get(t.sourcePlatform) ?? 0;
-      if (count >= options.limitPerSource!) {
-        return false;
-      }
       counts.set(t.sourcePlatform, count + 1);
+      if (offset > 0 && count < offset) return false;
+      if (limit && count >= offset + limit) return false;
       return true;
     });
   }
 
   if (limited.length === 0) {
     options.onProgress?.('No raw templates found. Check API keys and sources.');
-    return { templates: [], errors, rawCount: raw.length };
+    return { templates: [], errors, rawCount: raw.length, nextOffset: offset };
   }
+
+  options.onProgress?.(`After offset ${offset}${limit ? ` / limit ${limit}` : ''}: ${limited.length} templates to enrich.`);
 
   const enriched = await runEnrichment(limited, options);
   const uploads = await uploadToCloudinary(enriched, options);
@@ -294,14 +301,20 @@ async function runSeedPipelineInternal(
     };
   });
 
-  return { templates, errors, rawCount: raw.length };
+  // Suggest the next offset for the caller. If we got fewer than limit, we may
+  // be at the end of the current fetch window; still advance by limit so the
+  // next run asks the providers for a deeper page.
+  const nextOffset = offset + (limit ?? templates.length);
+
+  return { templates, errors, rawCount: raw.length, nextOffset };
 }
 
 /**
  * Run the full seed pipeline and return enriched templates (without DB insertion).
  * Callers can persist the returned items however they want.
  *
- * @deprecated Use {@link runSeedPipelineWithErrors} if you need provider error details.
+ * @deprecated Use {@link runSeedPipelineWithErrors} if you need provider error details
+ *   or pagination info (nextOffset).
  */
 export async function runSeedPipeline(
   options: SeedOptions,
