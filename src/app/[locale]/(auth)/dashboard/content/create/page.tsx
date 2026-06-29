@@ -21,14 +21,14 @@ import {
   Video,
   Wand2,
 } from 'lucide-react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
 
 import { PLATFORMS } from '@/components/icons/PlatformIcons';
 import type { RemixEdits } from '@/components/content-library/RemixEditor';
 import type { ContentTemplate } from '@/types/v2';
+import { getOptimizedVideoUrl, getVideoPosterUrl, isCloudinaryVideoUrl } from '@/lib/cloudinary';
 
 // -----------------------------------------------------------
 // TYPES
@@ -154,7 +154,50 @@ function getTypeDef(id: string): ContentTypeDef | undefined {
 // -----------------------------------------------------------
 // PAGE
 // -----------------------------------------------------------
-export default function ContentCreatePage() {
+// ── Template preview media (robust, Cloudinary-aware) ─────────
+function TemplatePreviewMedia({ template }: { template: ContentTemplate }) {
+  const [hasError, setHasError] = React.useState(false);
+  const mediaUrl = template.mediaUrl || template.thumbnailUrl;
+  const posterUrl = getVideoPosterUrl(template.thumbnailUrl, { width: 560, height: 996 });
+  const isDirectVideo = /\.(mp4|mov|webm)(\?.*)?$/i.test(mediaUrl || '');
+  const isCloudVid = isCloudinaryVideoUrl(mediaUrl);
+
+  if (hasError || !mediaUrl) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 bg-muted/50">
+        <Video className="size-8 text-muted-foreground/30" strokeWidth={1} />
+        <p className="text-[11px] text-muted-foreground">Preview unavailable</p>
+      </div>
+    );
+  }
+
+  if (isCloudVid || isDirectVideo) {
+    return (
+      <video
+        src={isCloudVid ? getOptimizedVideoUrl(mediaUrl) : mediaUrl}
+        poster={posterUrl || undefined}
+        className="size-full object-cover"
+        muted
+        loop
+        autoPlay
+        playsInline
+        preload="metadata"
+        onError={() => setHasError(true)}
+      />
+    );
+  }
+
+  return (
+    <img
+      src={posterUrl || mediaUrl}
+      alt={template.sourceCreator || 'Template'}
+      className="size-full object-cover"
+      loading="lazy"
+      onError={() => setHasError(true)}
+    />
+  );
+}
+export default function ContentCreatePage() { return <Suspense fallback={<div className="flex items-center justify-center py-20 text-sm text-muted-foreground">Loading...</div>}><ContentCreatePageInner /></Suspense>; } function ContentCreatePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const scheduledDate = searchParams.get('scheduledDate') || '';
@@ -347,7 +390,7 @@ export default function ContentCreatePage() {
         },
         style: {
           fontFamily: 'Inter',
-          fontSize: 48,
+          fontSize: 20,
           color: '#ffffff',
           backgroundColor: 'rgba(0,0,0,0.5)',
           align: 'center',
@@ -989,30 +1032,8 @@ export default function ContentCreatePage() {
                 <>
                   <div className="rounded-xl border bg-card p-4">
                     <h3 className="mb-3 text-sm font-semibold">Template Preview</h3>
-                    <div className="relative mx-auto aspect-[9/16] max-w-[260px] overflow-hidden rounded-xl bg-muted">
-                      {template.thumbnailUrl ? (
-                        <Image
-                          src={template.thumbnailUrl}
-                          alt={template.sourceCreator || 'Template'}
-                          fill
-                          className="object-cover"
-                          sizes="260px"
-                          unoptimized
-                        />
-                      ) : template.mediaUrl ? (
-                        <video
-                          src={template.mediaUrl}
-                          className="size-full object-cover"
-                          muted
-                          loop
-                          autoPlay
-                          playsInline
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center">
-                          <Video className="size-10 text-muted-foreground/30" strokeWidth={1} />
-                        </div>
-                      )}
+                    <div className="relative mx-auto aspect-[9/16] max-w-[280px] overflow-hidden rounded-xl bg-muted">
+                      <TemplatePreviewMedia template={template} />
                     </div>
                   </div>
 

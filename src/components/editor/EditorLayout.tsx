@@ -1,4 +1,4 @@
-import React, { ReactNode } from 'react';
+import React, { ReactNode, useState } from 'react';
 import { ArrowLeft, Check, Loader2, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
@@ -26,13 +26,51 @@ export function EditorLayout({
 }) {
   const { state, saveEdit } = useEditor();
   const router = useRouter();
+  const [isPublishing, setIsPublishing] = useState(false);
 
   const handleContinue = async () => {
     await saveEdit();
+    setIsPublishing(true);
+
+    // If we already have a content item, go to it
     if (state.edit?.contentItemId) {
       router.push(`/dashboard/content/${state.edit.contentItemId}`);
-    } else {
+      return;
+    }
+
+    // No content item — create one from the edit session data
+    try {
+      const res = await fetch('/api/content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contentType: state.edit?.contentType || 'text_only',
+          caption: [
+            state.script?.hookText,
+            state.script?.bodyText,
+            state.script?.ctaText,
+          ].filter(Boolean).join('\n\n'),
+          targetPlatforms: state.targetPlatforms || state.edit?.targetPlatforms || [],
+          status: 'draft',
+          graphicUrls: state.mediaSlots?.background?.url ? [state.mediaSlots.background.url] : [],
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to create post');
+
+      const data = await res.json();
+      const contentId = data.item?.id;
+      if (contentId) {
+        router.push(`/dashboard/content/${contentId}`);
+      } else {
+        router.push('/dashboard/posts');
+      }
+    } catch (err) {
+      console.error('Failed to publish:', err);
+      // Fallback
       router.push('/dashboard/posts');
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -106,10 +144,15 @@ export function EditorLayout({
           {/* ── Schedule & Publish ────────────────────────── */}
           <button
             onClick={handleContinue}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            disabled={isPublishing}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
           >
-            <Check className="size-3.5" />
-            Schedule &amp; Publish
+            {isPublishing ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Check className="size-3.5" />
+            )}
+            {isPublishing ? 'Publishing...' : 'Schedule &amp; Publish'}
           </button>
         </div>
       </header>
@@ -117,7 +160,7 @@ export function EditorLayout({
       {/* ── Main content: sidebar + preview ──────────────────── */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <aside className="w-80 shrink-0 overflow-hidden border-r border-border bg-card">
+        <aside className="w-96 shrink-0 overflow-hidden border-r border-border bg-card">
           {sidebar}
         </aside>
 

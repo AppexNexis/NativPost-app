@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import Image from 'next/image';
 import { Film, Loader2, X } from 'lucide-react';
 
 import { useEditor } from '../EditorContext';
+import { getVideoPosterUrl } from '@/lib/cloudinary';
 import type { ContentTemplate } from '@/types/v2';
 
 // ---------------------------------------------------------------------------
@@ -45,7 +45,7 @@ function MediaSelectModal({
     setLoadingTemplates(true);
     setTemplatesError(null);
     try {
-      const params = new URLSearchParams({ limit: '24', isApproved: 'true' });
+      const params = new URLSearchParams({ limit: '30', isApproved: 'true' });
       if (contentType && contentType !== 'text_only') params.set('contentType', contentType);
       const res = await fetch(`/api/templates?${params}`);
       if (!res.ok) throw new Error('Failed to load templates');
@@ -62,7 +62,7 @@ function MediaSelectModal({
     setLoadingAssets(true);
     setAssetsError(null);
     try {
-      const res = await fetch('/api/media-library?limit=24');
+      const res = await fetch('/api/media-library?limit=30');
       if (!res.ok) throw new Error('Failed to load media library');
       const data = await res.json();
       setAssets(data.assets || []);
@@ -81,7 +81,7 @@ function MediaSelectModal({
   const handleSelectTemplate = (t: ContentTemplate) => {
     const url = t.mediaUrl || t.thumbnailUrl;
     if (!url) return;
-    const isVideo = t.mediaUrl ? /\.(mp4|mov|webm)$/i.test(t.mediaUrl) || true : false;
+    const isVideo = Boolean(t.mediaUrl);
     onSelect(slot, url, isVideo ? 'video' : 'image');
     onClose();
   };
@@ -94,7 +94,7 @@ function MediaSelectModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4">
-      <div className="flex max-h-[80vh] w-full flex-col rounded-t-2xl border border-border bg-card shadow-2xl sm:max-w-lg sm:rounded-2xl">
+      <div className="flex max-h-[80vh] w-full flex-col rounded-t-2xl border border-border bg-card shadow-2xl sm:max-w-xl sm:rounded-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="text-sm font-semibold">Select Media</h2>
@@ -149,35 +149,36 @@ function MediaSelectModal({
                 <p className="py-4 text-center text-xs text-muted-foreground">No trending content found.</p>
               )}
               {!loadingTemplates && templates.length > 0 && (
-                <div className="grid grid-cols-3 gap-2">
-                  {templates.map(t => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => handleSelectTemplate(t)}
-                      className="group relative aspect-[9/16] overflow-hidden rounded-lg bg-muted transition-transform hover:scale-[1.02]"
-                    >
-                      {t.thumbnailUrl ? (
-                        <Image
-                          src={t.thumbnailUrl}
-                          alt={t.sourceCreator || 'Template'}
-                          fill
-                          className="object-cover"
-                          sizes="(max-width: 640px) 33vw, 160px"
-                          unoptimized
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center">
-                          <Film className="size-6 text-muted-foreground/30" />
-                        </div>
-                      )}
-                      {t.sourceCreator && (
-                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
-                          <p className="truncate text-[10px] text-white/90">{t.sourceCreator}</p>
-                        </div>
-                      )}
-                    </button>
-                  ))}
+                <div className="grid grid-cols-5 gap-1.5">
+                  {templates.map(t => {
+                    const posterUrl = getVideoPosterUrl(t.thumbnailUrl, { width: 240, height: 426 });
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => handleSelectTemplate(t)}
+                        className="group relative aspect-[9/16] overflow-hidden rounded-lg bg-muted transition-transform hover:scale-[1.03]"
+                      >
+                        {posterUrl ? (
+                          <img
+                            src={posterUrl}
+                            alt={t.sourceCreator || 'Template'}
+                            className="size-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center">
+                            <Film className="size-5 text-muted-foreground/30" />
+                          </div>
+                        )}
+                        {t.sourceCreator && (
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-1.5 pb-1 pt-4">
+                            <p className="truncate text-[10px] text-white/90">{t.sourceCreator}</p>
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </>
@@ -197,33 +198,31 @@ function MediaSelectModal({
                 <p className="py-4 text-center text-xs text-muted-foreground">Media library is empty.</p>
               )}
               {!loadingAssets && assets.length > 0 && (
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-5 gap-1.5">
                   {assets.map(a => (
                     <button
                       key={a.publicId}
                       type="button"
                       onClick={() => handleSelectAsset(a)}
-                      className="group relative aspect-[9/16] overflow-hidden rounded-lg bg-muted transition-transform hover:scale-[1.02]"
+                      className="group relative aspect-[9/16] overflow-hidden rounded-lg bg-muted transition-transform hover:scale-[1.03]"
                     >
                       {a.thumbnailUrl ? (
-                        <Image
+                        <img
                           src={a.thumbnailUrl}
                           alt={a.name}
-                          fill
-                          className="object-cover"
-                          sizes="(max-width: 640px) 33vw, 160px"
-                          unoptimized
+                          className="size-full object-cover"
+                          loading="lazy"
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center">
-                          <Film className="size-6 text-muted-foreground/30" />
+                          <Film className="size-5 text-muted-foreground/30" />
                         </div>
                       )}
-                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-1.5 pb-1 pt-4">
                         <p className="truncate text-[10px] text-white/90">{a.name}</p>
                       </div>
                       {a.isVideo && (
-                        <span className="absolute right-1.5 top-1.5 rounded bg-black/60 px-1 py-0.5 text-[10px] text-white">
+                        <span className="absolute right-1 top-1 rounded bg-black/60 px-1 py-0.5 text-[9px] text-white">
                           Video
                         </span>
                       )}
@@ -319,7 +318,7 @@ export function MediaTab() {
 
             {/* Current media preview */}
             {slot !== 'slides' && slotData && 'url' in slotData && slotData.url && (
-              <div className="group relative aspect-[9/16] overflow-hidden rounded-lg bg-muted">
+              <div className="group relative aspect-[9/16] w-full overflow-hidden rounded-lg bg-muted">
                 {slotData.assetType === 'video' || /\.(mp4|mov|webm)$/i.test(slotData.url) ? (
                   <video
                     src={slotData.url}
@@ -327,15 +326,13 @@ export function MediaTab() {
                     muted
                     loop
                     playsInline
+                    preload="metadata"
                   />
                 ) : (
-                  <Image
+                  <img
                     src={slotData.url}
                     alt={getSlotLabel(slot)}
-                    fill
-                    className="object-cover"
-                    sizes="160px"
-                    unoptimized
+                    className="size-full object-cover"
                   />
                 )}
                 <button
@@ -363,7 +360,7 @@ export function MediaTab() {
                         {slide.assetType === 'video' || /\.(mp4|mov|webm)$/i.test(slide.url) ? (
                           <video src={slide.url} className="size-full object-cover" muted loop playsInline />
                         ) : (
-                          <Image src={slide.url} alt={`Slide ${i + 1}`} fill className="object-cover" sizes="56px" unoptimized />
+                          <img src={slide.url} alt={`Slide ${i + 1}`} className="size-full object-cover" />
                         )}
                       </div>
                     )}

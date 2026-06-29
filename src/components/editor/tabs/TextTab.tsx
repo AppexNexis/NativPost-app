@@ -93,13 +93,13 @@ export function TextTab() {
       <div>
         <div className="mb-1.5 flex items-center justify-between">
           <label className="text-xs font-medium text-foreground">SIZE</label>
-          <span className="text-xs text-muted-foreground">{state.style.fontSize || 48}px</span>
+          <span className="text-xs text-muted-foreground">{state.style.fontSize || 20}px</span>
         </div>
         <input
           type="range"
           min={16}
           max={120}
-          value={state.style.fontSize || 48}
+          value={state.style.fontSize || 20}
           onChange={e => updateStyle('fontSize', parseInt(e.target.value))}
           className="w-full accent-primary"
         />

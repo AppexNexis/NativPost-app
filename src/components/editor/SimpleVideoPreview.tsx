@@ -58,8 +58,8 @@ function aspectClass(ar: string): string {
 
 function maxWidthClass(ar: string): string {
   if (ar === '16:9') return 'max-w-full';
-  if (ar === '1:1') return 'max-w-sm';
-  return 'max-w-[280px]'; // 9:16
+  if (ar === '1:1') return 'max-w-xs';
+  return 'max-w-full'; // 9:16 fills phone mockup
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ export function SimpleVideoPreview({
 
   const textStyle: React.CSSProperties = {
     fontFamily: style.fontFamily || 'Inter',
-    fontSize: `${style.fontSize || 48}px`,
+    fontSize: `${style.fontSize || 20}px`,
     color: style.color || '#ffffff',
     backgroundColor: style.backgroundColor || 'rgba(0,0,0,0.5)',
     textAlign: style.align || 'center',
@@ -170,12 +170,12 @@ export function SimpleVideoPreview({
                 </p>
               )}
               {script.bodyText && (
-                <p style={{ ...textStyle, fontSize: `${Math.max(14, (style.fontSize || 48) * 0.7)}px`, marginBottom: script.ctaText ? '8px' : 0 }}>
+                <p style={{ ...textStyle, fontSize: `${Math.max(14, (style.fontSize || 20) * 0.7)}px`, marginBottom: script.ctaText ? '8px' : 0 }}>
                   {script.bodyText}
                 </p>
               )}
               {script.ctaText && (
-                <p style={{ ...textStyle, fontSize: `${Math.max(12, (style.fontSize || 48) * 0.6)}px`, backgroundColor: 'rgba(var(--primary-rgb),0.85)' }}>
+                <p style={{ ...textStyle, fontSize: `${Math.max(12, (style.fontSize || 20) * 0.6)}px`, backgroundColor: 'rgba(var(--primary-rgb),0.85)' }}>
                   {script.ctaText}
                 </p>
               )}
