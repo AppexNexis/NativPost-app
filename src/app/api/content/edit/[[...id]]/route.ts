@@ -6,8 +6,7 @@ import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { contentEditSchema } from '@/models/Schema';
 
-const route = { GET: get, POST: post, PATCH: patch, DELETE: del };
-export { route as GET, route as POST, route as PATCH, route as DELETE };
+export { get as GET, post as POST, patch as PATCH, del as DELETE };
 
 // ---------------------------------------------------------------------------
 // GET /api/content/edit/[id] or /api/content/edit

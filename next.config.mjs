@@ -80,25 +80,27 @@ export default withSentryConfig(
     }),
   ),
   {
-    // For all available options, see:
-    // https://github.com/getsentry/sentry-webpack-plugin#options
-    // FIXME: Add your Sentry organization and project names
-    org: 'nextjs-boilerplate-org',
-    project: 'nextjs-boilerplate',
+    org: process.env.SENTRY_ORG || 'nativpost',
+    project: process.env.SENTRY_PROJECT || 'nativpost-app',
 
-    // Only print logs for uploading source maps in CI
+    // Auth token — set SENTRY_AUTH_TOKEN in your environment / CI secrets.
+    // Without it, source map upload is disabled (no upload = no warning).
+    authToken: process.env.SENTRY_AUTH_TOKEN,
+
+    // Only print upload logs in CI
     silent: !process.env.CI,
 
-    // For all available options, see:
-    // https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/
+    // Source maps: upload when auth token is present, delete after to avoid exposing them.
+    // When SENTRY_AUTH_TOKEN is not set, disable upload entirely (silences the warning).
+    sourcemaps: {
+      deleteSourcemapsAfterUpload: true,
+      disable: !process.env.SENTRY_AUTH_TOKEN,
+    },
 
-    // Upload a larger set of source maps for prettier stack traces (increases build time)
+    // Upload a larger set of source maps for prettier stack traces
     widenClientFileUpload: true,
 
     // Route browser requests to Sentry through a Next.js rewrite to circumvent ad-blockers.
-    // This can increase your server load as well as your hosting bill.
-    // Note: Check that the configured route will not match with your Next.js middleware, otherwise reporting of client-
-    // side errors will fail.
     tunnelRoute: '/monitoring',
 
     // Hides source maps from generated client bundles
@@ -107,10 +109,7 @@ export default withSentryConfig(
     // Automatically tree-shake Sentry logger statements to reduce bundle size
     disableLogger: true,
 
-    // Enables automatic instrumentation of Vercel Cron Monitors. (Does not yet work with App Router route handlers.)
-    // See the following for more information:
-    // https://docs.sentry.io/product/crons/
-    // https://vercel.com/docs/cron-jobs
+    // Enables automatic instrumentation of Vercel Cron Monitors.
     automaticVercelMonitors: true,
 
     // Disable Sentry telemetry
