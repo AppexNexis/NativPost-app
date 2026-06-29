@@ -1,8 +1,21 @@
 import React, { ReactNode } from 'react';
-import { ArrowLeft, Check, Loader2, Save, Sparkles } from 'lucide-react';
+import { ArrowLeft, Check, Loader2, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { useEditor } from './EditorContext';
+
+// ── Content type labels ──────────────────────────────────────────
+const CT_LABELS: Record<string, string> = {
+  text_only: 'Text',
+  single_image: 'Image',
+  slideshow: 'Slideshow',
+  reel: 'Video',
+  ugc: 'UGC',
+  data_story: 'Data Story',
+  wall_of_text: 'Wall of Text',
+  talking_head: 'Talking Head',
+  green_screen: 'Green Screen',
+};
 
 export function EditorLayout({
   preview,
@@ -32,10 +45,12 @@ export function EditorLayout({
   };
 
   const isRemix = state.edit?.source === 'remix';
+  const contentType = state.edit?.contentType || '';
+  const displayType = CT_LABELS[contentType] || contentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
-      {/* ── Top bar ─────────────────────────────────────────────────── */}
+      {/* ── Top bar ───────────────────────────────────────────── */}
       <header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-4 py-2.5">
         <div className="flex items-center gap-3">
           <button
@@ -45,60 +60,69 @@ export function EditorLayout({
           >
             <ArrowLeft className="size-4" />
           </button>
-          <div>
+          <div className="flex items-center gap-2">
             <h1 className="text-sm font-semibold text-foreground leading-none">
-              {isRemix ? 'Remix Editor' : 'Content Editor'}
+              {isRemix ? 'Remix Editor' : 'Editor'}
             </h1>
-            <p className="mt-0.5 flex items-center gap-1 text-xs leading-none">
-              {state.isSaving ? (
-                <span className="flex items-center gap-1 text-muted-foreground">
-                  <Loader2 className="size-2.5 animate-spin" />
-                  Saving…
-                </span>
-              ) : state.isDirty ? (
-                <span className="text-amber-500">Unsaved changes</span>
-              ) : (
-                <span className="flex items-center gap-1 text-emerald-600">
-                  <Check className="size-2.5" />
-                  Saved
-                </span>
-              )}
-            </p>
+            {displayType && (
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                {displayType}
+              </span>
+            )}
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* ── Save status ────────────────────────────────── */}
+          <div className="hidden items-center gap-1.5 sm:flex">
+            {state.isSaving ? (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Loader2 className="size-3 animate-spin" />
+                Saving&hellip;
+              </span>
+            ) : state.isDirty ? (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Save className="size-3" />
+                Unsaved
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-xs text-emerald-600">
+                <Check className="size-3" />
+                Saved
+              </span>
+            )}
+          </div>
+
+          {/* ── Save button ───────────────────────────────── */}
           <button
             onClick={saveEdit}
-            disabled={state.isSaving || !state.isDirty}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={!state.isDirty}
+            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
           >
-            <Save className="size-3" />
+            <Save className="size-3.5" />
             Save
           </button>
+
+          {/* ── Schedule & Publish ────────────────────────── */}
           <button
             onClick={handleContinue}
-            disabled={state.isSaving}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            {state.isSaving
-              ? <Loader2 className="size-3 animate-spin" />
-              : <Sparkles className="size-3" />
-            }
+            <Check className="size-3.5" />
             Schedule &amp; Publish
           </button>
         </div>
       </header>
 
-      {/* ── Main area ────────────────────────────────────────────────── */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Left sidebar — controls */}
-        <aside className="w-[340px] shrink-0 overflow-y-auto border-r border-border bg-card">
+      {/* ── Main content: sidebar + preview ──────────────────── */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <aside className="w-80 shrink-0 overflow-hidden border-r border-border bg-card">
           {sidebar}
         </aside>
 
-        {/* Center — live preview */}
-        <main className="flex min-w-0 flex-1 flex-col items-center justify-center bg-muted/20 p-6">
+        {/* Preview area */}
+        <main className="flex flex-1 items-center justify-center overflow-hidden">
           {preview}
         </main>
       </div>

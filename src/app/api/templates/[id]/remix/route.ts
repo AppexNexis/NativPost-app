@@ -11,16 +11,17 @@ const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 const APP_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 // -----------------------------------------------------------
-// Template contentType → NativPost contentType + generator
+// Template contentType → ContentItem contentType mapping
+// New types mapped directly (no legacy type indirection)
 // -----------------------------------------------------------
 const TEMPLATE_TYPE_MAP: Record<string, { contentType: string; generatorEndpoint: string; defaultAspectRatio: string }> = {
-  slideshow: { contentType: 'reel', generatorEndpoint: 'generate-video', defaultAspectRatio: '9:16' },
-  wall_of_text: { contentType: 'text_only', generatorEndpoint: 'generate-text-motion', defaultAspectRatio: '9:16' },
-  talking_head: { contentType: 'ugc_ad', generatorEndpoint: 'generate-ugc-ad', defaultAspectRatio: '9:16' },
-  green_screen_meme: { contentType: 'single_image', generatorEndpoint: 'generate-scene', defaultAspectRatio: '9:16' },
+  slideshow: { contentType: 'slideshow', generatorEndpoint: 'generate-video', defaultAspectRatio: '9:16' },
+  wall_of_text: { contentType: 'wall_of_text', generatorEndpoint: 'generate-text-motion', defaultAspectRatio: '9:16' },
+  talking_head: { contentType: 'talking_head', generatorEndpoint: 'generate-ugc-ad', defaultAspectRatio: '9:16' },
+  green_screen_meme: { contentType: 'green_screen', generatorEndpoint: 'generate-scene', defaultAspectRatio: '9:16' },
   video_hook_demo: { contentType: 'reel', generatorEndpoint: 'generate-video', defaultAspectRatio: '9:16' },
-  carousel: { contentType: 'carousel', generatorEndpoint: 'generate-carousel', defaultAspectRatio: '1:1' },
-  ugc: { contentType: 'ugc_ad', generatorEndpoint: 'generate-ugc-ad', defaultAspectRatio: '9:16' },
+  carousel: { contentType: 'slideshow', generatorEndpoint: 'generate-video', defaultAspectRatio: '9:16' },
+  ugc: { contentType: 'ugc', generatorEndpoint: 'generate-ugc-ad', defaultAspectRatio: '9:16' },
   custom: { contentType: 'reel', generatorEndpoint: 'generate-video', defaultAspectRatio: '9:16' },
 };
 
@@ -30,10 +31,15 @@ const CUSTOM_GENERATOR_MAP: Record<string, string> = {
   reel: 'generate-video',
   text_only: 'generate-text-motion',
   ugc_ad: 'generate-ugc-ad',
+  ugc: 'generate-ugc-ad',
   single_image: 'generate-image',
   carousel: 'generate-carousel',
+  slideshow: 'generate-video',
   data_story: 'generate-data-story',
   scene: 'generate-scene',
+  wall_of_text: 'generate-text-motion',
+  talking_head: 'generate-ugc-ad',
+  green_screen: 'generate-scene',
 };
 
 // -----------------------------------------------------------
@@ -228,22 +234,47 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // 7. Build template context for the engine
-    const templateContext = {
-      template_id: template.id,
+    const templateContextRaw = {
       content_type: template.contentType,
       source_platform: template.sourcePlatform,
       source_url: template.sourceUrl,
       source_creator: template.sourceCreator,
       structure,
+      niches: template.niches || [],
+      angles: template.angles || [],
+      visual_style: (template.structure as any)?.textOverlayStyle || null,
+      music_style: (template.structure as any)?.musicStyle || null,
+    };
+
+    // 7b. Analyze template via the content engine
+    let templateAnalysis: Record<string, unknown> | null = null;
+    try {
+      const analysisRes = await fetch(`${ENGINE_URL}/api/templates/analyze`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ENGINE_API_KEY}`,
+        },
+        body: JSON.stringify(templateContextRaw),
+      });
+      if (analysisRes.ok) {
+        const analysisData = await analysisRes.json();
+        templateAnalysis = analysisData.analysis || null;
+      }
+    } catch (analysisErr) {
+      console.warn('[Remix] Template analysis failed (non-fatal):', analysisErr);
+    }
+
+    // 7c. Build the full template context with analysis
+    const templateContext = {
+      template_id: template.id,
+      ...templateContextRaw,
       transcript: [
         structure.hook?.text,
         structure.body?.text,
         structure.cta?.text,
       ].filter(Boolean).join(' — '),
-      niches: template.niches || [],
-      angles: template.angles || [],
-      visual_style: (template.structure as any)?.textOverlayStyle || null,
-      music_style: (template.structure as any)?.musicStyle || null,
+      analysis: templateAnalysis || undefined,
     };
 
     // 8. Call engine for text generation

@@ -29,7 +29,6 @@ const CONTENT_TYPE_OPTIONS: { value: ContentType; label: string }[] = [
   { value: 'green_screen_meme', label: 'Green Screen' },
   { value: 'video_hook_demo', label: 'Video Hook' },
   { value: 'ugc', label: 'UGC' },
-  { value: 'carousel', label: 'Carousel' },
   { value: 'custom', label: 'Custom' },
 ];
 

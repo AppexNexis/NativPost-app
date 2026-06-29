@@ -46,11 +46,11 @@ function MediaSelectModal({
     setTemplatesError(null);
     try {
       const params = new URLSearchParams({ limit: '24', isApproved: 'true' });
-      if (contentType) params.set('contentType', contentType);
+      if (contentType && contentType !== 'text_only') params.set('contentType', contentType);
       const res = await fetch(`/api/templates?${params}`);
       if (!res.ok) throw new Error('Failed to load templates');
       const data = await res.json();
-      setTemplates(data.items || data.templates || []);
+      setTemplates(data.templates || data.items || []);
     } catch {
       setTemplatesError('Could not load trending content.');
     } finally {
@@ -62,7 +62,7 @@ function MediaSelectModal({
     setLoadingAssets(true);
     setAssetsError(null);
     try {
-      const res = await fetch('/api/media-library?type=video&limit=24');
+      const res = await fetch('/api/media-library?limit=24');
       if (!res.ok) throw new Error('Failed to load media library');
       const data = await res.json();
       setAssets(data.assets || []);
@@ -74,22 +74,32 @@ function MediaSelectModal({
   }, []);
 
   useEffect(() => {
-    fetchTemplates();
-  }, [fetchTemplates]);
+    if (tab === 'trending') fetchTemplates();
+    else fetchAssets();
+  }, [tab, fetchTemplates, fetchAssets]);
 
-  useEffect(() => {
-    if (tab === 'library' && assets.length === 0 && !loadingAssets && !assetsError) {
-      fetchAssets();
-    }
-  }, [tab, assets.length, loadingAssets, assetsError, fetchAssets]);
+  const handleSelectTemplate = (t: ContentTemplate) => {
+    const url = t.mediaUrl || t.thumbnailUrl;
+    if (!url) return;
+    const isVideo = t.mediaUrl ? /\.(mp4|mov|webm)$/i.test(t.mediaUrl) || true : false;
+    onSelect(slot, url, isVideo ? 'video' : 'image');
+    onClose();
+  };
+
+  const handleSelectAsset = (a: MediaAsset) => {
+    const assetType = a.isVideo ? 'video' : 'image';
+    onSelect(slot, a.url, assetType);
+    onClose();
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4">
-      <div className="flex max-h-[85vh] w-full flex-col rounded-t-2xl border border-border bg-card shadow-2xl sm:max-w-2xl sm:rounded-2xl">
+      <div className="flex max-h-[80vh] w-full flex-col rounded-t-2xl border border-border bg-card shadow-2xl sm:max-w-lg sm:rounded-2xl">
         {/* Header */}
-        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-4">
-          <h2 className="text-base font-semibold text-foreground">Select Media</h2>
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <h2 className="text-sm font-semibold">Select Media</h2>
           <button
+            type="button"
             onClick={onClose}
             className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
@@ -98,133 +108,129 @@ function MediaSelectModal({
         </div>
 
         {/* Tabs */}
-        <div className="flex shrink-0 border-b border-border">
-          {([
-            { id: 'trending' as ModalTab, label: 'Trending Content' },
-            { id: 'library' as ModalTab, label: 'Media Library' },
-          ]).map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                tab === t.id
-                  ? 'border-b-2 border-primary text-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="flex border-b border-border">
+          <button
+            type="button"
+            onClick={() => setTab('trending')}
+            className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
+              tab === 'trending'
+                ? 'border-b-2 border-primary text-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Trending Content
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('library')}
+            className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
+              tab === 'library'
+                ? 'border-b-2 border-primary text-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Media Library
+          </button>
         </div>
 
         {/* Content */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-3">
           {tab === 'trending' && (
             <>
               {loadingTemplates && (
-                <div className="flex h-32 items-center justify-center">
+                <div className="flex items-center justify-center py-8">
                   <Loader2 className="size-5 animate-spin text-muted-foreground" />
                 </div>
               )}
               {templatesError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-                  {templatesError}
-                </div>
+                <p className="py-4 text-center text-xs text-red-500">{templatesError}</p>
               )}
               {!loadingTemplates && !templatesError && templates.length === 0 && (
-                <p className="py-8 text-center text-sm text-muted-foreground">No trending content found.</p>
+                <p className="py-4 text-center text-xs text-muted-foreground">No trending content found.</p>
               )}
-              <div className="grid grid-cols-3 gap-3">
-                {templates.map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => t.mediaUrl && onSelect(slot, t.mediaUrl, 'video')}
-                    className="group overflow-hidden rounded-xl border border-border bg-background transition-all hover:border-primary hover:shadow-md"
-                  >
-                    <div className="relative aspect-[9/16] overflow-hidden bg-muted">
+              {!loadingTemplates && templates.length > 0 && (
+                <div className="grid grid-cols-3 gap-2">
+                  {templates.map(t => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => handleSelectTemplate(t)}
+                      className="group relative aspect-[9/16] overflow-hidden rounded-lg bg-muted transition-transform hover:scale-[1.02]"
+                    >
                       {t.thumbnailUrl ? (
                         <Image
                           src={t.thumbnailUrl}
                           alt={t.sourceCreator || 'Template'}
                           fill
-                          className="object-cover transition-transform group-hover:scale-105"
-                          sizes="200px"
+                          className="object-cover"
+                          sizes="(max-width: 640px) 33vw, 160px"
                           unoptimized
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center">
-                          <Film className="size-8 text-muted-foreground/30" />
+                          <Film className="size-6 text-muted-foreground/30" />
                         </div>
                       )}
-                    </div>
-                    <div className="p-2 text-left">
-                      <p className="truncate text-xs font-medium text-foreground">
-                        {t.sourceCreator || 'Trending'}
-                      </p>
-                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground capitalize">
-                        {t.contentType?.replace(/_/g, ' ')}
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
+                      {t.sourceCreator && (
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
+                          <p className="truncate text-[10px] text-white/90">{t.sourceCreator}</p>
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
             </>
           )}
 
           {tab === 'library' && (
             <>
               {loadingAssets && (
-                <div className="flex h-32 items-center justify-center">
+                <div className="flex items-center justify-center py-8">
                   <Loader2 className="size-5 animate-spin text-muted-foreground" />
                 </div>
               )}
               {assetsError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-                  {assetsError}
-                </div>
+                <p className="py-4 text-center text-xs text-red-500">{assetsError}</p>
               )}
               {!loadingAssets && !assetsError && assets.length === 0 && (
-                <div className="py-12 text-center">
-                  <Film className="mx-auto mb-2 size-8 text-muted-foreground/30" />
-                  <p className="text-sm text-muted-foreground">No videos in your media library yet.</p>
-                </div>
+                <p className="py-4 text-center text-xs text-muted-foreground">Media library is empty.</p>
               )}
-              <div className="grid grid-cols-3 gap-3">
-                {assets.map(a => (
-                  <button
-                    key={a.publicId}
-                    onClick={() => onSelect(slot, a.url, a.isVideo ? 'video' : 'image')}
-                    className="group overflow-hidden rounded-xl border border-border bg-background transition-all hover:border-primary hover:shadow-md"
-                  >
-                    <div className="relative aspect-[9/16] overflow-hidden bg-muted">
+              {!loadingAssets && assets.length > 0 && (
+                <div className="grid grid-cols-3 gap-2">
+                  {assets.map(a => (
+                    <button
+                      key={a.publicId}
+                      type="button"
+                      onClick={() => handleSelectAsset(a)}
+                      className="group relative aspect-[9/16] overflow-hidden rounded-lg bg-muted transition-transform hover:scale-[1.02]"
+                    >
                       {a.thumbnailUrl ? (
                         <Image
                           src={a.thumbnailUrl}
                           alt={a.name}
                           fill
-                          className="object-cover transition-transform group-hover:scale-105"
-                          sizes="200px"
+                          className="object-cover"
+                          sizes="(max-width: 640px) 33vw, 160px"
                           unoptimized
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center">
-                          <Film className="size-8 text-muted-foreground/30" />
+                          <Film className="size-6 text-muted-foreground/30" />
                         </div>
                       )}
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
+                        <p className="truncate text-[10px] text-white/90">{a.name}</p>
+                      </div>
                       {a.isVideo && (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="rounded-full bg-black/40 p-2">
-                            <Film className="size-4 text-white" />
-                          </div>
-                        </div>
+                        <span className="absolute right-1.5 top-1.5 rounded bg-black/60 px-1 py-0.5 text-[10px] text-white">
+                          Video
+                        </span>
                       )}
-                    </div>
-                    <div className="p-2 text-left">
-                      <p className="truncate text-xs font-medium text-foreground">{a.name}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -234,165 +240,174 @@ function MediaSelectModal({
 }
 
 // ---------------------------------------------------------------------------
+// Media slot labels
+// ---------------------------------------------------------------------------
+const SLOT_LABELS: Record<string, string> = {
+  background: 'Background',
+  hookVideo: 'Hook Video',
+  demoVideo: 'Demo / B-roll',
+  subjectVideo: 'Subject (foreground)',
+  faceVideo: 'Face Camera',
+  slides: 'Slides',
+  charts: 'Charts / Data',
+};
+
+// ---------------------------------------------------------------------------
 // MediaTab
 // ---------------------------------------------------------------------------
 export function MediaTab() {
   const { state, dispatch } = useEditor();
-  const [modalSlot, setModalSlot] = useState<string | null>(null);
+  const [activeSlot, setActiveSlot] = useState<string | null>(null);
+
+  const contentType = state.edit?.contentType ?? '';
+  const slots = state.mediaSlots || {};
+
+  const getSlotLabel = (key: string) => SLOT_LABELS[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+
+  // Determine which slots to show based on content type
+  const visibleSlots = getSlotsForContentType(contentType);
 
   const handleSelect = (slot: string, url: string, assetType: 'image' | 'video') => {
-    if (slot === 'background') {
-      dispatch({ type: 'UPDATE_MEDIA_SLOTS', payload: { background: { url, assetType } } });
-    } else if (slot === 'hookVideo') {
-      dispatch({ type: 'UPDATE_MEDIA_SLOTS', payload: { hookVideo: { url, assetType } } });
-    } else if (slot === 'demoVideo') {
-      dispatch({ type: 'UPDATE_MEDIA_SLOTS', payload: { demoVideo: { url, assetType } } });
-    } else if (slot === 'slide') {
-      const existing = state.mediaSlots.slides || [];
-      dispatch({ type: 'UPDATE_MEDIA_SLOTS', payload: { slides: [...existing, { url, assetType }] } });
+    if (slot === 'slides') {
+      const current = slots.slides || [];
+      dispatch({
+        type: 'UPDATE_MEDIA_SLOTS',
+        payload: { slides: [...current, { url, assetType }] },
+      });
+    } else {
+      dispatch({
+        type: 'UPDATE_MEDIA_SLOTS',
+        payload: { [slot]: { url, assetType } },
+      });
     }
-    setModalSlot(null);
+    setActiveSlot(null);
   };
 
-  const clearSlot = (slot: keyof typeof state.mediaSlots) => {
-    dispatch({ type: 'UPDATE_MEDIA_SLOTS', payload: { [slot]: undefined } });
+  const handleRemove = (slot: string, index?: number) => {
+    if (slot === 'slides') {
+      const current = slots.slides || [];
+      const updated = current.filter((_, i) => i !== index);
+      dispatch({ type: 'UPDATE_MEDIA_SLOTS', payload: { slides: updated } });
+    } else {
+      dispatch({ type: 'UPDATE_MEDIA_SLOTS', payload: { [slot]: null } });
+    }
   };
-
-  const contentType = state.edit?.contentType || '';
 
   return (
-    <div className="space-y-5">
-      {/* Background video */}
-      <MediaSlotCard
-        label="Background video"
-        media={state.mediaSlots.background}
-        onSelect={() => setModalSlot('background')}
-        onClear={() => clearSlot('background')}
-      />
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        Select replacement media for each slot.
+      </p>
 
-      {/* Hook video (for video_hook content type) */}
-      {['video_hook', 'ugc', 'talking_head'].includes(contentType) && (
-        <MediaSlotCard
-          label="Hook video"
-          media={state.mediaSlots.hookVideo}
-          onSelect={() => setModalSlot('hookVideo')}
-          onClear={() => clearSlot('hookVideo')}
-        />
-      )}
+      {visibleSlots.map(slot => {
+        const slotKey = slot as keyof typeof slots;
+        const slotData = slot === 'slides' ? undefined : slots[slotKey] as { url: string; assetType?: string } | undefined;
+        const slides = slot === 'slides' ? slots.slides || [] : [];
 
-      {/* Demo video (for ugc content type) */}
-      {contentType === 'ugc' && (
-        <MediaSlotCard
-          label="Demo video"
-          media={state.mediaSlots.demoVideo}
-          onSelect={() => setModalSlot('demoVideo')}
-          onClear={() => clearSlot('demoVideo')}
-        />
-      )}
+        return (
+          <div key={slot}>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="text-xs font-medium text-foreground">{getSlotLabel(slot)}</label>
+              <button
+                type="button"
+                onClick={() => setActiveSlot(slot)}
+                className="text-[11px] font-medium text-primary transition-colors hover:text-primary/80"
+              >
+                Select
+              </button>
+            </div>
 
-      {/* Slides (for slideshow/carousel) */}
-      {['slideshow', 'carousel'].includes(contentType) && (
-        <div>
-          <label className="mb-2 block text-xs font-medium text-foreground">SLIDES</label>
-          <div className="space-y-2">
-            {(state.mediaSlots.slides || []).map((slide, idx) => (
-              <div key={idx} className="flex items-center gap-3 rounded-lg border border-border bg-background p-2">
-                <div className="relative size-12 shrink-0 overflow-hidden rounded-md bg-muted">
-                  <Image src={slide.url} alt={`Slide ${idx + 1}`} fill className="object-cover" sizes="48px" unoptimized />
-                </div>
-                <span className="flex-1 text-sm text-foreground">Slide {idx + 1}</span>
+            {/* Current media preview */}
+            {slot !== 'slides' && slotData && 'url' in slotData && slotData.url && (
+              <div className="group relative aspect-[9/16] overflow-hidden rounded-lg bg-muted">
+                {slotData.assetType === 'video' || /\.(mp4|mov|webm)$/i.test(slotData.url) ? (
+                  <video
+                    src={slotData.url}
+                    className="size-full object-cover"
+                    muted
+                    loop
+                    playsInline
+                  />
+                ) : (
+                  <Image
+                    src={slotData.url}
+                    alt={getSlotLabel(slot)}
+                    fill
+                    className="object-cover"
+                    sizes="160px"
+                    unoptimized
+                  />
+                )}
                 <button
-                  onClick={() => {
-                    const slides = [...(state.mediaSlots.slides || [])];
-                    slides.splice(idx, 1);
-                    dispatch({ type: 'UPDATE_MEDIA_SLOTS', payload: { slides } });
-                  }}
-                  className="text-muted-foreground transition-colors hover:text-destructive"
+                  type="button"
+                  onClick={() => handleRemove(slot)}
+                  className="absolute right-1.5 top-1.5 rounded-full bg-black/60 p-1 text-white/80 opacity-0 transition-opacity hover:bg-black/80 group-hover:opacity-100"
                 >
-                  <X className="size-4" />
+                  <X className="size-3" />
                 </button>
               </div>
-            ))}
-            <button
-              onClick={() => setModalSlot('slide')}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border py-3 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-            >
-              Add slide
-            </button>
-          </div>
-        </div>
-      )}
+            )}
 
-      {/* Modal */}
-      {modalSlot !== null && (
+            {/* Slides */}
+            {slot === 'slides' && (
+              <div className="space-y-2">
+                {slides.length === 0 && (
+                  <div className="flex items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/20 py-6">
+                    <p className="text-xs text-muted-foreground">No slides yet. Click Select to add.</p>
+                  </div>
+                )}
+                {slides.map((slide, i) => (
+                  <div key={i} className="group relative flex items-center gap-3 rounded-lg bg-muted/30 p-2">
+                    {slide.url && (
+                      <div className="relative size-14 shrink-0 overflow-hidden rounded-md bg-muted">
+                        {slide.assetType === 'video' || /\.(mp4|mov|webm)$/i.test(slide.url) ? (
+                          <video src={slide.url} className="size-full object-cover" muted loop playsInline />
+                        ) : (
+                          <Image src={slide.url} alt={`Slide ${i + 1}`} fill className="object-cover" sizes="56px" unoptimized />
+                        )}
+                      </div>
+                    )}
+                    <span className="flex-1 truncate text-xs text-muted-foreground">Slide {i + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemove(slot, i)}
+                      className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Select modal */}
+      {activeSlot && (
         <MediaSelectModal
-          slot={modalSlot as string}
+          slot={activeSlot}
           contentType={contentType}
           onSelect={handleSelect}
-          onClose={() => setModalSlot(null)}
+          onClose={() => setActiveSlot(null)}
         />
       )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// MediaSlotCard — reusable slot display
-// ---------------------------------------------------------------------------
-function MediaSlotCard({
-  label,
-  media,
-  onSelect,
-  onClear,
-}: {
-  label: string;
-  media?: { url: string; assetType?: string };
-  onSelect: () => void;
-  onClear: () => void;
-}) {
-  return (
-    <div>
-      <label className="mb-2 block text-xs font-medium text-foreground uppercase tracking-wide">{label}</label>
-      <div className="rounded-xl border border-border bg-background">
-        {media?.url ? (
-          <div className="relative overflow-hidden rounded-xl">
-            {media.assetType === 'video' || /\.(mp4|mov|webm)$/i.test(media.url) ? (
-              <video
-                src={media.url}
-                className="aspect-video w-full rounded-t-xl object-cover"
-                muted
-                preload="metadata"
-              />
-            ) : (
-              <div className="relative aspect-video w-full overflow-hidden rounded-t-xl bg-muted">
-                <Image src={media.url} alt={label} fill className="object-cover" sizes="350px" unoptimized />
-              </div>
-            )}
-            <div className="flex gap-2 border-t border-border p-2">
-              <button
-                onClick={onSelect}
-                className="flex-1 rounded-lg border border-border py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
-              >
-                Change
-              </button>
-              <button
-                onClick={onClear}
-                className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
-              >
-                <X className="size-3.5" />
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            onClick={onSelect}
-            className="flex w-full flex-col items-center justify-center gap-2 rounded-xl py-10 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/50"
-          >
-            <Film className="size-7 text-muted-foreground/40" strokeWidth={1.2} />
-            Select
-          </button>
-        )}
-      </div>
-    </div>
-  );
+// ── Slot visibility per content type ─────────────────────────────
+function getSlotsForContentType(ct: string): string[] {
+  const map: Record<string, string[]> = {
+    text_only: [],
+    single_image: ['background'],
+    slideshow: ['slides'],
+    reel: ['background', 'hookVideo'],
+    ugc: ['demoVideo'],
+    data_story: ['charts'],
+    wall_of_text: ['background'],
+    talking_head: ['background', 'faceVideo'],
+    green_screen: ['background', 'subjectVideo'],
+  };
+  return map[ct] || ['background'];
 }

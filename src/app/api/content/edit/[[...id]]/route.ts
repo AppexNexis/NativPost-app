@@ -11,12 +11,13 @@ export { get as GET, post as POST, patch as PATCH, del as DELETE };
 // ---------------------------------------------------------------------------
 // GET /api/content/edit/[id] or /api/content/edit
 // ---------------------------------------------------------------------------
-async function get(_: NextRequest, context: { params: Promise<{ id?: string }> }) {
+async function get(_: NextRequest, context: { params: Promise<{ id?: string | string[] }> }) {
   const { orgId } = await getAuthContext();
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const db = await getDb();
-  const { id } = await context.params;
+  const raw = await context.params;
+  const id = Array.isArray(raw.id) ? raw.id[0] : raw.id;
 
   // List all active edits for this org (no id provided)
   if (!id) {
@@ -98,11 +99,12 @@ async function post(req: NextRequest) {
 // ---------------------------------------------------------------------------
 // PATCH /api/content/edit/[id] — update an edit session
 // ---------------------------------------------------------------------------
-async function patch(req: NextRequest, context: { params: Promise<{ id?: string }> }) {
+async function patch(req: NextRequest, context: { params: Promise<{ id?: string | string[] }> }) {
   const { orgId } = await getAuthContext();
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { id } = await context.params;
+  const raw = await context.params;
+  const id = Array.isArray(raw.id) ? raw.id[0] : raw.id;
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
   const body = (await req.json()) as Record<string, unknown>;
@@ -146,11 +148,12 @@ async function patch(req: NextRequest, context: { params: Promise<{ id?: string 
 // ---------------------------------------------------------------------------
 // DELETE /api/content/edit/[id] — discard an edit session
 // ---------------------------------------------------------------------------
-async function del(_: NextRequest, context: { params: Promise<{ id?: string }> }) {
+async function del(_: NextRequest, context: { params: Promise<{ id?: string | string[] }> }) {
   const { orgId } = await getAuthContext();
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { id } = await context.params;
+  const raw = await context.params;
+  const id = Array.isArray(raw.id) ? raw.id[0] : raw.id;
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
   const db = await getDb();

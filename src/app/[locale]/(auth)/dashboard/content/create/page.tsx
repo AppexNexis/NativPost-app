@@ -7,16 +7,19 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Clapperboard,
   Copy,
   Image as ImageIcon,
   Layers,
   Link2,
+  Loader2,
   Megaphone,
   RefreshCw,
   Sparkles,
+  Type,
+  User,
   Video,
   Wand2,
-  // X,
 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -65,20 +68,31 @@ type GenerationProgress = {
 };
 
 // -----------------------------------------------------------
-// CONFIG
+// CONTENT TYPES
 // -----------------------------------------------------------
-const CONTENT_TYPES = [
-  { id: 'text_only', label: 'Text', description: 'Text-only post', icon: AlignLeft },
-  { id: 'single_image', label: 'Image', description: 'Single image with caption', icon: ImageIcon },
-  { id: 'carousel', label: 'Carousel', description: 'Multi-image carousel', icon: Layers },
-  { id: 'reel', label: 'Video', description: 'Reel, Short, or video', icon: Video },
-  { id: 'ugc_ad', label: 'UGC Ad', description: 'Hook, problem, solution, CTA', icon: Megaphone },
-  { id: 'data_story', label: 'Data Story', description: 'Animated stats & numbers', icon: BarChart2 },
+type ContentTypeDef = {
+  id: string;
+  label: string;
+  description: string;
+  icon: typeof AlignLeft;
+  platforms: string[];
+};
+
+const CONTENT_TYPES: ContentTypeDef[] = [
+  { id: 'text_only', label: 'Text', description: 'Text-only post', icon: AlignLeft, platforms: ['facebook', 'twitter', 'linkedin', 'whatsapp'] },
+  { id: 'single_image', label: 'Image', description: 'Single image with caption', icon: ImageIcon, platforms: ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'snapchat', 'whatsapp'] },
+  { id: 'slideshow', label: 'Slideshow', description: 'Multi-slide video montage', icon: Layers, platforms: ['instagram', 'tiktok', 'facebook', 'youtube', 'whatsapp'] },
+  { id: 'reel', label: 'Video', description: 'Reel, Short, or video post', icon: Video, platforms: ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube', 'snapchat', 'whatsapp'] },
+  { id: 'ugc', label: 'UGC', description: 'User-generated content style', icon: Megaphone, platforms: ['instagram', 'tiktok', 'whatsapp'] },
+  { id: 'data_story', label: 'Data Story', description: 'Animated stats & numbers', icon: BarChart2, platforms: ['linkedin', 'instagram', 'youtube', 'whatsapp'] },
+  { id: 'wall_of_text', label: 'Wall of Text', description: 'Full-screen text motion', icon: Type, platforms: ['instagram', 'tiktok', 'facebook', 'whatsapp'] },
+  { id: 'talking_head', label: 'Talking Head', description: 'Speaker with text overlay', icon: User, platforms: ['instagram', 'tiktok', 'youtube', 'facebook', 'whatsapp'] },
+  { id: 'green_screen', label: 'Green Screen', description: 'Subject with keyed background', icon: Clapperboard, platforms: ['instagram', 'tiktok', 'youtube', 'whatsapp'] },
 ];
 
 const CONTENT_MODES = [
   { id: 'normal', label: 'Normal', description: 'Balanced, on-brand tone' },
-  { id: 'concise', label: 'Concise', description: 'Stripped to the essentials' },
+  { id: 'concise', label: 'Concise', description: 'Stripped to essentials' },
   { id: 'controversial', label: 'Controversial', description: 'Takes a position, sparks debate' },
 ];
 
@@ -102,14 +116,15 @@ const PROGRESS_MESSAGES = [
   { at: 95, message: 'Almost there...' },
 ];
 
-const TEMPLATE_TYPE_MAP: Record<string, string> = {
-  slideshow: 'reel',
-  wall_of_text: 'text_only',
-  talking_head: 'ugc_ad',
-  green_screen_meme: 'single_image',
+// Remix template type → UI content type (no more old-type mapping)
+const REMIX_TYPE_MAP: Record<string, string> = {
+  slideshow: 'slideshow',
+  wall_of_text: 'wall_of_text',
+  talking_head: 'talking_head',
+  green_screen_meme: 'green_screen',
   video_hook_demo: 'reel',
-  carousel: 'carousel',
-  ugc: 'ugc_ad',
+  carousel: 'slideshow',
+  ugc: 'ugc',
   custom: 'reel',
 };
 
@@ -132,13 +147,8 @@ function getProgressMessage(percent: number): string {
   return msg;
 }
 
-function platformFromTemplateSource(sourcePlatform: string): string {
-  switch (sourcePlatform) {
-    case 'tiktok': return 'tiktok';
-    case 'instagram': return 'instagram';
-    case 'youtube': return 'youtube';
-    default: return 'instagram';
-  }
+function getTypeDef(id: string): ContentTypeDef | undefined {
+  return CONTENT_TYPES.find(t => t.id === id);
 }
 
 // -----------------------------------------------------------
@@ -149,13 +159,14 @@ export default function ContentCreatePage() {
   const searchParams = useSearchParams();
   const scheduledDate = searchParams.get('scheduledDate') || '';
   const templateId = searchParams.get('templateId') || '';
+  const editId = searchParams.get('edit') || '';
   const isRemix = !!templateId;
 
   const prefillTopic = searchParams.get('topic') || '';
   const prefillContentType = searchParams.get('contentType') || '';
   const fromMonthlyPlan = !!(prefillTopic && prefillContentType);
 
-  const [step, setStep] = useState<'type' | 'configure' | 'edit' | 'review'>(
+  const [step, setStep] = useState<'type' | 'configure' | 'review'>(
     fromMonthlyPlan || isRemix ? 'configure' : 'type',
   );
   const [remixEdits] = useState<RemixEdits | null>(null);
@@ -178,7 +189,6 @@ export default function ContentCreatePage() {
 
   // Template state
   const [template, setTemplate] = useState<ContentTemplate | null>(null);
-  const [_isLoadingTemplate, setIsLoadingTemplate] = useState(false);
   const [remixLoading, setRemixLoading] = useState(false);
 
   const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -202,9 +212,8 @@ export default function ContentCreatePage() {
 
   // Load template if templateId is present
   useEffect(() => {
-    if (!templateId) return;
+    if (!templateId || editId) return;
     async function loadTemplate() {
-      setIsLoadingTemplate(true);
       try {
         const res = await fetch(`/api/templates/${templateId}`);
         if (res.ok) {
@@ -212,37 +221,35 @@ export default function ContentCreatePage() {
           const t = data.item as ContentTemplate;
           setTemplate(t);
 
-          // Pre-fill form
+          // Derive topic from structure
           const structure = t.structure || {};
           const derivedTopic = [structure.hook?.text, structure.body?.text, structure.cta?.text]
             .filter(Boolean)
             .join(' — ') || t.sourceCreator || '';
           setTopic(derivedTopic);
 
-          const mappedType = TEMPLATE_TYPE_MAP[t.contentType] || 'reel';
+          // Map template content type to UI content type
+          const mappedType = REMIX_TYPE_MAP[t.contentType] || 'reel';
           setContentType(mappedType);
 
-          const defaultPlatform = platformFromTemplateSource(t.sourcePlatform);
+          // Default platform from source
+          const defaultPlatform = t.sourcePlatform === 'tiktok' ? 'tiktok' : 'instagram';
           setSelectedPlatforms([defaultPlatform]);
 
-          // Pre-fill enrichment from template structure
+          // Pre-fill enrichment
           if (structure.cta?.text) {
             setEnrichment(prev => ({ ...prev, cta_label: structure.cta!.text }));
           }
           if (t.sourceUrl) {
             setEnrichment(prev => ({ ...prev, reference_links: [t.sourceUrl] }));
           }
-        } else {
-          console.error('Failed to load template');
         }
       } catch (err) {
         console.error('Failed to load template:', err);
-      } finally {
-        setIsLoadingTemplate(false);
       }
     }
     loadTemplate();
-  }, [templateId]);
+  }, [templateId, editId]);
 
   // Cleanup
   useEffect(() => {
@@ -301,52 +308,68 @@ export default function ContentCreatePage() {
   };
 
   // -----------------------------------------------------------
-  // Generate
+  // Create edit session
+  // -----------------------------------------------------------
+  const createEditSession = async (payload: Record<string, unknown>) => {
+    const res = await fetch('/api/content/edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Failed to create edit session');
+    const data = await res.json();
+    return data.edit.id as string;
+  };
+
+  // -----------------------------------------------------------
+  // Continue to Editor (remix flow)
   // -----------------------------------------------------------
   const handleContinueToEditor = async () => {
     if (selectedPlatforms.length === 0) {
       setError('Select at least one platform.');
       return;
     }
-    if (isRemix && templateId) {
-      setIsApproving(true);
-      try {
-        const editId = await createEditSession({
-          source: 'remix',
-          templateId,
-          contentType: template?.contentType || 'text',
-          contentMode,
-          targetPlatforms: selectedPlatforms,
-          aspectRatio: '9:16',
-          script: {
-            hookText: template?.structure?.hook?.text || '',
-            bodyText: template?.structure?.body?.text || '',
-            ctaText: template?.structure?.cta?.text || '',
-          },
-          style: {
-            fontFamily: 'Inter',
-            fontSize: 48,
-            color: '#ffffff',
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            align: 'center',
-          },
-          layout: 'centered',
-          mediaSlots: {
-            background: template?.mediaUrl
-              ? { url: template.mediaUrl, assetType: 'video' }
-              : undefined,
-          },
-          audioTrack: null,
-        });
-        router.push(`/dashboard/editor?edit=${editId}`);
-      } catch {
-        setError('Failed to create editor session.');
-        setIsApproving(false);
-      }
-      return;
+    if (!templateId || !template) return;
+
+    setIsApproving(true);
+    try {
+      const editId = await createEditSession({
+        source: 'remix',
+        templateId,
+        contentType: contentType,
+        contentMode,
+        targetPlatforms: selectedPlatforms,
+        aspectRatio: '9:16',
+        script: {
+          hookText: template.structure?.hook?.text || '',
+          bodyText: template.structure?.body?.text || '',
+          ctaText: template.structure?.cta?.text || '',
+        },
+        style: {
+          fontFamily: 'Inter',
+          fontSize: 48,
+          color: '#ffffff',
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          align: 'center',
+        },
+        layout: 'centered',
+        mediaSlots: {
+          background: template.mediaUrl
+            ? { url: template.mediaUrl, assetType: 'video' }
+            : undefined,
+        },
+        audioTrack: null,
+      });
+      router.push(`/dashboard/editor?edit=${editId}`);
+    } catch {
+      setError('Failed to create editor session.');
+      setIsApproving(false);
     }
   };
 
+  // -----------------------------------------------------------
+  // Generate (both remix generate + standard AI generate)
+  // -----------------------------------------------------------
   const handleGenerate = async () => {
     if (selectedPlatforms.length === 0) {
       setError('Select at least one platform.');
@@ -354,7 +377,7 @@ export default function ContentCreatePage() {
     }
 
     if (isRemix && templateId) {
-      // Use the remix endpoint
+      // Remix generate flow — calls remix API
       setRemixLoading(true);
       setError(null);
       setVariants([]);
@@ -502,22 +525,14 @@ export default function ContentCreatePage() {
     }
   };
 
-  const createEditSession = async (payload: Record<string, unknown>) => {
-    const res = await fetch('/api/content/edit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error('Failed to create edit session');
-    const data = await res.json();
-    return data.edit.id as string;
-  };
-
+  // -----------------------------------------------------------
+  // Approve variant → continue to editor
+  // -----------------------------------------------------------
   const handleApprove = async () => {
     if (!selectedVariant) return;
 
-    // Plain text content can be approved directly without entering the editor.
-    if (contentType === 'text') {
+    // Text-only posts can be approved directly
+    if (contentType === 'text_only') {
       setIsApproving(true);
       try {
         await fetch(`/api/content/${selectedVariant}`, {
@@ -537,7 +552,7 @@ export default function ContentCreatePage() {
       return;
     }
 
-    // All other content types go through the editor before publishing.
+    // All other content types go through the editor
     setIsApproving(true);
     try {
       const editId = await createEditSession({
@@ -556,549 +571,699 @@ export default function ContentCreatePage() {
   };
 
   // -----------------------------------------------------------
+  // DERIVED
+  // -----------------------------------------------------------
+  const typeDef = getTypeDef(contentType);
+  const connectedAndActive = connectedAccounts.filter(a => a.isActive);
+
+  // -----------------------------------------------------------
   // RENDER
   // -----------------------------------------------------------
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
-      {/* Header */}
+      {/* ── Header ─────────────────────────────────────────── */}
       <div className="mb-6 flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            {isRemix ? 'Remix template' : 'Create a new post'}
-          </h1>
+        <div className="flex items-center gap-4">
           {step !== 'type' && (
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {step === 'configure'
-              ? 'Configure your post details'
-              : step === 'edit'
-              ? 'Customize the template before generating'
-              : 'Review generated variants'}
-            </p>
+            <button
+              type="button"
+              onClick={() => {
+                if (step === 'review') setStep('configure');
+                else if (isRemix) router.push('/dashboard/content-library');
+                else setStep('type');
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <ArrowLeft className="size-4" />
+            </button>
           )}
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight">
+              {isRemix ? 'Remix Template' : 'Create Post'}
+            </h1>
+            {step === 'configure' && (
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {isRemix
+                  ? 'Customize before opening the editor'
+                  : 'Configure your post and generate variants'}
+              </p>
+            )}
+            {step === 'review' && (
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Select the best variant
+              </p>
+            )}
+          </div>
         </div>
-        {step !== 'type' && !isGenerating && !remixLoading && (
-          <button
-            type="button"
-            onClick={() => setStep(step === 'review' ? 'configure' : step === 'edit' ? 'configure' : 'type')}
-            className="inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-muted"
+
+        {step !== 'type' && connectedAndActive.length === 0 && (
+          <Link
+            href="/dashboard/connections"
+            className="hidden shrink-0 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 sm:inline-flex"
           >
-            <ArrowLeft className="size-4" />
-            <span className="hidden sm:inline">Back</span>
-          </button>
+            Connect accounts
+          </Link>
         )}
       </div>
 
-      {/* Template badge */}
-      {isRemix && template && (
-        <div className="mb-4 flex items-center gap-3 rounded-lg border border-purple-200 bg-purple-50 px-4 py-3">
-          <Wand2 className="size-4 shrink-0 text-purple-600" />
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-purple-700">Template:</span>
-            <span className="text-sm text-purple-800">{template.sourceCreator || 'Trending content'}</span>
-            <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700 capitalize">
-              {template.contentType.replace(/_/g, ' ')}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Monthly Plan context banner */}
-      {fromMonthlyPlan && step !== 'review' && (
-        <div className="mb-4 flex items-center gap-3 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3">
-          <Sparkles className="size-3.5 shrink-0 text-violet-600" />
-          <p className="text-sm text-muted-foreground">
-            From your{' '}
-            <span className="font-medium text-violet-700">Monthly Plan</span>
-            {' — '}topic pre-filled. Edit it freely before generating.
-          </p>
-        </div>
-      )}
-
-      {/* Calendar context banner */}
+      {/* ── Scheduled date banner ─────────────────────────── */}
       {scheduledDate && (
         <div className="mb-5 flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
           <div className="size-1.5 shrink-0 rounded-full bg-violet-500" />
           <p className="text-sm text-muted-foreground">
-            This post will be scheduled for{' '}
+            Will be scheduled for{' '}
             <span className="font-medium text-foreground">
               {new Date(`${scheduledDate}T12:00:00`).toLocaleDateString('en-US', {
                 weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
               })}
-            </span>.
+            </span>
           </p>
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Main content */}
-        <div className="lg:col-span-2">
-          {/* ── STEP 1: Choose content type ────────────────────── */}
-          {step === 'type' && (
-            <>
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
-                {CONTENT_TYPES.map((type) => {
-                  const Icon = type.icon;
-                  const supported = type.id === 'text_only'
-                    ? ['facebook', 'twitter', 'linkedin', 'whatsapp']
-                    : type.id === 'reel'
-                      ? ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube', 'snapchat', 'whatsapp']
-                      : type.id === 'ugc_ad'
-                        ? ['instagram', 'tiktok', 'whatsapp']
-                        : type.id === 'data_story'
-                          ? ['linkedin', 'instagram', 'youtube', 'whatsapp']
-                          : ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'snapchat', 'whatsapp'];
-
-                  return (
-                    <button
-                      key={type.id}
-                      type="button"
-                      onClick={() => { setContentType(type.id); setStep('configure'); }}
-                      className="group flex flex-col items-center rounded-xl border-2 border-dashed border-border/60 bg-card p-5 text-center transition-all hover:border-primary/40 hover:bg-primary/5 sm:p-8"
-                    >
-                      <Icon className="mb-3 size-8 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground sm:mb-4 sm:size-10" strokeWidth={1.2} />
-                      <h3 className="text-sm font-semibold">{type.label}</h3>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{type.description}</p>
-                      <div className="mt-3 flex items-center gap-1 sm:mt-4 sm:gap-1.5">
-                        {supported.map((p) => {
-                          const platform = PLATFORMS.find(pl => pl.id === p);
-                          if (!platform) return null;
-                          const PIcon = platform.icon;
-                          return <PIcon key={p} className="size-3.5 text-muted-foreground/40 sm:size-4" />;
-                        })}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {connectedAccounts.length === 0 && (
-                <div className="mt-6 flex flex-col gap-3 rounded-xl bg-muted/50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-sm text-muted-foreground">Connect your social media accounts to publish content.</p>
-                  <Link href="/dashboard/connections" className="self-start rounded-lg bg-primary px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-primary/90 sm:self-auto">
-                    Connect accounts
-                  </Link>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* ── STEP 2: Configure ──────────────────────────────── */}
-          {step === 'configure' && (
-            <div className="mx-auto max-w-2xl space-y-6">
-              {/* Current type indicator */}
-              <div className="flex items-center gap-2">
-                <span className="rounded-lg bg-muted px-3 py-1.5 text-xs font-medium">
-                  {CONTENT_TYPES.find(t => t.id === contentType)?.label}
-                </span>
-                {!fromMonthlyPlan && !isRemix && (
-                  <button type="button" onClick={() => setStep('type')} className="text-xs text-muted-foreground underline hover:text-foreground">
-                    Change
-                  </button>
-                )}
-                {isRemix && (
-                  <span className="text-xs text-muted-foreground">Locked to template type</span>
-                )}
-              </div>
-
-              {/* Content mode */}
+      {/* ── TWO-PANEL LAYOUT (configure step + remix) ─────── */}
+      {(step === 'configure' || (step === 'type' && isRemix)) && (
+        <div className="grid gap-6 lg:grid-cols-5">
+          {/* ── LEFT: Configuration ─────────────────────────── */}
+          <div className="space-y-6 lg:col-span-3">
+            {/* Content type selector (step 1) or badge (step 2) */}
+            {step === 'type' && !isRemix && (
               <div>
-                <label className="mb-2 block text-sm font-medium">Content mode</label>
-                <div className="flex rounded-lg border p-1">
-                  {CONTENT_MODES.map(mode => (
-                    <button
-                      key={mode.id}
-                      type="button"
-                      onClick={() => setContentMode(mode.id)}
-                      className={`flex-1 rounded-md px-3 py-2 text-left transition-colors ${contentMode === mode.id ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'}`}
-                    >
-                      <span className="block text-xs font-semibold">{mode.label}</span>
-                      <span className={`mt-0.5 block text-[10px] leading-tight ${contentMode === mode.id ? 'opacity-70' : 'opacity-60'}`}>
-                        {mode.description}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Topic */}
-              <div>
-                <label className="mb-1.5 block text-sm font-medium">
-                  Topic
-                  <span className="ml-1 font-normal text-muted-foreground">(optional)</span>
+                <label className="mb-3 block text-sm font-medium text-foreground">
+                  What kind of content are you creating?
                 </label>
-                <textarea
-                  value={topic}
-                  onChange={e => setTopic(e.target.value)}
-                  placeholder="e.g. New product launch, Behind the scenes, Industry tip, Customer spotlight..."
-                  rows={3}
-                  className="w-full resize-none rounded-lg border bg-background px-3.5 py-2.5 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Leave blank and NativPost will choose a topic based on your Brand Profile.
-                </p>
-              </div>
-
-              {/* Platform selection */}
-              <div>
-                <label className="mb-2 block text-sm font-medium">Target platforms</label>
-                <div className="space-y-1.5">
-                  {PLATFORMS.map((platform) => {
-                    const PIcon = platform.icon;
-                    const isConnected = connectedPlatformIds.includes(platform.id);
-                    const isSelected = selectedPlatforms.includes(platform.id);
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {CONTENT_TYPES.map((type) => {
+                    const Icon = type.icon;
                     return (
                       <button
-                        key={platform.id}
+                        key={type.id}
                         type="button"
-                        onClick={() => togglePlatform(platform.id)}
-                        disabled={!isConnected}
-                        className={`flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left text-sm transition-all disabled:cursor-not-allowed disabled:opacity-40 ${isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}
+                        onClick={() => { setContentType(type.id); setStep('configure'); }}
+                        className="group flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-border/50 bg-card p-4 text-center transition-all hover:border-primary/40 hover:bg-primary/5"
                       >
-                        <PIcon className={`size-4 shrink-0 sm:size-5 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
-                        <span className={`flex-1 ${isSelected ? 'font-medium' : ''}`}>{platform.name}</span>
-                        {!isConnected && <span className="text-xs text-muted-foreground">Not connected</span>}
-                        {isConnected && isSelected && <Check className="size-4 shrink-0 text-primary" />}
+                        <Icon className="size-7 text-muted-foreground/30 transition-colors group-hover:text-muted-foreground" strokeWidth={1.2} />
+                        <div>
+                          <p className="text-sm font-semibold">{type.label}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{type.description}</p>
+                        </div>
                       </button>
                     );
                   })}
                 </div>
-                {connectedPlatformIds.length === 0 && (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    No accounts connected.{' '}
-                    <Link href="/dashboard/connections" className="text-primary underline">Connect platforms</Link>{' '}to select them here.
-                  </p>
+
+                {connectedAndActive.length === 0 && (
+                  <div className="mt-6 flex flex-col gap-3 rounded-xl bg-muted/50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-muted-foreground">Connect your social accounts to publish content.</p>
+                    <Link href="/dashboard/connections" className="self-start rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 sm:self-auto">
+                      Connect accounts
+                    </Link>
+                  </div>
                 )}
               </div>
+            )}
 
-              {/* Post enrichment */}
-              <div className="overflow-hidden rounded-xl border bg-card">
-                <button
-                  type="button"
-                  onClick={() => setShowEnrichment(p => !p)}
-                  className="flex w-full items-center justify-between px-4 py-3.5 text-left"
-                >
+            {step === 'configure' && (
+              <>
+                {/* Content type badge */}
+                {typeDef && (
                   <div className="flex items-center gap-2">
-                    <Link2 className="size-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Post enrichment</span>
-                    {hasEnrichment() && (
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Active</span>
-                    )}
-                  </div>
-                  {showEnrichment ? <ChevronUp className="size-4 text-muted-foreground" /> : <ChevronDown className="size-4 text-muted-foreground" />}
-                </button>
-
-                {showEnrichment && (
-                  <div className="space-y-4 border-t p-4">
-                    <p className="text-xs text-muted-foreground">Add links, promo codes, contact info, and other elements to weave into your post.</p>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-muted-foreground">CTA URL</label>
-                        <input type="url" value={enrichment.cta_url} onChange={e => setEnrichment(prev => ({ ...prev, cta_url: e.target.value }))} placeholder="https://example.com/sale" className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-muted-foreground">CTA label</label>
-                        <input type="text" value={enrichment.cta_label} onChange={e => setEnrichment(prev => ({ ...prev, cta_label: e.target.value }))} placeholder="Shop the collection" className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-muted-foreground">Promo code</label>
-                      <input type="text" value={enrichment.promo_code} onChange={e => setEnrichment(prev => ({ ...prev, promo_code: e.target.value }))} placeholder="SAVE20" className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-muted-foreground">Contact info</label>
-                      <input type="text" value={enrichment.contact_info} onChange={e => setEnrichment(prev => ({ ...prev, contact_info: e.target.value }))} placeholder="email@company.com or booking link" className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-muted-foreground">Event details</label>
-                      <input type="text" value={enrichment.event_details} onChange={e => setEnrichment(prev => ({ ...prev, event_details: e.target.value }))} placeholder="March 15, 2026 at 7pm — Eko Hotel, Lagos" className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-muted-foreground">Reference links</label>
-                      <div className="flex gap-2">
-                        <input type="url" value={refLinkInput} onChange={e => setRefLinkInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addRefLink())} placeholder="https://..." className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                        <button type="button" onClick={addRefLink} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">Add</button>
-                      </div>
-                      {enrichment.reference_links.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {enrichment.reference_links.map(link => (
-                            <span key={link} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-[11px]">
-                              {link.length > 35 ? `${link.slice(0, 35)}...` : link}
-                              <button type="button" onClick={() => removeRefLink(link)} className="ml-0.5 opacity-50 hover:opacity-100">×</button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-muted-foreground">Mentions</label>
-                      <div className="flex gap-2">
-                        <input type="text" value={mentionInput} onChange={e => setMentionInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addMention())} placeholder="@handle" className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                        <button type="button" onClick={addMention} className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted">Add</button>
-                      </div>
-                      {enrichment.custom_mentions.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {enrichment.custom_mentions.map(handle => (
-                            <span key={handle} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-[11px]">
-                              {handle}
-                              <button type="button" onClick={() => removeMention(handle)} className="ml-0.5 opacity-50 hover:opacity-100">×</button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {error && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-              )}
-
-              <button
-                type="button"
-                onClick={isRemix ? handleContinueToEditor : handleGenerate}
-                disabled={isGenerating || remixLoading || isApproving || selectedPlatforms.length === 0}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-              >
-                {isRemix
-                  ? isApproving
-                    ? <div className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                    : <Wand2 className="size-4" />
-                  : <Sparkles className="size-4" />
-                }
-                {isRemix
-                  ? isApproving
-                    ? 'Opening editor...'
-                    : 'Continue to editor'
-                  : 'Generate content'
-                }
-              </button>
-            </div>
-          )}
-
-          {/* ── REMIX EDITOR STEP (redirects to new editor) ─────────────────────────── */}
-          {step === 'edit' && isRemix && (
-            <div className="mx-auto max-w-5xl text-center py-20">
-              <div className="mb-4 h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto" />
-              <p className="text-gray-500">Redirecting to editor...</p>
-            </div>
-          )}
-
-          {/* ── GENERATING STATE ─────────────────────────── */}
-          {(isGenerating || remixLoading) && (
-            <div className="mx-auto mt-4 max-w-2xl">
-              <div className="rounded-xl border bg-card p-6">
-                <div className="mb-4 flex items-end justify-between">
-                  <p className="text-sm font-medium text-foreground">{getProgressMessage(displayPercent)}</p>
-                  <span className="text-2xl font-bold tabular-nums text-primary">
-                    {displayPercent}<span className="text-base font-medium">%</span>
-                  </span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-primary transition-all duration-300 ease-out" style={{ width: `${displayPercent}%` }} />
-                </div>
-                <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{progress.completed > 0 ? `${progress.completed} of ${progress.total} variants ready` : 'Generating variants...'}</span>
-                  {variants.length > 0 && (
-                    <span className="text-primary">{variants.length > 1 ? `${variants.length} variants below` : '1 variant below — more coming'}</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── STEP 3: Review variants ─────────────────────────── */}
-          {step === 'review' && (
-            <div className="mx-auto max-w-3xl space-y-4">
-              {!isGenerating && !remixLoading && (
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-sm font-semibold">
-                      {variants.length} variant{variants.length !== 1 ? 's' : ''} generated
-                      {contentMode !== 'normal' && (
-                        <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{contentMode} mode</span>
-                      )}
-                    </h2>
-                    <p className="text-xs text-muted-foreground">Select the best one, then approve.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => { setStep('configure'); setVariants([]); }}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
-                  >
-                    <RefreshCw className="size-3" />
-                    Regenerate
-                  </button>
-                </div>
-              )}
-
-              {variants.map(variant => (
-                <button
-                  key={variant.id}
-                  type="button"
-                  onClick={() => setSelectedVariant(variant.id)}
-                  className={`w-full rounded-xl border bg-card p-5 text-left transition-all ${selectedVariant === variant.id ? 'border-primary ring-2 ring-primary/15' : 'hover:border-muted-foreground/20'}`}
-                >
-                  <div className="mb-3 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-semibold">{variant.variantNumber}</span>
-                      <span className="text-xs text-muted-foreground">Variant {variant.variantNumber}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {variant.antiSlopScore !== null && (() => {
-                        const sl = scoreLabel(variant.antiSlopScore!);
-                        return (
-                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${sl.color}`}>
-                            {Math.round(variant.antiSlopScore! * 100)}% {sl.text}
-                          </span>
-                        );
-                      })()}
+                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 text-sm font-medium">
+                      <typeDef.icon className="size-4" strokeWidth={1.5} />
+                      {typeDef.label}
+                    </span>
+                    {!fromMonthlyPlan && !isRemix && (
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(variant.caption); }}
-                        className="rounded p-1.5 hover:bg-muted"
-                        title="Copy"
+                        onClick={() => setStep('type')}
+                        className="text-xs text-muted-foreground underline hover:text-foreground"
                       >
-                        <Copy className="size-3.5 text-muted-foreground" />
+                        Change
                       </button>
-                    </div>
+                    )}
+                    {isRemix && template && (
+                      <span className="inline-flex items-center gap-1.5 rounded-lg bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700">
+                        <Wand2 className="size-3.5" />
+                        {template.sourceCreator || 'Trending'}
+                      </span>
+                    )}
                   </div>
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed">{variant.caption}</p>
-                  {variant.hashtags.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {variant.hashtags.map(tag => (
-                        <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{tag}</span>
-                      ))}
-                    </div>
-                  )}
-                  {variant.enrichmentApplied && variant.enrichmentApplied.length > 0 && (
-                    <div className="mt-3 flex items-center gap-1.5 border-t pt-3">
-                      <Link2 className="size-3 text-muted-foreground" />
-                      <span className="text-[11px] text-muted-foreground">Enrichment applied: {variant.enrichmentApplied.map(e => e.replace(/_/g, ' ')).join(', ')}</span>
-                    </div>
-                  )}
-                  {variant.qualityFlags && variant.qualityFlags.length > 0 && (
-                    <div className="mt-2 space-y-1 border-t pt-3">
-                      <span className="text-[10px] font-medium uppercase tracking-wider text-orange-500/70">Quality notes</span>
-                      {variant.qualityFlags.slice(0, 3).map((flag, i) => (
-                        <p key={i} className="text-[11px] text-muted-foreground">{flag}</p>
-                      ))}
-                    </div>
-                  )}
-                </button>
-              ))}
+                )}
 
-              {(isGenerating || remixLoading) && variants.length < 3 && (
-                Array.from({ length: 3 - variants.length }).map((_, i) => (
-                  <div key={`skeleton-${i}`} className="w-full animate-pulse rounded-xl border bg-card p-5">
-                    <div className="mb-3 flex items-center gap-2">
-                      <div className="size-6 rounded-full bg-muted" />
-                      <div className="h-3 w-16 rounded bg-muted" />
-                    </div>
-                    <div className="space-y-2">
-                      <div className="h-3 w-full rounded bg-muted" />
-                      <div className="h-3 w-5/6 rounded bg-muted" />
-                      <div className="h-3 w-4/6 rounded bg-muted" />
-                    </div>
+                {/* Content mode */}
+                <div>
+                  <label className="mb-2 block text-sm font-medium">Content mode</label>
+                  <div className="flex rounded-lg border p-1">
+                    {CONTENT_MODES.map(mode => (
+                      <button
+                        key={mode.id}
+                        type="button"
+                        onClick={() => setContentMode(mode.id)}
+                        className={`flex-1 rounded-md px-3 py-2 text-left transition-colors ${
+                          contentMode === mode.id
+                            ? 'bg-foreground text-background'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        <span className="block text-xs font-semibold">{mode.label}</span>
+                        <span className={`mt-0.5 block text-[10px] leading-tight ${
+                          contentMode === mode.id ? 'opacity-70' : 'opacity-50'
+                        }`}>
+                          {mode.description}
+                        </span>
+                      </button>
+                    ))}
                   </div>
-                ))
-              )}
+                </div>
 
-              {!isGenerating && !remixLoading && selectedVariant && (
+                {/* Topic */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">
+                    Topic
+                    <span className="ml-1 font-normal text-muted-foreground">(optional)</span>
+                  </label>
+                  <textarea
+                    value={topic}
+                    onChange={e => setTopic(e.target.value)}
+                    placeholder="e.g. New product launch, Behind the scenes, Industry tip..."
+                    rows={3}
+                    className="w-full resize-none rounded-lg border bg-background px-3.5 py-2.5 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Leave blank to auto-select from your Brand Profile.
+                  </p>
+                </div>
+
+                {/* Platforms */}
+                <div>
+                  <label className="mb-2 block text-sm font-medium">Target platforms</label>
+                  <div className="space-y-1.5">
+                    {PLATFORMS.map((platform) => {
+                      const PIcon = platform.icon;
+                      const isConnected = connectedPlatformIds.includes(platform.id);
+                      const isSelected = selectedPlatforms.includes(platform.id);
+                      return (
+                        <button
+                          key={platform.id}
+                          type="button"
+                          onClick={() => togglePlatform(platform.id)}
+                          disabled={!isConnected}
+                          className={`flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left text-sm transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
+                            isSelected
+                              ? 'border-primary bg-primary/5'
+                              : 'hover:bg-muted'
+                          }`}
+                        >
+                          <PIcon className={`size-4 shrink-0 sm:size-5 ${
+                            isSelected ? 'text-primary' : 'text-muted-foreground'
+                          }`} />
+                          <span className={`flex-1 ${isSelected ? 'font-medium' : ''}`}>{platform.name}</span>
+                          {!isConnected && <span className="text-xs text-muted-foreground">Not connected</span>}
+                          {isConnected && isSelected && <Check className="size-4 shrink-0 text-primary" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {connectedPlatformIds.length === 0 && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      No accounts connected.{' '}
+                      <Link href="/dashboard/connections" className="text-primary underline">
+                        Connect platforms
+                      </Link>{' '}
+                      to select them here.
+                    </p>
+                  )}
+                </div>
+
+                {/* Enrichment (collapsible) */}
+                <div className="overflow-hidden rounded-xl border bg-card">
+                  <button
+                    type="button"
+                    onClick={() => setShowEnrichment(p => !p)}
+                    className="flex w-full items-center justify-between px-4 py-3.5 text-left"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Link2 className="size-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">Post enrichment</span>
+                      {hasEnrichment() && (
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    {showEnrichment ? (
+                      <ChevronUp className="size-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="size-4 text-muted-foreground" />
+                    )}
+                  </button>
+
+                  {showEnrichment && (
+                    <div className="space-y-4 border-t p-4">
+                      <p className="text-xs text-muted-foreground">
+                        Add links, promo codes, contact info, and other elements to weave into your post.
+                      </p>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-muted-foreground">CTA URL</label>
+                          <input
+                            type="url"
+                            value={enrichment.cta_url}
+                            onChange={e => setEnrichment(prev => ({ ...prev, cta_url: e.target.value }))}
+                            placeholder="https://example.com/sale"
+                            className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-muted-foreground">CTA label</label>
+                          <input
+                            type="text"
+                            value={enrichment.cta_label}
+                            onChange={e => setEnrichment(prev => ({ ...prev, cta_label: e.target.value }))}
+                            placeholder="Shop the collection"
+                            className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Promo code</label>
+                        <input
+                          type="text"
+                          value={enrichment.promo_code}
+                          onChange={e => setEnrichment(prev => ({ ...prev, promo_code: e.target.value }))}
+                          placeholder="SAVE20"
+                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Contact info</label>
+                        <input
+                          type="text"
+                          value={enrichment.contact_info}
+                          onChange={e => setEnrichment(prev => ({ ...prev, contact_info: e.target.value }))}
+                          placeholder="email@company.com or booking link"
+                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Event details</label>
+                        <input
+                          type="text"
+                          value={enrichment.event_details}
+                          onChange={e => setEnrichment(prev => ({ ...prev, event_details: e.target.value }))}
+                          placeholder="March 15, 2026 at 7pm — Eko Hotel, Lagos"
+                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Reference links</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="url"
+                            value={refLinkInput}
+                            onChange={e => setRefLinkInput(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addRefLink())}
+                            placeholder="https://..."
+                            className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          />
+                          <button
+                            type="button"
+                            onClick={addRefLink}
+                            className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
+                          >
+                            Add
+                          </button>
+                        </div>
+                        {enrichment.reference_links.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {enrichment.reference_links.map(link => (
+                              <span key={link} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-[11px]">
+                                {link.length > 35 ? `${link.slice(0, 35)}...` : link}
+                                <button type="button" onClick={() => removeRefLink(link)} className="ml-0.5 opacity-50 hover:opacity-100">
+                                  &times;
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Mentions</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={mentionInput}
+                            onChange={e => setMentionInput(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addMention())}
+                            placeholder="@handle"
+                            className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          />
+                          <button
+                            type="button"
+                            onClick={addMention}
+                            className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
+                          >
+                            Add
+                          </button>
+                        </div>
+                        {enrichment.custom_mentions.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {enrichment.custom_mentions.map(handle => (
+                              <span key={handle} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-[11px]">
+                                {handle}
+                                <button type="button" onClick={() => removeMention(handle)} className="ml-0.5 opacity-50 hover:opacity-100">
+                                  &times;
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Error */}
+                {error && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {error}
+                  </div>
+                )}
+
+                {/* Primary action */}
                 <button
                   type="button"
-                  onClick={handleApprove}
-                  disabled={isApproving}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                  onClick={isRemix ? handleContinueToEditor : handleGenerate}
+                  disabled={isGenerating || remixLoading || isApproving || selectedPlatforms.length === 0}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                 >
-                  {isApproving ? <div className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <Check className="size-4" />}
-                  {isApproving
-                    ? 'Opening editor...'
-                    : contentType === 'text'
-                      ? (scheduledDate ? 'Approve and set schedule' : 'Approve selected variant')
-                      : 'Continue to editor'
-                  }
+                  {isGenerating || remixLoading ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : isRemix ? (
+                    <Wand2 className="size-4" />
+                  ) : (
+                    <Sparkles className="size-4" />
+                  )}
+                  {isGenerating
+                    ? 'Generating...'
+                    : remixLoading
+                      ? 'Remixing...'
+                      : isRemix
+                        ? 'Continue to Editor'
+                        : 'Generate Content'}
                 </button>
-              )}
+              </>
+            )}
+          </div>
 
-              {error && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ── Template Sidebar ──────────────────────────────── */}
-        {isRemix && template && step !== 'type' && (
-          <div className="hidden lg:block">
-            <div className="sticky top-6 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 5rem)' }}>
-              <div className="rounded-xl border bg-card p-5">
-                <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Template</h3>
-                <div className="relative mb-3 aspect-[9/16] overflow-hidden rounded-lg bg-muted">
-                  <Image src={template.thumbnailUrl} alt={template.contentType} fill className="object-cover" sizes="300px" />
-                </div>
-                <p className="text-sm font-medium">{template.sourceCreator || 'Trending content'}</p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700 capitalize">
-                    {template.contentType.replace(/_/g, ' ')}
-                  </span>
-                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 capitalize">
-                    {template.sourcePlatform}
-                  </span>
-                </div>
-                {template.engagementScore && (
-                  <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                    {(template.engagementScore * 100).toFixed(0)}% engagement score
+          {/* ── RIGHT: Template preview / visual panel ────── */}
+          <div className="hidden lg:col-span-2 lg:block">
+            <div className="sticky top-6 space-y-4">
+              {isRemix && template && (
+                <>
+                  <div className="rounded-xl border bg-card p-4">
+                    <h3 className="mb-3 text-sm font-semibold">Template Preview</h3>
+                    <div className="relative mx-auto aspect-[9/16] max-w-[260px] overflow-hidden rounded-xl bg-muted">
+                      {template.thumbnailUrl ? (
+                        <Image
+                          src={template.thumbnailUrl}
+                          alt={template.sourceCreator || 'Template'}
+                          fill
+                          className="object-cover"
+                          sizes="260px"
+                          unoptimized
+                        />
+                      ) : template.mediaUrl ? (
+                        <video
+                          src={template.mediaUrl}
+                          className="size-full object-cover"
+                          muted
+                          loop
+                          autoPlay
+                          playsInline
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center">
+                          <Video className="size-10 text-muted-foreground/30" strokeWidth={1} />
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-                {template.remixCount > 0 && (
-                  <p className="mt-1 text-xs text-muted-foreground">{template.remixCount} remixes</p>
-                )}
-              </div>
 
-              {template.structure && Object.keys(template.structure).length > 0 && (
-                <div className="rounded-xl border bg-card p-5">
-                  <h3 className="mb-4 border-b pb-3 text-sm font-semibold">Structure</h3>
-                  <div className="space-y-3">
-                    {template.structure.hook && (
-                      <div className="rounded-lg bg-muted/50 p-3">
-                        <div className="text-xs font-medium text-purple-600">Hook · {template.structure.hook.duration}s</div>
-                        <p className="mt-1 text-sm text-foreground">{template.structure.hook.text}</p>
+                  {/* Structure info */}
+                  {template.structure && (
+                    <div className="rounded-xl border bg-card p-4">
+                      <h3 className="mb-3 text-sm font-semibold">Content Structure</h3>
+                      <div className="space-y-2.5">
+                        {template.structure.hook && (
+                          <div className="rounded-lg bg-muted/50 p-2.5">
+                            <div className="text-[10px] font-medium uppercase tracking-wider text-purple-600">
+                              Hook &middot; {template.structure.hook.duration}s
+                            </div>
+                            <p className="mt-0.5 text-sm text-foreground line-clamp-2">
+                              {template.structure.hook.text}
+                            </p>
+                          </div>
+                        )}
+                        {template.structure.body && (
+                          <div className="rounded-lg bg-muted/50 p-2.5">
+                            <div className="text-[10px] font-medium uppercase tracking-wider text-blue-600">
+                              Body &middot; {template.structure.body.duration}s
+                            </div>
+                            <p className="mt-0.5 text-sm text-foreground line-clamp-2">
+                              {template.structure.body.text}
+                            </p>
+                          </div>
+                        )}
+                        {template.structure.cta && (
+                          <div className="rounded-lg bg-muted/50 p-2.5">
+                            <div className="text-[10px] font-medium uppercase tracking-wider text-green-600">
+                              CTA &middot; {template.structure.cta.duration}s
+                            </div>
+                            <p className="mt-0.5 text-sm text-foreground line-clamp-2">
+                              {template.structure.cta.text}
+                            </p>
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {template.structure.body && (
-                      <div className="rounded-lg bg-muted/50 p-3">
-                        <div className="text-xs font-medium text-blue-600">Body · {template.structure.body.duration}s</div>
-                        <p className="mt-1 text-sm text-foreground">{template.structure.body.text}</p>
-                      </div>
-                    )}
-                    {template.structure.cta && (
-                      <div className="rounded-lg bg-muted/50 p-3">
-                        <div className="text-xs font-medium text-green-600">CTA · {template.structure.cta.duration}s</div>
-                        <p className="mt-1 text-sm text-foreground">{template.structure.cta.text}</p>
-                      </div>
+                    </div>
+                  )}
+
+                  {/* Meta */}
+                  <div className="rounded-xl border bg-card p-4">
+                    <div className="flex flex-wrap gap-2">
+                      {template.contentType && (
+                        <span className="rounded-full bg-purple-50 px-2.5 py-0.5 text-[11px] font-medium text-purple-700 capitalize">
+                          {template.contentType.replace(/_/g, ' ')}
+                        </span>
+                      )}
+                      {template.sourcePlatform && (
+                        <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] text-muted-foreground capitalize">
+                          {template.sourcePlatform}
+                        </span>
+                      )}
+                      {template.engagementScore != null && (
+                        <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">
+                          {Math.round(template.engagementScore * 100)}% engagement
+                        </span>
+                      )}
+                    </div>
+                    {template.remixCount > 0 && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Remixed {template.remixCount} time{template.remixCount !== 1 ? 's' : ''}
+                      </p>
                     )}
                   </div>
-                </div>
+                </>
               )}
 
-              {template.niches && template.niches.length > 0 && (
-                <div className="rounded-xl border bg-card p-5">
-                  <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Niches</h3>
-                  <div className="flex flex-wrap gap-1.5">
-                    {template.niches.map(niche => (
-                      <span key={niche} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-                        {niche.replace(/_/g, ' ')}
-                      </span>
-                    ))}
+              {/* Non-remix: show content type info */}
+              {!isRemix && step === 'configure' && typeDef && (
+                <div className="rounded-xl border bg-card p-4">
+                  <h3 className="mb-3 text-sm font-semibold">{typeDef.label}</h3>
+                  <div className="flex flex-col items-center justify-center rounded-xl bg-muted/30 py-12">
+                    <typeDef.icon className="mb-3 size-12 text-muted-foreground/30" strokeWidth={1} />
+                    <p className="text-sm text-muted-foreground">{typeDef.description}</p>
+                    <div className="mt-4 flex items-center gap-1.5">
+                      {typeDef.platforms.map(p => {
+                        const platform = PLATFORMS.find(pl => pl.id === p);
+                        if (!platform) return null;
+                        const PIcon = platform.icon;
+                        return <PIcon key={p} className="size-4 text-muted-foreground/40" />;
+                      })}
+                    </div>
                   </div>
                 </div>
               )}
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* ── GENERATING STATE ─────────────────────────────── */}
+      {(isGenerating || remixLoading) && step !== 'review' && (
+        <div className="mx-auto mt-4 max-w-2xl">
+          <div className="rounded-xl border bg-card p-6">
+            <div className="mb-4 flex items-end justify-between">
+              <p className="text-sm font-medium text-foreground">{getProgressMessage(displayPercent)}</p>
+              <span className="text-2xl font-bold tabular-nums text-primary">
+                {displayPercent}<span className="text-base font-medium">%</span>
+              </span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-primary transition-all duration-300 ease-out" style={{ width: `${displayPercent}%` }} />
+            </div>
+            <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+              <span>{progress.completed > 0 ? `${progress.completed} of ${progress.total} variants ready` : 'Generating variants...'}</span>
+              {variants.length > 0 && (
+                <span className="text-primary">{variants.length > 1 ? `${variants.length} variants below` : '1 variant below — more coming'}</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── REVIEW VARIANTS ──────────────────────────────── */}
+      {step === 'review' && (
+        <div className="mx-auto max-w-3xl space-y-4">
+          {!isGenerating && !remixLoading && (
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold">
+                  {variants.length} variant{variants.length !== 1 ? 's' : ''} generated
+                  {contentMode !== 'normal' && (
+                    <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                      {contentMode} mode
+                    </span>
+                  )}
+                </h2>
+                <p className="text-xs text-muted-foreground">Select the best one, then continue.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setStep('configure'); setVariants([]); }}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
+              >
+                <RefreshCw className="size-3" />
+                Regenerate
+              </button>
+            </div>
+          )}
+
+          {variants.map(variant => (
+            <button
+              key={variant.id}
+              type="button"
+              onClick={() => setSelectedVariant(variant.id)}
+              className={`w-full rounded-xl border bg-card p-5 text-left transition-all ${
+                selectedVariant === variant.id
+                  ? 'border-primary ring-2 ring-primary/15'
+                  : 'hover:border-muted-foreground/20'
+              }`}
+            >
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-semibold">
+                    {variant.variantNumber}
+                  </span>
+                  <span className="text-xs text-muted-foreground">Variant {variant.variantNumber}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {variant.antiSlopScore !== null && (() => {
+                    const sl = scoreLabel(variant.antiSlopScore!);
+                    return (
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${sl.color}`}>
+                        {Math.round(variant.antiSlopScore! * 100)}% {sl.text}
+                      </span>
+                    );
+                  })()}
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(variant.caption); }}
+                    className="rounded p-1.5 hover:bg-muted"
+                    title="Copy"
+                  >
+                    <Copy className="size-3.5 text-muted-foreground" />
+                  </button>
+                </div>
+              </div>
+              <p className="whitespace-pre-wrap text-sm leading-relaxed">{variant.caption}</p>
+              {variant.hashtags.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {variant.hashtags.map(tag => (
+                    <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{tag}</span>
+                  ))}
+                </div>
+              )}
+              {variant.enrichmentApplied && variant.enrichmentApplied.length > 0 && (
+                <div className="mt-3 flex items-center gap-1.5 border-t pt-3">
+                  <Link2 className="size-3 text-muted-foreground" />
+                  <span className="text-[11px] text-muted-foreground">
+                    Enrichment applied: {variant.enrichmentApplied.map(e => e.replace(/_/g, ' ')).join(', ')}
+                  </span>
+                </div>
+              )}
+              {variant.qualityFlags && variant.qualityFlags.length > 0 && (
+                <div className="mt-2 space-y-1 border-t pt-3">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-orange-500/70">Quality notes</span>
+                  {variant.qualityFlags.slice(0, 3).map((flag, i) => (
+                    <p key={i} className="text-[11px] text-muted-foreground">{flag}</p>
+                  ))}
+                </div>
+              )}
+            </button>
+          ))}
+
+          {(isGenerating || remixLoading) && variants.length < 3 && (
+            Array.from({ length: 3 - variants.length }).map((_, i) => (
+              <div key={`skeleton-${i}`} className="w-full animate-pulse rounded-xl border bg-card p-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <div className="size-6 rounded-full bg-muted" />
+                  <div className="h-3 w-16 rounded bg-muted" />
+                </div>
+                <div className="space-y-2">
+                  <div className="h-3 w-full rounded bg-muted" />
+                  <div className="h-3 w-5/6 rounded bg-muted" />
+                  <div className="h-3 w-4/6 rounded bg-muted" />
+                </div>
+              </div>
+            ))
+          )}
+
+          {!isGenerating && !remixLoading && selectedVariant && (
+            <button
+              type="button"
+              onClick={handleApprove}
+              disabled={isApproving}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              {isApproving ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Check className="size-4" />
+              )}
+              {isApproving
+                ? 'Opening editor...'
+                : contentType === 'text_only'
+                  ? scheduledDate ? 'Approve and set schedule' : 'Approve selected variant'
+                  : 'Continue to editor'
+              }
+            </button>
+          )}
+
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
