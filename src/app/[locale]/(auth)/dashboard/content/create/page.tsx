@@ -24,7 +24,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 import { PLATFORMS } from '@/components/icons/PlatformIcons';
-import { RemixEditor, type RemixEdits } from '@/components/content-library/RemixEditor';
+import type { RemixEdits } from '@/components/content-library/RemixEditor';
 import type { ContentTemplate } from '@/types/v2';
 
 // -----------------------------------------------------------
@@ -158,7 +158,7 @@ export default function ContentCreatePage() {
   const [step, setStep] = useState<'type' | 'configure' | 'edit' | 'review'>(
     fromMonthlyPlan || isRemix ? 'configure' : 'type',
   );
-  const [remixEdits, setRemixEdits] = useState<RemixEdits | null>(null);
+  const [remixEdits] = useState<RemixEdits | null>(null);
   const [contentType, setContentType] = useState(prefillContentType);
   const [topic, setTopic] = useState(prefillTopic);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
@@ -303,13 +303,46 @@ export default function ContentCreatePage() {
   // -----------------------------------------------------------
   // Generate
   // -----------------------------------------------------------
-  const handleContinueToEditor = () => {
+  const handleContinueToEditor = async () => {
     if (selectedPlatforms.length === 0) {
       setError('Select at least one platform.');
       return;
     }
     if (isRemix && templateId) {
-      setStep('edit');
+      setIsApproving(true);
+      try {
+        const editId = await createEditSession({
+          source: 'remix',
+          templateId,
+          contentType: template?.contentType || 'text',
+          contentMode,
+          targetPlatforms: selectedPlatforms,
+          aspectRatio: '9:16',
+          script: {
+            hookText: template?.structure?.hook?.text || '',
+            bodyText: template?.structure?.body?.text || '',
+            ctaText: template?.structure?.cta?.text || '',
+          },
+          style: {
+            fontFamily: 'Inter',
+            fontSize: 48,
+            color: '#ffffff',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            align: 'center',
+          },
+          layout: 'centered',
+          mediaSlots: {
+            background: template?.mediaUrl
+              ? { url: template.mediaUrl, assetType: 'video' }
+              : undefined,
+          },
+          audioTrack: null,
+        });
+        router.push(`/dashboard/editor?edit=${editId}`);
+      } catch {
+        setError('Failed to create editor session.');
+        setIsApproving(false);
+      }
       return;
     }
   };
@@ -469,22 +502,55 @@ export default function ContentCreatePage() {
     }
   };
 
+  const createEditSession = async (payload: Record<string, unknown>) => {
+    const res = await fetch('/api/content/edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Failed to create edit session');
+    const data = await res.json();
+    return data.edit.id as string;
+  };
+
   const handleApprove = async () => {
     if (!selectedVariant) return;
+
+    // Plain text content can be approved directly without entering the editor.
+    if (contentType === 'text') {
+      setIsApproving(true);
+      try {
+        await fetch(`/api/content/${selectedVariant}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'approved', isSelectedVariant: true }),
+        });
+        if (scheduledDate) {
+          router.push(`/dashboard/content/${selectedVariant}?autoSchedule=${scheduledDate}`);
+        } else {
+          router.push('/dashboard/posts');
+        }
+      } catch {
+        setError('Failed to approve.');
+        setIsApproving(false);
+      }
+      return;
+    }
+
+    // All other content types go through the editor before publishing.
     setIsApproving(true);
     try {
-      await fetch(`/api/content/${selectedVariant}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'approved', isSelectedVariant: true }),
+      const editId = await createEditSession({
+        source: 'generate',
+        contentItemId: selectedVariant,
+        contentType,
+        contentMode,
+        targetPlatforms: selectedPlatforms,
+        aspectRatio: '9:16',
       });
-      if (scheduledDate) {
-        router.push(`/dashboard/content/${selectedVariant}?autoSchedule=${scheduledDate}`);
-      } else {
-        router.push('/dashboard/posts');
-      }
+      router.push(`/dashboard/editor?edit=${editId}`);
     } catch {
-      setError('Failed to approve.');
+      setError('Failed to open editor.');
       setIsApproving(false);
     }
   };
@@ -791,25 +857,30 @@ export default function ContentCreatePage() {
               <button
                 type="button"
                 onClick={isRemix ? handleContinueToEditor : handleGenerate}
-                disabled={isGenerating || remixLoading || selectedPlatforms.length === 0}
+                disabled={isGenerating || remixLoading || isApproving || selectedPlatforms.length === 0}
                 className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
-                {isRemix ? <Wand2 className="size-4" /> : <Sparkles className="size-4" />}
-                {isRemix ? 'Continue to editor' : 'Generate content'}
+                {isRemix
+                  ? isApproving
+                    ? <div className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    : <Wand2 className="size-4" />
+                  : <Sparkles className="size-4" />
+                }
+                {isRemix
+                  ? isApproving
+                    ? 'Opening editor...'
+                    : 'Continue to editor'
+                  : 'Generate content'
+                }
               </button>
             </div>
           )}
 
-          {/* ── REMIX EDITOR STEP ─────────────────────────── */}
-          {step === 'edit' && isRemix && template && (
-            <div className="mx-auto max-w-5xl">
-              <RemixEditor
-                template={template}
-                initialEdits={remixEdits || undefined}
-                onChange={setRemixEdits}
-                onGenerate={handleGenerate}
-                isGenerating={remixLoading}
-              />
+          {/* ── REMIX EDITOR STEP (redirects to new editor) ─────────────────────────── */}
+          {step === 'edit' && isRemix && (
+            <div className="mx-auto max-w-5xl text-center py-20">
+              <div className="mb-4 h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto" />
+              <p className="text-gray-500">Redirecting to editor...</p>
             </div>
           )}
 
@@ -941,7 +1012,12 @@ export default function ContentCreatePage() {
                   className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
                 >
                   {isApproving ? <div className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <Check className="size-4" />}
-                  {scheduledDate ? 'Approve and set schedule' : 'Approve selected variant'}
+                  {isApproving
+                    ? 'Opening editor...'
+                    : contentType === 'text'
+                      ? (scheduledDate ? 'Approve and set schedule' : 'Approve selected variant')
+                      : 'Continue to editor'
+                  }
                 </button>
               )}
 

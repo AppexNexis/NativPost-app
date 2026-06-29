@@ -387,6 +387,107 @@ export type GenerationParams = {
   remixSource?: string;
 };
 
+// ============================================================
+// CONTENT EDIT SESSION
+// ============================================================
+
+export type ContentEditSource = 'remix' | 'generate' | 'manual';
+
+export type TextStyle = {
+  fontFamily?: string;
+  fontSize?: number;
+  color?: string;
+  backgroundColor?: string;
+  align?: 'left' | 'center' | 'right';
+  weight?: 'normal' | 'bold';
+  italic?: boolean;
+  underline?: boolean;
+};
+
+export type MediaSlot = {
+  url: string;
+  publicId?: string;
+  assetType?: 'image' | 'video';
+  label?: string;
+};
+
+export type MediaSlots = {
+  background?: MediaSlot;
+  hookVideo?: MediaSlot;
+  slides?: MediaSlot[];
+  demoVideo?: MediaSlot;
+};
+
+export type AudioTrack = {
+  name: string;
+  url: string;
+  publicId?: string;
+  source: 'original' | 'library' | 'upload';
+  volume?: number;
+};
+
+export type TimingSegment = {
+  text?: string;
+  durationSeconds: number;
+  startAt?: number;
+};
+
+export type ContentEditTiming = {
+  hook?: TimingSegment;
+  body?: TimingSegment;
+  cta?: TimingSegment;
+  slides?: TimingSegment[];
+  transitions?: string[];
+};
+
+export type ContentEditScript = {
+  hookText?: string;
+  bodyText?: string;
+  ctaText?: string;
+  wallText?: string;
+  slideCopy?: Array<string | { text: string; durationSeconds?: number }>;
+};
+
+export type ContentEditStatus = 'draft' | 'approved' | 'discarded';
+export type ContentEditRenderStatus = 'idle' | 'rendering' | 'done' | 'failed';
+
+export type ContentEdit = {
+  id: string;
+  orgId: string;
+  userId: string;
+  contentItemId: string | null;
+  templateId: string | null;
+  source: ContentEditSource;
+
+  contentType: ContentType;
+  contentMode: string;
+  targetPlatforms: string[];
+  aspectRatio: string;
+
+  script: ContentEditScript;
+  style: TextStyle;
+  layout: string;
+  timing: ContentEditTiming;
+
+  mediaSlots: MediaSlots;
+  audioTrack: AudioTrack | null;
+
+  enrichment: Record<string, unknown>;
+  brandProfileSnapshot: Record<string, unknown>;
+
+  previewRenderUrl: string | null;
+  previewRenderId: string | null;
+  finalRenderUrl: string | null;
+  finalRenderId: string | null;
+  renderStatus: ContentEditRenderStatus;
+
+  status: ContentEditStatus;
+  isAutosave: boolean;
+
+  updatedAt: string;
+  createdAt: string;
+};
+
 export type AspectRatio = '9:16' | '3:4' | '1:1' | '4:3' | '16:9' | '2:3' | '3:2' | '21:9';
 
 export type VideoModel = 'pixverse_v6' | 'kling_v3_pro' | 'seedance_2' | 'remotion';

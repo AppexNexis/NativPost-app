@@ -127,6 +127,13 @@
       "when": 1782623874017,
       "tag": "0017_eager_stryfe",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1782624000000,
+      "tag": "0018_add_content_edit_table",
+      "breakpoints": true
     }
   ]
 }

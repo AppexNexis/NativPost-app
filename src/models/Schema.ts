@@ -531,6 +531,66 @@ export const contentTemplateSchema = pgTable(
 );
 
 // -----------------------------------------------------------
+// CONTENT EDIT SESSION
+// Persistent editing session for the new video editor.
+// -----------------------------------------------------------
+export const contentEditSchema = pgTable('content_edit', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: text('org_id')
+    .references(() => organizationSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  userId: text('user_id').notNull(),
+
+  // Source of the edit session
+  contentItemId: uuid('content_item_id').references(
+    () => contentItemSchema.id,
+    { onDelete: 'cascade' },
+  ),
+  templateId: uuid('template_id').references(
+    () => contentTemplateSchema.id,
+    { onDelete: 'set null' },
+  ),
+  source: text('source').notNull(), // 'remix' | 'generate' | 'manual'
+
+  // Resolved internal content type
+  contentType: text('content_type').notNull(),
+  contentMode: text('content_mode').default('normal'),
+  targetPlatforms: jsonb('target_platforms').default([]),
+  aspectRatio: text('aspect_ratio').default('9:16'),
+
+  // Editable content
+  script: jsonb('script').default({}),
+  style: jsonb('style').default({}),
+  layout: text('layout').default('centered'),
+  timing: jsonb('timing').default({}),
+
+  // Media slots
+  mediaSlots: jsonb('media_slots').default({}),
+  audioTrack: jsonb('audio_track').default(null),
+
+  // Brand / enrichment context
+  enrichment: jsonb('enrichment').default({}),
+  brandProfileSnapshot: jsonb('brand_profile_snapshot').default({}),
+
+  // Render state
+  previewRenderUrl: text('preview_render_url'),
+  previewRenderId: text('preview_render_id'),
+  finalRenderUrl: text('final_render_url'),
+  finalRenderId: text('final_render_id'),
+  renderStatus: text('render_status').default('idle'), // idle | rendering | done | failed
+
+  // Status / lifecycle
+  status: text('status').default('draft'), // draft | approved | discarded
+  isAutosave: boolean('is_autosave').default(false),
+
+  updatedAt: timestamp('updated_at', { mode: 'date' })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------
 // CAMPAIGN
 // -----------------------------------------------------------
 export const campaignSchema = pgTable('campaign', {
