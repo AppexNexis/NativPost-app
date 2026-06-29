@@ -134,6 +134,13 @@
       "when": 1782624000000,
       "tag": "0018_add_content_edit_table",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1782751529237,
+      "tag": "0019_low_diamondback",
+      "breakpoints": true
     }
   ]
 }
