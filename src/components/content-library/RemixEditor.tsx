@@ -142,8 +142,8 @@ function buildMediaReplacements(template: ContentTemplate): MediaReplacement[] {
     });
   }
 
-  // Slides for slideshow / carousel
-  if (template.contentType === 'slideshow' || template.contentType === 'carousel') {
+  // Slides for slideshow
+  if (template.contentType === 'slideshow') {
     // We don't have explicit slide URLs in the current schema, so we use the
     // thumbnail as a placeholder. In a full implementation these would come from
     // template.slides or a related media_set.

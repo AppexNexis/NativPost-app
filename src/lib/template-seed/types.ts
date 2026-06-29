@@ -11,7 +11,6 @@ export type ContentType =
   | 'green_screen_meme'
   | 'video_hook_demo'
   | 'ugc'
-  | 'carousel'
   | 'custom';
 
 export type NicheTag =

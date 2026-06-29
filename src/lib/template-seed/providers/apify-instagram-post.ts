@@ -6,7 +6,7 @@
  *
  * This provider targets individual Instagram post URLs and extracts both
  * single-video Reels and multi-image carousel posts. Carousels are mapped
- * to the 'carousel' content type with all slide URLs in thumbnailUrls.
+ * to the 'slideshow' content type with all slide URLs in thumbnailUrls.
  *
  * Env var required: APIFY_TOKEN
  */
@@ -32,7 +32,7 @@ const ACTOR_ID = 'apify~instagram-post-scraper';
 
 function pickContentType(caption: string, hasCarousel: boolean): ContentType {
   if (hasCarousel) {
-    return 'carousel';
+    return 'slideshow';
   }
   const t = caption.toLowerCase();
   if (t.includes('tutorial') || t.includes('how to') || t.includes('tips')) {

@@ -86,7 +86,6 @@ const VALID_CONTENT_TYPES = [
   'talking_head',
   'green_screen_meme',
   'video_hook_demo',
-  'carousel',
   'ugc',
   'custom',
 ];

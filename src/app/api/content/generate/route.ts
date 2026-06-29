@@ -102,7 +102,7 @@ async function enforceAccessChecks(
       return NextResponse.json({ error: imageCheck.reason }, { status: 403 });
     }
   }
-  if (contentType === 'carousel' || contentType === 'carousel_image') {
+  if (contentType === 'carousel' || contentType === 'slideshow' || contentType === 'carousel_image') {
     const carouselCheck = await checkFeatureAccess(orgId, 'carouselPosts');
     if (!carouselCheck.allowed) {
       return NextResponse.json({ error: carouselCheck.reason }, { status: 403 });

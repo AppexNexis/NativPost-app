@@ -50,7 +50,6 @@ export type ContentGenerator =
   | 'ugc_ad'
   | 'text_motion'
   | 'data_story'
-  | 'carousel'
   | 'single_image'
   | 'scene'
   | 'ai_graphic';
@@ -110,9 +109,8 @@ export function applyRemixEdits(
     }
   }
 
-  if (generator === 'carousel') {
-    // Carousel slides are explicit objects; media replacement is not yet
-    // supported at the per-slide level here.
+  if (generator === 'slideshow') {
+    // Slideshow uses the same caption override handling below.
   }
 
   // ── Text overrides ────────────────────────────────────────────────────────

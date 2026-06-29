@@ -18,7 +18,6 @@ const COMPOSITION_MAP: Record<string, React.ComponentType<any>> = {
   wall_of_text: WallOfTextComposition,
   text: TextMotionCard,
   slideshow: SlideshowComposition,
-  carousel: SlideshowComposition,
   green_screen: GreenScreenComposition,
   video_hook: VideoHookComposition,
   ugc: UGCAdComposition,

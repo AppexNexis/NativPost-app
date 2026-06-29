@@ -54,9 +54,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Content item not found' }, { status: 404 });
     }
 
-    if (item.contentType !== 'carousel') {
+    if (item.contentType !== 'carousel' && item.contentType !== 'slideshow') {
       return NextResponse.json(
-        { error: 'Carousel generation only available for carousel content type' },
+        { error: 'Carousel generation only available for slideshow content type' },
         { status: 400 },
       );
     }
@@ -161,7 +161,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       ...(profile?.logoUrl ? { logoUrl: profile.logoUrl } : {}),
     };
 
-    const payload = applyRemixEdits(basePayload, remixEdits, 'carousel');
+    const payload = applyRemixEdits(basePayload, remixEdits, 'slideshow');
 
     console.log('[Carousel] Generating', slides.length, 'slides, style:', style, 'ar:', aspectRatio);
 

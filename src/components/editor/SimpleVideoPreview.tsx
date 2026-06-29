@@ -202,7 +202,7 @@ export function SimpleVideoPreview({
         )}
 
         {/* Slideshow preview (first 3 slides) */}
-        {['slideshow', 'carousel'].includes(contentType) && (mediaSlots.slides?.length ?? 0) > 0 && (
+        {contentType === 'slideshow' && (mediaSlots.slides?.length ?? 0) > 0 && (
           <div className="absolute bottom-2 left-2 right-2 z-10 flex gap-1">
             {(mediaSlots.slides || []).slice(0, 3).map((slide, i) => (
               <div key={i} className="relative flex-1 overflow-hidden rounded-md" style={{ aspectRatio: '1/1' }}>

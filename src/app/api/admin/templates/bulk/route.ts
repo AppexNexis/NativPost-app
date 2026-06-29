@@ -60,7 +60,7 @@ type TemplateStructureInput = {
 type ImportTemplatePayload = {
   sourceUrl: string;
   sourcePlatform: 'tiktok' | 'instagram' | 'youtube' | 'facebook' | 'linkedin' | 'twitter';
-  contentType: 'slideshow' | 'wall_of_text' | 'talking_head' | 'green_screen_meme' | 'video_hook_demo' | 'carousel' | 'ugc' | 'custom';
+  contentType: 'slideshow' | 'wall_of_text' | 'talking_head' | 'green_screen_meme' | 'video_hook_demo' | 'ugc' | 'custom';
   thumbnailUrl: string;
   creatorName?: string;
   niches?: string[];
@@ -86,7 +86,6 @@ const VALID_CONTENT_TYPES = [
   'talking_head',
   'green_screen_meme',
   'video_hook_demo',
-  'carousel',
   'ugc',
   'custom',
 ];

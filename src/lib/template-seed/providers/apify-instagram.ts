@@ -51,7 +51,7 @@ const DEFAULT_HASHTAGS = [
 
 function pickContentType(caption: string, hasCarousel: boolean): ContentType {
   if (hasCarousel) {
-    return 'carousel';
+    return 'slideshow';
   }
   const t = caption.toLowerCase();
   if (t.includes('tutorial') || t.includes('how to') || t.includes('tips')) {

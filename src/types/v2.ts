@@ -14,7 +14,6 @@ export type ContentType =
   | 'green_screen_meme'
   | 'video_hook_demo'
   | 'ugc'
-  | 'carousel'
   | 'custom';
 
 export type SourcePlatform = 'tiktok' | 'instagram' | 'youtube' | 'pexels' | 'unknown';
@@ -99,7 +98,7 @@ export type ContentItem = {
   brandProfileId: string | null;
   caption: string;
   hashtags: string[];
-  contentType: string; // single_image, carousel, story, text_only, reel
+  contentType: string; // slideshow, wall_of_text, talking_head, reel, text_only
   topic: string | null;
   graphicUrls: string[];
   graphicTemplateId: string | null;

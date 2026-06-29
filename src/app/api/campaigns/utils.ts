@@ -27,7 +27,7 @@ const MIX_KEY_TO_CONTENT_TYPE: Record<string, string> = {
   greenScreen: 'reel',
   videoHook: 'reel',
   talkingHead: 'reel',
-  carousel: 'carousel',
+  carousel: 'slideshow',
   ugc: 'ugc_ad',
   dataStory: 'data_story',
   scene: 'scene',

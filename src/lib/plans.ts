@@ -300,7 +300,7 @@ export function getAllowedContentTypes(features: PlanFeatures): string[] {
     types.push('single_image');
   }
   if (features.carouselPosts) {
-    types.push('carousel');
+    types.push('slideshow');
   }
   if (features.videoPosts) {
     types.push('reel');

@@ -17,7 +17,6 @@ type TemplateContentType =
   | 'talking_head'
   | 'video_hook_demo'
   | 'green_screen_meme'
-  | 'carousel'
   | 'slideshow';
 
 interface TemplateScript {
@@ -32,7 +31,7 @@ interface TemplateScript {
 }
 
 function isTemplateContentType(value: string): value is TemplateContentType {
-  return ['wall_of_text', 'talking_head', 'video_hook_demo', 'green_screen_meme', 'carousel', 'slideshow'].includes(value);
+  return ['wall_of_text', 'talking_head', 'video_hook_demo', 'green_screen_meme', 'slideshow'].includes(value);
 }
 
 function getSlideUrls(template: typeof contentTemplateSchema.$inferSelect): string[] {
