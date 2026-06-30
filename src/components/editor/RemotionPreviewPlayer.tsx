@@ -3,29 +3,12 @@ import React from 'react';
 import { useMemo } from 'react';
 import { Player } from '@remotion/player';
 
-import { TalkingHeadComposition } from './compositions/TalkingHeadComposition';
-import { WallOfTextComposition } from './compositions/WallOfTextComposition';
-import { TextMotionCard } from './compositions/TextMotionCard';
-import { SlideshowComposition } from './compositions/SlideshowComposition';
-import { GreenScreenComposition } from './compositions/GreenScreenComposition';
-import { VideoHookComposition } from './compositions/VideoHookComposition';
-import { UGCAdComposition } from './compositions/UGCAdComposition';
-import { DataStoryComposition } from './compositions/DataStoryComposition';
+import { EditorComposition } from './compositions/EditorComposition';
 
-// Map content types to Remotion composition components
-const COMPOSITION_MAP: Record<string, React.ComponentType<any>> = {
-  talking_head: TalkingHeadComposition,
-  wall_of_text: WallOfTextComposition,
-  text: TextMotionCard,
-  slideshow: SlideshowComposition,
-  green_screen: GreenScreenComposition,
-  video_hook: VideoHookComposition,
-  ugc: UGCAdComposition,
-  data_story: DataStoryComposition,
-};
-
-// Default composition for unknown types
-const DEFAULT_COMPOSITION = TextMotionCard;
+// All content types use the universal EditorComposition which accepts
+// the full editor state (script, style, layout, mediaSlots, aspectRatio)
+// and renders text overlays directly into the video frames.
+const DEFAULT_COMPOSITION = EditorComposition;
 
 interface RemotionPreviewPlayerProps {
   contentType: string;
@@ -33,18 +16,17 @@ interface RemotionPreviewPlayerProps {
 }
 
 export function RemotionPreviewPlayer({ contentType, inputProps }: RemotionPreviewPlayerProps) {
-  const Composition = COMPOSITION_MAP[contentType] || DEFAULT_COMPOSITION;
+  const Composition = DEFAULT_COMPOSITION;
 
+  // 6 seconds at 30fps (matches engine's FIXED_DURATION_SECONDS)
   const durationInFrames = useMemo(() => {
-    const seconds = inputProps.timing?.totalSeconds || 10;
-    return Math.max(1, Math.round(seconds * 30)); // 30 fps
-  }, [inputProps.timing]);
+    return 6 * 30;
+  }, []);
 
   const { width, height } = useMemo(() => {
     const ar = inputProps.aspectRatio || '9:16';
     const [w, h] = ar.split(':').map(Number);
     if (!w || !h) return { width: 1080, height: 1920 };
-    // Scale to 1080 width
     const scale = 1080 / w;
     return { width: Math.round(w * scale), height: Math.round(h * scale) };
   }, [inputProps.aspectRatio]);

@@ -3,7 +3,7 @@ import { ArrowLeft, Check, Loader2, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { useEditor } from './EditorContext';
-import { getVideoPosterUrl, isCloudinaryVideoUrl } from '@/lib/cloudinary';
+import { VIDEO_ENGINE_URL } from '@/lib/ai-studio/server';
 
 // ── Content type labels ──────────────────────────────────────────
 const CT_LABELS: Record<string, string> = {
@@ -18,125 +18,32 @@ const CT_LABELS: Record<string, string> = {
   green_screen: 'Green Screen',
 };
 
-// ── Canvas preview capture (with timeout — never blocks publish) ─
-async function captureEditorPreview(
-  editorState: { script?: { hookText?: string; bodyText?: string; ctaText?: string }; style?: Record<string, unknown>; layout?: string },
+// ── Engine render — compiles editor state into a permanent MP4 ───
+async function renderEditorVideo(
+  editorState: { script: any; style: any; layout: string; aspectRatio: string; mediaSlots: any; contentType: string },
 ): Promise<string | null> {
-  const TIMEOUT_MS = 3000;
-
-  // Wrap the whole capture in a timeout so it never blocks publishing
   try {
-    return await Promise.race([
-      capturePreviewInner(editorState),
-      new Promise<null>(resolve => setTimeout(() => resolve(null), TIMEOUT_MS)),
-    ]);
-  } catch {
+    const res = await fetch(`${VIDEO_ENGINE_URL}/render/editor-video`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        script: editorState.script,
+        style: editorState.style,
+        layout: editorState.layout,
+        aspectRatio: editorState.aspectRatio,
+        contentType: editorState.contentType,
+        backgroundUrl: editorState.mediaSlots?.background?.url,
+        hookVideoUrl: editorState.mediaSlots?.hookVideo?.url,
+        slides: editorState.mediaSlots?.slides,
+      }),
+    });
+    if (!res.ok) throw new Error(`Engine render failed: ${res.status}`);
+    const data = await res.json();
+    return data.url || null;
+  } catch (err) {
+    console.error('[Publish] Engine render failed:', err);
     return null;
   }
-}
-
-async function capturePreviewInner(
-  editorState: { script?: { hookText?: string; bodyText?: string; ctaText?: string }; style?: Record<string, unknown>; layout?: string },
-): Promise<string | null> {
-  const video = document.querySelector<HTMLVideoElement>('[data-editor-preview-video]');
-  const canvas = document.createElement('canvas');
-  const W = 720;
-  const H = 1280;
-  canvas.width = W;
-  canvas.height = H;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-
-  // Fill background
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, W, H);
-
-  // Draw video frame if available (crossOrigin="anonymous" enables this)
-  if (video && video.readyState >= 2 && video.videoWidth > 0) {
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-    const scale = Math.max(W / vw, H / vh);
-    ctx.drawImage(video, (W - vw * scale) / 2, (H - vh * scale) / 2, vw * scale, vh * scale);
-  }
-
-  // Draw text overlays
-  const script = editorState.script || {};
-  const style_ = editorState.style || {};
-  const layout = editorState.layout || 'centered';
-
-  const lines: string[] = [];
-  if (script.hookText) lines.push(script.hookText);
-  if (script.bodyText) lines.push(script.bodyText);
-  if (script.ctaText) lines.push(script.ctaText);
-
-  if (lines.length > 0) {
-    const fontSize = Number(style_.fontSize) || 20;
-    const color = String(style_.color || '#ffffff');
-    const bg = String(style_.backgroundColor || 'rgba(0,0,0,0.5)');
-    const align = (String(style_.align || 'center')) as CanvasTextAlign;
-    const paddingX = 16;
-    const paddingY = 12;
-    const lineHeight = fontSize * 1.35;
-    const textW = W - paddingX * 4;
-    const totalH = lines.length * lineHeight + paddingY * 2;
-
-    let textY: number;
-    if (layout === 'centered' || layout === 'wall_of_text') {
-      textY = (H - totalH) / 2;
-    } else if (layout === 'top_caption') {
-      textY = paddingY + 12;
-    } else {
-      textY = H - totalH - 24;
-    }
-
-    ctx.fillStyle = bg;
-    roundRect(ctx, paddingX * 1.5, textY, textW, totalH, 6);
-    ctx.fill();
-
-    ctx.fillStyle = color;
-    ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
-    ctx.textAlign = align;
-    ctx.textBaseline = 'top';
-    const xPos = align === 'center' ? W / 2 : align === 'right' ? W - paddingX * 2 : paddingX * 2;
-    lines.forEach((line, i) => ctx.fillText(line, xPos, textY + paddingY + i * lineHeight));
-  }
-
-  // Export to blob
-  const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.88));
-  if (!blob) return null;
-
-  // Convert to base64
-  const dataUrl = await new Promise<string | null>(resolve => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = () => resolve(null);
-    reader.readAsDataURL(blob);
-  });
-  if (!dataUrl) return null;
-
-  // Upload to Cloudinary
-  const res = await fetch('/api/content/upload-snapshot', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ imageData: dataUrl }),
-  });
-  if (!res.ok) throw new Error('Upload failed');
-  const data = await res.json();
-  return data.url;
-}
-
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
 }
 
 export function EditorLayout({
@@ -154,48 +61,59 @@ export function EditorLayout({
     await saveEdit();
     setIsPublishing(true);
 
-    // If we already have a content item, update its enrichmentData and redirect
+    // If we already have a content item, render and update
     if (state.edit?.contentItemId) {
-      // Save latest editor state so the detail page shows current overlays
+      const compiledVideoUrl = await renderEditorVideo({
+        script: state.script,
+        style: state.style,
+        layout: state.layout,
+        aspectRatio: state.aspectRatio,
+        mediaSlots: state.mediaSlots,
+        contentType: state.edit?.contentType || 'text',
+      });
+
+      const updateBody: Record<string, any> = {
+        enrichmentData: {
+          editorScript: state.script,
+          editorStyle: state.style,
+          editorLayout: state.layout,
+        },
+      };
+
+      if (compiledVideoUrl) {
+        updateBody.graphicUrls = [compiledVideoUrl];
+      }
+
       fetch(`/api/content/${state.edit.contentItemId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          enrichmentData: {
-            editorScript: state.script,
-            editorStyle: state.style,
-            editorLayout: state.layout,
-          },
-        }),
+        body: JSON.stringify(updateBody),
       }).catch(() => {});
       router.push(`/dashboard/content/${state.edit.contentItemId}`);
       return;
     }
 
-    // 1. Build primary media URLs (raw source URLs first, snapshot last)
-    const allMediaUrls: string[] = [];
-
-    // Raw source URLs FIRST (these are the playable videos)
-    if (state.mediaSlots?.background?.url) allMediaUrls.push(state.mediaSlots.background.url);
-    if (state.mediaSlots?.hookVideo?.url) allMediaUrls.push(state.mediaSlots.hookVideo.url);
-    if (state.mediaSlots?.demoVideo?.url) allMediaUrls.push(state.mediaSlots.demoVideo.url);
-    if (state.mediaSlots?.slides?.length) {
-      state.mediaSlots.slides.forEach(s => { if (s.url) allMediaUrls.push(s.url); });
-    }
-
-    // Snapshot/poster LAST (preview image with text overlays baked in)
-    const snapshotUrl = await captureEditorPreview({
+    // 1. Compile editor state into a permanent MP4 via Remotion engine
+    const compiledVideoUrl = await renderEditorVideo({
       script: state.script,
       style: state.style,
       layout: state.layout,
+      aspectRatio: state.aspectRatio,
+      mediaSlots: state.mediaSlots,
+      contentType: state.edit?.contentType || 'text',
     });
-    if (snapshotUrl) {
-      allMediaUrls.push(snapshotUrl);
+
+    // Use compiled video as primary; fall back to raw source
+    const allMediaUrls: string[] = [];
+    if (compiledVideoUrl) {
+      allMediaUrls.push(compiledVideoUrl);
     } else {
-      // Fallback: Cloudinary poster frame from background video
-      const bgUrl = state.mediaSlots?.background?.url;
-      if (bgUrl && isCloudinaryVideoUrl(bgUrl)) {
-        allMediaUrls.push(getVideoPosterUrl(bgUrl, { width: 608, height: 1080 }));
+      // Fallback: raw source URLs + enrichmentData CSS overlays
+      if (state.mediaSlots?.background?.url) allMediaUrls.push(state.mediaSlots.background.url);
+      if (state.mediaSlots?.hookVideo?.url) allMediaUrls.push(state.mediaSlots.hookVideo.url);
+      if (state.mediaSlots?.demoVideo?.url) allMediaUrls.push(state.mediaSlots.demoVideo.url);
+      if (state.mediaSlots?.slides?.length) {
+        state.mediaSlots.slides.forEach(s => { if (s.url) allMediaUrls.push(s.url); });
       }
     }
 

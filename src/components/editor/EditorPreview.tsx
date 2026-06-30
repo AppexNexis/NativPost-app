@@ -1,7 +1,7 @@
 import React from 'react';
 
 import { useEditor } from './EditorContext';
-import { SimpleVideoPreview } from './SimpleVideoPreview';
+import { RemotionPreviewPlayer } from './RemotionPreviewPlayer';
 
 export function EditorPreview() {
   const { state } = useEditor();
@@ -33,15 +33,20 @@ export function EditorPreview() {
                 <div className="h-1 w-12 rounded-full bg-white/8" />
               </div>
 
-              {/* Screen — no background, let the content fill */}
+              {/* Screen — Remotion player with compiled preview */}
               <div className="relative flex flex-1 items-center justify-center overflow-hidden">
-                <SimpleVideoPreview
+                <RemotionPreviewPlayer
                   contentType={contentType}
-                  script={state.script}
-                  style={state.style}
-                  mediaSlots={state.mediaSlots}
-                  aspectRatio={aspectRatio}
-                  layout={state.layout}
+                  inputProps={{
+                    backgroundUrl: state.mediaSlots?.background?.url,
+                    hookVideoUrl: state.mediaSlots?.hookVideo?.url,
+                    slides: state.mediaSlots?.slides,
+                    script: state.script,
+                    style: state.style,
+                    layout: state.layout,
+                    aspectRatio: state.aspectRatio,
+                    contentType,
+                  }}
                 />
                 {state.isSaving && (
                   <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-[11px] text-white/70">
@@ -61,13 +66,18 @@ export function EditorPreview() {
         /* Wide / square content — clean, no dark backgrounds */
         <div className="flex h-full w-full items-center justify-center px-6 py-6">
           <div className="relative flex h-full w-full max-w-4xl items-center justify-center overflow-hidden">
-            <SimpleVideoPreview
+            <RemotionPreviewPlayer
               contentType={contentType}
-              script={state.script}
-              style={state.style}
-              mediaSlots={state.mediaSlots}
-              aspectRatio={aspectRatio}
-              layout={state.layout}
+              inputProps={{
+                backgroundUrl: state.mediaSlots?.background?.url,
+                hookVideoUrl: state.mediaSlots?.hookVideo?.url,
+                slides: state.mediaSlots?.slides,
+                script: state.script,
+                style: state.style,
+                layout: state.layout,
+                aspectRatio: state.aspectRatio,
+                contentType,
+              }}
             />
             {state.isSaving && (
               <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-[11px] text-white/70">

@@ -858,24 +858,30 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                 )}
               </div>
 
-              {/* Media display — raw video plays, snapshot poster, text overlays */}
+              {/* Media display — compiled video or raw video + CSS overlays */}
               {hasMedia ? (
                 <div className="space-y-4">
                   {VIDEO_CONTENT_TYPES.includes(item.contentType) ? (
                     <div className="flex justify-center">
                       {(() => {
-                        // graphicUrls[0] is the raw video (playable content)
                         const videoUrl = item.graphicUrls[0]!;
-                        // Last URL is the Cloudinary snapshot (poster with text overlays baked in)
-                        const posterUrl = item.graphicUrls.length > 1 ? item.graphicUrls[item.graphicUrls.length - 1]! : videoUrl;
                         const aspect = item.aspectRatio?.replace(':', '/') || '9/16';
                         const isVertical = item.aspectRatio === '9:16' || item.aspectRatio === '3:4' || item.aspectRatio === '2:3';
 
-                        // Text overlay from enrichmentData (populated when user publishes from editor)
-                        const ed = ((item.enrichmentData || {}) as { editorScript?: { hookText?: string; bodyText?: string; ctaText?: string }; editorStyle?: Record<string, unknown>; editorLayout?: string });
+                        // Detect compiled video: single URL from engine render
+                        const isCompiledVideo = item.graphicUrls.length === 1;
+
+                        // For old content (multiple URLs), show CSS overlays for backward compat
+                        const ed = isCompiledVideo ? {} as any : ((item.enrichmentData || {}) as { editorScript?: { hookText?: string; bodyText?: string; ctaText?: string }; editorStyle?: Record<string, unknown>; editorLayout?: string });
                         const editorScript = ed.editorScript;
                         const editorStyle = ed.editorStyle as { fontFamily?: string; fontSize?: number; color?: string; backgroundColor?: string; align?: string } | undefined;
                         const editorLayout = ed.editorLayout;
+
+                        const posterUrl = isCompiledVideo
+                          ? videoUrl
+                          : item.graphicUrls.length > 1
+                            ? item.graphicUrls[item.graphicUrls.length - 1]!
+                            : videoUrl;
 
                         const textOverlayStyle: React.CSSProperties = {
                           fontFamily: editorStyle?.fontFamily || 'Inter',
@@ -890,7 +896,6 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                           wordBreak: 'break-word',
                         };
 
-                        // Determine overlay position class from layout
                         const textPosClass: Record<string, string> = {
                           centered: 'inset-0 flex items-center justify-center p-4',
                           bottom_caption: 'bottom-0 left-0 right-0 p-3',
@@ -898,8 +903,7 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                           wall_of_text: 'inset-0 flex items-center justify-center p-4',
                         };
                         const displayOverlay = textPosClass[editorLayout || ''] || 'bottom-0 left-0 right-0 p-3';
-
-                        const activeText = editorScript?.hookText || editorScript?.bodyText || editorScript?.ctaText;
+                        const activeText = !isCompiledVideo && (editorScript?.hookText || editorScript?.bodyText || editorScript?.ctaText);
 
                         return (
                           <div className={`relative w-full overflow-hidden rounded-lg border bg-neutral-950 ${isVertical ? 'max-w-[360px]' : ''}`}
@@ -916,11 +920,10 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                               playsInline
                               style={{ aspectRatio: aspect, maxHeight: isVertical ? 640 : 400 }}
                             >
-                              {/* Fallback if video fails to load */}
                               <img src={posterUrl} alt="Content preview" className="size-full object-contain" />
                             </video>
 
-                            {/* Text overlays rendered on top of the video */}
+                            {/* CSS overlays for old content (no compiled video) */}
                             {activeText && (
                               <div className={`pointer-events-none absolute z-10 ${displayOverlay}`}>
                                 <div style={{ maxWidth: '90%' }}>
