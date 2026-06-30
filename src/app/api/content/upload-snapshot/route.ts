@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const imageData: string | undefined = body.imageData;
     const publicId: string | undefined = body.publicId;
-    const folder: string = body.folder || `nativpost/${orgId}/previews`;
+    const folder: string = body.folder || `nativpost/${orgId}`;
 
     if (!imageData) {
       return NextResponse.json({ error: 'Missing imageData' }, { status: 400 });

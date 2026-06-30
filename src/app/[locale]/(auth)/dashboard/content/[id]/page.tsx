@@ -903,18 +903,18 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
 
                         return (
                           <div className={`relative w-full overflow-hidden rounded-lg border bg-neutral-950 ${isVertical ? 'max-w-[360px]' : ''}`}
-                            style={{ aspectRatio: aspect, maxHeight: isVertical ? 640 : 400 }}
                           >
                             <video
                               src={toVideoSrc(videoUrl)}
                               poster={posterUrl}
-                              className="size-full object-contain"
+                              className="w-full object-contain"
                               controls
                               autoPlay
                               muted
                               loop
                               preload="metadata"
                               playsInline
+                              style={{ aspectRatio: aspect, maxHeight: isVertical ? 640 : 400 }}
                             >
                               {/* Fallback if video fails to load */}
                               <img src={posterUrl} alt="Content preview" className="size-full object-contain" />

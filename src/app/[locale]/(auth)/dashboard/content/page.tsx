@@ -2,12 +2,14 @@
 
 import {
   Calendar as CalendarIcon,
+  // ChevronLeft,
+  // ChevronRight,
+  Eye,
+  // Filter,
   Loader2,
   Plus,
-  RefreshCw,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
 import { PageHeader } from '@/features/dashboard/PageHeader';
@@ -25,7 +27,6 @@ interface ContentItem {
   scheduledFor: string | null;
   createdAt: string;
   antiSlopScore: number | null;
-  templateId?: string | null;
 }
 
 // type ViewMode = 'list' | 'calendar';
@@ -64,7 +65,6 @@ export default function ContentPage() {
   const [isLoading, setIsLoading] = useState(true);
   // const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
-  const router = useRouter();
 
   const fetchContent = useCallback(async () => {
     setIsLoading(true);
@@ -161,9 +161,10 @@ export default function ContentPage() {
           {/* Content list */}
           <div className="space-y-3">
             {(statusFilter ? items.filter((i) => i.status === statusFilter) : items).map((item) => (
-              <div
+              <Link
                 key={item.id}
-                className="flex items-start gap-4 rounded-xl border bg-card p-4"
+                href={`/dashboard/content/${item.id}`}
+                className="flex items-start gap-4 rounded-xl border bg-card p-4 transition-colors hover:bg-muted/30"
               >
                 {/* Status badge */}
                 <div className="pt-0.5">
@@ -201,19 +202,9 @@ export default function ContentPage() {
                   </div>
                 </div>
 
-                {/* Remix action */}
-                {item.templateId && (
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/dashboard/content/create?templateId=${item.templateId}`)}
-                    className="mt-0.5 inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-                    title="Remix from this template"
-                  >
-                    <RefreshCw className="size-3.5" />
-                    Remix
-                  </button>
-                )}
-              </div>
+                {/* Action */}
+                <Eye className="mt-1 size-4 shrink-0 text-muted-foreground" />
+              </Link>
             ))}
           </div>
 
