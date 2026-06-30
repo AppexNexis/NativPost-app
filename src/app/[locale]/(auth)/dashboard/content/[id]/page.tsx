@@ -867,21 +867,24 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                 )}
               </div>
 
-              {/* Media display with proper aspect ratio */}
+              {/* Media display — snapshot poster baked with text overlays */}
               {hasMedia ? (
                 <div className="space-y-4">
                   {isVideo || VIDEO_CONTENT_TYPES.includes(item.contentType) ? (
                     <div className="flex justify-center">
-                      {/* Find the first video URL — skip poster images */}
                       {(() => {
-                        const videoUrl = item.graphicUrls.find(u => isVideoFileUrl(u)) || item.graphicUrls[0]!;
+                        // graphicUrls[0] is the Cloudinary snapshot (image with text overlays baked in)
+                        const snapshotUrl = item.graphicUrls[0]!;
+                        // Find a raw video URL for playback
+                        const videoUrl = item.graphicUrls.find(u => isVideoFileUrl(u));
                         const aspect = item.aspectRatio?.replace(':', '/') || '9/16';
                         const isVertical = item.aspectRatio === '9:16' || item.aspectRatio === '3:4' || item.aspectRatio === '2:3';
                         return (
                           <div className={`w-full overflow-hidden rounded-lg border bg-neutral-950 ${isVertical ? 'max-w-[360px]' : ''}`}>
-                            {isVideoFileUrl(videoUrl) ? (
+                            {videoUrl ? (
                               <video
                                 src={toVideoSrc(videoUrl)}
+                                poster={snapshotUrl}
                                 className="w-full"
                                 controls
                                 autoPlay
@@ -893,7 +896,7 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                               />
                             ) : (
                               <img
-                                src={videoUrl}
+                                src={snapshotUrl}
                                 alt="Content preview"
                                 className="w-full object-contain"
                                 style={{ aspectRatio: aspect, maxHeight: isVertical ? 640 : 400 }}
