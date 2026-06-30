@@ -848,45 +848,52 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                 )}
               </div>
 
-              {/* Media display with 9:16 vertical card */}
+              {/* Media display with proper aspect ratio */}
               {hasMedia ? (
                 <div className="space-y-4">
                   {isVideo || VIDEO_CONTENT_TYPES.includes(item.contentType) ? (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {item.graphicUrls.map((url, i) => {
-                        const isVid = isVideoFileUrl(url);
+                    <div className="flex justify-center">
+                      {/* Find the first video URL — skip poster images */}
+                      {(() => {
+                        const videoUrl = item.graphicUrls.find(u => isVideoFileUrl(u)) || item.graphicUrls[0]!;
+                        const aspect = item.aspectRatio?.replace(':', '/') || '9/16';
                         const isVertical = item.aspectRatio === '9:16' || item.aspectRatio === '3:4' || item.aspectRatio === '2:3';
                         return (
-                          <div key={i} className={`overflow-hidden rounded-lg border bg-black ${isVertical ? 'mx-auto max-w-[240px]' : ''}`}>
-                            <div className="border-b px-3 py-2">
-                              <p className="text-[11px] font-medium text-muted-foreground">
-                                {item.aspectRatio ? ASPECT_RATIO_LABELS[item.aspectRatio] : isVid ? 'Video' : 'Image'} {item.graphicUrls.length > 1 ? `#${i + 1}` : ''}
-                              </p>
-                            </div>
-                            {isVid ? (
+                          <div className={`w-full overflow-hidden rounded-lg border bg-neutral-950 ${isVertical ? 'max-w-[360px]' : ''}`}>
+                            {isVideoFileUrl(videoUrl) ? (
                               <video
-                                src={toVideoSrc(url)}
+                                src={toVideoSrc(videoUrl)}
                                 className="w-full"
                                 controls
+                                autoPlay
+                                muted
+                                loop
                                 preload="metadata"
                                 playsInline
-                                style={{ maxHeight: isVertical ? 420 : 300, aspectRatio: item.aspectRatio?.replace(':', '/') || '9/16' }}
+                                style={{ aspectRatio: aspect, maxHeight: isVertical ? 640 : 400 }}
                               />
                             ) : (
-                              <Image src={url} alt={`Media ${i + 1}`} width={isVertical ? 240 : 540} height={isVertical ? 420 : 300} className="w-full object-cover" unoptimized />
+                              <img
+                                src={videoUrl}
+                                alt="Content preview"
+                                className="w-full object-contain"
+                                style={{ aspectRatio: aspect, maxHeight: isVertical ? 640 : 400 }}
+                              />
                             )}
                           </div>
                         );
-                      })}
+                      })()}
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                      {item.graphicUrls.map((url, i) => (
-                        <div key={i} className="overflow-hidden rounded-lg border">
-                          <div className="border-b px-2 py-1"><p className="text-[10px] text-muted-foreground">{isCarousel ? `Slide ${i + 1}` : `Image ${i + 1}`}</p></div>
-                          <Image src={url} alt={`Media ${i + 1}`} width={300} height={300} className="w-full object-cover" unoptimized />
-                        </div>
-                      ))}
+                    <div className="flex justify-center">
+                      {(() => {
+                        const aspect = item.aspectRatio?.replace(':', '/') || '1/1';
+                        return (
+                          <div className="w-full max-w-[360px] overflow-hidden rounded-lg border bg-neutral-950">
+                            <img src={item.graphicUrls[0]!} alt="Content image" className="w-full object-contain" style={{ aspectRatio: aspect }} />
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>

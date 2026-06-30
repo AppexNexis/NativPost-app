@@ -141,6 +141,7 @@ export function SimpleVideoPreview({
               loop
               autoPlay
               playsInline
+              data-editor-preview-video
               onEnded={() => setPlaying(false)}
             />
           ) : (

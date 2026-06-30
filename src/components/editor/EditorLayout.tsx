@@ -3,7 +3,6 @@ import { ArrowLeft, Check, Loader2, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { useEditor } from './EditorContext';
-import { getVideoPosterUrl, isCloudinaryVideoUrl } from '@/lib/cloudinary';
 
 // ── Content type labels ──────────────────────────────────────────
 const CT_LABELS: Record<string, string> = {
@@ -17,6 +16,135 @@ const CT_LABELS: Record<string, string> = {
   talking_head: 'Talking Head',
   green_screen: 'Green Screen',
 };
+
+// ── Canvas preview capture ───────────────────────────────────────
+// Renders the current editor preview (video frame + text overlays)
+// onto a hidden canvas, uploads to Cloudinary, returns the URL.
+async function captureEditorPreview(
+  editorState: { script?: { hookText?: string; bodyText?: string; ctaText?: string }; style?: Record<string, unknown>; layout?: string },
+): Promise<string | null> {
+  const video = document.querySelector<HTMLVideoElement>('[data-editor-preview-video]');
+  const canvas = document.createElement('canvas');
+  const W = 720;
+  const H = 1280; // 9:16 ratio
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  // 1. Fill background
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  // 2. Draw video frame (cover-fit)
+  if (video && video.readyState >= 2 && video.videoWidth > 0) {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const scale = Math.max(W / vw, H / vh);
+    const sw = vw * scale;
+    const sh = vh * scale;
+    ctx.drawImage(video, (W - sw) / 2, (H - sh) / 2, sw, sh);
+  }
+
+  // 3. Draw text overlays matching the layout
+  const script = editorState.script || {};
+  const style_ = editorState.style || {};
+  const layout = editorState.layout || 'centered';
+
+  const fontSize = Number(style_.fontSize) || 20;
+  const color = String(style_.color || '#ffffff');
+  const bg = String(style_.backgroundColor || 'rgba(0,0,0,0.5)');
+  const align = (String(style_.align || 'center')) as CanvasTextAlign;
+  const lines: string[] = [];
+  if (script.hookText) lines.push(script.hookText);
+  if (script.bodyText) lines.push(script.bodyText);
+  if (script.ctaText) lines.push(script.ctaText);
+
+  if (lines.length > 0) {
+    const paddingX = 16;
+    const paddingY = 12;
+    const lineHeight = fontSize * 1.35;
+    const textW = W - paddingX * 4;
+    const totalH = lines.length * lineHeight + paddingY * 2;
+    const radius = 6;
+
+    // Determine text position based on layout
+    let textY: number;
+    const isCentered = layout === 'centered' || layout === 'wall_of_text';
+    const isTop = layout === 'top_caption';
+
+    if (isCentered) {
+      textY = (H - totalH) / 2;
+    } else if (isTop) {
+      textY = paddingY + 12;
+    } else {
+      textY = H - totalH - 24;
+    }
+
+    // Background box
+    ctx.fillStyle = bg;
+    roundRect(ctx, paddingX * 1.5, textY, textW, totalH, radius);
+    ctx.fill();
+
+    // Text lines
+    ctx.fillStyle = color;
+    ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'top';
+
+    const xPos = align === 'center' ? W / 2 : align === 'right' ? W - paddingX * 2 : paddingX * 2;
+
+    lines.forEach((line, i) => {
+      const ty = textY + paddingY + i * lineHeight;
+      ctx.fillText(line, xPos, ty);
+    });
+  }
+
+  // 4. Export to blob
+  const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.88));
+  if (!blob) return null;
+
+  // 5. Convert to base64
+  const dataUrl = await new Promise<string | null>(resolve => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(blob);
+  });
+  if (!dataUrl) return null;
+
+  // 6. Upload to Cloudinary
+  try {
+    const res = await fetch('/api/content/upload-snapshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageData: dataUrl }),
+    });
+    if (!res.ok) throw new Error('Upload failed');
+    const data = await res.json();
+    return data.url;
+  } catch (err) {
+    console.error('[Capture] Failed to upload preview:', err);
+    return null;
+  }
+}
+
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number, r: number,
+) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
 
 export function EditorLayout({
   preview,
@@ -39,19 +167,21 @@ export function EditorLayout({
       return;
     }
 
+    // Capture the composed editor preview (video + text overlays) to Cloudinary
+    const snapshotUrl = await captureEditorPreview({
+      script: state.script,
+      style: state.style,
+      layout: state.layout,
+    });
+
     // Collect all media URLs from all slots
     const allMediaUrls: string[] = [];
-    const bgUrl = state.mediaSlots?.background?.url;
 
-    // If background is a Cloudinary video, generate a poster frame as the
-    // first graphicUrl — it's an image URL that renders immediately on the
-    // detail page even before the video loads or if text overlays aren't baked.
-    if (bgUrl && isCloudinaryVideoUrl(bgUrl)) {
-      allMediaUrls.push(getVideoPosterUrl(bgUrl, { width: 608, height: 1080 }));
-    }
+    // Snapshot goes first — it's the actual composed preview with overlays baked in
+    if (snapshotUrl) allMediaUrls.push(snapshotUrl);
 
     // Raw source URLs (videos playback, images display)
-    if (bgUrl) allMediaUrls.push(bgUrl);
+    if (state.mediaSlots?.background?.url) allMediaUrls.push(state.mediaSlots.background.url);
     if (state.mediaSlots?.hookVideo?.url) allMediaUrls.push(state.mediaSlots.hookVideo.url);
     if (state.mediaSlots?.demoVideo?.url) allMediaUrls.push(state.mediaSlots.demoVideo.url);
     if (state.mediaSlots?.slides?.length) {
