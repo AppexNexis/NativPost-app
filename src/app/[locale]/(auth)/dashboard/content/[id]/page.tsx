@@ -119,7 +119,12 @@ const PLATFORM_LABELS: Record<string, string> = {
   whatsapp: 'WhatsApp',
 };
 
-const MEDIA_CONTENT_TYPES = ['single_image', 'carousel', 'reel', 'ugc_ad', 'data_story'];
+const MEDIA_CONTENT_TYPES = [
+  'single_image', 'slideshow', 'reel', 'ugc',
+  'data_story', 'wall_of_text', 'talking_head', 'green_screen', 'video_hook',
+  'carousel', 'ugc_ad',
+];
+const VIDEO_CONTENT_TYPES = ['slideshow', 'reel', 'ugc', 'data_story', 'wall_of_text', 'talking_head', 'green_screen', 'video_hook', 'ugc_ad'];
 
 const ASPECT_RATIO_LABELS: Record<string, string> = {
   '9:16': '9:16 — Vertical (Stories, Reels)',
@@ -411,9 +416,6 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
   const statusConfig = STATUS_CONFIG[item.status] || { label: item.status, color: 'bg-muted' };
   const modeConfig = item.contentMode ? (MODE_CONFIG[item.contentMode] || { label: item.contentMode, color: 'bg-zinc-100 text-zinc-600' }) : null;
   const needsMedia = MEDIA_CONTENT_TYPES.includes(item.contentType);
-  const isReel = item.contentType === 'reel';
-  const isUGCAd = item.contentType === 'ugc_ad';
-  const isDataStory = item.contentType === 'data_story';
   const isCarousel = item.contentType === 'carousel';
   // const isSingleImage = item.contentType === 'single_image';
   const hasMedia = item.graphicUrls && item.graphicUrls.length > 0;
@@ -636,7 +638,7 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
           </button>
           {needsMedia && !hasMedia && item.status === 'approved' && (
             <p className="text-center text-[11px] text-amber-600">
-              {isReel ? 'Add a video before publishing.' : 'Add an image before publishing.'}
+              {VIDEO_CONTENT_TYPES.includes(item.contentType) ? 'Add a video before publishing.' : 'Add an image before publishing.'}
             </p>
           )}
         </>
@@ -832,9 +834,9 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
           {needsMedia && (
             <div className="rounded-xl border bg-card p-4 sm:p-5">
               <div className="mb-4 flex items-center gap-2 border-b pb-4">
-                {isReel || isUGCAd || isDataStory ? <Video className="size-4 text-muted-foreground" /> : <ImageIcon className="size-4 text-muted-foreground" />}
+                {VIDEO_CONTENT_TYPES.includes(item.contentType) ? <Video className="size-4 text-muted-foreground" /> : <ImageIcon className="size-4 text-muted-foreground" />}
                 <h3 className="text-sm font-semibold">
-                  {isReel ? 'Video' : isCarousel ? 'Carousel' : 'Image'}
+                  {VIDEO_CONTENT_TYPES.includes(item.contentType) ? 'Video' : isCarousel ? 'Carousel' : 'Image'}
                 </h3>
                 {item.aspectRatio && (
                   <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
@@ -849,7 +851,7 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
               {/* Media display with 9:16 vertical card */}
               {hasMedia ? (
                 <div className="space-y-4">
-                  {isVideo || isReel || isUGCAd || isDataStory ? (
+                  {isVideo || VIDEO_CONTENT_TYPES.includes(item.contentType) ? (
                     <div className="grid gap-3 sm:grid-cols-2">
                       {item.graphicUrls.map((url, i) => {
                         const isVid = isVideoFileUrl(url);

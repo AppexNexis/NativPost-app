@@ -3,6 +3,7 @@ import { ArrowLeft, Check, Loader2, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { useEditor } from './EditorContext';
+import { getVideoPosterUrl, isCloudinaryVideoUrl } from '@/lib/cloudinary';
 
 // ── Content type labels ──────────────────────────────────────────
 const CT_LABELS: Record<string, string> = {
@@ -40,7 +41,17 @@ export function EditorLayout({
 
     // Collect all media URLs from all slots
     const allMediaUrls: string[] = [];
-    if (state.mediaSlots?.background?.url) allMediaUrls.push(state.mediaSlots.background.url);
+    const bgUrl = state.mediaSlots?.background?.url;
+
+    // If background is a Cloudinary video, generate a poster frame as the
+    // first graphicUrl — it's an image URL that renders immediately on the
+    // detail page even before the video loads or if text overlays aren't baked.
+    if (bgUrl && isCloudinaryVideoUrl(bgUrl)) {
+      allMediaUrls.push(getVideoPosterUrl(bgUrl, { width: 608, height: 1080 }));
+    }
+
+    // Raw source URLs (videos playback, images display)
+    if (bgUrl) allMediaUrls.push(bgUrl);
     if (state.mediaSlots?.hookVideo?.url) allMediaUrls.push(state.mediaSlots.hookVideo.url);
     if (state.mediaSlots?.demoVideo?.url) allMediaUrls.push(state.mediaSlots.demoVideo.url);
     if (state.mediaSlots?.slides?.length) {
@@ -64,6 +75,7 @@ export function EditorLayout({
           status: 'draft',
           graphicUrls: allMediaUrls,
           aspectRatio: state.aspectRatio || state.edit?.aspectRatio || '9:16',
+          contentMode: state.edit?.contentMode || null,
         }),
       });
 

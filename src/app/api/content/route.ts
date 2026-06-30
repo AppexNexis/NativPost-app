@@ -89,6 +89,8 @@ export async function POST(request: NextRequest) {
         scheduledFor: body.scheduledFor ? new Date(body.scheduledFor) : null,
         antiSlopScore: body.antiSlopScore ? Number(body.antiSlopScore) : null,
         qualityFlags: Array.isArray(body.qualityFlags) ? body.qualityFlags : [],
+        aspectRatio: body.aspectRatio || null,
+        contentMode: body.contentMode || 'normal',
       })
       .returning();
 
