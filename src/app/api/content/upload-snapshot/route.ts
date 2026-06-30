@@ -44,10 +44,12 @@ export async function POST(request: NextRequest) {
     // Cloudinary wraps the single JPEG frame in an h.264 MP4 container,
     // producing a short looping video that shows the composited preview
     // (background frame + text overlays) baked in.
+    // Tagged with orgId so it appears in the media library.
     const result = await cloudinary.uploader.upload(imageData, {
       folder,
       public_id: publicId,
       resource_type: 'video',
+      tags: [`org:${orgId}`],
       transformation: [
         { width: 720, height: 1280, crop: 'pad', background: '#000', video_codec: 'h264' },
       ],
