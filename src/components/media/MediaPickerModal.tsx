@@ -80,13 +80,13 @@ export function MediaPickerModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-h-[80vh] max-w-2xl overflow-hidden sm:max-w-2xl">
+      <DialogContent className="flex max-h-[80vh] max-w-2xl flex-col sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 
         {/* Search */}
-        <div className="relative">
+        <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search media..."
@@ -100,13 +100,13 @@ export function MediaPickerModal({
         </div>
 
         {/* Grid */}
-        <div className="min-h-[300px] flex-1 overflow-y-auto">
+        <div className="min-h-[250px] flex-1 overflow-y-auto">
           {loading ? (
-            <div className="flex h-64 items-center justify-center">
+            <div className="flex h-48 items-center justify-center">
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
           ) : assets.length === 0 ? (
-            <div className="flex h-64 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+            <div className="flex h-48 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
               <ImageIcon className="size-8 opacity-40" />
               <p>No media found in your library.</p>
               <p className="text-xs">Upload images using the Media Library page first.</p>
@@ -119,6 +119,11 @@ export function MediaPickerModal({
                   <button
                     key={asset.publicId}
                     type="button"
+                    onDoubleClick={() => {
+                      setSelectedId(asset.publicId);
+                      onSelect(asset.url);
+                      onClose();
+                    }}
                     onClick={() =>
                       setSelectedId(isSelected ? null : asset.publicId)
                     }
@@ -151,13 +156,18 @@ export function MediaPickerModal({
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 border-t pt-4">
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleConfirm} disabled={!selectedId}>
-            Use Selected
-          </Button>
+        <div className="flex items-center justify-between gap-2 border-t pt-3">
+          <p className="text-xs text-muted-foreground">
+            {selectedId ? "Double-click to select instantly" : "Select an image, then click Use Selected"}
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirm} disabled={!selectedId}>
+              Use Selected
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
