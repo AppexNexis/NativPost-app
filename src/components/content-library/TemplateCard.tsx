@@ -12,10 +12,9 @@ import { TemplateCategoryPill } from './TemplateCategoryPill';
 type TemplateCardProps = {
   template: ContentTemplate;
   onRemix: (template: ContentTemplate) => void;
-  onClick?: (template: ContentTemplate) => void;
 };
 
-export function TemplateCard({ template, onRemix, onClick }: TemplateCardProps) {
+export function TemplateCard({ template, onRemix }: TemplateCardProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -50,18 +49,9 @@ export function TemplateCard({ template, onRemix, onClick }: TemplateCardProps) 
 
   return (
     <div
-      className="group relative cursor-pointer overflow-hidden rounded-2xl bg-muted shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md"
+      className="group relative overflow-hidden rounded-2xl bg-muted shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      onClick={() => onClick?.(template)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onClick?.(template);
-        }
-      }}
     >
       {/* 9:16 media container */}
       <div className="relative aspect-[9/16] w-full overflow-hidden bg-secondary/5">

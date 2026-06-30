@@ -6,7 +6,6 @@ import React, { useState } from 'react';
 import type { ContentTemplate, ContentType, NicheTag, TemplateFilters } from '@/types/v2';
 
 import { TemplateCard } from './TemplateCard';
-import { TemplatePreviewModal } from './TemplatePreviewModal';
 
 type ContentLibraryBrowserProps = {
   templates: ContentTemplate[];
@@ -66,7 +65,6 @@ export function ContentLibraryBrowser({
   onLoadMore,
   onRemix,
 }: ContentLibraryBrowserProps) {
-  const [selectedTemplate, setSelectedTemplate] = useState<ContentTemplate | null>(null);
   const [showFilters, setShowFilters] = useState(false);
 
   const handleFilterChange = React.useCallback(
@@ -205,7 +203,6 @@ export function ContentLibraryBrowser({
                 key={template.id}
                 template={template}
                 onRemix={onRemix}
-                onClick={setSelectedTemplate}
               />
             ))}
           </div>
@@ -244,14 +241,6 @@ export function ContentLibraryBrowser({
         </div>
       )}
 
-      {/* Preview modal */}
-      {selectedTemplate && (
-        <TemplatePreviewModal
-          template={selectedTemplate}
-          onClose={() => setSelectedTemplate(null)}
-          onRemix={onRemix}
-        />
-      )}
     </div>
   );
 }
