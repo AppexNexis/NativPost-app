@@ -867,11 +867,11 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                         const videoUrl = item.graphicUrls[0]!;
                         const aspect = item.aspectRatio?.replace(':', '/') || '9/16';
 
-                        // Detect compiled video: single URL from engine render
-                        const isCompiledVideo = item.graphicUrls.length === 1;
+                        // Detect compiled video: engine-rendered MP4 with text baked in
+                        const isCompiledVideo = (item.enrichmentData as any)?.isCompiled === true;
 
-                        // For old content (multiple URLs), show CSS overlays for backward compat
-                        const ed = isCompiledVideo ? {} as any : ((item.enrichmentData || {}) as { editorScript?: { hookText?: string; bodyText?: string; ctaText?: string }; editorStyle?: Record<string, unknown>; editorLayout?: string });
+                        // Use enrichmentData for CSS overlays when video isn't compiled
+                        const ed = (item.enrichmentData || {}) as { editorScript?: { hookText?: string; bodyText?: string; ctaText?: string }; editorStyle?: Record<string, unknown>; editorLayout?: string };
                         const editorScript = ed.editorScript;
                         const editorStyle = ed.editorStyle as { fontFamily?: string; fontSize?: number; color?: string; backgroundColor?: string; align?: string } | undefined;
                         const editorLayout = ed.editorLayout;

@@ -61,6 +61,14 @@ export function EditorLayout({
     await saveEdit();
     setIsPublishing(true);
 
+    // Enrichment data with editor state — always stored so CSS overlays work
+    const enrichmentData: Record<string, any> = {
+      editorScript: state.script,
+      editorStyle: state.style,
+      editorLayout: state.layout,
+      aspectRatio: state.aspectRatio,
+    };
+
     // If we already have a content item, render and update
     if (state.edit?.contentItemId) {
       const compiledVideoUrl = await renderEditorVideo({
@@ -73,22 +81,22 @@ export function EditorLayout({
       });
 
       const updateBody: Record<string, any> = {
-        enrichmentData: {
-          editorScript: state.script,
-          editorStyle: state.style,
-          editorLayout: state.layout,
-        },
+        enrichmentData,
       };
 
       if (compiledVideoUrl) {
+        enrichmentData.isCompiled = true;
         updateBody.graphicUrls = [compiledVideoUrl];
       }
 
-      fetch(`/api/content/${state.edit.contentItemId}`, {
+      const patchRes = await fetch(`/api/content/${state.edit.contentItemId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateBody),
-      }).catch(() => {});
+      });
+      if (!patchRes.ok) {
+        console.error('[Publish] PATCH failed:', patchRes.status);
+      }
       router.push(`/dashboard/content/${state.edit.contentItemId}`);
       return;
     }
@@ -103,12 +111,16 @@ export function EditorLayout({
       contentType: state.edit?.contentType || 'text',
     });
 
+    if (compiledVideoUrl) {
+      enrichmentData.isCompiled = true;
+    }
+
     // Use compiled video as primary; fall back to raw source
     const allMediaUrls: string[] = [];
     if (compiledVideoUrl) {
       allMediaUrls.push(compiledVideoUrl);
     } else {
-      // Fallback: raw source URLs + enrichmentData CSS overlays
+      // Fallback: raw source URLs — CSS overlays will use enrichmentData on detail page
       if (state.mediaSlots?.background?.url) allMediaUrls.push(state.mediaSlots.background.url);
       if (state.mediaSlots?.hookVideo?.url) allMediaUrls.push(state.mediaSlots.hookVideo.url);
       if (state.mediaSlots?.demoVideo?.url) allMediaUrls.push(state.mediaSlots.demoVideo.url);
@@ -156,19 +168,12 @@ export function EditorLayout({
         }).catch(() => {});
       }
 
-      // 4. Save editor state (script, style, layout) on the content item
-      //    so the detail page can render text overlays on the video
+      // 4. Save editor state & compiled flag on the content item
       if (contentId) {
         await fetch(`/api/content/${contentId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            enrichmentData: {
-              editorScript: state.script,
-              editorStyle: state.style,
-              editorLayout: state.layout,
-            },
-          }),
+          body: JSON.stringify({ enrichmentData }),
         }).catch(() => {});
       }
 
