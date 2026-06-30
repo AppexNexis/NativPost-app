@@ -13,6 +13,11 @@ const BG_COLORS = [
   'rgba(255,255,255,0.15)', 'rgba(255,255,255,0)',
 ];
 
+const CTA_COLORS = [
+  'rgba(134, 79, 254, 0.85)', '#864FFE', '#ef4444', '#22c55e',
+  '#3b82f6', '#f59e0b', '#ec4899', 'rgba(0,0,0,0.7)',
+];
+
 export function TextTab() {
   const { state, dispatch } = useEditor();
 
@@ -199,6 +204,53 @@ export function TextTab() {
           }`}
         >
           U
+        </button>
+      </div>
+
+      <div className="border-t border-border" />
+
+      {/* CTA Background Color */}
+      <div>
+        <label className="mb-2 block text-xs font-medium text-foreground">CTA BUTTON COLOR</label>
+        <div className="flex flex-wrap gap-2">
+          {CTA_COLORS.map((c, i) => (
+            <button
+              key={i}
+              onClick={() => updateStyle('ctaBackgroundColor', c)}
+              className={`size-7 rounded-full border-2 transition-transform hover:scale-110 ${
+                (state.style as any).ctaBackgroundColor === c ? 'border-primary scale-110' : 'border-border'
+              }`}
+              style={{ backgroundColor: c }}
+            />
+          ))}
+          <input
+            type="color"
+            value={(state.style as any).ctaBackgroundColor || '#864FFE'}
+            onChange={e => updateStyle('ctaBackgroundColor', e.target.value)}
+            className="size-7 cursor-pointer rounded-full border-2 border-border bg-transparent p-0"
+            title="Custom CTA color"
+          />
+        </div>
+      </div>
+
+      {/* Animation Toggle */}
+      <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+        <div>
+          <label className="text-xs font-medium text-foreground">ANIMATION</label>
+          <p className="text-[11px] text-muted-foreground">Sequential text fade-in</p>
+        </div>
+        <button
+          onClick={() => {
+            const current = (state.style as any).noAnimation;
+            dispatch({ type: 'UPDATE_STYLE', payload: { noAnimation: !current } });
+          }}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+            (state.style as any).noAnimation ? 'bg-muted-foreground/30' : 'bg-primary'
+          }`}
+        >
+          <span className={`inline-block size-3.5 rounded-full bg-white transition-transform ${
+            (state.style as any).noAnimation ? 'translate-x-1' : 'translate-x-[18px]'
+          }`} />
         </button>
       </div>
     </div>

@@ -18,9 +18,9 @@ interface RemotionPreviewPlayerProps {
 export function RemotionPreviewPlayer({ contentType, inputProps }: RemotionPreviewPlayerProps) {
   const Composition = DEFAULT_COMPOSITION;
 
-  // 6 seconds at 30fps (matches engine's FIXED_DURATION_SECONDS)
+  // 8 seconds at 30fps (matches engine's FIXED_DURATION_SECONDS)
   const durationInFrames = useMemo(() => {
-    return 6 * 30;
+    return 8 * 30;
   }, []);
 
   const { width, height } = useMemo(() => {

@@ -397,10 +397,12 @@ export type TextStyle = {
   fontSize?: number;
   color?: string;
   backgroundColor?: string;
+  ctaBackgroundColor?: string;
   align?: 'left' | 'center' | 'right';
   weight?: 'normal' | 'bold';
   italic?: boolean;
   underline?: boolean;
+  noAnimation?: boolean;
 };
 
 export type MediaSlot = {

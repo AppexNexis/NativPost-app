@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React from 'react';
 import {
   AbsoluteFill,
@@ -23,6 +22,7 @@ export interface EditorStyle {
   fontSize?: number;
   color?: string;
   backgroundColor?: string;
+  ctaBackgroundColor?: string;
   align?: 'left' | 'center' | 'right';
   weight?: 'normal' | 'bold';
   italic?: boolean;
@@ -42,6 +42,7 @@ export interface EditorInputProps {
   layout: string;
   aspectRatio: string;
   contentType: string;
+  noAnimation?: boolean;
 }
 
 // ── Style helpers ──────────────────────────────────────────────────────────────
@@ -63,8 +64,8 @@ interface LayoutCoords {
   padding: number;
 }
 
-function layoutPosition(layout: string, width: number, height: number): LayoutCoords {
-  const p = Math.round(width * 0.04);
+function layoutPosition(layout: string, width: number, _height: number): LayoutCoords {
+  const p = Math.round(width * 0.05);
 
   switch (layout) {
     case 'centered':
@@ -82,16 +83,22 @@ function layoutPosition(layout: string, width: number, height: number): LayoutCo
   }
 }
 
-// ── Fade-in text animation ─────────────────────────────────────────────────────
+// ── Text block renderer (animated or static) ─────────────────────────────────────
 
-function FadeInText({ text, style, startFrame, duration }: {
+function FadeInText({ text, style, startFrame, duration, noAnimation }: {
   text: string;
   style: React.CSSProperties;
   startFrame: number;
   duration: number;
+  noAnimation?: boolean;
 }) {
   const frame = useCurrentFrame();
   const localFrame = frame - startFrame;
+
+  if (noAnimation) {
+    return <div style={style}>{text}</div>;
+  }
+
   if (localFrame < 0 || localFrame > duration) return null;
 
   const opacity = interpolate(localFrame, [0, 10], [0, 1], { extrapolateRight: 'clamp' });
@@ -109,11 +116,12 @@ export function EditorComposition({
   script,
   style,
   layout,
-  aspectRatio,
   contentType,
+  noAnimation: noAnimationFromProps,
 }: EditorInputProps) {
   const { width, height, fps } = useVideoConfig();
 
+  const noAnimation = noAnimationFromProps ?? (style as any)?.noAnimation;
   const isHookVideoContent = ['video_hook', 'ugc', 'talking_head'].includes(contentType);
   const isSlideshow = contentType === 'slideshow';
 
@@ -127,11 +135,13 @@ export function EditorComposition({
     fontWeight: style.weight === 'bold' ? 'bold' : 'normal',
     fontStyle: style.italic ? 'italic' : 'normal',
     textDecoration: style.underline ? 'underline' : 'none',
-    lineHeight: 1.25,
-    padding: '8px 12px',
-    borderRadius: '6px',
+    lineHeight: 1.6,
+    letterSpacing: '0.02em',
+    padding: '14px 20px',
+    borderRadius: '8px',
     wordBreak: 'break-word',
     display: 'inline-block',
+    maxWidth: '100%',
   };
 
   const pos = layoutPosition(layout, width, height);
@@ -142,11 +152,11 @@ export function EditorComposition({
   const hookInsetTop = Math.round(height * 0.05);
 
   const activeText = script.hookText || script.bodyText || script.ctaText;
-  const totalFrames = 6 * fps; // 6 seconds
-  const textStartFrame = 10;
+  const totalFrames = 8 * fps; // 8 seconds
+  const textStartFrame = noAnimation ? 0 : 10;
 
-  const bodyFontSize = `${Math.max(14, fontSize * 0.7)}px`;
-  const ctaFontSize = `${Math.max(12, fontSize * 0.6)}px`;
+  const bodyFontSize = `${Math.max(16, fontSize * 0.8)}px`;
+  const ctaFontSize = `${Math.max(14, fontSize * 0.7)}px`;
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
@@ -176,29 +186,37 @@ export function EditorComposition({
           display: 'flex', justifyContent: pos.justifyContent, alignItems: pos.alignItems,
           padding: pos.padding, zIndex: 10,
         }}>
-          <div style={{ maxWidth: '90%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ maxWidth: '90%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {script.hookText && (
               <FadeInText
                 text={script.hookText}
                 style={textBaseStyle}
                 startFrame={textStartFrame}
                 duration={totalFrames - textStartFrame}
+                noAnimation={noAnimation}
               />
             )}
             {script.bodyText && (
               <FadeInText
                 text={script.bodyText}
                 style={{ ...textBaseStyle, fontSize: bodyFontSize }}
-                startFrame={textStartFrame + 20}
+                startFrame={noAnimation ? 0 : textStartFrame + 20}
                 duration={totalFrames - textStartFrame - 20}
+                noAnimation={noAnimation}
               />
             )}
             {script.ctaText && (
               <FadeInText
                 text={script.ctaText}
-                style={{ ...textBaseStyle, fontSize: ctaFontSize, backgroundColor: 'rgba(134, 79, 254, 0.85)' }}
-                startFrame={textStartFrame + 40}
+                style={{
+                  ...textBaseStyle,
+                  fontSize: ctaFontSize,
+                  fontWeight: 'bold',
+                  backgroundColor: style.ctaBackgroundColor || style.backgroundColor || 'rgba(134, 79, 254, 0.85)',
+                }}
+                startFrame={noAnimation ? 0 : textStartFrame + 40}
                 duration={totalFrames - textStartFrame - 40}
+                noAnimation={noAnimation}
               />
             )}
           </div>
@@ -207,7 +225,7 @@ export function EditorComposition({
 
       {/* Hook video inset */}
       {isHookVideoContent && hookVideoUrl && (
-        <Sequence from={15} durationInFrames={totalFrames - 15}>
+        <Sequence from={noAnimation ? 0 : 15} durationInFrames={totalFrames - (noAnimation ? 0 : 15)}>
           <div style={{
             position: 'absolute', top: hookInsetTop, right: hookInsetRight,
             width: hookInsetWidth, height: hookInsetHeight,

@@ -911,16 +911,16 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                             <video
                               src={toVideoSrc(videoUrl)}
                               poster={posterUrl}
-                              className="w-full object-contain"
+                              className="w-full object-cover"
                               controls
                               autoPlay
                               muted
                               loop
                               preload="metadata"
                               playsInline
-                              style={{ aspectRatio: aspect, maxHeight: isVertical ? 640 : 400 }}
+                              style={{ aspectRatio: aspect }}
                             >
-                              <img src={posterUrl} alt="Content preview" className="size-full object-contain" />
+                              <img src={posterUrl} alt="Content preview" className="size-full object-cover" />
                             </video>
 
                             {/* CSS overlays for old content (no compiled video) */}
