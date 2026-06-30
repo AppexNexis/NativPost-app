@@ -3,9 +3,7 @@ import { eq } from 'drizzle-orm';
 import { getDb } from '@/libs/DB';
 import { brandProfileSchema, mediaAssetSchema, organizationSchema } from '@/models/Schema';
 
-export const IMAGE_ENGINE_URL = process.env.NATIVPOST_IMAGE_URL || 'http://localhost:4000';
-export const VIDEO_ENGINE_URL = process.env.NATIVPOST_VIDEO_URL || 'http://localhost:3001';
-export const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
+export { IMAGE_ENGINE_URL, VIDEO_ENGINE_URL, ENGINE_API_KEY, engineAuthHeaders } from './engine';
 
 export interface BrandTokens {
   brandName: string;
@@ -371,9 +369,3 @@ export async function saveMediaAsset(
   };
 }
 
-export function engineAuthHeaders() {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${ENGINE_API_KEY}`,
-  };
-}

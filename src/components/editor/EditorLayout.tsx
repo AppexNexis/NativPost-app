@@ -3,7 +3,7 @@ import { ArrowLeft, Check, Loader2, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { useEditor } from './EditorContext';
-import { VIDEO_ENGINE_URL, engineAuthHeaders } from '@/lib/ai-studio/server';
+import { VIDEO_ENGINE_URL, engineAuthHeaders } from '@/lib/ai-studio/engine';
 
 // ── Content type labels ──────────────────────────────────────────
 const CT_LABELS: Record<string, string> = {
