@@ -154,16 +154,36 @@ export function EditorLayout({
     await saveEdit();
     setIsPublishing(true);
 
-    // If we already have a content item, go directly to it
+    // If we already have a content item, update its enrichmentData and redirect
     if (state.edit?.contentItemId) {
+      // Save latest editor state so the detail page shows current overlays
+      fetch(`/api/content/${state.edit.contentItemId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enrichmentData: {
+            editorScript: state.script,
+            editorStyle: state.style,
+            editorLayout: state.layout,
+          },
+        }),
+      }).catch(() => {});
       router.push(`/dashboard/content/${state.edit.contentItemId}`);
       return;
     }
 
-    // 1. Build primary media URLs (non-blocking snapshot + all source URLs)
+    // 1. Build primary media URLs (raw source URLs first, snapshot last)
     const allMediaUrls: string[] = [];
 
-    // Try canvas capture with 3s timeout — never blocks publishing
+    // Raw source URLs FIRST (these are the playable videos)
+    if (state.mediaSlots?.background?.url) allMediaUrls.push(state.mediaSlots.background.url);
+    if (state.mediaSlots?.hookVideo?.url) allMediaUrls.push(state.mediaSlots.hookVideo.url);
+    if (state.mediaSlots?.demoVideo?.url) allMediaUrls.push(state.mediaSlots.demoVideo.url);
+    if (state.mediaSlots?.slides?.length) {
+      state.mediaSlots.slides.forEach(s => { if (s.url) allMediaUrls.push(s.url); });
+    }
+
+    // Snapshot/poster LAST (preview image with text overlays baked in)
     const snapshotUrl = await captureEditorPreview({
       script: state.script,
       style: state.style,
@@ -177,14 +197,6 @@ export function EditorLayout({
       if (bgUrl && isCloudinaryVideoUrl(bgUrl)) {
         allMediaUrls.push(getVideoPosterUrl(bgUrl, { width: 608, height: 1080 }));
       }
-    }
-
-    // Raw source URLs
-    if (state.mediaSlots?.background?.url) allMediaUrls.push(state.mediaSlots.background.url);
-    if (state.mediaSlots?.hookVideo?.url) allMediaUrls.push(state.mediaSlots.hookVideo.url);
-    if (state.mediaSlots?.demoVideo?.url) allMediaUrls.push(state.mediaSlots.demoVideo.url);
-    if (state.mediaSlots?.slides?.length) {
-      state.mediaSlots.slides.forEach(s => { if (s.url) allMediaUrls.push(s.url); });
     }
 
     const caption = [
@@ -226,7 +238,23 @@ export function EditorLayout({
         }).catch(() => {});
       }
 
-      // 4. Redirect to detail page
+      // 4. Save editor state (script, style, layout) on the content item
+      //    so the detail page can render text overlays on the video
+      if (contentId) {
+        await fetch(`/api/content/${contentId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            enrichmentData: {
+              editorScript: state.script,
+              editorStyle: state.style,
+              editorLayout: state.layout,
+            },
+          }),
+        }).catch(() => {});
+      }
+
+      // 5. Redirect to detail page
       if (contentId) {
         router.push(`/dashboard/content/${contentId}`);
       } else {

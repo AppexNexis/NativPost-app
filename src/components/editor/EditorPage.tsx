@@ -37,6 +37,8 @@ export default function EditorPage({
           let aspectRatio = '9:16';
           let script: Record<string, unknown> = {};
           let mediaSlots: Record<string, unknown> = {};
+          let editorStyle: Record<string, unknown> | undefined;
+          let editorLayout: string | undefined;
 
           if (!itemRes.ok) {
             throw new Error('Failed to load content item for editing');
@@ -50,6 +52,11 @@ export default function EditorPage({
             aspectRatio?: string;
             caption?: string;
             graphicUrls?: string[];
+            enrichmentData?: {
+              editorScript?: { hookText?: string; bodyText?: string; ctaText?: string };
+              editorStyle?: Record<string, unknown>;
+              editorLayout?: string;
+            };
           } | undefined;
 
           if (item) {
@@ -58,15 +65,23 @@ export default function EditorPage({
             targetPlatforms = item.targetPlatforms || [];
             aspectRatio = item.aspectRatio || '9:16';
 
-            // Map caption to script fields
-            if (item.caption) {
+            // Load script from enrichmentData (preserves hook/body/cta structure)
+            // Fallback: parse caption as body text
+            if (item.enrichmentData?.editorScript) {
+              script = item.enrichmentData.editorScript as Record<string, unknown>;
+            } else if (item.caption) {
               script = { bodyText: item.caption };
             }
 
-            // Map graphicUrls to mediaSlots
+            // Load style and layout from enrichmentData
+            editorStyle = item.enrichmentData?.editorStyle as Record<string, unknown> | undefined;
+            editorLayout = item.enrichmentData?.editorLayout;
+
+            // Use graphicUrls[0] as background media (raw video/image, not the snapshot)
             if (item.graphicUrls && item.graphicUrls.length > 0) {
+              const rawUrl = item.graphicUrls[0]!;
               mediaSlots = {
-                background: { url: item.graphicUrls[0], assetType: 'video' },
+                background: { url: rawUrl, assetType: 'video' },
               };
             }
           }
@@ -83,6 +98,8 @@ export default function EditorPage({
               targetPlatforms,
               aspectRatio,
               script,
+              style: editorStyle || {},
+              layout: editorLayout || 'centered',
               mediaSlots,
             }),
           });
