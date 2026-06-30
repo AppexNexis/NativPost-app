@@ -3,7 +3,7 @@ import { ArrowLeft, Check, Loader2, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { useEditor } from './EditorContext';
-import { VIDEO_ENGINE_URL } from '@/lib/ai-studio/server';
+import { VIDEO_ENGINE_URL, engineAuthHeaders } from '@/lib/ai-studio/server';
 
 // ── Content type labels ──────────────────────────────────────────
 const CT_LABELS: Record<string, string> = {
@@ -25,7 +25,7 @@ async function renderEditorVideo(
   try {
     const res = await fetch(`${VIDEO_ENGINE_URL}/render/editor-video`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: engineAuthHeaders(),
       body: JSON.stringify({
         script: editorState.script,
         style: editorState.style,
