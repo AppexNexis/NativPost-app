@@ -26,6 +26,7 @@ import {
   Users,
   Gift,
   MessageCircle,
+  Zap,
 } from 'lucide-react';
 import NextImage from 'next/image';
 import Link from 'next/link';
@@ -64,6 +65,7 @@ const ICONS: Record<string, typeof Calendar> = {
   Users,
   Gift,
   MessageCircle,
+  Zap,
 };
 
 export default function DashboardClientLayout({

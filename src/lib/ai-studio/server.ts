@@ -48,7 +48,7 @@ export async function fetchBrandTokens(orgId: string): Promise<BrandTokens> {
 
 export interface CreditActivity {
   id: string;
-  type: 'generation' | 'purchase' | 'bonus' | 'refund';
+  type: 'generation' | 'purchase' | 'bonus' | 'refund' | 'subscription_renewal' | 'credit_consumption';
   description: string;
   amount: number; // negative for spend, positive for top-up
   balanceAfter: number;
@@ -68,8 +68,8 @@ export interface AiCreditWallet {
   recentActivity: CreditActivity[];
 }
 
-const DEFAULT_MONTHLY_LIMIT = 50;
 const ACTIVITY_LIMIT = 50;
+const DEFAULT_MONTHLY_LIMIT = 50; // fallback if plan cannot be determined
 
 function startOfNextMonth(): Date {
   const d = new Date();
@@ -92,10 +92,10 @@ function resetMonthlyIfNeeded(wallet: AiCreditWallet): AiCreditWallet {
   return wallet;
 }
 
-function getDefaultWallet(): AiCreditWallet {
+function getDefaultWallet(monthlyLimit?: number): AiCreditWallet {
   return {
     monthly: {
-      limit: DEFAULT_MONTHLY_LIMIT,
+      limit: monthlyLimit ?? DEFAULT_MONTHLY_LIMIT,
       used: 0,
       resetAt: startOfNextMonth().toISOString(),
     },
@@ -107,13 +107,14 @@ function getDefaultWallet(): AiCreditWallet {
   };
 }
 
-function readWallet(settings: Record<string, unknown>): AiCreditWallet {
+function readWallet(settings: Record<string, unknown>, monthlyLimit?: number): AiCreditWallet {
+  const fallbackLimit = monthlyLimit ?? DEFAULT_MONTHLY_LIMIT;
   const raw = settings.aiCredits as Partial<AiCreditWallet> | undefined;
-  if (!raw || typeof raw !== 'object') return getDefaultWallet();
+  if (!raw || typeof raw !== 'object') return getDefaultWallet(monthlyLimit);
 
   const wallet: AiCreditWallet = {
     monthly: {
-      limit: typeof raw.monthly?.limit === 'number' ? raw.monthly.limit : DEFAULT_MONTHLY_LIMIT,
+      limit: typeof raw.monthly?.limit === 'number' ? raw.monthly.limit : fallbackLimit,
       used: typeof raw.monthly?.used === 'number' ? raw.monthly.used : 0,
       resetAt: typeof raw.monthly?.resetAt === 'string' ? raw.monthly.resetAt : startOfNextMonth().toISOString(),
     },
@@ -132,7 +133,7 @@ function totalAvailable(wallet: AiCreditWallet): number {
   return monthlyRemaining + wallet.addon.remaining;
 }
 
-export async function getAiCreditsWallet(orgId: string): Promise<AiCreditWallet> {
+export async function getAiCreditsWallet(orgId: string, planMonthlyLimit?: number): Promise<AiCreditWallet> {
   const db = await getDb();
   const [org] = await db
     .select({ settings: organizationSchema.settings })
@@ -141,7 +142,7 @@ export async function getAiCreditsWallet(orgId: string): Promise<AiCreditWallet>
     .limit(1);
 
   const settings = (org?.settings ?? {}) as Record<string, unknown>;
-  const wallet = readWallet(settings);
+  const wallet = readWallet(settings, planMonthlyLimit);
 
   // If this is the first read, persist the seeded wallet.
   if (!settings.aiCredits) {
@@ -259,6 +260,51 @@ export async function addAiCredits(
       },
       ...wallet.recentActivity,
     ].slice(0, ACTIVITY_LIMIT),
+  };
+
+  await db
+    .update(organizationSchema)
+    .set({ settings: { ...settings, aiCredits: updated } })
+    .where(eq(organizationSchema.id, orgId));
+
+  return updated;
+}
+
+/**
+ * Reset the monthly credit counter and record a renewal event in recent activity.
+ * Called when a subscription renews or the monthly cycle turns over.
+ */
+export async function resetMonthlyCredits(
+  orgId: string,
+  newLimit: number,
+): Promise<AiCreditWallet> {
+  const db = await getDb();
+  const [org] = await db
+    .select({ settings: organizationSchema.settings })
+    .from(organizationSchema)
+    .where(eq(organizationSchema.id, orgId))
+    .limit(1);
+
+  const settings = (org?.settings ?? {}) as Record<string, unknown>;
+  const wallet = readWallet(settings);
+
+  const renewalEvent: CreditActivity = {
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    type: 'subscription_renewal',
+    description: `Monthly credits reset — ${newLimit} credits available`,
+    amount: newLimit,
+    balanceAfter: newLimit + wallet.addon.remaining,
+    createdAt: new Date().toISOString(),
+  };
+
+  const updated: AiCreditWallet = {
+    ...wallet,
+    monthly: {
+      limit: newLimit,
+      used: 0,
+      resetAt: startOfNextMonth().toISOString(),
+    },
+    recentActivity: [renewalEvent, ...wallet.recentActivity].slice(0, ACTIVITY_LIMIT),
   };
 
   await db

@@ -4,6 +4,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
+import { addAiCredits } from '@/lib/ai-studio/server';
 import { getPlanByStripePriceId, PLAN_CONFIGS } from '@/lib/plans';
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
@@ -75,6 +76,16 @@ export async function POST(request: NextRequest) {
         const sessionType = session.metadata?.type;
 
         if (!orgId) break;
+
+        // ── AI credits purchase ──
+        if (sessionType === 'ai_credits') {
+          const credits = parseInt(session.metadata?.credits ?? '0', 10);
+          if (credits > 0) {
+            await addAiCredits(orgId, credits, { type: 'purchase', description: `Purchased ${credits} AI credits` });
+            console.log(`[Stripe Webhook] ai_credits: org=${orgId} credits=${credits}`);
+          }
+          break;
+        }
 
         // ── Setup fee payment ──
         if (sessionType === 'setup_fee') {

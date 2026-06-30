@@ -25,6 +25,7 @@ export type PlanFeatures = {
   apiAccess: boolean;
   monthlyPlanTopics: number; // 0 = not available, >0 = topics per month
   monthlyPlanRegenerations: number; // how many regenerations per month allowed
+  monthlyAiCredits: number; // AI Studio monthly credit allocation
 };
 
 export type PlanConfig = {
@@ -67,6 +68,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       apiAccess: false,
       monthlyPlanTopics: 15,
       monthlyPlanRegenerations: 2,
+      monthlyAiCredits: 250,
     },
     stripePriceId: { dev: 'price_STARTER_DEV_REPLACE', prod: 'price_1TLfHe8UA4orc9zNIcmWwP1d' },
     paystackPlanCode: { dev: 'PLN_jjfdqyrgr1vbsvv', prod: 'PLN_4jzn7zd6blqssag' },
@@ -98,6 +100,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       apiAccess: false,
       monthlyPlanTopics: 20,
       monthlyPlanRegenerations: 3,
+      monthlyAiCredits: 500,
     },
     stripePriceId: { dev: 'price_GROWTH_DEV_REPLACE', prod: 'price_1TLfIW8UA4orc9zN5SvYEWkD' },
     paystackPlanCode: { dev: 'PLN_8h1kodnrprlt3sp', prod: 'PLN_u39i4zlh6416qbb' },
@@ -129,6 +132,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       apiAccess: false,
       monthlyPlanTopics: 25,
       monthlyPlanRegenerations: 3,
+      monthlyAiCredits: 1250,
     },
     stripePriceId: { dev: 'price_PRO_DEV_REPLACE', prod: 'price_1TLfJ08UA4orc9zNrNzFnRr7' },
     paystackPlanCode: { dev: 'PLN_fdwtqby00izl4ro', prod: 'PLN_o7ebuljkyw9iyaw' },
@@ -160,6 +164,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       apiAccess: true,
       monthlyPlanTopics: 30,
       monthlyPlanRegenerations: -1, // unlimited
+      monthlyAiCredits: 2000,
     },
     stripePriceId: { dev: 'price_AGENCY_DEV_REPLACE', prod: 'price_1TLfKa8UA4orc9zNw27oyVak' },
     paystackPlanCode: { dev: 'PLN_lu1zsbqua45q58b', prod: 'PLN_uevdm7btk36wdhg' },
@@ -191,6 +196,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       apiAccess: true,
       monthlyPlanTopics: -1,
       monthlyPlanRegenerations: -1,
+      monthlyAiCredits: 2000,
     },
     stripePriceId: { dev: '', prod: '' },
     paystackPlanCode: { dev: '', prod: '' },
@@ -229,6 +235,7 @@ export const TRIAL_FEATURES: PlanFeatures = {
   apiAccess: false,
   monthlyPlanTopics: 0, // not available during trial
   monthlyPlanRegenerations: 0,
+  monthlyAiCredits: 50,
 };
 
 function getEnv(): 'dev' | 'prod' {

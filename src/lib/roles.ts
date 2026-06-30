@@ -54,6 +54,7 @@ export const NAV_ITEMS: NavItem[] = [
   // --- Posts ---
   { label: 'Calendar', href: '/dashboard/calendar', icon: 'Calendar', roles: ['admin', 'editor', 'member'], group: 'Posts' },
   { label: 'All posts', href: '/dashboard/posts', icon: 'LayoutList', roles: ['admin', 'editor', 'member'], group: 'Posts' },
+  { label: 'Blitz', href: '/dashboard/blitz', icon: 'Zap', roles: ['admin', 'editor', 'member'], group: 'Posts' },
   { label: 'Scheduled', href: '/dashboard/posts?status=scheduled', icon: 'Clock', roles: ['admin', 'editor', 'member'], group: 'Posts' },
   { label: 'Published', href: '/dashboard/posts?status=published', icon: 'CheckCircle2', roles: ['admin', 'editor', 'member'], group: 'Posts' },
   { label: 'Drafts', href: '/dashboard/posts?status=draft', icon: 'FileText', roles: ['admin', 'editor'], group: 'Posts' },

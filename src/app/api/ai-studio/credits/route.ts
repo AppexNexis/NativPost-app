@@ -2,13 +2,25 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { addAiCredits, getAiCreditsWallet, type AiCreditWallet } from '@/lib/ai-studio/server';
+import { getOrgBillingState } from '@/lib/billing';
 
 export async function GET() {
   const { error, orgId } = await getAuthContext();
   if (error) return error;
 
   try {
-    const wallet = await getAiCreditsWallet(orgId!);
+    // Fetch the org's plan to get the correct monthly AI credit limit
+    let planMonthlyLimit: number | undefined;
+    try {
+      const billing = await getOrgBillingState(orgId!);
+      if (billing?.features?.monthlyAiCredits !== undefined) {
+        planMonthlyLimit = billing.features.monthlyAiCredits;
+      }
+    } catch {
+      // Fallback to default if billing lookup fails
+    }
+
+    const wallet = await getAiCreditsWallet(orgId!, planMonthlyLimit);
     return NextResponse.json({ wallet });
   } catch (err) {
     console.error('[AI Studio Credits] failed:', err);

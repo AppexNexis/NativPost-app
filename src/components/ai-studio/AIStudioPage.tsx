@@ -39,6 +39,7 @@ import type { MediaAsset } from '@/types/v2';
 import { AssetGallery } from './AssetGallery';
 import { CreditWallet } from './CreditWallet';
 import { ModelSelector } from './ModelSelector';
+import { MediaPickerModal } from '@/components/media/MediaPickerModal';
 
 export function AIStudioPage() {
   const [activeTab, setActiveTab] = useState<'images' | 'videos'>('images');
@@ -418,15 +419,47 @@ function ImageControls(props: {
   template: string;
   setTemplate: (v: string) => void;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   return (
     <div className="space-y-4">
       <PromptBox value={props.prompt} onChange={props.setPrompt} placeholder="Describe the image you want to generate..." icon={ImageIcon} />
 
-      {props.reference && (
-        <div className="relative size-16 overflow-hidden rounded-lg">
-          <Image src={props.reference} alt="Reference" fill className="object-cover" sizes="64px" />
-        </div>
-      )}
+      <div className="flex items-center gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setPickerOpen(true)}
+          className="gap-1.5"
+        >
+          <ImageIcon className="size-3.5" />
+          {props.reference ? 'Change Reference' : 'Choose Reference'}
+        </Button>
+
+        {props.reference && (
+          <div className="relative size-10 shrink-0 overflow-hidden rounded-md border">
+            <Image src={props.reference} alt="Reference" fill className="object-cover" sizes="40px" />
+          </div>
+        )}
+
+        {props.reference && (
+          <button
+            type="button"
+            onClick={() => props.setReference('')}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      <MediaPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={props.setReference}
+        title="Select Reference Image"
+      />
 
       <div className="space-y-3">
         <ControlRow label="Model">
@@ -503,6 +536,7 @@ function VideoControls(props: {
   wordCount: number;
   wordWarning: boolean;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
   return (
     <div className="space-y-4">
       <div className="flex gap-2">
@@ -616,11 +650,41 @@ function VideoControls(props: {
         </>
       )}
 
-      {props.reference && (
-        <div className="relative size-16 overflow-hidden rounded-lg">
-          <Image src={props.reference} alt="Reference" fill className="object-cover" sizes="64px" />
-        </div>
-      )}
+      <div className="flex items-center gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setPickerOpen(true)}
+          className="gap-1.5"
+        >
+          <ImageIcon className="size-3.5" />
+          {props.reference ? 'Change Reference' : 'Choose Reference'}
+        </Button>
+
+        {props.reference && (
+          <div className="relative size-10 shrink-0 overflow-hidden rounded-md border">
+            <Image src={props.reference} alt="Reference" fill className="object-cover" sizes="40px" />
+          </div>
+        )}
+
+        {props.reference && (
+          <button
+            type="button"
+            onClick={() => props.setReference('')}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      <MediaPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={props.setReference}
+        title="Select Reference Image"
+      />
     </div>
   );
 }

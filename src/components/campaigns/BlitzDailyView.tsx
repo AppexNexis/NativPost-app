@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Zap, RefreshCw, Sparkles } from 'lucide-react';
+import { Zap, RefreshCw, Sparkles, Settings2 } from 'lucide-react';
 import type { Campaign, ContentItem } from '@/types/v2';
 import { CampaignReviewGrid } from './CampaignReviewGrid';
+import { BlitzSettings } from '@/components/blitz/BlitzSettings';
 
 interface BlitzDailyViewProps {
   campaign: Campaign;
@@ -22,6 +23,7 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
   const [contentItems, setContentItems] = useState(initialContentItems);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const refresh = async () => {
     const res = await fetch(`/api/campaigns/${campaign.id}`);
@@ -148,6 +150,13 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+          >
+            <Settings2 className="h-4 w-4" />
+            Settings
+          </button>
           {hasContent && (
             <button
               onClick={handleLaunch}
@@ -203,6 +212,24 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
           onScheduleChange={handleScheduleChange}
         />
       )}
+
+      <BlitzSettings
+        campaignId={campaign.id}
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onSaved={() => { refresh(); }}
+        initial={{
+          contentMix: (campaign.contentMix ?? {}) as Record<string, number>,
+          remixRatio: campaign.remixRatio ?? 50,
+          angles: (campaign.angles ?? []) as { angleId: string; weight: number }[],
+          mentionFrequency: campaign.mentionFrequency ?? 'sometimes',
+          ownMediaMix: campaign.ownMediaMix ?? 50,
+          influencerFrequency: campaign.influencerFrequency ?? 0,
+          targetAccounts: (campaign.targetAccounts ?? []) as { accountId: string; platform: string }[],
+          postsPerDay: campaign.postsPerDay ?? 3,
+          qualityThreshold: campaign.qualityThreshold ?? 0.7,
+        }}
+      />
     </div>
   );
 }
