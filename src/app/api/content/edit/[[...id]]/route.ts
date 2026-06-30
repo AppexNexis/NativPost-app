@@ -124,7 +124,7 @@ async function patch(req: NextRequest, context: { params: Promise<{ id?: string 
   // Only allow updating editable fields
   const allowed: Record<string, unknown> = {};
   const keys = [
-    'contentType', 'contentMode', 'targetPlatforms', 'aspectRatio',
+    'contentItemId', 'contentType', 'contentMode', 'targetPlatforms', 'aspectRatio',
     'script', 'style', 'layout', 'timing', 'mediaSlots', 'audioTrack',
     'enrichment', 'brandProfileSnapshot', 'previewRenderUrl', 'previewRenderId',
     'finalRenderUrl', 'finalRenderId', 'renderStatus', 'status', 'isAutosave',

@@ -141,11 +141,21 @@ const ASPECT_RATIO_LABELS: Record<string, string> = {
 // HELPERS
 // -----------------------------------------------------------
 function isVideoFileUrl(url: string): boolean {
-  return /\.(?:mp4|mov|webm|avi|mkv)(?:[/?#]|$)/i.test(url);
+  // Direct video file extension
+  if (/\.(?:mp4|mov|webm|avi|mkv)(?:[/?#]|$)/i.test(url)) return true;
+  // Cloudinary video delivery URL (no file extension — /video/upload/ route)
+  if (/\/video\/upload\//i.test(url)) return true;
+  return false;
 }
 
 function toVideoSrc(url: string): string {
+  // Direct video file — use as-is
   if (/\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(url)) return url;
+  // Cloudinary video URL without extension — add f_mp4 for direct playback
+  if (/\/video\/upload\//i.test(url)) {
+    return url.replace(/\/video\/upload\//, '/video/upload/f_mp4/');
+  }
+  // Fallback
   const base = url.endsWith('/') ? url : `${url}/`;
   return `${base}video.mp4`;
 }
@@ -654,11 +664,20 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
       <PageHeader
         title="Content detail"
         actions={(
-          <Link href="/dashboard/posts" className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-muted sm:px-4 sm:py-2.5">
-            <ArrowLeft className="size-4" />
-            <span className="hidden sm:inline">Back to posts</span>
-            <span className="sm:hidden">Back</span>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/dashboard/editor?contentItemId=${item.id}`}
+              className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-muted sm:px-4 sm:py-2.5"
+            >
+              <Edit3 className="size-4" />
+              <span className="hidden sm:inline">Edit</span>
+            </Link>
+            <Link href="/dashboard/posts" className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-muted sm:px-4 sm:py-2.5">
+              <ArrowLeft className="size-4" />
+              <span className="hidden sm:inline">Back to posts</span>
+              <span className="sm:hidden">Back</span>
+            </Link>
+          </div>
         )}
       />
 

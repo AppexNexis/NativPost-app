@@ -8,10 +8,11 @@ import EditorPage from '@/components/editor/EditorPage';
 function EditorContent() {
   const searchParams = useSearchParams();
   const editId = searchParams.get('edit') || undefined;
+  const contentItemId = searchParams.get('contentItemId') || undefined;
 
   return (
     <div className="-mx-4 -mt-4 h-full lg:-mx-6 lg:-mt-6">
-      <EditorPage editId={editId} />
+      <EditorPage editId={editId} contentItemId={contentItemId} />
     </div>
   );
 }
