@@ -866,7 +866,6 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                       {(() => {
                         const videoUrl = item.graphicUrls[0]!;
                         const aspect = item.aspectRatio?.replace(':', '/') || '9/16';
-                        const isVertical = item.aspectRatio === '9:16' || item.aspectRatio === '3:4' || item.aspectRatio === '2:3';
 
                         // Detect compiled video: single URL from engine render
                         const isCompiledVideo = item.graphicUrls.length === 1;
@@ -905,44 +904,100 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                         const displayOverlay = textPosClass[editorLayout || ''] || 'bottom-0 left-0 right-0 p-3';
                         const activeText = !isCompiledVideo && (editorScript?.hookText || editorScript?.bodyText || editorScript?.ctaText);
 
-                        return (
-                          <div className={`relative w-full overflow-hidden rounded-lg border bg-neutral-950 ${isVertical ? 'max-w-[360px]' : ''}`}
-                          >
-                            <video
-                              src={toVideoSrc(videoUrl)}
-                              poster={posterUrl}
-                              className="w-full object-cover"
-                              controls
-                              autoPlay
-                              muted
-                              loop
-                              preload="metadata"
-                              playsInline
-                              style={{ aspectRatio: aspect }}
-                            >
-                              <img src={posterUrl} alt="Content preview" className="size-full object-cover" />
-                            </video>
+                        // Match editor preview framing exactly
+                        const isPortrait = item.aspectRatio === '9:16' || item.aspectRatio === '3:4' || item.aspectRatio === '2:3';
+                        const phoneFrame = isPortrait;
+                        const phoneWidth = 320;
 
-                            {/* CSS overlays for old content (no compiled video) */}
-                            {activeText && (
-                              <div className={`pointer-events-none absolute z-10 ${displayOverlay}`}>
-                                <div style={{ maxWidth: '90%' }}>
-                                  {editorScript?.hookText && (
-                                    <p style={{ ...textOverlayStyle, marginBottom: editorScript.bodyText ? '8px' : 0 }}>
-                                      {editorScript.hookText}
-                                    </p>
-                                  )}
-                                  {editorScript?.bodyText && (
-                                    <p style={{ ...textOverlayStyle, fontSize: `${Math.max(14, (editorStyle?.fontSize || 20) * 0.7)}px`, marginBottom: editorScript.ctaText ? '8px' : 0 }}>
-                                      {editorScript.bodyText}
-                                    </p>
-                                  )}
-                                  {editorScript?.ctaText && (
-                                    <p style={{ ...textOverlayStyle, fontSize: `${Math.max(12, (editorStyle?.fontSize || 20) * 0.6)}px` }}>
-                                      {editorScript.ctaText}
-                                    </p>
-                                  )}
-                                </div>
+                        return (
+                          <div className="flex justify-center">
+                            {phoneFrame ? (
+                              // ── Phone mockup (matches EditorPreview for portrait) ──
+                              <div className="relative overflow-hidden rounded-[24px] border-4 border-neutral-700 bg-neutral-950 shadow-2xl"
+                                style={{ width: phoneWidth, aspectRatio: aspect }}
+                              >
+                                {/* Notch */}
+                                <div className="absolute left-1/2 top-0 z-20 h-5 w-28 -translate-x-1/2 rounded-b-2xl bg-neutral-900" />
+                                <video
+                                  src={toVideoSrc(videoUrl)}
+                                  poster={posterUrl}
+                                  className="size-full object-cover rounded-[20px]"
+                                  controls
+                                  autoPlay
+                                  muted
+                                  loop
+                                  preload="metadata"
+                                  playsInline
+                                >
+                                  <img src={posterUrl} alt="Content preview" className="size-full object-cover" />
+                                </video>
+                                {/* CSS overlays for old content (no compiled video) — inside phone frame */}
+                                {activeText && (
+                                  <div className={`pointer-events-none absolute z-10 ${displayOverlay}`}
+                                    style={{ position: 'absolute', inset: 0 }}
+                                  >
+                                    <div style={{ maxWidth: '90%' }}>
+                                      {editorScript?.hookText && (
+                                        <p style={{ ...textOverlayStyle, marginBottom: editorScript.bodyText ? '8px' : 0 }}>
+                                          {editorScript.hookText}
+                                        </p>
+                                      )}
+                                      {editorScript?.bodyText && (
+                                        <p style={{ ...textOverlayStyle, fontSize: `${Math.max(14, (editorStyle?.fontSize || 20) * 0.7)}px`, marginBottom: editorScript.ctaText ? '8px' : 0 }}>
+                                          {editorScript.bodyText}
+                                        </p>
+                                      )}
+                                      {editorScript?.ctaText && (
+                                        <p style={{ ...textOverlayStyle, fontSize: `${Math.max(12, (editorStyle?.fontSize || 20) * 0.6)}px` }}>
+                                          {editorScript.ctaText}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              // ── Framed container (landscape/square) ──
+                              <div className="relative w-full overflow-hidden rounded-lg border bg-neutral-950 shadow-lg"
+                                style={{ maxWidth: 640, aspectRatio: aspect }}
+                              >
+                                <video
+                                  src={toVideoSrc(videoUrl)}
+                                  poster={posterUrl}
+                                  className="size-full object-cover"
+                                  controls
+                                  autoPlay
+                                  muted
+                                  loop
+                                  preload="metadata"
+                                  playsInline
+                                >
+                                  <img src={posterUrl} alt="Content preview" className="size-full object-cover" />
+                                </video>
+                                {/* CSS overlays for old content (no compiled video) — inside frame */}
+                                {activeText && (
+                                  <div className={`pointer-events-none absolute z-10 ${displayOverlay}`}
+                                    style={{ position: 'absolute', inset: 0 }}
+                                  >
+                                    <div style={{ maxWidth: '90%' }}>
+                                      {editorScript?.hookText && (
+                                        <p style={{ ...textOverlayStyle, marginBottom: editorScript.bodyText ? '8px' : 0 }}>
+                                          {editorScript.hookText}
+                                        </p>
+                                      )}
+                                      {editorScript?.bodyText && (
+                                        <p style={{ ...textOverlayStyle, fontSize: `${Math.max(14, (editorStyle?.fontSize || 20) * 0.7)}px`, marginBottom: editorScript.ctaText ? '8px' : 0 }}>
+                                          {editorScript.bodyText}
+                                        </p>
+                                      )}
+                                      {editorScript?.ctaText && (
+                                        <p style={{ ...textOverlayStyle, fontSize: `${Math.max(12, (editorStyle?.fontSize || 20) * 0.6)}px` }}>
+                                          {editorScript.ctaText}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
