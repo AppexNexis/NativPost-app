@@ -139,6 +139,7 @@ export function SimpleVideoPreview({
               className="absolute inset-0 size-full object-cover"
               muted={muted}
               loop
+              autoPlay
               playsInline
               onEnded={() => setPlaying(false)}
             />
@@ -230,12 +231,6 @@ export function SimpleVideoPreview({
           </div>
         )}
 
-        {/* Content type badge */}
-        <div className="absolute left-2 top-2 z-20">
-          <span className="rounded-full bg-black/50 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm capitalize">
-            {contentType?.replace(/_/g, ' ')}
-          </span>
-        </div>
       </div>
     </div>
   );

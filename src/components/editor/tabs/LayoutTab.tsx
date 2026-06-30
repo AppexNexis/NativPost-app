@@ -25,21 +25,8 @@ const ASPECT_RATIOS = ['9:16', '1:1', '16:9'];
 export function LayoutTab() {
   const { state, dispatch } = useEditor();
 
-  const contentType = state.edit?.contentType ?? '';
-  const isForcedLayout = ['wall_of_text', 'talking_head', 'green_screen'].includes(contentType);
-  const forcedLayout = isForcedLayout ? contentType : null;
-
-  // Filter available layouts
-  const layouts = ALL_LAYOUTS.filter(
-    l => l.contentTypes.length === 0 || l.contentTypes.includes(contentType),
-  );
-
-  // Auto-set forced layout
-  React.useEffect(() => {
-    if (forcedLayout && state.layout !== forcedLayout) {
-      dispatch({ type: 'SET_LAYOUT', payload: forcedLayout });
-    }
-  }, [forcedLayout, state.layout, dispatch]);
+  // Filter available layouts — show all layouts for any content type
+  const layouts = ALL_LAYOUTS;
 
   return (
     <div className="space-y-5">
@@ -47,11 +34,6 @@ export function LayoutTab() {
       <div>
         <label className="mb-3 block text-xs font-medium uppercase tracking-wide text-foreground">
           Layout
-          {forcedLayout && (
-            <span className="ml-2 font-normal text-muted-foreground normal-case">
-              (auto-set for this content type)
-            </span>
-          )}
         </label>
         <div className="grid grid-cols-2 gap-2">
           {layouts.map(layout => {
@@ -59,13 +41,8 @@ export function LayoutTab() {
             return (
               <button
                 key={layout.id}
-                onClick={() => {
-                  if (!forcedLayout) {
-                    dispatch({ type: 'SET_LAYOUT', payload: layout.id });
-                  }
-                }}
-                disabled={!!forcedLayout}
-                className={`rounded-xl border-2 p-3 text-left transition-all disabled:cursor-not-allowed ${
+                onClick={() => dispatch({ type: 'SET_LAYOUT', payload: layout.id })}
+                className={`rounded-xl border-2 p-3 text-left transition-all cursor-pointer ${
                   isSelected
                     ? 'border-primary bg-primary/5'
                     : 'border-border hover:border-primary/30 hover:bg-muted/30'

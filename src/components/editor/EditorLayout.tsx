@@ -38,21 +38,32 @@ export function EditorLayout({
       return;
     }
 
-    // No content item — create one from the edit session data
+    // Collect all media URLs from all slots
+    const allMediaUrls: string[] = [];
+    if (state.mediaSlots?.background?.url) allMediaUrls.push(state.mediaSlots.background.url);
+    if (state.mediaSlots?.hookVideo?.url) allMediaUrls.push(state.mediaSlots.hookVideo.url);
+    if (state.mediaSlots?.demoVideo?.url) allMediaUrls.push(state.mediaSlots.demoVideo.url);
+    if (state.mediaSlots?.slides?.length) {
+      state.mediaSlots.slides.forEach(s => { if (s.url) allMediaUrls.push(s.url); });
+    }
+
+    const caption = [
+      state.script?.hookText,
+      state.script?.bodyText,
+      state.script?.ctaText,
+    ].filter(Boolean).join('\n\n');
+
     try {
       const res = await fetch('/api/content', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contentType: state.edit?.contentType || 'text_only',
-          caption: [
-            state.script?.hookText,
-            state.script?.bodyText,
-            state.script?.ctaText,
-          ].filter(Boolean).join('\n\n'),
+          caption,
           targetPlatforms: state.targetPlatforms || state.edit?.targetPlatforms || [],
           status: 'draft',
-          graphicUrls: state.mediaSlots?.background?.url ? [state.mediaSlots.background.url] : [],
+          graphicUrls: allMediaUrls,
+          aspectRatio: state.aspectRatio || state.edit?.aspectRatio || '9:16',
         }),
       });
 
@@ -60,14 +71,23 @@ export function EditorLayout({
 
       const data = await res.json();
       const contentId = data.item?.id;
-      if (contentId) {
+
+      if (contentId && state.edit?.id) {
+        // Link the edit session to the content item so subsequent publishes go directly to it
+        await fetch(`/api/content/edit/${state.edit.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contentItemId: contentId }),
+        }).catch(() => {});
+
+        router.push(`/dashboard/content/${contentId}`);
+      } else if (contentId) {
         router.push(`/dashboard/content/${contentId}`);
       } else {
         router.push('/dashboard/posts');
       }
     } catch (err) {
       console.error('Failed to publish:', err);
-      // Fallback
       router.push('/dashboard/posts');
     } finally {
       setIsPublishing(false);
@@ -152,7 +172,7 @@ export function EditorLayout({
             ) : (
               <Check className="size-3.5" />
             )}
-            {isPublishing ? 'Publishing...' : 'Schedule &amp; Publish'}
+            {isPublishing ? 'Publishing...' : 'Schedule & Publish'}
           </button>
         </div>
       </header>

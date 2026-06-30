@@ -684,19 +684,14 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
         </div>
       )}
 
-      {/* ── TWO-PANEL LAYOUT (configure step + remix) ─────── */}
-      {(step === 'configure' || (step === 'type' && isRemix)) && (
-        <div className="grid gap-6 lg:grid-cols-5">
-          {/* ── LEFT: Configuration ─────────────────────────── */}
-          <div className="space-y-6 lg:col-span-3">
-            {/* Content type selector (step 1) or badge (step 2) */}
-            {step === 'type' && !isRemix && (
-              <div>
-                <label className="mb-3 block text-sm font-medium text-foreground">
-                  What kind of content are you creating?
-                </label>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {CONTENT_TYPES.map((type) => {
+      {/* ── Content Type Selector (step 1) ──────────────── */}
+      {step === 'type' && !isRemix && (
+        <div>
+          <label className="mb-3 block text-sm font-medium text-foreground">
+            What kind of content are you creating?
+          </label>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {CONTENT_TYPES.map((type) => {
                     const Icon = type.icon;
                     return (
                       <button
@@ -727,7 +722,8 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
             )}
 
             {step === 'configure' && (
-              <>
+              <div className="grid gap-6 lg:grid-cols-5">
+              <div className="space-y-6 lg:col-span-3">
                 {/* Content type badge */}
                 {typeDef && (
                   <div className="flex items-center gap-2">
@@ -1021,14 +1017,12 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                         ? 'Continue to Editor'
                         : 'Generate Content'}
                 </button>
-              </>
-            )}
-          </div>
+              </div>
 
-          {/* ── RIGHT: Template preview / visual panel ────── */}
-          <div className="hidden lg:col-span-2 lg:block">
-            <div className="sticky top-6 space-y-4">
-              {isRemix && template && (
+              {/* ── RIGHT: Template preview / visual panel ────── */}
+              <div className="hidden lg:col-span-2 lg:block">
+                <div className="sticky top-6 space-y-4">
+                  {isRemix && template && (
                 <>
                   <div className="rounded-xl border bg-card p-4">
                     <h3 className="mb-3 text-sm font-semibold">Template Preview</h3>

@@ -25,7 +25,7 @@ export function EditorPreview() {
         <div className="flex h-full w-full items-center justify-center px-8 py-6">
           {/* Phone mockup — scales with available height */}
           <div className="flex h-full max-h-[780px] w-auto flex-col justify-center">
-            <div className="flex h-full max-h-full flex-col overflow-hidden rounded-[2rem] border-[2px] border-foreground/8 bg-black shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_20px_60px_-15px_rgba(0,0,0,0.4)]"
+            <div className="flex h-full max-h-full flex-col overflow-hidden rounded-[2rem] border-[2px] border-foreground/8 bg-neutral-950 shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_20px_60px_-15px_rgba(0,0,0,0.4)]"
               style={{ aspectRatio: '9 / 16' }}
             >
               {/* Notch / Dynamic Island */}
@@ -36,7 +36,7 @@ export function EditorPreview() {
               </div>
 
               {/* Screen */}
-              <div className="relative flex flex-1 items-center justify-center bg-black overflow-hidden">
+              <div className="relative flex flex-1 items-center justify-center bg-neutral-950 overflow-hidden">
                 <SimpleVideoPreview
                   contentType={contentType}
                   script={state.script}
@@ -61,8 +61,8 @@ export function EditorPreview() {
         </div>
       ) : (
         /* Wide / square content — full-width without phone frame */
-        <div className="flex h-full w-full max-w-4xl items-center justify-center px-8 py-6">
-          <div className="relative h-full max-h-[600px] w-full overflow-hidden rounded-2xl bg-black shadow-2xl">
+        <div className="flex h-full w-full items-center justify-center px-8 py-6">
+          <div className="relative h-full w-full max-w-5xl overflow-hidden rounded-2xl bg-neutral-950/80 shadow-2xl ring-1 ring-white/5">
             <SimpleVideoPreview
               contentType={contentType}
               script={state.script}
