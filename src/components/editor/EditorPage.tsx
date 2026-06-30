@@ -29,6 +29,48 @@ export default function EditorPage({
         if (editId) {
           url = `/api/content/edit/${editId}`;
         } else if (contentItemId) {
+          // First fetch the content item to populate editor fields
+          const itemRes = await fetch(`/api/content/${contentItemId}`);
+          let contentType = 'text';
+          let contentMode = 'normal';
+          let targetPlatforms: string[] = [];
+          let aspectRatio = '9:16';
+          let script: Record<string, unknown> = {};
+          let mediaSlots: Record<string, unknown> = {};
+
+          if (!itemRes.ok) {
+            throw new Error('Failed to load content item for editing');
+          }
+
+          const itemData = await itemRes.json();
+          const item = itemData.item as {
+            contentType?: string;
+            contentMode?: string;
+            targetPlatforms?: string[];
+            aspectRatio?: string;
+            caption?: string;
+            graphicUrls?: string[];
+          } | undefined;
+
+          if (item) {
+            contentType = item.contentType || 'text';
+            contentMode = item.contentMode || 'normal';
+            targetPlatforms = item.targetPlatforms || [];
+            aspectRatio = item.aspectRatio || '9:16';
+
+            // Map caption to script fields
+            if (item.caption) {
+              script = { bodyText: item.caption };
+            }
+
+            // Map graphicUrls to mediaSlots
+            if (item.graphicUrls && item.graphicUrls.length > 0) {
+              mediaSlots = {
+                background: { url: item.graphicUrls[0], assetType: 'video' },
+              };
+            }
+          }
+
           // Create a new edit session from content item
           const res = await fetch('/api/content/edit', {
             method: 'POST',
@@ -36,7 +78,12 @@ export default function EditorPage({
             body: JSON.stringify({
               source: 'manual',
               contentItemId,
-              contentType: 'text',
+              contentType,
+              contentMode,
+              targetPlatforms,
+              aspectRatio,
+              script,
+              mediaSlots,
             }),
           });
           if (!res.ok) throw new Error('Failed to create edit session');

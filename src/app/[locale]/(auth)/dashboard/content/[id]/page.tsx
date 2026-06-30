@@ -140,14 +140,6 @@ const ASPECT_RATIO_LABELS: Record<string, string> = {
 // -----------------------------------------------------------
 // HELPERS
 // -----------------------------------------------------------
-function isVideoFileUrl(url: string): boolean {
-  // Direct video file extension
-  if (/\.(?:mp4|mov|webm|avi|mkv)(?:[/?#]|$)/i.test(url)) return true;
-  // Cloudinary video delivery URL (no file extension — /video/upload/ route)
-  if (/\/video\/upload\//i.test(url)) return true;
-  return false;
-}
-
 function toVideoSrc(url: string): string {
   // Direct video file — use as-is
   if (/\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(url)) return url;
@@ -429,7 +421,6 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
   const isCarousel = item.contentType === 'carousel';
   // const isSingleImage = item.contentType === 'single_image';
   const hasMedia = item.graphicUrls && item.graphicUrls.length > 0;
-  const isVideo = hasMedia && item.graphicUrls.some(url => isVideoFileUrl(url));
   const canPublish = item.status === 'approved' && (!needsMedia || hasMedia);
   const primaryAction = item.status === 'pending_review' || item.status === 'draft' ? 'approve'
     : item.status === 'approved' ? 'publish'
@@ -870,38 +861,36 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
               {/* Media display — snapshot poster baked with text overlays */}
               {hasMedia ? (
                 <div className="space-y-4">
-                  {isVideo || VIDEO_CONTENT_TYPES.includes(item.contentType) ? (
+                  {VIDEO_CONTENT_TYPES.includes(item.contentType) ? (
                     <div className="flex justify-center">
                       {(() => {
-                        // graphicUrls[0] is the Cloudinary snapshot (image with text overlays baked in)
-                        const snapshotUrl = item.graphicUrls[0]!;
-                        // Find a raw video URL for playback
-                        const videoUrl = item.graphicUrls.find(u => isVideoFileUrl(u));
+                        // graphicUrls[0] is the Cloudinary snapshot uploaded as a video resource
+                        // (JPEG frame wrapped in h.264 MP4 with text overlays baked in)
+                        const videoUrl = item.graphicUrls[0]!;
                         const aspect = item.aspectRatio?.replace(':', '/') || '9/16';
                         const isVertical = item.aspectRatio === '9:16' || item.aspectRatio === '3:4' || item.aspectRatio === '2:3';
                         return (
                           <div className={`w-full overflow-hidden rounded-lg border bg-neutral-950 ${isVertical ? 'max-w-[360px]' : ''}`}>
-                            {videoUrl ? (
-                              <video
-                                src={toVideoSrc(videoUrl)}
-                                poster={snapshotUrl}
-                                className="w-full"
-                                controls
-                                autoPlay
-                                muted
-                                loop
-                                preload="metadata"
-                                playsInline
-                                style={{ aspectRatio: aspect, maxHeight: isVertical ? 640 : 400 }}
-                              />
-                            ) : (
+                            <video
+                              src={toVideoSrc(videoUrl)}
+                              poster={videoUrl}
+                              className="w-full"
+                              controls
+                              autoPlay
+                              muted
+                              loop
+                              preload="metadata"
+                              playsInline
+                              style={{ aspectRatio: aspect, maxHeight: isVertical ? 640 : 400 }}
+                            >
+                              {/* Fallback if video fails to load — show snapshot as image */}
                               <img
-                                src={snapshotUrl}
+                                src={videoUrl}
                                 alt="Content preview"
                                 className="w-full object-contain"
                                 style={{ aspectRatio: aspect, maxHeight: isVertical ? 640 : 400 }}
                               />
-                            )}
+                            </video>
                           </div>
                         );
                       })()}

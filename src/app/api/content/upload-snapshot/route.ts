@@ -40,14 +40,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing imageData' }, { status: 400 });
     }
 
-    // Upload to Cloudinary
+    // Upload to Cloudinary as a video resource.
+    // Cloudinary wraps the single JPEG frame in an h.264 MP4 container,
+    // producing a short looping video that shows the composited preview
+    // (background frame + text overlays) baked in.
     const result = await cloudinary.uploader.upload(imageData, {
       folder,
       public_id: publicId,
-      resource_type: 'image',
+      resource_type: 'video',
       transformation: [
-        { quality: 'auto:good', fetch_format: 'auto' },
+        { width: 720, height: 1280, crop: 'pad', background: '#000', video_codec: 'h264' },
       ],
+      eager: [
+        { width: 608, height: 1080, crop: 'pad', background: '#000', video_codec: 'h264' },
+      ],
+      eager_async: false,
     });
 
     return NextResponse.json({ url: result.secure_url });
