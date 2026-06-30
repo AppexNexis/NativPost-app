@@ -388,12 +388,42 @@ function TabButton({ active, onClick, icon: Icon, label }: { active: boolean; on
   );
 }
 
-function PromptBox({ value, onChange, placeholder, icon: Icon }: { value: string; onChange: (v: string) => void; placeholder: string; icon: React.ElementType }) {
+function PromptBox({ value, onChange, placeholder, icon: Icon, reference, onReferenceClick, onReferenceClear }: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  icon: React.ElementType;
+  reference?: string;
+  onReferenceClick?: () => void;
+  onReferenceClear?: () => void;
+}) {
   return (
     <div className="flex gap-3 rounded-xl border border-border bg-background p-3 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
-      <div className="flex size-10 shrink-0 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted text-muted-foreground">
-        <Icon className="size-4" />
-      </div>
+      <button
+        type="button"
+        onClick={onReferenceClick}
+        className="group relative flex size-14 shrink-0 flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-muted text-muted-foreground hover:border-purple-300 hover:bg-purple-50 transition-colors"
+      >
+        {reference ? (
+          <>
+            <Image src={reference} alt="Reference" fill className="object-cover" sizes="56px" />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+            {onReferenceClear && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onReferenceClear(); }}
+                className="absolute right-0.5 top-0.5 flex size-4 items-center justify-center rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="size-3">
+                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                </svg>
+              </button>
+            )}
+          </>
+        ) : (
+          <Icon className="size-4" />
+        )}
+      </button>
       <Textarea
         value={value}
         onChange={e => onChange(e.target.value)}
@@ -423,36 +453,15 @@ function ImageControls(props: {
 
   return (
     <div className="space-y-4">
-      <PromptBox value={props.prompt} onChange={props.setPrompt} placeholder="Describe the image you want to generate..." icon={ImageIcon} />
-
-      <div className="flex items-center gap-3">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setPickerOpen(true)}
-          className="gap-1.5"
-        >
-          <ImageIcon className="size-3.5" />
-          {props.reference ? 'Change Reference' : 'Choose Reference'}
-        </Button>
-
-        {props.reference && (
-          <div className="relative size-10 shrink-0 overflow-hidden rounded-md border">
-            <Image src={props.reference} alt="Reference" fill className="object-cover" sizes="40px" />
-          </div>
-        )}
-
-        {props.reference && (
-          <button
-            type="button"
-            onClick={() => props.setReference('')}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            Clear
-          </button>
-        )}
-      </div>
+      <PromptBox
+        value={props.prompt}
+        onChange={props.setPrompt}
+        placeholder="Describe the image you want to generate..."
+        icon={ImageIcon}
+        reference={props.reference || undefined}
+        onReferenceClick={() => setPickerOpen(true)}
+        onReferenceClear={() => props.setReference('')}
+      />
 
       <MediaPickerModal
         open={pickerOpen}
@@ -546,7 +555,15 @@ function VideoControls(props: {
 
       {props.subMode === 'video' ? (
         <>
-          <PromptBox value={props.prompt} onChange={props.setPrompt} placeholder="Describe the motion (optional, e.g. slow zoom on the face)" icon={Wand2} />
+          <PromptBox
+            value={props.prompt}
+            onChange={props.setPrompt}
+            placeholder="Describe the motion (optional, e.g. slow zoom on the face)"
+            icon={Wand2}
+            reference={props.reference || undefined}
+            onReferenceClick={() => setPickerOpen(true)}
+            onReferenceClear={() => props.setReference('')}
+          />
           <div className="space-y-3">
             <ControlRow label="Model">
               <ModelSelector type="video" value={props.model} onChange={props.setModel} />
@@ -598,7 +615,15 @@ function VideoControls(props: {
         </>
       ) : (
         <>
-          <PromptBox value={props.thScript} onChange={props.setThScript} placeholder="Write what the person should say..." icon={UserCircle} />
+          <PromptBox
+            value={props.thScript}
+            onChange={props.setThScript}
+            placeholder="Write what the person should say..."
+            icon={UserCircle}
+            reference={props.reference || undefined}
+            onReferenceClick={() => setPickerOpen(true)}
+            onReferenceClear={() => props.setReference('')}
+          />
           {props.wordWarning && (
             <p className="text-xs text-amber-600">
               {props.wordCount}
@@ -649,35 +674,6 @@ function VideoControls(props: {
           </div>
         </>
       )}
-
-      <div className="flex items-center gap-3">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setPickerOpen(true)}
-          className="gap-1.5"
-        >
-          <ImageIcon className="size-3.5" />
-          {props.reference ? 'Change Reference' : 'Choose Reference'}
-        </Button>
-
-        {props.reference && (
-          <div className="relative size-10 shrink-0 overflow-hidden rounded-md border">
-            <Image src={props.reference} alt="Reference" fill className="object-cover" sizes="40px" />
-          </div>
-        )}
-
-        {props.reference && (
-          <button
-            type="button"
-            onClick={() => props.setReference('')}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            Clear
-          </button>
-        )}
-      </div>
 
       <MediaPickerModal
         open={pickerOpen}

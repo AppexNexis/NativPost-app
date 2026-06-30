@@ -75,6 +75,12 @@ export default withSentryConfig(
             protocol: 'https',
             hostname: 'img.youtube.com',
           },
+
+          // Cloudinary (media library, AI Studio reference images)
+          {
+            protocol: 'https',
+            hostname: 'res.cloudinary.com',
+          },
         ],
       },
     }),
