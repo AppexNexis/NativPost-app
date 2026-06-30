@@ -22,21 +22,19 @@ export function EditorPreview() {
       />
 
       {isPortrait ? (
-        <div className="flex h-full w-full items-center justify-center px-8 py-6">
-          {/* Phone mockup — scales with available height */}
+        <div className="flex h-full w-full items-center justify-center px-6 py-6">
+          {/* Phone mockup — scales with available height, no harsh black */}
           <div className="flex h-full max-h-[780px] w-auto flex-col justify-center">
-            <div className="flex h-full max-h-full flex-col overflow-hidden rounded-[2rem] border-[2px] border-foreground/8 bg-neutral-950 shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_20px_60px_-15px_rgba(0,0,0,0.4)]"
+            <div className="flex h-full max-h-full flex-col overflow-hidden rounded-[2rem] border-[1.5px] border-white/[0.06] bg-neutral-900/40 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_8px_32px_-12px_rgba(0,0,0,0.3)]"
               style={{ aspectRatio: '9 / 16' }}
             >
               {/* Notch / Dynamic Island */}
-              <div className="relative flex shrink-0 items-center justify-center py-1.5">
-                <div className="h-1 w-12 rounded-full bg-white/10" />
-                <div className="absolute right-4 top-1/2 size-1.5 -translate-y-1/2 rounded-full bg-white/8" />
-                <div className="absolute right-2 top-1/2 size-1 -translate-y-1/2 rounded-full bg-white/8" />
+              <div className="relative flex shrink-0 items-center justify-center py-1">
+                <div className="h-1 w-12 rounded-full bg-white/8" />
               </div>
 
-              {/* Screen */}
-              <div className="relative flex flex-1 items-center justify-center bg-neutral-950 overflow-hidden">
+              {/* Screen — no background, let the content fill */}
+              <div className="relative flex flex-1 items-center justify-center overflow-hidden">
                 <SimpleVideoPreview
                   contentType={contentType}
                   script={state.script}
@@ -60,9 +58,9 @@ export function EditorPreview() {
           </div>
         </div>
       ) : (
-        /* Wide / square content — full-width without phone frame */
-        <div className="flex h-full w-full items-center justify-center px-8 py-6">
-          <div className="relative h-full w-full max-w-5xl overflow-hidden rounded-2xl bg-neutral-950/80 shadow-2xl ring-1 ring-white/5">
+        /* Wide / square content — clean, no dark backgrounds */
+        <div className="flex h-full w-full items-center justify-center px-6 py-6">
+          <div className="relative flex h-full w-full max-w-4xl items-center justify-center overflow-hidden">
             <SimpleVideoPreview
               contentType={contentType}
               script={state.script}

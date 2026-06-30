@@ -3,6 +3,7 @@ import { ArrowLeft, Check, Loader2, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { useEditor } from './EditorContext';
+import { getVideoPosterUrl, isCloudinaryVideoUrl } from '@/lib/cloudinary';
 
 // ── Content type labels ──────────────────────────────────────────
 const CT_LABELS: Record<string, string> = {
@@ -17,94 +18,94 @@ const CT_LABELS: Record<string, string> = {
   green_screen: 'Green Screen',
 };
 
-// ── Canvas preview capture ───────────────────────────────────────
-// Renders the current editor preview (video frame + text overlays)
-// onto a hidden canvas, uploads to Cloudinary, returns the URL.
+// ── Canvas preview capture (with timeout — never blocks publish) ─
 async function captureEditorPreview(
+  editorState: { script?: { hookText?: string; bodyText?: string; ctaText?: string }; style?: Record<string, unknown>; layout?: string },
+): Promise<string | null> {
+  const TIMEOUT_MS = 3000;
+
+  // Wrap the whole capture in a timeout so it never blocks publishing
+  try {
+    return await Promise.race([
+      capturePreviewInner(editorState),
+      new Promise<null>(resolve => setTimeout(() => resolve(null), TIMEOUT_MS)),
+    ]);
+  } catch {
+    return null;
+  }
+}
+
+async function capturePreviewInner(
   editorState: { script?: { hookText?: string; bodyText?: string; ctaText?: string }; style?: Record<string, unknown>; layout?: string },
 ): Promise<string | null> {
   const video = document.querySelector<HTMLVideoElement>('[data-editor-preview-video]');
   const canvas = document.createElement('canvas');
   const W = 720;
-  const H = 1280; // 9:16 ratio
+  const H = 1280;
   canvas.width = W;
   canvas.height = H;
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
 
-  // 1. Fill background
+  // Fill background
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, W, H);
 
-  // 2. Draw video frame (cover-fit)
+  // Draw video frame if available (crossOrigin="anonymous" enables this)
   if (video && video.readyState >= 2 && video.videoWidth > 0) {
     const vw = video.videoWidth;
     const vh = video.videoHeight;
     const scale = Math.max(W / vw, H / vh);
-    const sw = vw * scale;
-    const sh = vh * scale;
-    ctx.drawImage(video, (W - sw) / 2, (H - sh) / 2, sw, sh);
+    ctx.drawImage(video, (W - vw * scale) / 2, (H - vh * scale) / 2, vw * scale, vh * scale);
   }
 
-  // 3. Draw text overlays matching the layout
+  // Draw text overlays
   const script = editorState.script || {};
   const style_ = editorState.style || {};
   const layout = editorState.layout || 'centered';
 
-  const fontSize = Number(style_.fontSize) || 20;
-  const color = String(style_.color || '#ffffff');
-  const bg = String(style_.backgroundColor || 'rgba(0,0,0,0.5)');
-  const align = (String(style_.align || 'center')) as CanvasTextAlign;
   const lines: string[] = [];
   if (script.hookText) lines.push(script.hookText);
   if (script.bodyText) lines.push(script.bodyText);
   if (script.ctaText) lines.push(script.ctaText);
 
   if (lines.length > 0) {
+    const fontSize = Number(style_.fontSize) || 20;
+    const color = String(style_.color || '#ffffff');
+    const bg = String(style_.backgroundColor || 'rgba(0,0,0,0.5)');
+    const align = (String(style_.align || 'center')) as CanvasTextAlign;
     const paddingX = 16;
     const paddingY = 12;
     const lineHeight = fontSize * 1.35;
     const textW = W - paddingX * 4;
     const totalH = lines.length * lineHeight + paddingY * 2;
-    const radius = 6;
 
-    // Determine text position based on layout
     let textY: number;
-    const isCentered = layout === 'centered' || layout === 'wall_of_text';
-    const isTop = layout === 'top_caption';
-
-    if (isCentered) {
+    if (layout === 'centered' || layout === 'wall_of_text') {
       textY = (H - totalH) / 2;
-    } else if (isTop) {
+    } else if (layout === 'top_caption') {
       textY = paddingY + 12;
     } else {
       textY = H - totalH - 24;
     }
 
-    // Background box
     ctx.fillStyle = bg;
-    roundRect(ctx, paddingX * 1.5, textY, textW, totalH, radius);
+    roundRect(ctx, paddingX * 1.5, textY, textW, totalH, 6);
     ctx.fill();
 
-    // Text lines
     ctx.fillStyle = color;
     ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
     ctx.textAlign = align;
     ctx.textBaseline = 'top';
-
     const xPos = align === 'center' ? W / 2 : align === 'right' ? W - paddingX * 2 : paddingX * 2;
-
-    lines.forEach((line, i) => {
-      const ty = textY + paddingY + i * lineHeight;
-      ctx.fillText(line, xPos, ty);
-    });
+    lines.forEach((line, i) => ctx.fillText(line, xPos, textY + paddingY + i * lineHeight));
   }
 
-  // 4. Export to blob
+  // Export to blob
   const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.88));
   if (!blob) return null;
 
-  // 5. Convert to base64
+  // Convert to base64
   const dataUrl = await new Promise<string | null>(resolve => {
     const reader = new FileReader();
     reader.onloadend = () => resolve(reader.result as string);
@@ -113,26 +114,18 @@ async function captureEditorPreview(
   });
   if (!dataUrl) return null;
 
-  // 6. Upload to Cloudinary
-  try {
-    const res = await fetch('/api/content/upload-snapshot', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageData: dataUrl }),
-    });
-    if (!res.ok) throw new Error('Upload failed');
-    const data = await res.json();
-    return data.url;
-  } catch (err) {
-    console.error('[Capture] Failed to upload preview:', err);
-    return null;
-  }
+  // Upload to Cloudinary
+  const res = await fetch('/api/content/upload-snapshot', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageData: dataUrl }),
+  });
+  if (!res.ok) throw new Error('Upload failed');
+  const data = await res.json();
+  return data.url;
 }
 
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number, y: number, w: number, h: number, r: number,
-) {
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.lineTo(x + w - r, y);
@@ -161,26 +154,32 @@ export function EditorLayout({
     await saveEdit();
     setIsPublishing(true);
 
-    // If we already have a content item, go to it
+    // If we already have a content item, go directly to it
     if (state.edit?.contentItemId) {
       router.push(`/dashboard/content/${state.edit.contentItemId}`);
       return;
     }
 
-    // Capture the composed editor preview (video + text overlays) to Cloudinary
+    // 1. Build primary media URLs (non-blocking snapshot + all source URLs)
+    const allMediaUrls: string[] = [];
+
+    // Try canvas capture with 3s timeout — never blocks publishing
     const snapshotUrl = await captureEditorPreview({
       script: state.script,
       style: state.style,
       layout: state.layout,
     });
+    if (snapshotUrl) {
+      allMediaUrls.push(snapshotUrl);
+    } else {
+      // Fallback: Cloudinary poster frame from background video
+      const bgUrl = state.mediaSlots?.background?.url;
+      if (bgUrl && isCloudinaryVideoUrl(bgUrl)) {
+        allMediaUrls.push(getVideoPosterUrl(bgUrl, { width: 608, height: 1080 }));
+      }
+    }
 
-    // Collect all media URLs from all slots
-    const allMediaUrls: string[] = [];
-
-    // Snapshot goes first — it's the actual composed preview with overlays baked in
-    if (snapshotUrl) allMediaUrls.push(snapshotUrl);
-
-    // Raw source URLs (videos playback, images display)
+    // Raw source URLs
     if (state.mediaSlots?.background?.url) allMediaUrls.push(state.mediaSlots.background.url);
     if (state.mediaSlots?.hookVideo?.url) allMediaUrls.push(state.mediaSlots.hookVideo.url);
     if (state.mediaSlots?.demoVideo?.url) allMediaUrls.push(state.mediaSlots.demoVideo.url);
@@ -194,6 +193,7 @@ export function EditorLayout({
       state.script?.ctaText,
     ].filter(Boolean).join('\n\n');
 
+    // 2. Create content item
     try {
       const res = await fetch('/api/content', {
         method: 'POST',
@@ -209,27 +209,31 @@ export function EditorLayout({
         }),
       });
 
-      if (!res.ok) throw new Error('Failed to create post');
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => '');
+        throw new Error(`API ${res.status}: ${errBody}`);
+      }
 
       const data = await res.json();
       const contentId = data.item?.id;
 
+      // 3. Link edit session to content item
       if (contentId && state.edit?.id) {
-        // Link the edit session to the content item so subsequent publishes go directly to it
         await fetch(`/api/content/edit/${state.edit.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ contentItemId: contentId }),
         }).catch(() => {});
+      }
 
-        router.push(`/dashboard/content/${contentId}`);
-      } else if (contentId) {
+      // 4. Redirect to detail page
+      if (contentId) {
         router.push(`/dashboard/content/${contentId}`);
       } else {
         router.push('/dashboard/posts');
       }
     } catch (err) {
-      console.error('Failed to publish:', err);
+      console.error('[Publish] Failed:', err);
       router.push('/dashboard/posts');
     } finally {
       setIsPublishing(false);

@@ -129,7 +129,7 @@ export function SimpleVideoPreview({
 
   return (
     <div className={`relative mx-auto w-full ${maxWidthClass(aspectRatio)}`}>
-      <div className={`relative overflow-hidden rounded-2xl bg-black shadow-2xl ${aspectClass(aspectRatio)}`}>
+      <div className={`relative overflow-hidden ${aspectClass(aspectRatio)}`}>
         {/* Background media */}
         {bg?.url ? (
           bgIsVideo ? (
@@ -141,6 +141,7 @@ export function SimpleVideoPreview({
               loop
               autoPlay
               playsInline
+              crossOrigin="anonymous"
               data-editor-preview-video
               onEnded={() => setPlaying(false)}
             />
