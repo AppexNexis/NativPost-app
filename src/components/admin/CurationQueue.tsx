@@ -1,10 +1,30 @@
 'use client';
 
+import type {
+  Column,
+  ColumnDef,
+  ColumnFiltersState,
+  RowData,
+  SortingState,
+  VisibilityState,
+} from '@tanstack/react-table';
+import {
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import {
   AlertTriangle,
   ArrowUpDown,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   ChevronUp,
   Clock,
   Copy,
@@ -13,6 +33,7 @@ import {
   Loader2,
   Play,
   Search,
+  SlidersHorizontal,
   ThumbsDown,
   ThumbsUp,
   TrendingUp,
@@ -42,6 +63,14 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -68,6 +97,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { getOptimizedVideoUrl, getVideoPosterUrl, isCloudinaryVideoUrl } from '@/lib/cloudinary';
 import type { ContentTemplate } from '@/types/v2';
 import { formatDuration, formatLabel } from '@/utils/format';
+
+declare module '@tanstack/react-table' {
+  // eslint-disable-next-line unused-imports/no-unused-vars
+  interface ColumnMeta<TData extends RowData, TValue> {
+    className?: string;
+  }
+}
 
 /* ─────────────────── Brand Icons ─────────────────── */
 
@@ -226,6 +262,32 @@ const ContentBadge = ({ type }: { type: string }) => {
   );
 };
 
+function SortButton<TData, TValue>({
+  column,
+  label,
+}: {
+  column: Column<TData, TValue>;
+  label: string;
+}) {
+  const sorted = column.getIsSorted();
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      onClick={() => column.toggleSorting(sorted === 'asc')}
+      className="-ml-2 h-7 px-2 text-xs font-medium hover:bg-accent"
+    >
+      {label}
+      {sorted === 'asc'
+        ? <ChevronUp className="ml-1 size-3" />
+        : sorted === 'desc'
+          ? <ChevronDown className="ml-1 size-3" />
+          : <ArrowUpDown className="ml-1 size-3 opacity-50" />}
+    </Button>
+  );
+}
+
 const SuggestionBanner = ({ template }: { template: Template }) => {
   if (template.engagementScore && template.engagementScore >= 0.9) {
     return (
@@ -274,8 +336,6 @@ export default function CurationQueue() {
   const [filterPlatform, setFilterPlatform] = useState<'all' | Platform>('all');
   const [filterType, setFilterType] = useState<'all' | string>('all');
   const [filterNiche, setFilterNiche] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'date' | 'engagement'>('date');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [rejectFeedback, setRejectFeedback] = useState('');
   const [editNiches, setEditNiches] = useState<string[]>([]);
   const [editAngles, setEditAngles] = useState<string[]>([]);
@@ -357,18 +417,259 @@ export default function CurationQueue() {
     if (filterNiche !== 'all') {
       result = result.filter(t => t.niches.includes(filterNiche));
     }
-    result.sort((a, b) => {
-      if (sortBy === 'engagement') {
-        const ae = a.engagementScore ?? 0;
-        const be = b.engagementScore ?? 0;
-        return sortDir === 'asc' ? ae - be : be - ae;
-      }
-      const ad = new Date(a.createdAt).getTime();
-      const bd = new Date(b.createdAt).getTime();
-      return sortDir === 'asc' ? ad - bd : bd - ad;
-    });
     return result;
-  }, [templates, searchQuery, filterPlatform, filterType, filterNiche, sortBy, sortDir]);
+  }, [templates, searchQuery, filterPlatform, filterType, filterNiche]);
+
+  /* ─────────── TanStack table ─────────── */
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: 'createdAt', desc: true },
+  ]);
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
+    // hide heavy columns on first load — user can toggle back on
+    angles: false,
+  });
+  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 25 });
+
+  const columns = useMemo<ColumnDef<Template>[]>(() => [
+    {
+      id: 'select',
+      size: 36,
+      enableHiding: false,
+      enableSorting: false,
+      header: ({ table }) => (
+        <Checkbox
+          checked={
+            table.getIsAllPageRowsSelected()
+              ? true
+              : table.getIsSomePageRowsSelected()
+                ? 'indeterminate'
+                : false
+          }
+          onCheckedChange={value => table.toggleAllPageRowsSelected(!!value)}
+          aria-label="Select all"
+        />
+      ),
+      cell: ({ row }) => (
+        <Checkbox
+          checked={row.getIsSelected()}
+          onCheckedChange={value => row.toggleSelected(!!value)}
+          aria-label="Select row"
+        />
+      ),
+    },
+    {
+      id: 'preview',
+      size: 72,
+      enableHiding: false,
+      enableSorting: false,
+      header: () => <span>Preview</span>,
+      cell: ({ row }) => {
+        const template = row.original;
+        return (
+          <button
+            type="button"
+            onClick={() => setPreviewTemplate(template)}
+            className="relative block overflow-hidden rounded-md"
+            aria-label="Open preview"
+          >
+            <PreviewThumbnail template={template} />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition hover:opacity-100">
+              <Play className="size-4 text-white" />
+            </div>
+          </button>
+        );
+      },
+    },
+    {
+      id: 'sourcePlatform',
+      accessorKey: 'sourcePlatform',
+      size: 120,
+      header: ({ column }) => (
+        <SortButton column={column} label="Platform" />
+      ),
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2">
+          <PlatformIcon platform={row.original.sourcePlatform} />
+          <span className="truncate text-sm">{row.original.sourcePlatform}</span>
+        </div>
+      ),
+    },
+    {
+      id: 'creator',
+      accessorKey: 'creatorName',
+      size: 200,
+      header: ({ column }) => <SortButton column={column} label="Creator" />,
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <button
+            type="button"
+            onClick={() => openDrawer(row.original)}
+            className="block max-w-full truncate font-medium text-primary hover:underline"
+            title={row.original.creatorName}
+          >
+            {row.original.creatorName}
+          </button>
+          <div className="mt-0.5 line-clamp-1 max-w-full text-xs text-muted-foreground">
+            {row.original.sourceUrl}
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'contentType',
+      accessorKey: 'contentType',
+      size: 140,
+      meta: { className: 'hidden md:table-cell' },
+      header: ({ column }) => <SortButton column={column} label="Type" />,
+      cell: ({ row }) => <ContentBadge type={row.original.contentType} />,
+    },
+    {
+      id: 'niches',
+      size: 200,
+      enableSorting: false,
+      meta: { className: 'hidden lg:table-cell' },
+      header: () => <span>Niches</span>,
+      cell: ({ row }) => (
+        <div className="flex max-w-[220px] flex-wrap gap-1">
+          {row.original.niches.slice(0, 2).map(n => (
+            <Badge key={n} variant="secondary" className="text-xs">
+              {n}
+            </Badge>
+          ))}
+          {row.original.niches.length > 2 && (
+            <Badge variant="outline" className="text-xs">
+              +
+              {row.original.niches.length - 2}
+            </Badge>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'angles',
+      size: 200,
+      enableSorting: false,
+      meta: { className: 'hidden xl:table-cell' },
+      header: () => <span>Angles</span>,
+      cell: ({ row }) => (
+        <div className="flex max-w-[220px] flex-wrap gap-1">
+          {row.original.angles.slice(0, 2).map(a => (
+            <Badge key={a} variant="outline" className="text-xs">
+              {a}
+            </Badge>
+          ))}
+          {row.original.angles.length > 2 && (
+            <Badge variant="outline" className="text-xs">
+              +
+              {row.original.angles.length - 2}
+            </Badge>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'engagementScore',
+      accessorFn: row => row.engagementScore ?? -1,
+      size: 120,
+      meta: { className: 'hidden md:table-cell' },
+      header: ({ column }) => <SortButton column={column} label="Engagement" />,
+      cell: ({ row }) => (
+        row.original.engagementScore
+          ? (
+              <div className="flex items-center gap-1">
+                <TrendingUp className="size-3 text-green-600" />
+                <span className="font-medium">{Math.round(row.original.engagementScore * 100)}</span>
+              </div>
+            )
+          : <span className="text-muted-foreground">—</span>
+      ),
+    },
+    {
+      id: 'duration',
+      accessorKey: 'duration',
+      size: 100,
+      meta: { className: 'hidden lg:table-cell' },
+      header: ({ column }) => <SortButton column={column} label="Duration" />,
+      cell: ({ row }) => (
+        <span className="text-sm tabular-nums">{formatDuration(row.original.duration)}</span>
+      ),
+    },
+    {
+      id: 'createdAt',
+      accessorFn: row => new Date(row.createdAt).getTime(),
+      size: 120,
+      meta: { className: 'hidden md:table-cell' },
+      header: ({ column }) => <SortButton column={column} label="Created" />,
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {new Date(row.original.createdAt).toLocaleDateString()}
+        </span>
+      ),
+    },
+    {
+      id: 'actions',
+      size: 100,
+      enableHiding: false,
+      enableSorting: false,
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) => (
+        <div className="flex justify-end gap-1">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7 text-green-600 hover:bg-green-50 hover:text-green-700"
+            disabled={isLoading}
+            onClick={() => updateStatus([row.original.id], 'approved')}
+            aria-label="Approve"
+          >
+            <Check className="size-3.5" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7 text-red-600 hover:bg-red-50 hover:text-red-700"
+            disabled={isLoading}
+            onClick={() => updateStatus([row.original.id], 'rejected')}
+            aria-label="Reject"
+          >
+            <X className="size-3.5" />
+          </Button>
+        </div>
+      ),
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [isLoading]);
+
+  const table = useReactTable({
+    data: filteredTemplates,
+    columns,
+    state: {
+      sorting,
+      columnFilters,
+      columnVisibility,
+      rowSelection,
+      pagination,
+    },
+    getRowId: row => row.id,
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    onColumnVisibilityChange: setColumnVisibility,
+    onRowSelectionChange: setRowSelection,
+    onPaginationChange: setPagination,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    enableRowSelection: true,
+  });
+
+  // Keep the legacy selectedIds Set in sync with tanstack row selection so the
+  // bulk-action bar and updateStatus() paths stay unchanged.
+  useEffect(() => {
+    setSelectedIds(new Set(Object.keys(rowSelection).filter(id => rowSelection[id])));
+  }, [rowSelection]);
 
   const stats = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -390,26 +691,6 @@ export default function CurationQueue() {
     );
     return { pending, approvedToday, rejectedToday, pendingByPlatform };
   }, [templates, pendingTotal]);
-
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedIds.size === filteredTemplates.length && filteredTemplates.length > 0) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(filteredTemplates.map(t => t.id)));
-    }
-  };
 
   const updateStatus = async (ids: string[], status: CurationStatus) => {
     setIsLoading(true);
@@ -494,15 +775,6 @@ export default function CurationQueue() {
     await updateStatus([drawerTemplate.id], 'rejected');
     // In a real app, send feedback to API
     console.log('Reject feedback:', rejectFeedback);
-  };
-
-  const toggleSort = (field: 'date' | 'engagement') => {
-    if (sortBy === field) {
-      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortBy(field);
-      setSortDir('desc');
-    }
   };
 
   /* ─────────────────── Render ─────────────────── */
@@ -695,168 +967,223 @@ export default function CurationQueue() {
         {/* Template Table */}
         <Card>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[40px]">
-                      <Checkbox
-                        checked={
-                          filteredTemplates.length > 0
-                          && selectedIds.size === filteredTemplates.length
-                        }
-                        onCheckedChange={toggleSelectAll}
-                      />
-                    </TableHead>
-                    <TableHead className="w-[80px]">Preview</TableHead>
-                    <TableHead>Platform</TableHead>
-                    <TableHead>Creator</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Niches</TableHead>
-                    <TableHead>Angles</TableHead>
-                    <TableHead
-                      className="cursor-pointer"
-                      onClick={() => toggleSort('engagement')}
-                    >
-                      <div className="flex items-center gap-1">
-                        Engagement
-                        {sortBy === 'engagement'
-                        && (sortDir === 'asc' ? (
-                          <ChevronUp className="size-3" />
-                        ) : (
-                          <ChevronDown className="size-3" />
-                        ))}
-                        {sortBy !== 'engagement' && <ArrowUpDown className="size-3" />}
-                      </div>
-                    </TableHead>
-                    <TableHead
-                      className="cursor-pointer"
-                      onClick={() => toggleSort('date')}
-                    >
-                      <div className="flex items-center gap-1">
-                        Duration
-                        {sortBy === 'date'
-                        && (sortDir === 'asc' ? (
-                          <ChevronUp className="size-3" />
-                        ) : (
-                          <ChevronDown className="size-3" />
-                        ))}
-                        {sortBy !== 'date' && <ArrowUpDown className="size-3" />}
-                      </div>
-                    </TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
+            {/* Toolbar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2">
+              <div className="text-xs text-muted-foreground">
+                Showing
+                {' '}
+                <span className="font-medium text-foreground">
+                  {table.getRowModel().rows.length}
+                </span>
+                {' '}
+                of
+                {' '}
+                <span className="font-medium text-foreground">
+                  {table.getFilteredRowModel().rows.length}
+                </span>
+                {' '}
+                items
+                {table.getFilteredSelectedRowModel().rows.length > 0 && (
+                  <>
+                    {' · '}
+                    <span className="text-primary">
+                      {table.getFilteredSelectedRowModel().rows.length}
+                      {' '}
+                      selected
+                    </span>
+                  </>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-8">
+                      <SlidersHorizontal className="mr-1 size-3.5" />
+                      Columns
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {table
+                      .getAllColumns()
+                      .filter(c => c.getCanHide())
+                      .map(column => (
+                        <DropdownMenuCheckboxItem
+                          key={column.id}
+                          className="capitalize"
+                          checked={column.getIsVisible()}
+                          onCheckedChange={value => column.toggleVisibility(!!value)}
+                        >
+                          {column.id === 'sourcePlatform'
+                            ? 'Platform'
+                            : column.id === 'contentType'
+                              ? 'Type'
+                              : column.id === 'engagementScore'
+                                ? 'Engagement'
+                                : column.id === 'createdAt'
+                                  ? 'Created'
+                                  : column.id}
+                        </DropdownMenuCheckboxItem>
+                      ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+
+            {/* Table body */}
+            <div className="w-full overflow-x-auto">
+              <Table className="w-full table-fixed">
+                <TableHeader className="sticky top-0 z-10 bg-card">
+                  {table.getHeaderGroups().map(headerGroup => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => {
+                        const metaClass = header.column.columnDef.meta?.className ?? '';
+                        return (
+                          <TableHead
+                            key={header.id}
+                            style={{
+                              width: header.getSize(),
+                              minWidth: header.getSize(),
+                            }}
+                            className={`text-xs font-semibold uppercase tracking-wide text-muted-foreground ${metaClass}`}
+                          >
+                            {header.isPlaceholder
+                              ? null
+                              : flexRender(header.column.columnDef.header, header.getContext())}
+                          </TableHead>
+                        );
+                      })}
+                    </TableRow>
+                  ))}
                 </TableHeader>
                 <TableBody>
-                  {loading ? (
-                    <TableRow>
-                      <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
-                        <Loader2 className="mx-auto size-6 animate-spin" />
-                        <p className="mt-2 text-sm">Loading queue...</p>
-                      </TableCell>
-                    </TableRow>
-                  ) : filteredTemplates.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
-                        No pending templates match your filters.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredTemplates.map(template => (
-                      <TableRow key={template.id}>
-                        <TableCell>
-                          <Checkbox
-                            checked={selectedIds.has(template.id)}
-                            onCheckedChange={() => toggleSelect(template.id)}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <button
-                            type="button"
-                            onClick={() => setPreviewTemplate(template)}
-                            className="relative block overflow-hidden rounded-md"
+                  {loading
+                    ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={table.getAllColumns().length}
+                            className="h-40 text-center text-muted-foreground"
                           >
-                            <PreviewThumbnail template={template} />
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition hover:opacity-100">
-                              <Play className="size-4 text-white" />
-                            </div>
-                          </button>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <PlatformIcon platform={template.sourcePlatform} />
-                            <span className="text-sm">{template.sourcePlatform}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <button
-                            type="button"
-                            onClick={() => openDrawer(template)}
-                            className="font-medium text-primary hover:underline"
-                          >
-                            {template.creatorName}
-                          </button>
-                          <SuggestionBanner template={template} />
-                        </TableCell>
-                        <TableCell>
-                          <ContentBadge type={template.contentType} />
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {template.niches.map(n => (
-                              <Badge key={n} variant="secondary" className="text-xs">
-                                {n}
-                              </Badge>
-                            ))}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {template.angles.map(a => (
-                              <Badge key={a} variant="outline" className="text-xs">
-                                {a}
-                              </Badge>
-                            ))}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {template.engagementScore ? (
-                            <div className="flex items-center gap-1">
-                              <TrendingUp className="size-3 text-green-600" />
-                              <span className="font-medium">{Math.round(template.engagementScore * 100)}</span>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>{formatDuration(template.duration)}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-7 text-green-600 hover:bg-green-50 hover:text-green-700"
-                              disabled={isLoading}
-                              onClick={() => updateStatus([template.id], 'approved')}
+                            <Loader2 className="mx-auto size-6 animate-spin" />
+                            <p className="mt-2 text-sm">Loading queue...</p>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    : table.getRowModel().rows.length === 0
+                      ? (
+                          <TableRow>
+                            <TableCell
+                              colSpan={table.getAllColumns().length}
+                              className="h-40 text-center text-muted-foreground"
                             >
-                              <Check className="size-3.5" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-7 text-red-600 hover:bg-red-50 hover:text-red-700"
-                              disabled={isLoading}
-                              onClick={() => updateStatus([template.id], 'rejected')}
+                              No pending templates match your filters.
+                            </TableCell>
+                          </TableRow>
+                        )
+                      : (
+                          table.getRowModel().rows.map(row => (
+                            <TableRow
+                              key={row.id}
+                              data-state={row.getIsSelected() && 'selected'}
+                              className="align-middle"
                             >
-                              <X className="size-3.5" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
+                              {row.getVisibleCells().map((cell) => {
+                                const metaClass = cell.column.columnDef.meta?.className ?? '';
+                                return (
+                                  <TableCell
+                                    key={cell.id}
+                                    style={{ width: cell.column.getSize() }}
+                                    className={`py-2 align-middle ${metaClass}`}
+                                  >
+                                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                  </TableCell>
+                                );
+                              })}
+                            </TableRow>
+                          ))
+                        )}
                 </TableBody>
               </Table>
+            </div>
+
+            {/* Pagination footer */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Rows per page</span>
+                <Select
+                  value={String(pagination.pageSize)}
+                  onValueChange={(v) => {
+                    table.setPageSize(Number(v));
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-[72px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[10, 25, 50, 100].map(size => (
+                      <SelectItem key={size} value={String(size)}>
+                        {size}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                Page
+                {' '}
+                <span className="font-medium text-foreground">
+                  {table.getState().pagination.pageIndex + 1}
+                </span>
+                {' '}
+                of
+                {' '}
+                <span className="font-medium text-foreground">
+                  {Math.max(1, table.getPageCount())}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8"
+                  onClick={() => table.setPageIndex(0)}
+                  disabled={!table.getCanPreviousPage()}
+                  aria-label="First page"
+                >
+                  <ChevronsLeft className="size-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8"
+                  onClick={() => table.previousPage()}
+                  disabled={!table.getCanPreviousPage()}
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8"
+                  onClick={() => table.nextPage()}
+                  disabled={!table.getCanNextPage()}
+                  aria-label="Next page"
+                >
+                  <ChevronRight className="size-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8"
+                  onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+                  disabled={!table.getCanNextPage()}
+                  aria-label="Last page"
+                >
+                  <ChevronsRight className="size-4" />
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
