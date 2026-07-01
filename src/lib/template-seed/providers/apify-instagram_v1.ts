@@ -1,13 +1,19 @@
 /**
- * Instagram Reels trending content provider via Apify.
+ * Instagram trending content provider via Apify.
  *
- * Actor: apify/instagram-reel-scraper
- * Docs:  https://apify.com/apify/instagram-reel-scraper
+ * Actor: apify/instagram-hashtag-scraper
+ * Docs:  https://apify.com/apify/instagram-hashtag-scraper
  *
  * Replaces the Instagram Basic Display API provider, which was permanently
  * shut down on December 4 2024. The Graph API replacement only exposes
  * content from accounts you own — it has no endpoint for discovering other
- * people's trending content. Apify's scraper solves both problems.
+ * people's trending content.
+ *
+ * NOTE: This provider previously targeted apify/instagram-reel-scraper,
+ * which does NOT support hashtag-based discovery — it requires a specific
+ * username/profile/reel URL as input. instagram-hashtag-scraper is the
+ * correct actor for hashtag-driven trending discovery; it accepts a list
+ * of hashtags directly (confirmed via the actor's own Input > JSON tab).
  *
  * Env var required: APIFY_TOKEN
  */
@@ -25,15 +31,22 @@ export type ApifyInstagramOptions = {
   apifyToken?: string;
   /** Hashtags to scrape (with or without the # prefix — normalised internally). */
   hashtags?: string[];
-  /** Max reels to fetch per run. */
+  /** Max posts/reels to fetch per hashtag. */
   limit?: number;
   /** Skip the first N results (pagination). */
   offset?: number;
-  /** Minimum like count to include a reel. */
+  /** Minimum like count to include an item. */
   minLikes?: number;
+  /**
+   * What to scrape per hashtag. The actor's Content-type dropdown maps to
+   * this field. Defaults to 'posts' to match the actor's own default —
+   * change to 'reels' if you want reel-only results once confirmed via a
+   * live run.
+   */
+  resultsType?: 'posts' | 'reels';
 };
 
-const ACTOR_ID = 'apify~instagram-reel-scraper';
+const ACTOR_ID = 'apify~instagram-hashtag-scraper';
 
 const DEFAULT_HASHTAGS = [
   'smallbusiness',
@@ -76,6 +89,7 @@ function extractSlideUrls(item: Record<string, unknown>): string[] {
   const candidates: unknown[] = [
     ...(Array.isArray(item.carouselMedia) ? item.carouselMedia : []),
     ...(Array.isArray(item.carousel_media) ? item.carousel_media : []),
+    ...(Array.isArray(item.childPosts) ? item.childPosts : []),
     ...(Array.isArray(item.media) ? item.media : []),
     ...(Array.isArray(item.images) ? item.images : []),
   ];
@@ -108,6 +122,7 @@ function extractSlideCaptions(item: Record<string, unknown>): string[] {
   const allMedia = [
     ...(Array.isArray(item.carouselMedia) ? item.carouselMedia : []),
     ...(Array.isArray(item.carousel_media) ? item.carousel_media : []),
+    ...(Array.isArray(item.childPosts) ? item.childPosts : []),
     ...(Array.isArray(item.media) ? item.media : []),
   ];
 
@@ -125,31 +140,34 @@ function extractSlideCaptions(item: Record<string, unknown>): string[] {
 }
 
 function mapItem(item: Record<string, unknown>): RawTemplate | null {
-  // The reel scraper returns shortCode or id
-  const id = String(item.id ?? item.shortCode ?? '').trim();
+  const id = String(item.id ?? item.shortCode ?? item.short_code ?? '').trim();
   if (!id) {
     return null;
   }
 
-  const caption = String(item.caption ?? item.text ?? '');
-  const title = caption.slice(0, 120) || 'Instagram Reel';
+  const caption = String(item.caption ?? item.text ?? item.description ?? '');
+  const title = caption.slice(0, 120) || 'Instagram post';
 
-  const ownerUsername = String(item.ownerUsername ?? item.username ?? '');
+  const ownerUsername = String(
+    item.ownerUsername ?? item.owner_username ?? item.username ?? item.ownerFullName ?? '',
+  );
 
-  const sourceUrl = String(item.url ?? item.permalink ?? `https://www.instagram.com/reel/${id}/`);
+  const sourceUrl = String(
+    item.url ?? item.permalink ?? item.postUrl ?? `https://www.instagram.com/p/${id}/`,
+  );
 
-  // Video URL — actor exposes videoUrl for reels
+  // Video URL — reels/videos expose one of these; carousels/photos won't.
   const mediaUrl = String(item.videoUrl ?? item.video_url ?? '');
 
-  // Thumbnail — various field names across actor versions
+  // Thumbnail — various field names across actor response shapes.
   const thumbnailUrl = String(
-    item.displayUrl ?? item.thumbnailUrl ?? item.thumbnail_url ?? item.displaySrc ?? '',
+    item.displayUrl ?? item.display_url ?? item.thumbnailUrl ?? item.thumbnail_url ?? item.images ?? '',
   );
 
   const slideUrls = extractSlideUrls(item);
   const isCarousel = slideUrls.length > 1;
 
-  if (!mediaUrl && !thumbnailUrl) {
+  if (!mediaUrl && !thumbnailUrl && slideUrls.length === 0) {
     return null;
   }
 
@@ -157,7 +175,7 @@ function mapItem(item: Record<string, unknown>): RawTemplate | null {
     sourceUrl,
     sourcePlatform: 'instagram' as SourcePlatform,
     sourceCreator: ownerUsername || null,
-    sourceVideoId: id,
+    sourceVideoId: isCarousel ? null : id,
     sourcePostId: id,
     mediaUrl: mediaUrl || null,
     thumbnailUrl: slideUrls[0] || thumbnailUrl,
@@ -165,8 +183,8 @@ function mapItem(item: Record<string, unknown>): RawTemplate | null {
     slideCaptions: extractSlideCaptions(item),
     durationSeconds: asNumber(item.videoDuration ?? item.video_duration),
     contentType: pickContentType(caption, isCarousel),
-    viewCount: asNumber(item.videoViewCount ?? item.video_view_count ?? item.playsCount),
-    likeCount: asNumber(item.likesCount ?? item.likes_count ?? item.diggCount),
+    viewCount: asNumber(item.videoViewCount ?? item.video_view_count ?? item.videoPlayCount ?? item.playsCount),
+    likeCount: asNumber(item.likesCount ?? item.likes_count ?? item.likeCount),
     title,
     description: caption,
   };
@@ -200,16 +218,16 @@ export const apifyInstagramProvider: ViralSourceProvider = {
     const limit = Math.min(typeof options.limit === 'number' ? options.limit : 30, 200);
     const offset = Math.max(0, typeof options.offset === 'number' ? options.offset : 0);
     const minLikes = typeof options.minLikes === 'number' ? options.minLikes : 200;
+    const resultsType = options.resultsType === 'reels' ? 'reels' : 'posts';
 
-    console.log(`[Apify/Instagram] Starting scrape — hashtags: [${hashtags.join(', ')}], limit: ${limit}`);
+    console.log(`[Apify/Instagram] Starting scrape — hashtags: [${hashtags.join(', ')}], limit: ${limit}, type: ${resultsType}`);
 
     try {
       const input = {
         hashtags,
+        keywordSearch: false,
         resultsLimit: limit,
-        // Only pull content from the last 60 days so results are fresh
-        onlyPostsNewerThan: '60 days',
-        addParentData: false,
+        resultsType,
       };
 
       const run = await startApifyRun(ACTOR_ID, token, input);
@@ -228,7 +246,7 @@ export const apifyInstagramProvider: ViralSourceProvider = {
 
       const templates = items
         .filter((item) => {
-          const likes = asNumber(item.likesCount ?? item.likes_count ?? item.diggCount);
+          const likes = asNumber(item.likesCount ?? item.likes_count ?? item.likeCount);
           return likes === null || likes >= minLikes;
         })
         .map(mapItem)
