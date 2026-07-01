@@ -410,6 +410,22 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
     setRecompileStage('rendering');
     setRecompileError(null);
     try {
+      // Prefer the stashed raw source slots. For rows that predate the
+      // sourceMediaSlots stash we can only fall back to graphicUrls[0]
+      // when it's still the raw source — if the item is already isCompiled
+      // that URL is the baked MP4 and reusing it would stack overlays.
+      const stashed = ed.sourceMediaSlots as Record<string, any> | undefined;
+      let mediaSlots: Record<string, any>;
+      if (stashed && Object.keys(stashed).length > 0) {
+        mediaSlots = stashed;
+      } else if (!ed.isCompiled && item.graphicUrls?.[0]) {
+        mediaSlots = { background: { url: item.graphicUrls[0] } };
+      } else {
+        throw new Error(
+          'Cannot recompile — original source media is missing. Re-open in the editor to reselect a background.',
+        );
+      }
+
       const url = await renderEditorVideo(
         {
           script: ed.editorScript || {},
@@ -417,11 +433,7 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
           layout: ed.editorLayout || 'centered',
           aspectRatio: item.aspectRatio || '9:16',
           contentType: item.contentType,
-          // Legacy items store the source URL as graphicUrls[0]; if this
-          // is a stale record where graphicUrls[0] is already a compiled
-          // MP4, the caller should have cleared it first — but degrading
-          // gracefully here beats blocking a recompile.
-          mediaSlots: { background: { url: item.graphicUrls?.[0] } },
+          mediaSlots,
         },
         (percent, stage) => {
           setRecompilePercent(percent);

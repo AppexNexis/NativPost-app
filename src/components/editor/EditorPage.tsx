@@ -56,6 +56,8 @@ export default function EditorPage({
               editorScript?: { hookText?: string; bodyText?: string; ctaText?: string };
               editorStyle?: Record<string, unknown>;
               editorLayout?: string;
+              sourceMediaSlots?: Record<string, unknown>;
+              isCompiled?: boolean;
             };
           } | undefined;
 
@@ -77,11 +79,20 @@ export default function EditorPage({
             editorStyle = item.enrichmentData?.editorStyle as Record<string, unknown> | undefined;
             editorLayout = item.enrichmentData?.editorLayout;
 
-            // Use graphicUrls[0] as background media (raw video/image, not the snapshot)
-            if (item.graphicUrls && item.graphicUrls.length > 0) {
-              const rawUrl = item.graphicUrls[0]!;
+            // Restore the raw source background — critical when the item was
+            // already compiled once, because graphicUrls[0] now points at the
+            // baked MP4. Using that as the background would double-stack the
+            // overlays (baked-in text + fresh RemotionPreviewPlayer text).
+            const stashed = item.enrichmentData?.sourceMediaSlots as
+              | Record<string, any>
+              | undefined;
+            if (stashed && Object.keys(stashed).length > 0) {
+              mediaSlots = stashed;
+            } else if (item.graphicUrls && item.graphicUrls.length > 0 && !item.enrichmentData?.isCompiled) {
+              // Legacy path: item never went through the editor, so
+              // graphicUrls[0] is still the raw source.
               mediaSlots = {
-                background: { url: rawUrl, assetType: 'video' },
+                background: { url: item.graphicUrls[0]!, assetType: 'video' },
               };
             }
           }

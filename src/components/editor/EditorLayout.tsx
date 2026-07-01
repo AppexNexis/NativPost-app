@@ -60,6 +60,11 @@ export function EditorLayout({
       editorStyle: state.style,
       editorLayout: state.layout,
       aspectRatio: state.aspectRatio,
+      // Preserve the raw source media so re-editing / recompiling doesn't
+      // stack overlays on top of an already-baked video. graphicUrls[0] gets
+      // overwritten with the compiled MP4 after render, so without this stash
+      // we lose the original background forever.
+      sourceMediaSlots: state.mediaSlots,
     };
 
     let compiledVideoUrl: string | null = null;
@@ -199,12 +204,18 @@ export function EditorLayout({
   const contentType = state.edit?.contentType || '';
   const displayType = CT_LABELS[contentType] || contentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
+  // Unified progress: render fills 0–95%, upload jumps to 100%, save/redirect
+  // holds at 100%. One label — "Saving X%" — replaces the noisy multi-stage
+  // strip. Under the hood the stages are still tracked for logic; the UI just
+  // presents them as a single progressing action.
+  const unifiedPercent =
+    publishStage === 'rendering'   ? Math.min(95, renderPercent) :
+    publishStage === 'uploading'   ? 100 :
+    publishStage === 'saving'      ? 100 :
+    publishStage === 'redirecting' ? 100 :
+    0;
   const publishLabel =
-    publishStage === 'rendering'   ? (renderPercent > 0 ? `Rendering video… ${renderPercent}%` : 'Rendering video…') :
-    publishStage === 'uploading'   ? 'Uploading to Cloudinary…' :
-    publishStage === 'saving'      ? 'Saving…' :
-    publishStage === 'redirecting' ? 'Opening post…' :
-    'Schedule & Publish';
+    publishStage === 'idle' ? 'Schedule & Publish' : `Saving ${unifiedPercent}%`;
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
@@ -276,36 +287,6 @@ export function EditorLayout({
           </button>
         </div>
       </header>
-
-      {/* ── Render progress banner ───────────────────────────── */}
-      {(publishStage === 'rendering' || publishStage === 'uploading') && !publishError && (
-        <div className="shrink-0 border-b border-primary/20 bg-primary/5">
-          <div className="flex items-center gap-3 px-4 py-2">
-            <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
-            <p className="min-w-0 flex-1 text-xs text-foreground">
-              <span className="font-medium">
-                {publishStage === 'uploading' ? 'Uploading video to Cloudinary…' : 'Compiling video…'}
-              </span>{' '}
-              <span className="text-muted-foreground">
-                {publishStage === 'uploading'
-                  ? 'Almost done.'
-                  : renderPercent > 0
-                    ? `Frame ${renderPercent}% — you can leave this open while it works.`
-                    : 'Starting up…'}
-              </span>
-            </p>
-            <span className="shrink-0 text-xs font-semibold tabular-nums text-primary">
-              {publishStage === 'uploading' ? '100%' : `${renderPercent}%`}
-            </span>
-          </div>
-          <div className="h-1 w-full bg-primary/10">
-            <div
-              className="h-full bg-primary transition-[width] duration-300 ease-out"
-              style={{ width: `${publishStage === 'uploading' ? 100 : renderPercent}%` }}
-            />
-          </div>
-        </div>
-      )}
 
       {/* ── Compile-failure banner ───────────────────────────── */}
       {publishError && (
