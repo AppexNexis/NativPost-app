@@ -196,6 +196,8 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
   const [isReRolling, setIsReRolling] = useState(false);
   const [reRollError, setReRollError] = useState<string | null>(null);
   const [isRemixing, setIsRemixing] = useState(false);
+  const [isRecompiling, setIsRecompiling] = useState(false);
+  const [recompileError, setRecompileError] = useState<string | null>(null);
 
   // Load content item
   useEffect(() => {
@@ -394,6 +396,52 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
       router.push(`/dashboard/content/create?templateId=${item.templateId}`);
     } finally {
       setIsRemixing(false);
+    }
+  };
+
+  const handleRecompile = async () => {
+    if (!item) return;
+    const ed = (item.enrichmentData || {}) as Record<string, any>;
+    setIsRecompiling(true);
+    setRecompileError(null);
+    try {
+      const renderRes = await fetch('/api/editor/render', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          script: ed.editorScript || {},
+          style: ed.editorStyle || {},
+          layout: ed.editorLayout || 'centered',
+          aspectRatio: item.aspectRatio || '9:16',
+          contentType: item.contentType,
+          backgroundUrl: item.graphicUrls?.[0],
+        }),
+      });
+      if (!renderRes.ok) {
+        const text = await renderRes.text().catch(() => '');
+        throw new Error(`Engine render failed (${renderRes.status}): ${text || 'no response body'}`);
+      }
+      const { url } = await renderRes.json();
+      if (!url) throw new Error('Engine returned no url');
+
+      const patchRes = await fetch(`/api/content/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          graphicUrls: [url],
+          enrichmentData: { ...ed, isCompiled: true, compileError: null },
+        }),
+      });
+      if (patchRes.ok) {
+        const updated = await patchRes.json();
+        setItem(updated.item);
+      } else {
+        throw new Error('Failed to save recompiled URL');
+      }
+    } catch (err) {
+      setRecompileError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsRecompiling(false);
     }
   };
 
@@ -867,6 +915,23 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                   - Plain videos w/o enrichment: simple <video controls>. */}
               {hasMedia ? (
                 <div className="space-y-4">
+                  {VIDEO_CONTENT_TYPES.includes(item.contentType) && (item.enrichmentData as any)?.isCompiled !== true && (
+                    <div className="flex flex-col items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-center">
+                      <p className="text-xs text-amber-800">
+                        This video has no baked-in overlays — the preview above is rendered live. Compile a standalone MP4 to enable downloads and social publishing with overlays.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleRecompile}
+                        disabled={isRecompiling}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                      >
+                        {isRecompiling ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+                        {isRecompiling ? 'Compiling…' : 'Compile standalone video'}
+                      </button>
+                      {recompileError && <p className="text-[11px] text-red-600">{recompileError}</p>}
+                    </div>
+                  )}
                   {VIDEO_CONTENT_TYPES.includes(item.contentType) ? (
                     <div className="flex justify-center">
                       {(() => {
@@ -881,8 +946,30 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                           editorStyle?: Record<string, unknown>;
                           editorLayout?: string;
                         };
+                        // hasEditorState is intentionally forgiving: any
+                        // signal that an editor session existed (a script
+                        // field, a stored style, or a stored layout) is
+                        // enough to prefer the RemotionPreviewPlayer over
+                        // the raw <video> fallback. Without this,
+                        // caption-only items degrade to letterboxed raw
+                        // source playback on the detail page.
+                        const scriptWithFallback = ed.editorScript && (ed.editorScript.hookText || ed.editorScript.bodyText || ed.editorScript.ctaText)
+                          ? ed.editorScript
+                          : (() => {
+                              const lines = (item.caption || '').split('\n').map(l => l.trim()).filter(Boolean);
+                              if (lines.length === 0) return {};
+                              if (lines.length === 1) return { hookText: lines[0] };
+                              if (lines.length === 2) return { hookText: lines[0], bodyText: lines[1] };
+                              return {
+                                hookText: lines[0],
+                                bodyText: lines.slice(1, -1).join('\n'),
+                                ctaText: lines[lines.length - 1],
+                              };
+                            })();
                         const hasEditorState = Boolean(
-                          ed.editorScript && (ed.editorScript.hookText || ed.editorScript.bodyText || ed.editorScript.ctaText),
+                          (scriptWithFallback && (scriptWithFallback.hookText || scriptWithFallback.bodyText || scriptWithFallback.ctaText))
+                          || ed.editorStyle
+                          || ed.editorLayout,
                         );
 
                         const posterUrl = isCompiledVideo
@@ -899,7 +986,7 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                         if (!isCompiledVideo && hasEditorState) {
                           const inputProps = {
                             backgroundUrl: videoUrl,
-                            script: ed.editorScript || {},
+                            script: scriptWithFallback,
                             style: ed.editorStyle || {},
                             layout: ed.editorLayout || 'centered',
                             aspectRatio,

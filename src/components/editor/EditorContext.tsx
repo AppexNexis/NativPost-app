@@ -3,6 +3,37 @@ import React, { createContext, useContext, useReducer, useCallback, useEffect, u
 import type { ContentEdit, ContentEditScript, TextStyle, MediaSlots, AudioTrack, ContentEditTiming } from '@/types/v2';
 
 // ---------------------------------------------------------------------------
+// Caption → script splitter
+// ---------------------------------------------------------------------------
+// The editor's overlay renderer needs hook/body/CTA fields. If the initial
+// edit only has a caption (common for legacy items or freshly generated
+// content where the AI returned a single blob), split it so the overlay is
+// never blank on publish. Without this, `state.script` stays `{}` and the
+// content-detail page falls through to raw-video display because
+// `hasEditorState` is false.
+function deriveScriptFromCaption(caption?: string | null): ContentEditScript {
+  if (!caption || typeof caption !== 'string') return {};
+  const lines = caption.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length === 0) return {};
+  if (lines.length === 1) return { hookText: lines[0] };
+  if (lines.length === 2) return { hookText: lines[0], bodyText: lines[1] };
+  return {
+    hookText: lines[0],
+    bodyText: lines.slice(1, -1).join('\n'),
+    ctaText: lines[lines.length - 1],
+  };
+}
+
+function initialScript(edit?: ContentEdit | null): ContentEditScript {
+  const s = edit?.script;
+  const hasContent = s && (s.hookText || s.bodyText || s.ctaText || s.wallText);
+  if (hasContent) return s;
+  // Fall back to caption-derived script — supports items opened directly from
+  // the content library without a persisted editor session.
+  return deriveScriptFromCaption((edit as any)?.caption);
+}
+
+// ---------------------------------------------------------------------------
 // Editor State
 // ---------------------------------------------------------------------------
 export type EditorState = {
@@ -43,7 +74,7 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
       return {
         ...state,
         edit: action.payload,
-        script: action.payload.script || {},
+        script: initialScript(action.payload),
         style: action.payload.style || {},
         layout: action.payload.layout || 'centered',
         timing: action.payload.timing || {},
@@ -106,7 +137,7 @@ export function EditorProvider({
 }) {
   const [state, dispatch] = useReducer(editorReducer, {
     edit: initialEdit || null,
-    script: initialEdit?.script || {},
+    script: initialScript(initialEdit),
     style: initialEdit?.style || {},
     layout: initialEdit?.layout || 'centered',
     timing: initialEdit?.timing || {},

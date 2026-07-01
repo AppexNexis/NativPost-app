@@ -1,5 +1,5 @@
 import React, { ReactNode, useState } from 'react';
-import { ArrowLeft, Check, Loader2, Save } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, Loader2, Save, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { useEditor } from './EditorContext';
@@ -21,37 +21,41 @@ const CT_LABELS: Record<string, string> = {
 //    (server-only env) is attached server-side. Previously this called the
 //    engine directly from the browser, which silently 401'd because
 //    NATIVPOST_ENGINE_API_KEY is never available in the client bundle.
+//
+// Throws on failure — callers decide whether to block the publish or
+// fall through. Silent nulls led to broken detail pages before.
 async function renderEditorVideo(
   editorState: { script: any; style: any; layout: string; aspectRatio: string; mediaSlots: any; contentType: string },
-): Promise<string | null> {
-  try {
-    const res = await fetch('/api/editor/render', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        script: editorState.script,
-        style: editorState.style,
-        layout: editorState.layout,
-        aspectRatio: editorState.aspectRatio,
-        contentType: editorState.contentType,
-        backgroundUrl: editorState.mediaSlots?.background?.url,
-        hookVideoUrl: editorState.mediaSlots?.hookVideo?.url,
-        slides: editorState.mediaSlots?.slides,
-      }),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Engine render failed: ${res.status} ${text}`);
-    }
-    const data = await res.json();
-    return data.url || null;
-  } catch (err) {
-    console.error('[Publish] Engine render failed:', err);
-    return null;
+): Promise<string> {
+  const res = await fetch('/api/editor/render', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      script: editorState.script,
+      style: editorState.style,
+      layout: editorState.layout,
+      aspectRatio: editorState.aspectRatio,
+      contentType: editorState.contentType,
+      backgroundUrl: editorState.mediaSlots?.background?.url,
+      hookVideoUrl: editorState.mediaSlots?.hookVideo?.url,
+      slides: editorState.mediaSlots?.slides,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Engine render failed (${res.status}): ${text || 'no response body'}`);
   }
+  const data = await res.json();
+  if (!data.url) throw new Error('Engine returned no url');
+  return data.url as string;
 }
 
 type PublishStage = 'idle' | 'rendering' | 'saving' | 'redirecting';
+
+type PublishError = {
+  message: string;
+  canProceedRaw: boolean;
+};
 
 export function EditorLayout({
   preview,
@@ -63,16 +67,20 @@ export function EditorLayout({
   const { state, saveEdit } = useEditor();
   const router = useRouter();
   const [publishStage, setPublishStage] = useState<PublishStage>('idle');
+  const [publishError, setPublishError] = useState<PublishError | null>(null);
 
   const isPublishing = publishStage !== 'idle';
 
-  const handleContinue = async () => {
+  const runPublish = async (opts: { proceedWithRaw: boolean }) => {
+    setPublishError(null);
     await saveEdit();
 
     setPublishStage('rendering');
 
-    // Enrichment data with editor state — always stored so CSS overlays work
-    // for any old content items lacking a compiled URL.
+    // Enrichment data with editor state — always stored so overlays work
+    // for any items lacking a compiled URL. `editorScript` gates the
+    // detail page's RemotionPreviewPlayer fallback, so it must include
+    // real text (see EditorContext.initialScript for caption fallback).
     const enrichmentData: Record<string, any> = {
       editorScript: state.script,
       editorStyle: state.style,
@@ -80,16 +88,31 @@ export function EditorLayout({
       aspectRatio: state.aspectRatio,
     };
 
-    const compiledVideoUrl = await renderEditorVideo({
-      script: state.script,
-      style: state.style,
-      layout: state.layout,
-      aspectRatio: state.aspectRatio,
-      mediaSlots: state.mediaSlots,
-      contentType: state.edit?.contentType || 'text',
-    });
-    if (compiledVideoUrl) {
+    let compiledVideoUrl: string | null = null;
+    try {
+      compiledVideoUrl = await renderEditorVideo({
+        script: state.script,
+        style: state.style,
+        layout: state.layout,
+        aspectRatio: state.aspectRatio,
+        mediaSlots: state.mediaSlots,
+        contentType: state.edit?.contentType || 'text',
+      });
       enrichmentData.isCompiled = true;
+    } catch (err) {
+      console.error('[Publish] Engine render failed:', err);
+      if (!opts.proceedWithRaw) {
+        setPublishStage('idle');
+        setPublishError({
+          message: err instanceof Error ? err.message : String(err),
+          canProceedRaw: true,
+        });
+        return;
+      }
+      // User explicitly chose to proceed without a compiled video. Overlays
+      // will still render via RemotionPreviewPlayer on the detail page.
+      enrichmentData.isCompiled = false;
+      enrichmentData.compileError = err instanceof Error ? err.message : String(err);
     }
 
     setPublishStage('saving');
@@ -181,6 +204,8 @@ export function EditorLayout({
       router.push('/dashboard/posts');
     }
   };
+
+  const handleContinue = () => runPublish({ proceedWithRaw: false });
 
   const handleBack = () => {
     if (window.history.length > 1) {
@@ -283,6 +308,61 @@ export function EditorLayout({
           {preview}
         </main>
       </div>
+
+      {/* ── Compile-failure modal ────────────────────────────── */}
+      {publishError && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl border bg-card p-5 shadow-2xl">
+            <div className="mb-3 flex items-start gap-3">
+              <div className="mt-0.5 rounded-full bg-amber-100 p-1.5 text-amber-700">
+                <AlertTriangle className="size-4" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold text-foreground">Video compile failed</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  The engine couldn't render a standalone video with your text overlays baked in. The most common cause is that the video-renderer service is not running (expected at <code className="rounded bg-muted px-1">NATIVPOST_VIDEO_URL</code>) or its API key is missing.
+                </p>
+                <pre className="mt-2 max-h-24 overflow-auto rounded bg-muted/60 p-2 text-[10px] leading-tight text-muted-foreground">{publishError.message}</pre>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPublishError(null)}
+                className="text-muted-foreground hover:text-foreground"
+                title="Close"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => runPublish({ proceedWithRaw: false })}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                <Loader2 className={`size-3.5 ${isPublishing ? 'animate-spin' : 'hidden'}`} />
+                Retry compile
+              </button>
+              {publishError.canProceedRaw && (
+                <button
+                  type="button"
+                  onClick={() => runPublish({ proceedWithRaw: true })}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
+                  title="Publish without a compiled video. Overlays will render live on the detail page but downloads will show raw source."
+                >
+                  Publish without compile
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setPublishError(null)}
+                className="rounded-lg border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
