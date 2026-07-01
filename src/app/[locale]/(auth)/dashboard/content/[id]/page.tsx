@@ -26,6 +26,7 @@ import { useEffect, useState } from 'react';
 
 import { PageHeader } from '@/features/dashboard/PageHeader';
 import { RemotionPreviewPlayer } from '@/components/editor/RemotionPreviewPlayer';
+import { renderEditorVideo } from '@/lib/editor/render-editor-video';
 
 // -----------------------------------------------------------
 // TYPES
@@ -197,6 +198,8 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
   const [reRollError, setReRollError] = useState<string | null>(null);
   const [isRemixing, setIsRemixing] = useState(false);
   const [isRecompiling, setIsRecompiling] = useState(false);
+  const [recompilePercent, setRecompilePercent] = useState(0);
+  const [recompileStage, setRecompileStage] = useState<'rendering' | 'uploading'>('rendering');
   const [recompileError, setRecompileError] = useState<string | null>(null);
 
   // Load content item
@@ -403,26 +406,28 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
     if (!item) return;
     const ed = (item.enrichmentData || {}) as Record<string, any>;
     setIsRecompiling(true);
+    setRecompilePercent(0);
+    setRecompileStage('rendering');
     setRecompileError(null);
     try {
-      const renderRes = await fetch('/api/editor/render', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const url = await renderEditorVideo(
+        {
           script: ed.editorScript || {},
           style: ed.editorStyle || {},
           layout: ed.editorLayout || 'centered',
           aspectRatio: item.aspectRatio || '9:16',
           contentType: item.contentType,
-          backgroundUrl: item.graphicUrls?.[0],
-        }),
-      });
-      if (!renderRes.ok) {
-        const text = await renderRes.text().catch(() => '');
-        throw new Error(`Engine render failed (${renderRes.status}): ${text || 'no response body'}`);
-      }
-      const { url } = await renderRes.json();
-      if (!url) throw new Error('Engine returned no url');
+          // Legacy items store the source URL as graphicUrls[0]; if this
+          // is a stale record where graphicUrls[0] is already a compiled
+          // MP4, the caller should have cleared it first — but degrading
+          // gracefully here beats blocking a recompile.
+          mediaSlots: { background: { url: item.graphicUrls?.[0] } },
+        },
+        (percent, stage) => {
+          setRecompilePercent(percent);
+          setRecompileStage(stage);
+        },
+      );
 
       const patchRes = await fetch(`/api/content/${item.id}`, {
         method: 'PATCH',
@@ -927,8 +932,20 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                         className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50"
                       >
                         {isRecompiling ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-                        {isRecompiling ? 'Compiling…' : 'Compile standalone video'}
+                        {isRecompiling
+                          ? recompileStage === 'uploading'
+                            ? 'Uploading to Cloudinary…'
+                            : `Rendering video… ${recompilePercent}%`
+                          : 'Compile standalone video'}
                       </button>
+                      {isRecompiling && (
+                        <div className="h-1 w-full overflow-hidden rounded bg-amber-100">
+                          <div
+                            className="h-full bg-amber-500 transition-all duration-300"
+                            style={{ width: `${recompileStage === 'uploading' ? 100 : recompilePercent}%` }}
+                          />
+                        </div>
+                      )}
                       {recompileError && <p className="text-[11px] text-red-600">{recompileError}</p>}
                     </div>
                   )}

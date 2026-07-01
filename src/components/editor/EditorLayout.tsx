@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowLeft, Check, Loader2, Save, X } from 'lucide-react'
 import { useRouter } from 'next/navigation';
 
 import { useEditor } from './EditorContext';
+import { renderEditorVideo } from '@/lib/editor/render-editor-video';
 
 // ── Content type labels ──────────────────────────────────────────
 const CT_LABELS: Record<string, string> = {
@@ -17,40 +18,11 @@ const CT_LABELS: Record<string, string> = {
   green_screen: 'Green Screen',
 };
 
-// ── Engine render — proxied via /api/editor/render so the engine API key
-//    (server-only env) is attached server-side. Previously this called the
-//    engine directly from the browser, which silently 401'd because
-//    NATIVPOST_ENGINE_API_KEY is never available in the client bundle.
-//
-// Throws on failure — callers decide whether to block the publish or
-// fall through. Silent nulls led to broken detail pages before.
-async function renderEditorVideo(
-  editorState: { script: any; style: any; layout: string; aspectRatio: string; mediaSlots: any; contentType: string },
-): Promise<string> {
-  const res = await fetch('/api/editor/render', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      script: editorState.script,
-      style: editorState.style,
-      layout: editorState.layout,
-      aspectRatio: editorState.aspectRatio,
-      contentType: editorState.contentType,
-      backgroundUrl: editorState.mediaSlots?.background?.url,
-      hookVideoUrl: editorState.mediaSlots?.hookVideo?.url,
-      slides: editorState.mediaSlots?.slides,
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Engine render failed (${res.status}): ${text || 'no response body'}`);
-  }
-  const data = await res.json();
-  if (!data.url) throw new Error('Engine returned no url');
-  return data.url as string;
-}
+// Render helper (with polling) lives in @/lib/editor/render-editor-video.
+// Shared with the detail-page recompile flow so both paths handle the
+// engine's async /render/editor-video job model identically.
 
-type PublishStage = 'idle' | 'rendering' | 'saving' | 'redirecting';
+type PublishStage = 'idle' | 'rendering' | 'uploading' | 'saving' | 'redirecting';
 
 type PublishError = {
   message: string;
@@ -68,11 +40,13 @@ export function EditorLayout({
   const router = useRouter();
   const [publishStage, setPublishStage] = useState<PublishStage>('idle');
   const [publishError, setPublishError] = useState<PublishError | null>(null);
+  const [renderPercent, setRenderPercent] = useState<number>(0);
 
   const isPublishing = publishStage !== 'idle';
 
   const runPublish = async (opts: { proceedWithRaw: boolean }) => {
     setPublishError(null);
+    setRenderPercent(0);
     await saveEdit();
 
     setPublishStage('rendering');
@@ -90,14 +64,20 @@ export function EditorLayout({
 
     let compiledVideoUrl: string | null = null;
     try {
-      compiledVideoUrl = await renderEditorVideo({
-        script: state.script,
-        style: state.style,
-        layout: state.layout,
-        aspectRatio: state.aspectRatio,
-        mediaSlots: state.mediaSlots,
-        contentType: state.edit?.contentType || 'text',
-      });
+      compiledVideoUrl = await renderEditorVideo(
+        {
+          script: state.script,
+          style: state.style,
+          layout: state.layout,
+          aspectRatio: state.aspectRatio,
+          mediaSlots: state.mediaSlots,
+          contentType: state.edit?.contentType || 'text',
+        },
+        (percent, stage) => {
+          setRenderPercent(percent);
+          setPublishStage(stage === 'uploading' ? 'uploading' : 'rendering');
+        },
+      );
       enrichmentData.isCompiled = true;
     } catch (err) {
       console.error('[Publish] Engine render failed:', err);
@@ -220,7 +200,8 @@ export function EditorLayout({
   const displayType = CT_LABELS[contentType] || contentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
   const publishLabel =
-    publishStage === 'rendering'   ? 'Rendering video…' :
+    publishStage === 'rendering'   ? (renderPercent > 0 ? `Rendering video… ${renderPercent}%` : 'Rendering video…') :
+    publishStage === 'uploading'   ? 'Uploading to Cloudinary…' :
     publishStage === 'saving'      ? 'Saving…' :
     publishStage === 'redirecting' ? 'Opening post…' :
     'Schedule & Publish';
@@ -295,6 +276,36 @@ export function EditorLayout({
           </button>
         </div>
       </header>
+
+      {/* ── Render progress banner ───────────────────────────── */}
+      {(publishStage === 'rendering' || publishStage === 'uploading') && !publishError && (
+        <div className="shrink-0 border-b border-primary/20 bg-primary/5">
+          <div className="flex items-center gap-3 px-4 py-2">
+            <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
+            <p className="min-w-0 flex-1 text-xs text-foreground">
+              <span className="font-medium">
+                {publishStage === 'uploading' ? 'Uploading video to Cloudinary…' : 'Compiling video…'}
+              </span>{' '}
+              <span className="text-muted-foreground">
+                {publishStage === 'uploading'
+                  ? 'Almost done.'
+                  : renderPercent > 0
+                    ? `Frame ${renderPercent}% — you can leave this open while it works.`
+                    : 'Starting up…'}
+              </span>
+            </p>
+            <span className="shrink-0 text-xs font-semibold tabular-nums text-primary">
+              {publishStage === 'uploading' ? '100%' : `${renderPercent}%`}
+            </span>
+          </div>
+          <div className="h-1 w-full bg-primary/10">
+            <div
+              className="h-full bg-primary transition-[width] duration-300 ease-out"
+              style={{ width: `${publishStage === 'uploading' ? 100 : renderPercent}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* ── Compile-failure banner ───────────────────────────── */}
       {publishError && (

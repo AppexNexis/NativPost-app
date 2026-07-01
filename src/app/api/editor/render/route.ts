@@ -72,7 +72,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Engine render failed (${res.status})`, detail: text }, { status: 502 });
     }
 
+    // Engine returns 202 { jobId } — client polls
+    // /api/editor/render/status/:jobId for progress/completion.
+    // Legacy sync response { url, publicId } is still forwarded for
+    // backwards compatibility if the engine is running an older build.
     const data = await res.json();
+    if (data.jobId) {
+      return NextResponse.json({ jobId: data.jobId }, { status: 202 });
+    }
     return NextResponse.json({
       url: data.url,
       publicId: data.publicId,

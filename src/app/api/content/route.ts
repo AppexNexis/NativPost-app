@@ -91,6 +91,8 @@ export async function POST(request: NextRequest) {
         qualityFlags: Array.isArray(body.qualityFlags) ? body.qualityFlags : [],
         aspectRatio: body.aspectRatio || null,
         contentMode: body.contentMode || 'normal',
+        enrichmentData: body.enrichmentData && typeof body.enrichmentData === 'object' ? body.enrichmentData : {},
+        enrichmentApplied: Array.isArray(body.enrichmentApplied) ? body.enrichmentApplied : [],
       })
       .returning();
 
