@@ -4,7 +4,7 @@
 
 export * from './ai';
 export * from './cloudinary';
-export { type ApifyInstagramOptions, apifyInstagramProvider } from './providers/apify-instagram';
+export { type ApifyInstagramOptions, apifyInstagramProvider } from './providers/apify-instagram_v1';
 export {
   type ApifyInstagramPostOptions,
   scrapeInstagramPosts,

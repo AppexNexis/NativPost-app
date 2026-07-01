@@ -296,6 +296,47 @@ export function EditorLayout({
         </div>
       </header>
 
+      {/* ── Compile-failure banner ───────────────────────────── */}
+      {publishError && (
+        <div className="shrink-0 flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 dark:border-amber-900/40 dark:bg-amber-950/30">
+          <AlertTriangle className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <p className="min-w-0 flex-1 truncate text-xs text-amber-800 dark:text-amber-300">
+            <span className="font-medium">Compile failed —</span>{' '}
+            {publishError.message}
+          </p>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => runPublish({ proceedWithRaw: false })}
+              disabled={isPublishing}
+              className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+            >
+              {isPublishing && <Loader2 className="size-3 animate-spin" />}
+              Retry
+            </button>
+            {publishError.canProceedRaw && (
+              <button
+                type="button"
+                onClick={() => runPublish({ proceedWithRaw: true })}
+                disabled={isPublishing}
+                className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-60 dark:border-amber-700 dark:bg-transparent dark:text-amber-300"
+                title="Overlays will render live on the detail page but no standalone MP4 will be produced."
+              >
+                Publish anyway
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setPublishError(null)}
+              className="rounded-md p-1 text-amber-600 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+              title="Dismiss"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Main content: sidebar + preview ──────────────────── */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
@@ -308,61 +349,6 @@ export function EditorLayout({
           {preview}
         </main>
       </div>
-
-      {/* ── Compile-failure modal ────────────────────────────── */}
-      {publishError && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl border bg-card p-5 shadow-2xl">
-            <div className="mb-3 flex items-start gap-3">
-              <div className="mt-0.5 rounded-full bg-amber-100 p-1.5 text-amber-700">
-                <AlertTriangle className="size-4" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-sm font-semibold text-foreground">Video compile failed</h3>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  The engine couldn't render a standalone video with your text overlays baked in. The most common cause is that the video-renderer service is not running (expected at <code className="rounded bg-muted px-1">NATIVPOST_VIDEO_URL</code>) or its API key is missing.
-                </p>
-                <pre className="mt-2 max-h-24 overflow-auto rounded bg-muted/60 p-2 text-[10px] leading-tight text-muted-foreground">{publishError.message}</pre>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPublishError(null)}
-                className="text-muted-foreground hover:text-foreground"
-                title="Close"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-              <button
-                type="button"
-                onClick={() => runPublish({ proceedWithRaw: false })}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-              >
-                <Loader2 className={`size-3.5 ${isPublishing ? 'animate-spin' : 'hidden'}`} />
-                Retry compile
-              </button>
-              {publishError.canProceedRaw && (
-                <button
-                  type="button"
-                  onClick={() => runPublish({ proceedWithRaw: true })}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
-                  title="Publish without a compiled video. Overlays will render live on the detail page but downloads will show raw source."
-                >
-                  Publish without compile
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setPublishError(null)}
-                className="rounded-lg border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

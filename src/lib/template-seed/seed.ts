@@ -8,7 +8,7 @@
 
 import { enrichTemplateWithAI } from './ai';
 import { configureCloudinary, type UploadResult, uploadVideoFromUrl } from './cloudinary';
-import { type ApifyInstagramOptions, apifyInstagramProvider } from './providers/apify-instagram';
+import { type ApifyInstagramOptions, apifyInstagramProvider } from './providers/apify-instagram_v1';
 // import { tiktokResearchProvider, type TikTokResearchOptions } from './providers/tiktok-research';
 // import { instagramProvider, type InstagramOptions } from './providers/instagram';
 import { type ApifyTikTokOptions, apifyTikTokProvider } from './providers/apify-tiktok';
