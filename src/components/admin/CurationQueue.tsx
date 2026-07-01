@@ -283,17 +283,38 @@ export default function CurationQueue() {
   const [newAngle, setNewAngle] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  const [pendingTotal, setPendingTotal] = useState<number | null>(null);
+
   const loadTemplates = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/templates/admin?status=pending&limit=100&offset=0');
-      if (!res.ok) {
-        throw new Error('Failed to load queue');
+      const pageSize = 500;
+      const collected: ContentTemplate[] = [];
+      let offset = 0;
+      let total = 0;
+
+      // Paginate through all pending items so no platform is hidden
+      // beyond the first page (previously capped at 100).
+      for (let page = 0; page < 20; page++) {
+        const res = await fetch(
+          `/api/templates/admin?status=pending&limit=${pageSize}&offset=${offset}`,
+        );
+        if (!res.ok) {
+          throw new Error('Failed to load queue');
+        }
+        const data = await res.json();
+        const items = (data.items ?? []) as ContentTemplate[];
+        collected.push(...items);
+        total = Number(data.total ?? collected.length);
+        offset += items.length;
+        if (items.length < pageSize || collected.length >= total) {
+          break;
+        }
       }
-      const data = await res.json();
-      const mapped = (data.items as ContentTemplate[]).map(mapDbTemplate);
-      setTemplates(mapped);
+
+      setPendingTotal(total);
+      setTemplates(collected.map(mapDbTemplate));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load queue');
     } finally {
@@ -357,7 +378,7 @@ export default function CurationQueue() {
     const rejectedToday = templates.filter(
       t => t.status === 'rejected' && t.updatedAt.startsWith(today),
     ).length;
-    const pending = templates.filter(t => t.status === 'pending').length;
+    const pending = pendingTotal ?? templates.filter(t => t.status === 'pending').length;
     const pendingByPlatform = templates.reduce<Record<Platform, number>>(
       (acc, t) => {
         if (t.status === 'pending') {
@@ -368,7 +389,7 @@ export default function CurationQueue() {
       { TikTok: 0, Instagram: 0, YouTube: 0, Pexels: 0, Unknown: 0 },
     );
     return { pending, approvedToday, rejectedToday, pendingByPlatform };
-  }, [templates]);
+  }, [templates, pendingTotal]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -1060,18 +1081,15 @@ export default function CurationQueue() {
 }
 
 function PreviewThumbnail({ template }: { template: Template }) {
-  const mediaUrl = template.mediaUrl || template.thumbnailUrl;
-  const isPlayable = isCloudinaryVideoUrl(mediaUrl) || /\.(mp4|mov|webm|ogg|mkv)(\?.*)?$/i.test(mediaUrl || '');
   const posterUrl = getVideoPosterUrl(template.thumbnailUrl, { width: 120, height: 160 });
 
-  if (isPlayable) {
+  // Fallback: legacy TikTok rows have empty thumbnail_url — render a platform
+  // placeholder instead of a broken <img>.
+  if (!posterUrl) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={posterUrl}
-        alt="thumbnail"
-        className="h-16 w-12 object-cover"
-      />
+      <div className="flex h-16 w-12 items-center justify-center rounded-md bg-muted text-muted-foreground">
+        <PlatformIcon platform={template.sourcePlatform} />
+      </div>
     );
   }
 

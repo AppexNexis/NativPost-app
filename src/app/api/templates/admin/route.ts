@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get('status') || 'pending';
   const source = searchParams.get('source');
-  const limit = Math.min(Number(searchParams.get('limit')) || 50, 100);
+  const limit = Math.min(Number(searchParams.get('limit')) || 50, 500);
   const offset = Number(searchParams.get('offset')) || 0;
 
   if (!['pending', 'approved', 'rejected'].includes(status)) {
