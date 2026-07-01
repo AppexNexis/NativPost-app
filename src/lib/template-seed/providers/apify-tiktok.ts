@@ -48,7 +48,7 @@ export type ApifyTikTokOptions = {
 
 const ACTOR_ID = 'clockworks~tiktok-scraper';
 
-const DEFAULT_USERNAMES = Array.from(
+export const DEFAULT_USERNAMES = Array.from(
   new Set(
     Object.values(SEED_ACCOUNTS).flatMap(niche => niche.tiktok),
   ),

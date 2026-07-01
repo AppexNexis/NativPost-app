@@ -40,7 +40,7 @@ export type ApifyInstagramOptions = {
 
 const ACTOR_ID = 'apify~instagram-reel-scraper';
 
-const DEFAULT_USERNAMES = Array.from(
+export const DEFAULT_USERNAMES = Array.from(
   new Set(
     Object.values(SEED_ACCOUNTS).flatMap(niche => niche.instagram),
   ),

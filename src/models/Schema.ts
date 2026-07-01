@@ -762,3 +762,21 @@ export const engineRequestLogSchema = pgTable('engine_request_log', {
   costEstimate: real('cost_estimate'),
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
 });
+
+
+// -----------------------------------------------------------
+// APIFY SEED RUN (async ingestion tracking for trending seed pipeline)
+// -----------------------------------------------------------
+export const apifySeedRunSchema = pgTable('apify_seed_run', {
+  id: text('id').primaryKey(), // Apify run ID (external ID, like organizationSchema.id pattern)
+  provider: text('provider').notNull(), // 'instagram' | 'tiktok'
+  actorId: text('actor_id').notNull(),
+  status: text('status').default('pending').notNull(), // pending | succeeded | failed | processed
+  params: jsonb('params').default({}), // { usernames, limit, minLikes/minViews, curationStatus, offset }
+  itemsFetched: integer('items_fetched'),
+  itemsInserted: integer('items_inserted'),
+  errorMessage: text('error_message'),
+  requestedAt: timestamp('requested_at', { mode: 'date' }).defaultNow().notNull(),
+  completedAt: timestamp('completed_at', { mode: 'date' }),
+  processedAt: timestamp('processed_at', { mode: 'date' }),
+});
