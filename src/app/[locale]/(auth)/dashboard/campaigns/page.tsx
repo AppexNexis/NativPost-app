@@ -16,13 +16,7 @@ export default async function Page() {
 
   // If auth fails, render empty state (middleware should catch this, but be safe)
   if (error || !orgId) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="mx-auto max-w-7xl px-4 py-8">
-          <p className="text-sm text-gray-500">Please sign in to view campaigns.</p>
-        </div>
-      </div>
-    );
+    return <p className="py-8 text-sm text-muted-foreground">Please sign in to view campaigns.</p>;
   }
 
   const [campaigns, angles, accounts, influencers] = await Promise.all([
@@ -54,15 +48,11 @@ export default async function Page() {
   ]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="mx-auto max-w-7xl px-4 py-8">
-        <CampaignsPage
-          campaigns={campaigns as any}
-          angles={angles as any}
-          accounts={accounts as any}
-          influencers={influencers as any}
-        />
-      </div>
-    </div>
+    <CampaignsPage
+      campaigns={campaigns as any}
+      angles={angles as any}
+      accounts={accounts as any}
+      influencers={influencers as any}
+    />
   );
 }

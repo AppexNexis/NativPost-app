@@ -315,14 +315,14 @@ export default function AnalyticsPage() {
       />
 
       {syncError && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+        <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {syncError}
         </div>
       )}
 
       {!hasEngagementData && (
-        <div className="mb-6 rounded-lg border bg-amber-50 px-4 py-3">
-          <p className="text-sm text-amber-700">
+        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-900/20">
+          <p className="text-sm text-amber-700 dark:text-amber-400">
             Engagement data hasn't synced yet. Click "Sync now" to fetch the latest metrics from your connected platforms, or wait for the next automatic sync in up to 6 hours.
           </p>
         </div>

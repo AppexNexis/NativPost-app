@@ -111,12 +111,12 @@ const FEATURE_ROWS = [
   {
     label: 'Support',
     render: (plan: typeof VISIBLE_PLANS[0]) =>
-    ({
-      email: 'Email',
-      priority_email: 'Priority email',
-      live_chat: 'Live chat',
-      dedicated_slack: 'Dedicated Slack',
-    }[plan.features.supportLevel as string] || 'Email'),
+      ({
+        email: 'Email',
+        priority_email: 'Priority email',
+        live_chat: 'Live chat',
+        dedicated_slack: 'Dedicated Slack',
+      }[plan.features.supportLevel as string] || 'Email'),
   },
 ];
 
@@ -132,7 +132,7 @@ function StatusBadge({
 }) {
   if (isTrialing) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
+      <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
         <span className="size-1.5 rounded-full bg-blue-500" />
         Trial
       </span>
@@ -140,7 +140,7 @@ function StatusBadge({
   }
   if (status === 'active') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
         <span className="size-1.5 rounded-full bg-emerald-500" />
         Active
       </span>
@@ -148,7 +148,7 @@ function StatusBadge({
   }
   if (status === 'past_due') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700">
+      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-400">
         <span className="size-1.5 rounded-full bg-red-500" />
         Past due
       </span>
@@ -183,7 +183,7 @@ function PaystackPortal({
 
   useEffect(() => {
     fetch('/api/billing/paystack-manage')
-      .then((r) => r.json())
+      .then(r => r.json())
       .then(setData)
       .catch(() => setData({ subscription: null, invoices: [] }))
       .finally(() => setLoading(false));
@@ -247,9 +247,9 @@ function PaystackPortal({
                     <p className="text-sm font-semibold">{sub.plan?.name}</p>
                     <span
                       className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${sub.status === 'active'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-muted text-muted-foreground'
-                        }`}
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                        : 'bg-muted text-muted-foreground'
+                      }`}
                     >
                       {sub.status}
                     </span>
@@ -258,7 +258,11 @@ function PaystackPortal({
                     <div>
                       <p className="text-muted-foreground">Amount</p>
                       <p className="mt-0.5 font-semibold">
-                        NGN {((sub.amount ?? 0) / 100).toLocaleString()}/{sub.plan?.interval}
+                        NGN
+                        {' '}
+                        {((sub.amount ?? 0) / 100).toLocaleString()}
+                        /
+                        {sub.plan?.interval}
                       </p>
                     </div>
                     <div>
@@ -266,10 +270,10 @@ function PaystackPortal({
                       <p className="mt-0.5 font-semibold">
                         {sub.next_payment_date
                           ? new Date(sub.next_payment_date).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })
                           : 'N/A'}
                       </p>
                     </div>
@@ -277,8 +281,16 @@ function PaystackPortal({
                       <div className="col-span-2">
                         <p className="text-muted-foreground">Card</p>
                         <p className="mt-0.5 font-semibold capitalize">
-                          {sub.authorization.brand} •••• {sub.authorization.last4} · expires{' '}
-                          {sub.authorization.exp_month}/{sub.authorization.exp_year}
+                          {sub.authorization.brand}
+                          {' '}
+                          ••••
+                          {sub.authorization.last4}
+                          {' '}
+                          · expires
+                          {' '}
+                          {sub.authorization.exp_month}
+                          /
+                          {sub.authorization.exp_year}
                         </p>
                       </div>
                     )}
@@ -296,32 +308,37 @@ function PaystackPortal({
                   <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Recent transactions
                   </p>
-                  <div className="overflow-hidden rounded-xl border divide-y">
-                    {invoices.map((inv) => (
+                  <div className="divide-y overflow-hidden rounded-xl border">
+                    {invoices.map(inv => (
                       <div
                         key={inv.id}
                         className="flex items-center justify-between px-4 py-3"
                       >
                         <div>
                           <p className="text-xs font-semibold">
-                            NGN {((inv.amount ?? 0) / 100).toLocaleString()}
+                            NGN
+                            {' '}
+                            {((inv.amount ?? 0) / 100).toLocaleString()}
                           </p>
                           <p className="mt-0.5 text-[10px] text-muted-foreground">
                             {inv.paid_at
                               ? new Date(inv.paid_at).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric',
-                              })
-                              : 'N/A'}{' '}
-                            · {inv.channel}
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })
+                              : 'N/A'}
+                            {' '}
+                            ·
+                            {' '}
+                            {inv.channel}
                           </p>
                         </div>
                         <span
                           className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${inv.status === 'success'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-muted text-muted-foreground'
-                            }`}
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                            : 'bg-muted text-muted-foreground'
+                          }`}
                         >
                           {inv.status}
                         </span>
@@ -346,14 +363,14 @@ function PaystackPortal({
                       Cancel subscription
                     </button>
                   ) : (
-                    <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-4">
-                      <p className="text-sm font-semibold text-red-700">Cancel subscription?</p>
-                      <p className="text-xs text-red-600">
+                    <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+                      <p className="text-sm font-semibold text-red-700 dark:text-red-400">Cancel subscription?</p>
+                      <p className="text-xs text-red-600 dark:text-red-400">
                         Your subscription stays active until the end of the billing period. You
                         will not be charged again.
                       </p>
                       {cancelError && (
-                        <p className="text-xs text-red-600">{cancelError}</p>
+                        <p className="text-xs text-red-600 dark:text-red-400">{cancelError}</p>
                       )}
                       <div className="flex gap-2">
                         <button
@@ -421,29 +438,29 @@ function BillingContent() {
   //   }
   // }, []);
   // Remove the IP geo useEffect entirely from BillingContent.
-// Instead, update the existing loadBilling callback to set paymentMethod from payment_type:
+  // Instead, update the existing loadBilling callback to set paymentMethod from payment_type:
 
-const loadBilling = useCallback(async () => {
-  try {
-    const res = await fetch('/api/billing/status');
-    if (res.ok) {
-      const data = await res.json();
-      setBilling(data);
+  const loadBilling = useCallback(async () => {
+    try {
+      const res = await fetch('/api/billing/status');
+      if (res.ok) {
+        const data = await res.json();
+        setBilling(data);
 
-      // Use payment_type from DB as the source of truth.
-      // Fall back to Paystack if they have any Paystack data but no Stripe sub.
-      const isPaystack =
-        data.paymentType === 'paystack' ||
-        data.hasPaystackSub ||
-        (data.hasPaystack && !data.hasStripe);
-      setPaymentMethod(isPaystack ? 'paystack' : 'stripe');
+        // Use payment_type from DB as the source of truth.
+        // Fall back to Paystack if they have any Paystack data but no Stripe sub.
+        const isPaystack
+        = data.paymentType === 'paystack'
+          || data.hasPaystackSub
+          || (data.hasPaystack && !data.hasStripe);
+        setPaymentMethod(isPaystack ? 'paystack' : 'stripe');
+      }
+    } catch (err) {
+      console.error('Failed to load billing:', err);
+    } finally {
+      setIsLoading(false);
     }
-  } catch (err) {
-    console.error('Failed to load billing:', err);
-  } finally {
-    setIsLoading(false);
-  }
-}, []);
+  }, []);
 
   useEffect(() => {
     loadBilling();
@@ -495,7 +512,9 @@ const loadBilling = useCallback(async () => {
     try {
       const res = await fetch('/api/billing/manage', { method: 'POST' });
       const data = await res.json();
-      if (data.url) window.location.href = data.url;
+      if (data.url) {
+        window.location.href = data.url;
+      }
     } catch {
       setError('Failed to open billing portal.');
     } finally {
@@ -504,8 +523,8 @@ const loadBilling = useCallback(async () => {
   };
 
   const trialDaysLeft = billing?.trialDaysLeft ?? 0;
-  const currentPlan = VISIBLE_PLANS.find((p) => p.id === billing?.plan);
-  const currentPlanIndex = VISIBLE_PLANS.findIndex((p) => p.id === billing?.plan);
+  const currentPlan = VISIBLE_PLANS.find(p => p.id === billing?.plan);
+  const currentPlanIndex = VISIBLE_PLANS.findIndex(p => p.id === billing?.plan);
 
   if (isLoading) {
     return (
@@ -519,33 +538,32 @@ const loadBilling = useCallback(async () => {
     <div className="space-y-8">
       {/* Banners */}
       {success && (
-        <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+        <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400">
           <div className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-500">
             <Check className="size-3 text-white" />
           </div>
           {successPlan
-            ? `Your ${VISIBLE_PLANS.find((p) => p.id === successPlan)?.name ?? successPlan} plan is now active.`
+            ? `Your ${VISIBLE_PLANS.find(p => p.id === successPlan)?.name ?? successPlan} plan is now active.`
             : 'Subscription activated successfully.'}
         </div>
       )}
 
       {cancelled && (
-        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400">
           <AlertCircle className="size-4 shrink-0" />
           Checkout cancelled. No changes were made.
         </div>
       )}
 
-
       {recovery && billing?.planStatus === 'past_due' && (
-        <div className="flex flex-col gap-3 rounded-xl border-2 border-red-300 bg-red-50 p-5">
+        <div className="flex flex-col gap-3 rounded-xl border-2 border-red-300 bg-red-50 p-5 dark:border-red-800 dark:bg-red-900/20">
           <div className="flex items-start gap-3">
             <AlertCircle className="mt-0.5 size-5 shrink-0 text-red-500" />
             <div>
-              <p className="text-sm font-semibold text-red-700">
+              <p className="text-sm font-semibold text-red-700 dark:text-red-400">
                 Your trial ended and the renewal charge didn't go through
               </p>
-              <p className="mt-1 text-xs text-red-600">
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">
                 To restore access, subscribe to your plan below. Your content and settings are safe.
               </p>
             </div>
@@ -555,10 +573,14 @@ const loadBilling = useCallback(async () => {
               type="button"
               onClick={() => handleCheckout(billing.plan)}
               disabled={!!checkoutLoading}
-              className="w-fit rounded-xl bg-red-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-60 flex items-center gap-2"
+              className="flex w-fit items-center gap-2 rounded-xl bg-red-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-60"
             >
               {checkoutLoading && <Loader2 className="size-3.5 animate-spin" />}
-              Reactivate {currentPlan?.name} plan
+              Reactivate
+              {' '}
+              {currentPlan?.name}
+              {' '}
+              plan
               <ChevronRight className="size-3.5" />
             </button>
           )}
@@ -566,11 +588,11 @@ const loadBilling = useCallback(async () => {
       )}
 
       {billing?.planStatus === 'past_due' && (
-        <div className="flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 p-4 sm:flex-row sm:items-start">
+        <div className="flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20 sm:flex-row sm:items-start">
           <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-500" />
           <div className="flex-1">
-            <p className="text-sm font-semibold text-red-700">Payment past due</p>
-            <p className="mt-0.5 text-xs text-red-600">
+            <p className="text-sm font-semibold text-red-700 dark:text-red-400">Payment past due</p>
+            <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">
               Your last payment failed. Update your payment method to keep your account active.
             </p>
           </div>
@@ -588,7 +610,7 @@ const loadBilling = useCallback(async () => {
       )}
 
       {error && (
-        <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
           <X className="size-4 shrink-0" />
           {error}
         </div>
@@ -596,12 +618,14 @@ const loadBilling = useCallback(async () => {
 
       {/* Current plan card */}
       <div className="overflow-hidden rounded-2xl border bg-card">
-        <div className="border-b bg-muted/30 px-5 py-5">
+        <div className="border-b bg-muted/30 p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-sm font-semibold">
-                  {currentPlan?.name ?? 'Starter'} Plan
+                  {currentPlan?.name ?? 'Starter'}
+                  {' '}
+                  Plan
                 </p>
                 <StatusBadge
                   status={billing?.planStatus ?? 'inactive'}
@@ -619,28 +643,28 @@ const loadBilling = useCallback(async () => {
               </p>
             </div>
 
-            {billing?.planStatus === 'active' &&
-              (billing.hasStripe || billing.hasPaystackSub) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (billing.hasPaystackSub) {
-                      setShowPaystackPortal(true);
-                    } else {
-                      handleManage();
-                    }
-                  }}
-                  disabled={portalLoading}
-                  className="flex w-fit items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium hover:bg-muted disabled:opacity-60"
-                >
-                  {portalLoading ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <ExternalLink className="size-4" />
-                  )}
-                  Manage subscription
-                </button>
-              )}
+            {billing?.planStatus === 'active'
+            && (billing.hasStripe || billing.hasPaystackSub) && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (billing.hasPaystackSub) {
+                    setShowPaystackPortal(true);
+                  } else {
+                    handleManage();
+                  }
+                }}
+                disabled={portalLoading}
+                className="flex w-fit items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium hover:bg-muted disabled:opacity-60"
+              >
+                {portalLoading ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ExternalLink className="size-4" />
+                )}
+                Manage subscription
+              </button>
+            )}
           </div>
         </div>
 
@@ -651,7 +675,9 @@ const loadBilling = useCallback(async () => {
             <p className="mt-1 text-2xl font-bold tabular-nums">
               {billing?.usage.postsThisMonth ?? 0}
               <span className="ml-1 text-sm font-normal text-muted-foreground">
-                / {billing?.usage.postsLimit === 999999 ? '∞' : (billing?.usage.postsLimit ?? 0)}
+                /
+                {' '}
+                {billing?.usage.postsLimit === 999999 ? '∞' : (billing?.usage.postsLimit ?? 0)}
               </span>
             </p>
             {billing?.isTrialing && billing.plan !== 'starter' && (
@@ -676,7 +702,8 @@ const loadBilling = useCallback(async () => {
           <div className="border-t px-5 py-4 sm:border-t-0">
             <p className="text-xs text-muted-foreground">Plan price</p>
             <p className="mt-1 text-2xl font-bold tabular-nums">
-              ${currentPlan?.priceUsd ?? 0}
+              $
+              {currentPlan?.priceUsd ?? 0}
               <span className="ml-1 text-sm font-normal text-muted-foreground">/mo</span>
             </p>
           </div>
@@ -687,7 +714,12 @@ const loadBilling = useCallback(async () => {
               {billing?.setupFeePaid ? (
                 <span className="text-emerald-600">Paid</span>
               ) : (
-                <span className="text-muted-foreground">${SETUP_FEE_USD} due</span>
+                <span className="text-muted-foreground">
+                  $
+                  {SETUP_FEE_USD}
+                  {' '}
+                  due
+                </span>
               )}
             </p>
           </div>
@@ -695,11 +727,18 @@ const loadBilling = useCallback(async () => {
 
         {/* Trial note */}
         {billing?.isTrialing && billing.plan !== 'starter' && (
-          <div className="border-t bg-blue-50/60 px-5 py-3">
-            <p className="text-xs text-blue-700">
-              <strong className="font-semibold">Trial note:</strong> During your{' '}
-              {FREE_TRIAL_DAYS}-day trial, access is limited to Starter plan features (15 posts, 3
-              platforms) regardless of your selected plan. Your full {currentPlan?.name} limits
+          <div className="border-t bg-blue-50/60 px-5 py-3 dark:bg-blue-900/20">
+            <p className="text-xs text-blue-700 dark:text-blue-400">
+              <strong className="font-semibold">Trial note:</strong>
+              {' '}
+              During your
+              {' '}
+              {FREE_TRIAL_DAYS}
+              -day trial, access is limited to Starter plan features (15 posts, 3
+              platforms) regardless of your selected plan. Your full
+              {currentPlan?.name}
+              {' '}
+              limits
               unlock the moment you subscribe.
             </p>
           </div>
@@ -711,7 +750,12 @@ const loadBilling = useCallback(async () => {
             <div className="mb-2 flex items-center justify-between text-xs">
               <span className="text-muted-foreground">Trial progress</span>
               <span className="font-semibold">
-                {trialDaysLeft} of {FREE_TRIAL_DAYS} days remaining
+                {trialDaysLeft}
+                {' '}
+                of
+                {FREE_TRIAL_DAYS}
+                {' '}
+                days remaining
               </span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
@@ -737,7 +781,10 @@ const loadBilling = useCallback(async () => {
           <div>
             <h2 className="text-base font-semibold">Available plans</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              All plans include a one-time ${SETUP_FEE_USD} setup fee on first subscription.
+              All plans include a one-time $
+              {SETUP_FEE_USD}
+              {' '}
+              setup fee on first subscription.
             </p>
           </div>
 
@@ -759,9 +806,9 @@ const loadBilling = useCallback(async () => {
                       type="button"
                       onClick={() => setPaymentMethod('stripe')}
                       className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${paymentMethod === 'stripe'
-                          ? 'border bg-background text-foreground shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground'
-                        }`}
+                        ? 'border bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                      }`}
                     >
                       Stripe
                     </button>
@@ -769,9 +816,9 @@ const loadBilling = useCallback(async () => {
                       type="button"
                       onClick={() => setPaymentMethod('paystack')}
                       className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${paymentMethod === 'paystack'
-                          ? 'border bg-background text-foreground shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground'
-                        }`}
+                        ? 'border bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                      }`}
                     >
                       Paystack
                     </button>
@@ -796,39 +843,43 @@ const loadBilling = useCallback(async () => {
             const isAboveCurrent = idx > currentPlanIndex;
 
             let ctaLabel = 'Get started';
-            if (isCurrent) ctaLabel = 'Current plan';
-            else if (isTrialingOnThis) ctaLabel = 'Subscribe now';
-            else if (billing?.planStatus === 'active' && !isCurrent)
+            if (isCurrent) {
+              ctaLabel = 'Current plan';
+            } else if (isTrialingOnThis) {
+              ctaLabel = 'Subscribe now';
+            } else if (billing?.planStatus === 'active' && !isCurrent) {
               ctaLabel = isAboveCurrent ? 'Upgrade' : 'Downgrade';
-            else if (billing?.isTrialing) ctaLabel = 'Subscribe now';
+            } else if (billing?.isTrialing) {
+              ctaLabel = 'Subscribe now';
+            }
 
             return (
               <div
                 key={plan.id}
                 className={`relative flex flex-col overflow-hidden rounded-2xl border transition-shadow ${plan.popular
-                    ? 'border-foreground shadow-lg'
-                    : isTrialingOnThis
-                      ? 'border-blue-300 shadow-md'
-                      : 'border-border hover:shadow-sm'
-                  }`}
+                  ? 'border-foreground shadow-lg'
+                  : isTrialingOnThis
+                    ? 'border-blue-300 shadow-md'
+                    : 'border-border hover:shadow-sm'
+                }`}
               >
                 {/* Chip labels */}
                 {plan.popular && (
-                  <div className="absolute -top-px left-0 right-0 flex justify-center">
+                  <div className="absolute inset-x-0 -top-px flex justify-center">
                     <span className="rounded-b-lg bg-foreground px-3 py-0.5 text-[10px] font-semibold text-background">
                       Most popular
                     </span>
                   </div>
                 )}
                 {isTrialingOnThis && !plan.popular && (
-                  <div className="absolute -top-px left-0 right-0 flex justify-center">
+                  <div className="absolute inset-x-0 -top-px flex justify-center">
                     <span className="rounded-b-lg bg-blue-500 px-3 py-0.5 text-[10px] font-semibold text-white">
                       Your trial plan
                     </span>
                   </div>
                 )}
                 {isCurrent && !plan.popular && (
-                  <div className="absolute -top-px left-0 right-0 flex justify-center">
+                  <div className="absolute inset-x-0 -top-px flex justify-center">
                     <span className="rounded-b-lg bg-emerald-500 px-3 py-0.5 text-[10px] font-semibold text-white">
                       Your plan
                     </span>
@@ -837,34 +888,38 @@ const loadBilling = useCallback(async () => {
 
                 {/* Plan header */}
                 <div
-                  className={`px-5 pt-8 pb-4 ${plan.popular ? 'bg-foreground text-background' : 'bg-muted/30'
-                    }`}
+                  className={`px-5 pb-4 pt-8 ${plan.popular ? 'bg-foreground text-background' : 'bg-muted/30'
+                  }`}
                 >
                   <p
                     className={`mb-2 text-sm font-semibold ${plan.popular ? 'text-background' : ''
-                      }`}
+                    }`}
                   >
                     {plan.name}
                   </p>
                   <div className="flex items-baseline gap-1">
                     <span
                       className={`text-3xl font-bold tracking-tight ${plan.popular ? 'text-background' : ''
-                        }`}
+                      }`}
                     >
-                      ${plan.priceUsd}
+                      $
+                      {plan.priceUsd}
                     </span>
                     <span
                       className={`text-sm ${plan.popular ? 'text-background/60' : 'text-muted-foreground'
-                        }`}
+                      }`}
                     >
                       /mo
                     </span>
                   </div>
                   <p
                     className={`mt-0.5 text-xs ${plan.popular ? 'text-background/50' : 'text-muted-foreground'
-                      }`}
+                    }`}
                   >
-                    + ${SETUP_FEE_USD} one-time setup
+                    + $
+                    {SETUP_FEE_USD}
+                    {' '}
+                    one-time setup
                   </p>
                 </div>
 
@@ -872,18 +927,21 @@ const loadBilling = useCallback(async () => {
                 <div className="flex flex-1 flex-col gap-2.5 px-5 py-4">
                   {FEATURE_ROWS.map((row) => {
                     const value = row.render(plan);
-                    if (typeof value === 'boolean' && !value) return null;
+                    if (typeof value === 'boolean' && !value) {
+                      return null;
+                    }
                     return (
                       <div key={row.label} className="flex items-start gap-2.5 text-sm">
-                        <div className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-100">
-                          <Check className="size-2.5 text-emerald-600" />
+                        <div className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+                          <Check className="size-2.5 text-emerald-600 dark:text-emerald-400" />
                         </div>
                         <span className="text-muted-foreground">
                           {typeof value === 'boolean' ? (
                             row.label
                           ) : (
                             <>
-                              <strong className="font-semibold text-foreground">{value}</strong>{' '}
+                              <strong className="font-semibold text-foreground">{value}</strong>
+                              {' '}
                               {row.label.toLowerCase()}
                             </>
                           )}
@@ -900,11 +958,11 @@ const loadBilling = useCallback(async () => {
                     onClick={() => handleCheckout(plan.id)}
                     disabled={isCurrent || !!checkoutLoading}
                     className={`flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-60 ${isCurrent
-                        ? 'cursor-default bg-muted text-muted-foreground'
-                        : plan.popular
-                          ? 'bg-foreground text-background hover:opacity-90 active:scale-[0.98]'
-                          : 'border bg-background text-foreground hover:bg-muted active:scale-[0.98]'
-                      }`}
+                      ? 'cursor-default bg-muted text-muted-foreground'
+                      : plan.popular
+                        ? 'bg-foreground text-background hover:opacity-90 active:scale-[0.98]'
+                        : 'border bg-background text-foreground hover:bg-muted active:scale-[0.98]'
+                    }`}
                   >
                     {isLoadingThis && <Loader2 className="size-3.5 animate-spin" />}
                     {ctaLabel}
@@ -1004,13 +1062,18 @@ const loadBilling = useCallback(async () => {
         <p className="mt-3 text-xs text-muted-foreground">
           {billing?.hasStripe && (
             <>
-              <strong className="font-semibold">Stripe:</strong> Full invoice history is available
-              via the billing portal.{' '}
+              <strong className="font-semibold">Stripe:</strong>
+              {' '}
+              Full invoice history is available
+              via the billing portal.
+              {' '}
             </>
           )}
           {billing?.hasPaystack && (
             <>
-              <strong className="font-semibold">Paystack:</strong> A receipt is sent to your email
+              <strong className="font-semibold">Paystack:</strong>
+              {' '}
+              A receipt is sent to your email
               after every successful transaction.
             </>
           )}
@@ -1044,11 +1107,11 @@ export default function BillingPage() {
         />
       </div>
       <Suspense
-        fallback={
+        fallback={(
           <div className="flex min-h-[300px] items-center justify-center">
             <Loader2 className="size-5 animate-spin text-muted-foreground" />
           </div>
-        }
+        )}
       >
         <BillingContent />
       </Suspense>

@@ -102,13 +102,6 @@ const PLATFORM_COLORS: Record<string, string> = {
 // -----------------------------------------------------------
 // HELPERS
 // -----------------------------------------------------------
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
-}
-console.log({ formatDate });
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', {
@@ -247,15 +240,15 @@ function StatCard({
   return (
     <Link
       href={href}
-      className={`group relative overflow-hidden rounded-xl border bg-card p-5 transition-colors hover:bg-muted/30 ${accent ? 'border-amber-200 bg-amber-50/30' : ''}`}
+      className={`group relative overflow-hidden rounded-xl border bg-card p-5 transition-colors hover:bg-muted/30 ${accent ? 'border-amber-200 bg-amber-50/30 dark:border-amber-800 dark:bg-amber-900/10' : ''}`}
     >
       <div className="mb-4 flex items-center justify-between">
-        <div className={`flex size-8 items-center justify-center rounded-lg ${accent ? 'bg-amber-100' : 'bg-muted'}`}>
-          <Icon className={`size-4 ${accent ? 'text-amber-600' : 'text-muted-foreground'}`} />
+        <div className={`flex size-8 items-center justify-center rounded-lg ${accent ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-muted'}`}>
+          <Icon className={`size-4 ${accent ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`} />
         </div>
         <ChevronRight className="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
       </div>
-      <p className={`text-2xl font-bold tracking-tight ${accent && value > 0 ? 'text-amber-700' : ''}`}>
+      <p className={`text-2xl font-bold tracking-tight ${accent && value > 0 ? 'text-amber-700 dark:text-amber-400' : ''}`}>
         {value}
       </p>
       <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
@@ -380,10 +373,10 @@ const hasUpcoming = (data.upcoming?.length || 0) > 0;
 
       {/* Failure alert — staff/admin org only - shown only when there are recent failures */}
       {isStaff && hasFailures && (
-        <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3.5">
-          <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-500" />
+        <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3.5 dark:border-red-800 dark:bg-red-900/20">
+          <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-500 dark:text-red-400" />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-red-700">
+            <p className="text-sm font-medium text-red-700 dark:text-red-400">
               {data!.recentFailures.length}
               {' '}
               {data!.recentFailures.length === 1 ? 'post' : 'posts'}
@@ -392,10 +385,10 @@ const hasUpcoming = (data.upcoming?.length || 0) > 0;
             </p>
             <div className="mt-1 space-y-0.5">
               {(data.recentFailures || []).map((f, i) => (
-                <p key={i} className="text-xs text-red-600">
+                <p key={i} className="text-xs text-red-600 dark:text-red-400">
                   <Link
                     href={`/dashboard/content/${f.contentItemId}`}
-                    className="underline hover:text-red-700"
+                    className="underline hover:text-red-700 dark:hover:text-red-300"
                   >
                     {PLATFORM_LABELS[f.platform] || f.platform}
                   </Link>
@@ -451,8 +444,8 @@ const hasUpcoming = (data.upcoming?.length || 0) > 0;
 
             {!hasPending ? (
               <div className="flex flex-col items-center justify-center px-5 py-14 text-center">
-                <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-emerald-50">
-                  <CheckCircle2 className="size-5 text-emerald-600" />
+                <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-900/20">
+                  <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400" />
                 </div>
                 <p className="text-sm font-medium">All caught up</p>
                 <p className="mt-1 max-w-xs text-xs text-muted-foreground">
@@ -489,7 +482,7 @@ const hasUpcoming = (data.upcoming?.length || 0) > 0;
                           {relativeTime(item.createdAt)}
                         </span>
                         {item.antiSlopScore !== null && item.antiSlopScore >= 0.8 && (
-                          <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                          <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400">
                             {Math.round(item.antiSlopScore * 100)}
                             {' '}
                             quality
@@ -554,7 +547,7 @@ const hasUpcoming = (data.upcoming?.length || 0) > 0;
                     href={`/dashboard/content/${post.id}`}
                     className="group flex items-start gap-3 px-5 py-3.5 transition-colors hover:bg-muted/30"
                   >
-                    <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md border bg-violet-50 text-violet-600">
+                    <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md border bg-primary/10 text-primary">
                       {contentTypeIcon(post.contentType)}
                     </div>
                     <div className="min-w-0 flex-1">
@@ -566,7 +559,7 @@ const hasUpcoming = (data.upcoming?.length || 0) > 0;
                       </div>
                     </div>
                     <div className="shrink-0 text-right">
-                      <p className="text-[10px] font-medium text-violet-600">
+                      <p className="text-[10px] font-medium text-primary">
                         {timeUntil(post.scheduledFor)}
                       </p>
                       <p className="text-[10px] text-muted-foreground">

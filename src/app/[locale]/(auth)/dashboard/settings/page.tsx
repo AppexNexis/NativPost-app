@@ -113,6 +113,10 @@ function applyTheme(theme: string) {
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     root.classList.toggle('dark', prefersDark);
   }
+  // Persist in a cookie so the root layout can apply the class on next page load (no flash)
+  try {
+    document.cookie = `np-theme=${theme}; path=/; max-age=31536000; SameSite=Lax`;
+  } catch { /* ignore */ }
 }
 
 // -----------------------------------------------------------

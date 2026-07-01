@@ -32,12 +32,12 @@ interface ContentItem {
 // type ViewMode = 'list' | 'calendar';
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-600',
-  pending_review: 'bg-yellow-50 text-yellow-700',
-  approved: 'bg-blue-50 text-blue-700',
-  scheduled: 'bg-purple-50 text-purple-700',
-  published: 'bg-green-50 text-green-700',
-  rejected: 'bg-red-50 text-red-700',
+  draft: 'bg-muted text-muted-foreground',
+  pending_review: 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400',
+  approved: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400',
+  scheduled: 'bg-primary/10 text-primary',
+  published: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400',
+  rejected: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400',
 };
 
 const STATUS_LABELS: Record<string, string> = {

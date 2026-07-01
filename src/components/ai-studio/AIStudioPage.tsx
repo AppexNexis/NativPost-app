@@ -13,6 +13,7 @@ import {
 import Image from 'next/image';
 import React, { useEffect, useMemo, useState } from 'react';
 
+import { MediaPickerModal } from '@/components/media/MediaPickerModal';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -39,7 +40,6 @@ import type { MediaAsset } from '@/types/v2';
 import { AssetGallery } from './AssetGallery';
 import { CreditWallet } from './CreditWallet';
 import { ModelSelector } from './ModelSelector';
-import { MediaPickerModal } from '@/components/media/MediaPickerModal';
 
 export function AIStudioPage() {
   const [activeTab, setActiveTab] = useState<'images' | 'videos'>('images');
@@ -402,17 +402,19 @@ function PromptBox({ value, onChange, placeholder, icon: Icon, reference, onRefe
       <button
         type="button"
         onClick={onReferenceClick}
-        className="group relative flex size-14 shrink-0 flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-muted text-muted-foreground hover:border-purple-300 hover:bg-purple-50 transition-colors"
+        className="group relative flex size-14 shrink-0 flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-muted text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/5"
       >
         {reference ? (
           <>
             <Image src={reference} alt="Reference" fill className="object-cover" sizes="56px" />
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+            <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/20" />
             {onReferenceClear && (
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); onReferenceClear(); }}
-                className="absolute right-0.5 top-0.5 flex size-4 items-center justify-center rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={(e) => {
+                  e.stopPropagation(); onReferenceClear();
+                }}
+                className="absolute right-0.5 top-0.5 flex size-4 items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="size-3">
                   <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />

@@ -106,7 +106,7 @@ function ReadinessCheck({ label, ok }: { label: string; ok: boolean }) {
       ) : (
         <XCircle className="h-3.5 w-3.5 shrink-0 text-red-400" />
       )}
-      <span className={`text-xs ${ok ? "text-gray-600" : "text-red-500"}`}>{label}</span>
+      <span className={`text-xs ${ok ? "text-muted-foreground" : "text-red-500"}`}>{label}</span>
     </div>
   );
 }
@@ -304,7 +304,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
 
         <div className="space-y-6 py-4">
           {error && (
-            <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               {error}
             </div>
@@ -312,13 +312,13 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
 
           {/* Section 1: AI Influencers */}
           <section>
-            <h3 className="mb-3 text-sm font-semibold text-gray-900">AI Influencers</h3>
+            <h3 className="mb-3 text-sm font-semibold">AI Influencers</h3>
             <div className="space-y-3">
               {/* Frequency slider */}
-              <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+              <div className="rounded-xl border bg-muted/30 p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700">Influencer frequency</span>
-                  <span className="text-sm text-gray-500">
+                  <span className="text-sm font-medium">Influencer frequency</span>
+                  <span className="text-sm text-muted-foreground">
                     {influencerFrequency === 0 ? "None" : `${influencerFrequency} / campaign`}
                   </span>
                 </div>
@@ -329,16 +329,16 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                   step={1}
                   value={influencerFrequency}
                   onChange={(e) => setInfluencerFrequency(parseInt(e.target.value, 10))}
-                  className="mt-2 w-full accent-purple-600"
+                  className="mt-2 w-full accent-primary"
                 />
-                <p className="mt-1 text-xs text-gray-400">
+                <p className="mt-1 text-xs text-muted-foreground">
                   How many AI influencer posts to include per campaign
                 </p>
               </div>
 
               {/* Gender preference */}
-              <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-                <Label className="text-sm font-medium text-gray-700">Gender preference</Label>
+              <div className="rounded-xl border bg-muted/30 p-4">
+                <Label className="text-sm font-medium">Gender preference</Label>
                 <div className="mt-2 flex gap-2">
                   {GENDER_OPTIONS.map((opt) => (
                     <button
@@ -347,8 +347,8 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                       onClick={() => setGenderPreference(opt.value)}
                       className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
                         genderPreference === opt.value
-                          ? "border-purple-500 bg-purple-50 text-purple-700"
-                          : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border text-muted-foreground hover:bg-muted/50"
                       }`}
                     >
                       {opt.label}
@@ -359,25 +359,25 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
 
               {/* Per-influencer readiness list */}
               {influencerFrequency > 0 && (
-                <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+                <div className="rounded-xl border bg-muted/30 p-4">
                   <div className="mb-3">
-                    <Label className="text-sm font-medium text-gray-700">Select influencers</Label>
-                    <p className="mt-0.5 text-xs text-gray-400">
+                    <Label className="text-sm font-medium">Select influencers</Label>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
                       Only influencers that pass all 4 readiness checks can be used by Blitz.
                     </p>
                   </div>
 
                   {influencersLoading && (
-                    <div className="flex items-center gap-2 text-xs text-gray-400">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       Loading influencers…
                     </div>
                   )}
 
                   {!influencersLoading && influencers.length === 0 && (
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-muted-foreground">
                       No AI influencers yet.{" "}
-                      <a href="/dashboard/ai-studio#influencers" className="text-purple-600 underline">
+                      <a href="/dashboard/ai-studio#influencers" className="text-primary underline">
                         Create one
                       </a>
                       .
@@ -395,8 +395,8 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                           key={inf.id}
                           className={`flex items-start gap-3 rounded-lg border p-3 transition-colors ${
                             isReady
-                              ? "border-gray-200 bg-white"
-                              : "border-gray-100 bg-gray-50 opacity-70"
+                              ? "border bg-card"
+                              : "border bg-muted/30 opacity-70"
                           }`}
                         >
                           {/* Avatar */}
@@ -408,7 +408,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                                 className="h-10 w-10 rounded-full object-cover"
                               />
                             ) : (
-                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-100 text-sm font-semibold text-purple-600">
+                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
                                 {inf.name[0]?.toUpperCase()}
                               </div>
                             )}
@@ -417,9 +417,9 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                           {/* Info + checks */}
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                              <p className="text-sm font-medium text-gray-800">{inf.name}</p>
+                              <p className="text-sm font-medium">{inf.name}</p>
                               {!isReady && (
-                                <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-600">
+                                <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-600 dark:bg-red-900/20 dark:text-red-400">
                                   Not ready
                                 </span>
                               )}
@@ -431,7 +431,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                               <ReadinessCheck label="Account connected" ok={readiness.accountConnected} />
                             </div>
                             {!isReady && (
-                              <p className="mt-1.5 text-[11px] text-red-500">
+                              <p className="mt-1.5 text-[11px] text-red-500 dark:text-red-400">
                                 Complete all 4 checks before this influencer can appear in Blitz content.
                               </p>
                             )}
@@ -444,7 +444,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                               checked={isEnabled}
                               disabled={!isReady}
                               onChange={() => toggleInfluencer(inf.id)}
-                              className="h-4 w-4 rounded border-gray-300 text-purple-600 disabled:cursor-not-allowed disabled:opacity-40"
+                              className="h-4 w-4 rounded border text-primary disabled:cursor-not-allowed disabled:opacity-40"
                               title={!isReady ? "Complete readiness checks to enable" : undefined}
                             />
                           </div>
@@ -459,11 +459,11 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
 
           {/* Section 2: Voice & Angles */}
           <section>
-            <h3 className="mb-3 text-sm font-semibold text-gray-900">Voice & Angles</h3>
+            <h3 className="mb-3 text-sm font-semibold">Voice & Angles</h3>
             <div className="space-y-3">
               {/* Mention frequency */}
-              <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-                <Label className="text-sm font-medium text-gray-700">Brand mention frequency</Label>
+              <div className="rounded-xl border bg-muted/30 p-4">
+                <Label className="text-sm font-medium">Brand mention frequency</Label>
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   {MENTION_OPTIONS.map((opt) => (
                     <button
@@ -472,8 +472,8 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                       onClick={() => setMentionFrequency(opt.value)}
                       className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
                         mentionFrequency === opt.value
-                          ? "border-purple-500 bg-purple-50 text-purple-700"
-                          : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border text-muted-foreground hover:bg-muted/50"
                       }`}
                     >
                       {opt.label}
@@ -483,20 +483,20 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
               </div>
 
               {/* Content angles */}
-              <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+              <div className="rounded-xl border bg-muted/30 p-4">
                 <div className="mb-2 flex items-center justify-between">
-                  <Label className="text-sm font-medium text-gray-700">Content angles</Label>
+                  <Label className="text-sm font-medium">Content angles</Label>
                   <button
                     type="button"
                     onClick={normalizeWeights}
-                    className="text-xs text-purple-600 hover:text-purple-800"
+                    className="text-xs text-primary hover:text-primary/80"
                     disabled={angleWeightTotal === 0}
                   >
                     Normalize weights
                   </button>
                 </div>
                 {availableAngles.length === 0 && (
-                  <p className="text-xs text-gray-400">No content angles configured yet.</p>
+                  <p className="text-xs text-muted-foreground">No content angles configured yet.</p>
                 )}
                 <div className="space-y-2">
                   {availableAngles.map((angle) => {
@@ -507,9 +507,9 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                           type="checkbox"
                           checked={!!selected}
                           onChange={() => toggleAngle(angle.id)}
-                          className="h-4 w-4 rounded border-gray-300 text-purple-600"
+                          className="h-4 w-4 rounded border text-primary"
                         />
-                        <span className="flex-1 text-sm text-gray-700">{angle.name}</span>
+                        <span className="flex-1 text-sm text-foreground">{angle.name}</span>
                         {selected && (
                           <div className="flex items-center gap-1">
                             <input
@@ -518,9 +518,9 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                               max={100}
                               value={selected.weight}
                               onChange={(e) => updateAngleWeight(angle.id, parseInt(e.target.value, 10) || 0)}
-                              className="h-7 w-16 rounded-md border border-gray-200 px-2 text-center text-xs"
+                              className="h-7 w-16 rounded-md border bg-background px-2 text-center text-xs"
                             />
-                            <span className="text-xs text-gray-400">%</span>
+                            <span className="text-xs text-muted-foreground">%</span>
                           </div>
                         )}
                       </div>
@@ -534,7 +534,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                         ? "text-green-600"
                         : angleWeightTotal > 100
                         ? "text-amber-600"
-                        : "text-gray-400"
+                        : "text-muted-foreground"
                     }`}
                   >
                     Total weight: {angleWeightTotal}%
@@ -547,12 +547,12 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
 
           {/* Section 3: Visual Sources */}
           <section>
-            <h3 className="mb-3 text-sm font-semibold text-gray-900">Visual Sources</h3>
-            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-4">
+            <h3 className="mb-3 text-sm font-semibold">Visual Sources</h3>
+            <div className="rounded-xl border bg-muted/30 p-4 space-y-4">
               {/* Three-way blend display */}
               <div className="flex rounded-lg overflow-hidden h-2">
                 <div
-                  className="bg-purple-500 transition-all"
+                  className="bg-primary transition-all"
                   style={{ width: `${ownMediaMix}%` }}
                   title={`Own media: ${ownMediaMix}%`}
                 />
@@ -562,14 +562,14 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                   title={`Pinterest: ${pinterestPercent}%`}
                 />
                 <div
-                  className="bg-gray-300 transition-all"
+                  className="bg-muted-foreground/30 transition-all"
                   style={{ width: `${platformPercent}%` }}
                   title={`Platform media: ${platformPercent}%`}
                 />
               </div>
-              <div className="flex items-center gap-4 text-xs text-gray-500">
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-purple-500" />
+                  <span className="h-2 w-2 rounded-full bg-primary" />
                   Own uploads {ownMediaMix}%
                 </span>
                 <span className="flex items-center gap-1">
@@ -577,7 +577,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                   Pinterest {pinterestPercent}%
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-gray-300" />
+                  <span className="h-2 w-2 rounded-full bg-muted-foreground/30" />
                   Platform {platformPercent}%
                 </span>
               </div>
@@ -585,8 +585,8 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
               {/* Own media slider */}
               <div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">Own uploads</span>
-                  <span className="text-sm text-gray-500">{ownMediaMix}%</span>
+                  <span className="text-sm text-foreground">Own uploads</span>
+                  <span className="text-sm text-muted-foreground">{ownMediaMix}%</span>
                 </div>
                 <input
                   type="range"
@@ -595,15 +595,15 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                   step={5}
                   value={ownMediaMix}
                   onChange={(e) => handleOwnMediaChange(parseInt(e.target.value, 10))}
-                  className="mt-1 w-full accent-purple-600"
+                  className="mt-1 w-full accent-primary"
                 />
               </div>
 
               {/* Pinterest slider (disabled stub) */}
               <div className="opacity-60">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">Pinterest collections</span>
-                  <span className="text-xs text-gray-400 italic">Connect Pinterest to enable</span>
+                  <span className="text-sm text-foreground">Pinterest collections</span>
+                  <span className="text-xs text-muted-foreground italic">Connect Pinterest to enable</span>
                 </div>
                 <input
                   type="range"
@@ -617,13 +617,13 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                 />
                 <a
                   href="/dashboard/settings/integrations#pinterest"
-                  className="mt-1 inline-flex items-center gap-1 text-xs text-pink-600 hover:text-pink-800"
+                  className="mt-1 inline-flex items-center gap-1 text-xs text-pink-600 hover:text-pink-800 dark:text-pink-400 dark:hover:text-pink-300"
                 >
                   Connect Pinterest account
                 </a>
               </div>
 
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-muted-foreground">
                 Remaining {platformPercent}% comes from platform trending media.
               </p>
             </div>
@@ -631,14 +631,14 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
 
           {/* Section 4: Content Mix */}
           <section>
-            <h3 className="mb-3 text-sm font-semibold text-gray-900">Content Mix</h3>
-            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+            <h3 className="mb-3 text-sm font-semibold">Content Mix</h3>
+            <div className="rounded-xl border bg-muted/30 p-4">
               <div className="mb-2 flex items-center justify-between">
-                <Label className="text-sm font-medium text-gray-700">Type distribution</Label>
+                <Label className="text-sm font-medium">Type distribution</Label>
                 <button
                   type="button"
                   onClick={normalizeContentMix}
-                  className="text-xs text-purple-600 hover:text-purple-800"
+                  className="text-xs text-primary hover:text-primary/80"
                   disabled={contentMixTotal === 0}
                 >
                   Normalize to 100%
@@ -647,14 +647,14 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
               <div className="space-y-3">
                 {Object.entries(CONTENT_TYPE_LABELS).map(([key, label]) => (
                   <div key={key} className="flex items-center gap-3">
-                    <span className="w-28 text-sm text-gray-700">{label}</span>
+                    <span className="w-28 text-sm text-foreground">{label}</span>
                     <input
                       type="range"
                       min={0}
                       max={100}
                       value={contentMix[key] ?? 0}
                       onChange={(e) => updateContentMix(key, parseInt(e.target.value, 10))}
-                      className="flex-1 accent-purple-600"
+                      className="flex-1 accent-primary"
                     />
                     <input
                       type="number"
@@ -662,9 +662,9 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                       max={100}
                       value={contentMix[key] ?? 0}
                       onChange={(e) => updateContentMix(key, parseInt(e.target.value, 10) || 0)}
-                      className="h-7 w-14 rounded-md border border-gray-200 px-2 text-center text-xs"
+                      className="h-7 w-14 rounded-md border bg-background px-2 text-center text-xs"
                     />
-                    <span className="w-4 text-xs text-gray-400">%</span>
+                    <span className="w-4 text-xs text-muted-foreground">%</span>
                   </div>
                 ))}
               </div>
@@ -681,10 +681,10 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
 
           {/* Schedule */}
           <section>
-            <h3 className="mb-3 text-sm font-semibold text-gray-900">Schedule</h3>
+            <h3 className="mb-3 text-sm font-semibold">Schedule</h3>
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-                <Label className="text-sm font-medium text-gray-700">Posts per day</Label>
+              <div className="rounded-xl border bg-muted/30 p-4">
+                <Label className="text-sm font-medium">Posts per day</Label>
                 <Input
                   type="number"
                   min={1}
@@ -694,8 +694,8 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                   className="mt-1"
                 />
               </div>
-              <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-                <Label className="text-sm font-medium text-gray-700">Quality threshold</Label>
+              <div className="rounded-xl border bg-muted/30 p-4">
+                <Label className="text-sm font-medium">Quality threshold</Label>
                 <input
                   type="range"
                   min={0}
@@ -703,22 +703,22 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                   step={5}
                   value={Math.round(qualityThreshold * 100)}
                   onChange={(e) => setQualityThreshold(parseInt(e.target.value, 10) / 100)}
-                  className="mt-2 w-full accent-purple-600"
+                  className="mt-2 w-full accent-primary"
                 />
-                <p className="mt-1 text-xs text-gray-400">{Math.round(qualityThreshold * 100)}%</p>
+                <p className="mt-1 text-xs text-muted-foreground">{Math.round(qualityThreshold * 100)}%</p>
               </div>
             </div>
           </section>
         </div>
 
-        <div className="flex items-center justify-end gap-3 border-t border-gray-100 pt-4">
+        <div className="flex items-center justify-end gap-3 border-t pt-4">
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
           <Button
             onClick={handleSave}
             disabled={saving || contentMixTotal === 0}
-            className="bg-purple-600 hover:bg-purple-700"
+            className="bg-primary hover:bg-primary/90"
           >
             {saving ? (
               <>

@@ -26,12 +26,9 @@ export function CampaignReviewGrid({
 }: CampaignReviewGridProps) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'calendar'>('grid');
-  // const [editScheduleItem, setEditScheduleItem] = useState<string | null>(null);
 
   const handleReRoll = (itemId: string) => {
-    if (campaign.reRollsRemaining > 0) {
-      onReRoll(itemId);
-    }
+    if (campaign.reRollsRemaining > 0) onReRoll(itemId);
   };
 
   return (
@@ -39,25 +36,29 @@ export function CampaignReviewGrid({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">Review your campaign</h3>
-          <p className="text-sm text-gray-500">
+          <h3 className="text-base font-semibold">Review your campaign</h3>
+          <p className="text-sm text-muted-foreground">
             {contentItems.length} of {campaign.totalPosts} posts ready
           </p>
         </div>
         <div className="flex items-center gap-4">
-          <span className="text-sm text-gray-600">
-            <span className="font-semibold text-orange-600">{campaign.reRollsRemaining}</span> re-rolls left
+          <span className="text-sm text-muted-foreground">
+            <span className="font-semibold text-primary">{campaign.reRollsRemaining}</span> re-rolls left
           </span>
-          <div className="flex rounded-lg border border-gray-200 bg-white">
+          <div className="flex rounded-lg border bg-background">
             <button
               onClick={() => setViewMode('grid')}
-              className={`px-3 py-1.5 text-sm font-medium ${viewMode === 'grid' ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+              className={`rounded-l-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                viewMode === 'grid' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'
+              }`}
             >
               Grid
             </button>
             <button
               onClick={() => setViewMode('calendar')}
-              className={`px-3 py-1.5 text-sm font-medium ${viewMode === 'calendar' ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+              className={`rounded-r-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                viewMode === 'calendar' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'
+              }`}
             >
               Calendar
             </button>
@@ -67,7 +68,7 @@ export function CampaignReviewGrid({
 
       {/* Re-roll warning */}
       {campaign.reRollsRemaining === 0 && (
-        <div className="flex items-center gap-2 rounded-lg bg-yellow-50 border border-yellow-200 px-4 py-3 text-sm text-yellow-800">
+        <div className="flex items-center gap-2 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400">
           <AlertTriangle className="h-4 w-4 flex-shrink-0" />
           You've used all your re-rolls. You can still edit posts individually or delete and regenerate the campaign.
         </div>
@@ -103,13 +104,13 @@ export function CampaignReviewGrid({
       )}
 
       {/* Bulk actions */}
-      <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-        <span className="text-sm text-gray-600">
+      <div className="flex items-center justify-between rounded-xl border bg-muted/30 px-4 py-3">
+        <span className="text-sm text-muted-foreground">
           {contentItems.filter((i) => i.status === 'approved').length} of {contentItems.length} approved
         </span>
         <button
           onClick={() => contentItems.forEach((i) => onApprove(i.id))}
-          className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+          className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
         >
           <Check className="h-4 w-4" />
           Approve all
@@ -153,15 +154,15 @@ function ReviewCard({
 
   return (
     <div
-      className={`group relative overflow-hidden rounded-xl border bg-white transition-all ${
-        isSelected ? 'border-orange-500 ring-2 ring-orange-500' : 'border-gray-200'
-      } ${isApproved ? 'ring-1 ring-green-200' : ''}`}
+      className={`group relative overflow-hidden rounded-xl border bg-card transition-all ${
+        isSelected ? 'border-primary ring-2 ring-primary' : ''
+      } ${isApproved ? 'ring-1 ring-emerald-300' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={onSelect}
     >
-      {/* Thumbnail / Video Preview */}
-      <div className="relative aspect-[9/16] overflow-hidden bg-gray-100">
+      {/* Thumbnail */}
+      <div className="relative aspect-[9/16] overflow-hidden bg-muted">
         {thumbnail ? (
           <Image
             src={thumbnail}
@@ -171,7 +172,7 @@ function ReviewCard({
             sizes="(max-width: 640px) 50vw, 20vw"
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-gray-300">
+          <div className="flex h-full items-center justify-center text-muted-foreground/30">
             <svg className="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
@@ -179,20 +180,20 @@ function ReviewCard({
         )}
 
         {/* Status badges */}
-        <div className="absolute top-2 left-2 flex gap-1">
+        <div className="absolute left-2 top-2 flex gap-1">
           {isApproved && (
-            <span className="rounded-full bg-green-500 px-2 py-0.5 text-[10px] font-bold text-white uppercase">
+            <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
               Approved
             </span>
           )}
           {isReRolled && (
-            <span className="rounded-full bg-purple-500 px-2 py-0.5 text-[10px] font-bold text-white uppercase">
+            <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase text-primary-foreground">
               Re-rolled
             </span>
           )}
           {item.antiSlopScore !== null && (
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold text-white uppercase ${
-              item.antiSlopScore >= 0.8 ? 'bg-green-500' : item.antiSlopScore >= 0.6 ? 'bg-yellow-500' : 'bg-red-500'
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase text-white ${
+              item.antiSlopScore >= 0.8 ? 'bg-emerald-500' : item.antiSlopScore >= 0.6 ? 'bg-yellow-500' : 'bg-red-500'
             }`}>
               {(item.antiSlopScore * 100).toFixed(0)}%
             </span>
@@ -218,7 +219,6 @@ function ReviewCard({
           </div>
         </div>
 
-        {/* Duration badge */}
         {item.durationSeconds && (
           <div className="absolute bottom-2 right-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
             {Math.round(item.durationSeconds)}s
@@ -228,55 +228,50 @@ function ReviewCard({
 
       {/* Info */}
       <div className="p-2.5">
-        <p className="line-clamp-2 text-xs text-gray-700 leading-relaxed">{item.caption}</p>
-        <div className="mt-2 flex items-center justify-between text-[10px] text-gray-400">
+        <p className="line-clamp-2 text-xs leading-relaxed text-foreground">{item.caption}</p>
+        <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
           <div className="flex items-center gap-1">
             <Calendar className="h-3 w-3" />
             {item.scheduledDate ? (
               <span>{new Date(item.scheduledDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
             ) : (
-              <span className="text-gray-300">Unscheduled</span>
+              <span className="text-muted-foreground/50">Unscheduled</span>
             )}
           </div>
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowSchedule(!showSchedule);
-            }}
-            className="flex items-center gap-1 text-orange-600 hover:text-orange-700"
+            onClick={(e) => { e.stopPropagation(); setShowSchedule(!showSchedule); }}
+            className="flex items-center gap-1 text-primary hover:text-primary/80"
           >
             <Clock className="h-3 w-3" />
             {item.scheduledTime || 'Set time'}
           </button>
         </div>
 
-        {/* Inline schedule editor */}
         {showSchedule && (
           <div className="mt-2 flex gap-2">
             <input
               type="date"
               defaultValue={item.scheduledDate || ''}
               onChange={(e) => onScheduleChange(e.target.value, item.scheduledTime || '09:00')}
-              className="flex-1 rounded border border-gray-200 px-2 py-1 text-xs"
+              className="flex-1 rounded border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40"
             />
             <input
               type="time"
               defaultValue={item.scheduledTime || '09:00'}
               onChange={(e) => onScheduleChange(item.scheduledDate || '', e.target.value)}
-              className="w-20 rounded border border-gray-200 px-2 py-1 text-xs"
+              className="w-20 rounded border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40"
             />
           </div>
         )}
 
-        {/* Content type tags */}
         <div className="mt-2 flex flex-wrap gap-1">
           {item.contentFormat && (
-            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 capitalize">
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium capitalize text-muted-foreground">
               {item.contentFormat.replace('_', ' ')}
             </span>
           )}
           {item.aspectRatio && (
-            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
               {item.aspectRatio}
             </span>
           )}
@@ -301,16 +296,13 @@ function ActionButton({
 }) {
   return (
     <button
-      onClick={(e) => {
-        e.stopPropagation();
-        if (!disabled) onClick();
-      }}
+      onClick={(e) => { e.stopPropagation(); if (!disabled) onClick(); }}
       disabled={disabled}
       className={`flex flex-1 flex-col items-center gap-0.5 rounded-lg py-1.5 text-[10px] font-medium transition-colors ${
         variant === 'green'
-          ? 'bg-green-500/90 text-white hover:bg-green-600'
-          : 'bg-white/90 text-gray-700 hover:bg-white'
-      } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+          ? 'bg-emerald-500/90 text-white hover:bg-emerald-600'
+          : 'bg-white/90 text-foreground hover:bg-white dark:bg-foreground/10 dark:text-foreground dark:hover:bg-foreground/20'
+      } ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
     >
       {icon}
       <span>{label}</span>
@@ -319,7 +311,7 @@ function ActionButton({
 }
 
 // ============================================================
-// Calendar View (simplified)
+// Calendar View
 // ============================================================
 function CalendarView({
   contentItems,
@@ -327,7 +319,6 @@ function CalendarView({
   onEdit,
   onReRoll,
   onDelete,
-  // onApprove,
 }: {
   contentItems: (ContentItem & { sequenceIndex?: number; scheduledDate?: string })[];
   campaign: Campaign;
@@ -350,8 +341,8 @@ function CalendarView({
       <div className="grid grid-cols-7 gap-2">
         {days.map((day, i) => (
           <div key={i} className="text-center">
-            <div className="text-xs font-medium text-gray-500">{dayNames[day.getDay()]}</div>
-            <div className="text-lg font-semibold text-gray-900">{day.getDate()}</div>
+            <div className="text-xs font-medium text-muted-foreground">{dayNames[day.getDay()]}</div>
+            <div className="text-lg font-semibold text-foreground">{day.getDate()}</div>
           </div>
         ))}
       </div>
@@ -361,31 +352,25 @@ function CalendarView({
             (item) => item.scheduledDate && new Date(item.scheduledDate).toDateString() === day.toDateString()
           );
           return (
-            <div key={i} className="min-h-[120px] rounded-xl border border-gray-200 bg-gray-50 p-2">
+            <div key={i} className="min-h-[120px] rounded-xl border bg-muted/30 p-2">
               {dayItems.map((item) => (
                 <div
                   key={item.id}
-                  className="mb-1.5 cursor-pointer overflow-hidden rounded-lg bg-white shadow-sm"
+                  className="mb-1.5 cursor-pointer overflow-hidden rounded-lg bg-card shadow-sm"
                   onClick={() => onEdit(item.id)}
                 >
                   {item.graphicUrls?.[0] && (
                     <div className="relative aspect-[9/16] w-full">
-                      <Image
-                        src={item.graphicUrls[0]}
-                        alt=""
-                        fill
-                        className="object-cover"
-                        sizes="80px"
-                      />
+                      <Image src={item.graphicUrls[0]} alt="" fill className="object-cover" sizes="80px" />
                     </div>
                   )}
                   <div className="p-1.5">
-                    <p className="line-clamp-1 text-[10px] text-gray-700">{item.caption}</p>
+                    <p className="line-clamp-1 text-[10px] text-foreground">{item.caption}</p>
                     <div className="mt-1 flex gap-1">
-                      <button onClick={(e) => { e.stopPropagation(); onReRoll(item.id); }} className="text-gray-400 hover:text-gray-600">
+                      <button onClick={(e) => { e.stopPropagation(); onReRoll(item.id); }} className="text-muted-foreground hover:text-foreground">
                         <RefreshCw className="h-3 w-3" />
                       </button>
-                      <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }} className="text-gray-400 hover:text-red-600">
+                      <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }} className="text-muted-foreground hover:text-destructive">
                         <Trash2 className="h-3 w-3" />
                       </button>
                     </div>

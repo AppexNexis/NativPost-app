@@ -75,10 +75,10 @@ function PlatformBadge({ platform }: { platform: string }) {
 function QualityBadge({ score }: { score: number }) {
   const pct = Math.round(score * 100);
   const color = score >= 0.8
-    ? 'bg-emerald-50 text-emerald-700'
+    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400'
     : score >= 0.7
-      ? 'bg-yellow-50 text-yellow-700'
-      : 'bg-red-50 text-red-700';
+      ? 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400'
+      : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400';
   return (
     <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${color}`}>
       {pct}
@@ -339,7 +339,7 @@ export default function ApprovalsPage() {
                       onChange={e => setRejectFeedback(e.target.value)}
                       placeholder="e.g. Tone is too casual, needs more industry-specific language..."
                       rows={2}
-                      className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-red-300 focus:outline-none focus:ring-2 focus:ring-red-100"
+                      className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-destructive/30 focus:outline-none focus:ring-2 focus:ring-destructive/10"
                     />
                     <div className="mt-2 flex gap-2">
                       <button
@@ -386,7 +386,7 @@ export default function ApprovalsPage() {
                     <button
                       type="button"
                       onClick={() => setRejectingId(item.id)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                      className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
                     >
                       <X className="size-3" />
                       Reject

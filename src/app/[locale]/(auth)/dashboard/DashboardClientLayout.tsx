@@ -6,6 +6,8 @@ import {
   BookOpen,
   Calendar,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   CircleCheck,
   Clock,
   CreditCard,
@@ -20,6 +22,7 @@ import {
   Menu,
   PenLine,
   Plus,
+  Search,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -31,7 +34,7 @@ import {
 import NextImage from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import logoIcon from '/public/assets/images/shared/logo.svg';
 import logoDark from '/public/assets/images/shared/logo-dark.svg';
@@ -78,10 +81,12 @@ export default function DashboardClientLayout({
   const { orgRole } = useAuth();
   const { organization } = useOrganization();
   const pathname = usePathname();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [subNavOpen, setSubNavOpen] = useState<Record<string, boolean>>({});
   const [currentPlan, setCurrentPlan] = useState<string>(plan || 'starter');
   const [billingStatus, setBillingStatus] = useState<{ planStatus: string; setupFeePaid: boolean } | null>(null);
-
+  const navRef = useRef<HTMLElement>(null);
 
   const role = getUserRole(orgRole);
   const navGroups = getNavForRole(role);
@@ -93,16 +98,21 @@ export default function DashboardClientLayout({
 
   useOrgSync();
 
-  // Fetch current plan if not passed from server (fallback)
-  // useEffect(() => {
-  //   if (plan) return;
-  //   fetch('/api/billing/status')
-  //     .then(r => r.ok ? r.json() : null)
-  //     .then((data: { plan?: string } | null) => {
-  //       if (data?.plan) setCurrentPlan(data.plan);
-  //     })
-  //     .catch(() => null);
-  // }, [plan]);
+  // Restore sidebar collapse state from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('np-sidebar-collapsed');
+      if (stored === 'true') setCollapsed(true);
+    } catch { /* ignore */ }
+  }, []);
+
+  const toggleCollapsed = () => {
+    setCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem('np-sidebar-collapsed', String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (plan) return;
@@ -115,8 +125,6 @@ export default function DashboardClientLayout({
       .catch(() => null);
   }, [plan]);
 
-  // Fix: use a proper RegExp literal — avoids the TS7053 index-type error
-  // that occurred when the regex was written as a string escape sequence.
   const cleanPath = pathname.replace(/^\/[a-z]{2}(\/|$)/, '/');
 
   const isActive = (href: string) => {
@@ -135,31 +143,45 @@ export default function DashboardClientLayout({
     return item.planRequired.includes(currentPlan);
   };
 
-  const renderNavItem = (item: NavItem) => {
+  // Check if any sub-items in a group are active (auto-expand accordion)
+  const hasActiveSubItem = (items: NavItem[]) => items.some(i => i.subGroup && isActive(i.href));
+
+  const toggleSubNav = (group: string) => {
+    setSubNavOpen(prev => ({ ...prev, [group]: !prev[group] }));
+  };
+
+  const isSubNavOpen = (group: string, items: NavItem[]) => {
+    if (subNavOpen[group] !== undefined) return subNavOpen[group];
+    return hasActiveSubItem(items);
+  };
+
+  const renderNavItem = (item: NavItem, dense = false) => {
     const Icon = ICONS[item.icon] ?? FileText;
     const active = isActive(item.href);
     const eligible = isPlanEligible(item);
 
-    const baseClass =
-      'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors w-full';
-    const activeClass = 'bg-primary/10 font-medium text-primary';
-    const inactiveClass = 'text-muted-foreground hover:bg-muted hover:text-foreground';
-    const disabledClass = 'text-muted-foreground/50 cursor-default';
+    const py = dense ? 'py-1.5' : 'py-2';
+    const baseClass = `relative flex items-center gap-2.5 rounded-lg px-2.5 ${py} text-[13px] transition-all duration-150 w-full`;
+    const activeClass = 'bg-primary/10 font-medium text-primary before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-4 before:w-[3px] before:rounded-r-full before:bg-primary';
+    const inactiveClass = 'text-muted-foreground hover:bg-muted/70 hover:text-foreground';
+    const disabledClass = 'text-muted-foreground/40 cursor-default';
 
     if (!eligible) {
       return (
         <div
           key={item.href + item.label}
-          title={`Available on ${item.planRequired
-            ?.map(p => p.charAt(0).toUpperCase() + p.slice(1))
-            .join(', ')} plans`}
-          className={`${baseClass} ${disabledClass} group relative`}
+          title={`Available on ${item.planRequired?.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ')} plans`}
+          className={`${baseClass} ${disabledClass} group`}
         >
           <Icon className="size-4 shrink-0" />
-          <span>{item.label}</span>
-          <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-            Growth+
-          </span>
+          {!collapsed && (
+            <>
+              <span className="truncate">{item.label}</span>
+              <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                Growth+
+              </span>
+            </>
+          )}
         </div>
       );
     }
@@ -171,12 +193,17 @@ export default function DashboardClientLayout({
           href={item.href}
           target="_blank"
           rel="noopener noreferrer"
-          onClick={() => setSidebarOpen(false)}
+          onClick={() => setMobileOpen(false)}
+          title={collapsed ? item.label : undefined}
           className={`${baseClass} ${inactiveClass}`}
         >
           <Icon className="size-4 shrink-0" />
-          <span>{item.label}</span>
-          <ExternalLink className="ml-auto size-3 text-muted-foreground/50" />
+          {!collapsed && (
+            <>
+              <span className="truncate">{item.label}</span>
+              <ExternalLink className="ml-auto size-3 text-muted-foreground/50 shrink-0" />
+            </>
+          )}
         </a>
       );
     }
@@ -185,11 +212,12 @@ export default function DashboardClientLayout({
       <Link
         key={item.href + item.label}
         href={item.href}
-        onClick={() => setSidebarOpen(false)}
+        onClick={() => setMobileOpen(false)}
+        title={collapsed ? item.label : undefined}
         className={`${baseClass} ${active ? activeClass : inactiveClass}`}
       >
-        <Icon className="size-4 shrink-0" />
-        {item.label}
+        <Icon className={`size-4 shrink-0 ${active ? 'text-primary' : ''}`} />
+        {!collapsed && <span className="truncate">{item.label}</span>}
       </Link>
     );
   };
@@ -198,145 +226,202 @@ export default function DashboardClientLayout({
     <div className="flex h-screen overflow-hidden bg-muted/30">
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex h-screen w-[220px] flex-col border-r bg-background transition-transform duration-200 lg:static lg:inset-y-auto lg:z-auto lg:translate-x-0 lg:shrink-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-          }`}
+        className={`fixed inset-y-0 left-0 z-40 flex h-screen flex-col border-r bg-background transition-all duration-200 ease-in-out
+          ${collapsed ? 'w-[56px]' : 'w-[220px]'}
+          ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
+          lg:static lg:inset-y-auto lg:z-auto lg:translate-x-0 lg:shrink-0`}
       >
         {/* Logo */}
-        <div className="flex h-14 items-center border-b px-4">
-          <Link href="/dashboard" className="inline-flex items-center">
-            <figure className="hidden sm:block sm:max-w-[140px]">
-              <NextImage
-                src={mainLogo}
-                alt="NativPost"
-                className="h-auto w-full dark:invert"
-                priority
-              />
-            </figure>
-            <figure className="block max-w-[32px] sm:hidden">
-              <NextImage
-                src={logoIcon}
-                alt="NativPost"
-                className="block h-auto w-full dark:hidden"
-                priority
-              />
-              <NextImage
-                src={logoDark}
-                alt="NativPost"
-                className="hidden h-auto w-full dark:block"
-                priority
-              />
-            </figure>
+        <div className={`flex h-14 shrink-0 items-center border-b ${collapsed ? 'justify-center px-0' : 'px-4'}`}>
+          <Link href="/dashboard" className="inline-flex items-center min-w-0">
+            {collapsed ? (
+              <figure className="w-8 shrink-0">
+                <NextImage src={logoIcon} alt="NativPost" className="block h-auto w-full dark:hidden" priority />
+                <NextImage src={logoDark} alt="NativPost" className="hidden h-auto w-full dark:block" priority />
+              </figure>
+            ) : (
+              <figure className="max-w-[130px]">
+                <NextImage src={mainLogo} alt="NativPost" className="h-auto w-full dark:invert" priority />
+              </figure>
+            )}
           </Link>
         </div>
 
         {/* Org switcher */}
-        <div className="border-b px-3 py-2.5">
-          <OrganizationSwitcher
-            hidePersonal
-            appearance={{
-              elements: {
-                rootBox: 'w-full',
-                organizationSwitcherTrigger:
-                  'w-full justify-between rounded-lg border px-3 py-2 text-sm hover:bg-muted',
-              },
-            }}
-          />
-          {/* <OrganizationSwitcher
-            hidePersonal
-            afterSelectOrganizationUrl={pathname}
-            afterCreateOrganizationUrl={pathname}
-            appearance={{
-              elements: {
-                rootBox: 'w-full',
-                organizationSwitcherTrigger:
-                  'w-full justify-between rounded-lg border px-3 py-2 text-sm hover:bg-muted',
-              },
-            }}
-          /> */}
-        </div>
+        {!collapsed && (
+          <div className="shrink-0 border-b px-3 py-2.5">
+            <OrganizationSwitcher
+              hidePersonal
+              appearance={{
+                elements: {
+                  rootBox: 'w-full',
+                  organizationSwitcherTrigger:
+                    'w-full justify-between rounded-lg border px-3 py-2 text-sm hover:bg-muted',
+                },
+              }}
+            />
+          </div>
+        )}
 
         {/* Create post button — team only */}
         {isTeam && (
-          <div className="px-3 pt-3">
+          <div className={`shrink-0 ${collapsed ? 'px-2 pt-3' : 'px-3 pt-3'}`}>
             <Link
               href="/dashboard/content/create"
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              title={collapsed ? 'Create post' : undefined}
+              className={`flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90`}
             >
-              <Plus className="size-4" />
-              Create post
+              <Plus className="size-4 shrink-0" />
+              {!collapsed && 'Create post'}
             </Link>
           </div>
         )}
 
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto p-3">
-          {Object.entries(navGroups).map(([group, items]) => (
-            <div key={group} className="mb-4">
-              <p className="mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
-                {group}
-              </p>
-              <div className="space-y-0.5">
-                {items.map(item => renderNavItem(item))}
+        {/* Navigation — hidden scrollbar */}
+        <nav
+          ref={navRef}
+          className="flex-1 overflow-y-auto p-3 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+        >
+          {Object.entries(navGroups).map(([group, items]) => {
+            const mainItems = items.filter(i => !i.subGroup);
+            const subItems = items.filter(i => i.subGroup);
+            const subOpen = isSubNavOpen(group, items);
+
+            return (
+              <div key={group} className="mb-3">
+                {/* Group label */}
+                {!collapsed && (
+                  <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50 select-none">
+                    {group}
+                  </p>
+                )}
+
+                <div className="space-y-0.5">
+                  {mainItems.map(item => renderNavItem(item))}
+                </div>
+
+                {/* Collapsible sub-group */}
+                {subItems.length > 0 && !collapsed && (
+                  <div className="mt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => toggleSubNav(group)}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] text-muted-foreground/60 transition-colors hover:bg-muted/70 hover:text-muted-foreground"
+                    >
+                      <ChevronRight
+                        className={`size-3 shrink-0 transition-transform duration-150 ${subOpen ? 'rotate-90' : ''}`}
+                      />
+                      <span>More</span>
+                    </button>
+                    {subOpen && (
+                      <div className="mt-0.5 space-y-0.5 pl-2">
+                        {subItems.map(item => renderNavItem(item, true))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
 
         {/* Admin ops — NativPost staff only */}
         {isNativPostStaff && (
-          <div className="border-t px-3 py-2">
+          <div className="shrink-0 border-t px-3 py-2">
             <Link
               href="/admin/support"
-              onClick={() => setSidebarOpen(false)}
+              onClick={() => setMobileOpen(false)}
+              title={collapsed ? 'Admin ops' : undefined}
               className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <ShieldCheck className="size-4 shrink-0" />
-              Admin ops
+              {!collapsed && 'Admin ops'}
             </Link>
           </div>
         )}
 
-        {/* User section */}
-        <div className="border-t p-3">
-          <div className="flex items-center gap-2.5">
-            <UserButton
-              afterSignOutUrl="/"
-              appearance={{ elements: { avatarBox: 'size-8' } }}
-            />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium">
-                {organization?.name || 'Organization'}
-              </p>
-              <p className="truncate text-[11px] text-muted-foreground">
-                {isTeam
-                  ? 'NativPost Team'
-                  : `${currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)} plan`}
-              </p>
+        {/* User section + collapse toggle */}
+        <div className="shrink-0 border-t p-3">
+          {!collapsed ? (
+            <div className="flex items-center gap-2">
+              <UserButton
+                afterSignOutUrl="/"
+                appearance={{ elements: { avatarBox: 'size-8' } }}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium">
+                  {organization?.name || 'Organization'}
+                </p>
+                <p className="truncate text-[11px] text-muted-foreground">
+                  {isTeam
+                    ? 'NativPost Team'
+                    : `${currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)} plan`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={toggleCollapsed}
+                className="hidden lg:flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label="Collapse sidebar"
+              >
+                <ChevronLeft className="size-3.5" />
+              </button>
             </div>
-          </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2">
+              <UserButton
+                afterSignOutUrl="/"
+                appearance={{ elements: { avatarBox: 'size-7' } }}
+              />
+              <button
+                type="button"
+                onClick={toggleCollapsed}
+                className="hidden lg:flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label="Expand sidebar"
+              >
+                <ChevronRight className="size-3.5" />
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 
       {/* Mobile overlay */}
-      {sidebarOpen && (
+      {mobileOpen && (
         <div
           className="fixed inset-0 z-30 bg-black/30 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
+          onClick={() => setMobileOpen(false)}
         />
       )}
 
       {/* Main content */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Top bar — always visible, never scrolls */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b bg-background px-4 lg:px-6">
+        {/* Top bar */}
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background px-4 lg:px-6">
+          {/* Mobile menu toggle */}
           <button
             type="button"
-            onClick={() => setSidebarOpen(true)}
+            onClick={() => setMobileOpen(true)}
             className="rounded-lg p-2 hover:bg-muted lg:hidden"
           >
             <Menu className="size-5" />
           </button>
-          <div className="hidden lg:block" />
+
+          {/* Universal search — desktop */}
+          <button
+            type="button"
+            className="hidden flex-1 max-w-sm items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted lg:flex"
+            onClick={() => {/* TODO: open search modal */}}
+          >
+            <Search className="size-4 shrink-0" />
+            <span className="flex-1 text-left">Search</span>
+            <kbd className="hidden rounded border bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:block">
+              Ctrl K
+            </kbd>
+          </button>
+
+          <div className="flex-1 lg:hidden" />
+
           <div className="flex items-center gap-2">
             <NotificationBell />
             <UserButton
@@ -346,7 +431,7 @@ export default function DashboardClientLayout({
           </div>
         </header>
         <BillingGate billing={billingStatus} />
-        {/* Page content — only this area scrolls */}
+        {/* Page content */}
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 lg:p-6">
           {children}
         </div>

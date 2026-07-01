@@ -38,12 +38,12 @@ type LayoutMode = 'list' | 'grid' | 'compact';
 // CONFIG
 // -----------------------------------------------------------
 const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string }> = {
-  draft: { label: 'Draft', dot: 'bg-zinc-400', bg: 'bg-zinc-100 text-zinc-600' },
-  pending_review: { label: 'Pending review', dot: 'bg-amber-400', bg: 'bg-amber-50 text-amber-700' },
-  approved: { label: 'Approved', dot: 'bg-blue-400', bg: 'bg-blue-50 text-blue-700' },
-  scheduled: { label: 'Scheduled', dot: 'bg-violet-400', bg: 'bg-violet-50 text-violet-700' },
-  published: { label: 'Published', dot: 'bg-emerald-500', bg: 'bg-emerald-50 text-emerald-700' },
-  rejected: { label: 'Rejected', dot: 'bg-red-400', bg: 'bg-red-50 text-red-700' },
+  draft: { label: 'Draft', dot: 'bg-zinc-400', bg: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700/50 dark:text-zinc-400' },
+  pending_review: { label: 'Pending review', dot: 'bg-amber-400', bg: 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400' },
+  approved: { label: 'Approved', dot: 'bg-blue-400', bg: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' },
+  scheduled: { label: 'Scheduled', dot: 'bg-primary', bg: 'bg-primary/10 text-primary' },
+  published: { label: 'Published', dot: 'bg-emerald-500', bg: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' },
+  rejected: { label: 'Rejected', dot: 'bg-red-400', bg: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400' },
 };
 
 const CONTENT_TYPE_ICON: Record<string, React.ElementType> = {

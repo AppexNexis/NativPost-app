@@ -1,11 +1,25 @@
 /**
- * TikTok trending content provider via Apify's TikTok scraper.
+ * TikTok content provider via Apify's TikTok scraper — profile-based discovery.
  *
  * Actor: clockworks/tiktok-scraper
  * Docs:  https://apify.com/clockworks/tiktok-scraper
  *
  * Replaces the TikTok Research API provider, which is gated to
  * academic/non-profit institutions and unavailable to commercial products.
+ *
+ * NOTE: Switched from hashtag-based discovery to profile-based discovery.
+ * Public hashtag feeds (#viral, #trending, #fyp) are dominated by low-effort
+ * spam/caption-farming accounts with no reliable engagement signal — the
+ * same problem diagnosed on the Instagram side. Pulling from a curated list
+ * of known hook/UGC-style accounts (see seed-accounts.ts) gives real
+ * engagement numbers and content that actually matches our target style.
+ *
+ * FLAG: The `profiles` input field and related options below match
+ * clockworks/tiktok-scraper's documented profile-scrape mode, but this
+ * hasn't been confirmed against a live Input > JSON tab the way the
+ * Instagram hashtag scraper schema was. Recommend checking
+ * console.apify.com/actors/<this-actor>/input → JSON toggle before running
+ * at scale, same process used to fix the Instagram provider.
  *
  * Env var required: APIFY_TOKEN
  */
@@ -17,13 +31,14 @@ import {
   startApifyRun,
   waitForApifyRun,
 } from './apify-shared';
+import { SEED_ACCOUNTS } from './seed-accounts';
 
 export type ApifyTikTokOptions = {
   /** Apify API token. Falls back to APIFY_TOKEN env var. */
   apifyToken?: string;
-  /** Hashtags to scrape (without the # prefix). */
-  hashtags?: string[];
-  /** Max videos to fetch per run (capped at 200 by Apify pagination). */
+  /** TikTok usernames to pull videos from (without the @ prefix). */
+  usernames?: string[];
+  /** Max videos to fetch per profile. */
   limit?: number;
   /** Skip the first N results (pagination). */
   offset?: number;
@@ -33,15 +48,11 @@ export type ApifyTikTokOptions = {
 
 const ACTOR_ID = 'clockworks~tiktok-scraper';
 
-const DEFAULT_HASHTAGS = [
-  'viral',
-  'trending',
-  'business',
-  'smallbusiness',
-  'entrepreneur',
-  'africa',
-  'marketing',
-];
+const DEFAULT_USERNAMES = Array.from(
+  new Set(
+    Object.values(SEED_ACCOUNTS).flatMap(niche => niche.tiktok),
+  ),
+);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -123,7 +134,7 @@ function mapItem(item: Record<string, unknown>): RawTemplate | null {
   }
 
   const description = String(item.text ?? item.desc ?? '');
-  const title = description.slice(0, 120) || 'TikTok trending video';
+  const title = description.slice(0, 120) || 'TikTok video';
 
   // author can be nested or flat depending on actor version
   const authorName
@@ -191,25 +202,27 @@ export const apifyTikTokProvider: ViralSourceProvider = {
       return [];
     }
 
-    const hashtags: string[] = Array.isArray(options.hashtags)
-      ? (options.hashtags as string[])
-      : DEFAULT_HASHTAGS;
+    const usernames: string[] = Array.isArray(options.usernames) && options.usernames.length > 0
+      ? (options.usernames as string[])
+      : DEFAULT_USERNAMES;
 
-    const limit = Math.min(typeof options.limit === 'number' ? options.limit : 50, 200);
+    const limit = Math.min(typeof options.limit === 'number' ? options.limit : 15, 100);
     const offset = Math.max(0, typeof options.offset === 'number' ? options.offset : 0);
-    const minViews = typeof options.minViews === 'number' ? options.minViews : 5_000;
+    const minViews = typeof options.minViews === 'number' ? options.minViews : 0;
 
-    console.log(`[Apify/TikTok] Starting scrape — hashtags: [${hashtags.join(', ')}], limit: ${limit}`);
+    console.log(`[Apify/TikTok] Starting profile scrape — accounts: [${usernames.join(', ')}], limit/account: ${limit}`);
 
     try {
       const input = {
-        hashtags,
+        profiles: usernames,
         resultsPerPage: limit,
+        profileScrapeSections: ['videos'],
+        profileSorting: 'latest',
         maxRequestRetries: 3,
         shouldDownloadVideos: false,
         shouldDownloadCovers: false,
         shouldDownloadSubtitles: false,
-        // Enable slideshow image extraction so photo posts are imported as slideshows
+        // Enable slideshow image extraction so photo posts import as slideshows
         shouldDownloadSlideshowImages: true,
       };
 
@@ -222,7 +235,7 @@ export const apifyTikTokProvider: ViralSourceProvider = {
       const items = await fetchApifyDataset<Record<string, unknown>>(
         run.defaultDatasetId,
         token,
-        limit * 2, // fetch a bit more to account for filtering
+        usernames.length * limit * 2,
       );
 
       console.log(`[Apify/TikTok] Raw items: ${items.length}`);

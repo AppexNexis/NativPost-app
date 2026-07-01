@@ -76,6 +76,15 @@ export default function RootLayout(props: {
 
   return (
     <html lang={props.params.locale} suppressHydrationWarning>
+      <head>
+        {/* Apply theme before first paint to prevent flash */}
+        <script
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var c=document.cookie.split('; ').find(function(r){return r.startsWith('np-theme=')});var t=c?c.split('=')[1]:'system';if(t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})()`,
+          }}
+        />
+      </head>
       <body className="bg-background text-foreground antialiased" suppressHydrationWarning>
         <NextIntlClientProvider
           locale={props.params.locale}

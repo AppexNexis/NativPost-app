@@ -118,7 +118,7 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
     return (
       <div className="space-y-6">
         {error && (
-          <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             <AlertTriangle className="h-4 w-4 flex-shrink-0" />
             {error}
           </div>
@@ -130,7 +130,7 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
               setSelectedCampaign(null);
               setError(null);
             }}
-            className="text-sm text-gray-500 hover:text-gray-700"
+            className="text-sm text-muted-foreground hover:text-foreground"
           >
             ← Back to campaigns
           </button>
@@ -152,48 +152,48 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Campaigns</h1>
-          <p className="text-sm text-gray-500">
+          <h1 className="text-2xl font-semibold tracking-tight">Campaigns</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
             Create and manage automated content campaigns. Generate, review, and schedule posts in bulk.
           </p>
         </div>
         <button
           onClick={() => setActiveTab("new")}
-          className="flex items-center gap-2 rounded-xl bg-orange-500 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-600"
+          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           <Plus className="h-4 w-4" />
           New Campaign
         </button>
       </div>
 
-      <div className="flex gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1">
+      <div className="flex gap-1 rounded-lg border bg-muted/50 p-1">
         <button
           onClick={() => setActiveTab("active")}
-          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === "active" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+          className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "active" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
           }`}
         >
           <Calendar className="h-4 w-4" />
           Active
-          <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs">
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
             {campaigns.filter((c) => ["active", "scheduled", "generating", "review"].includes(c.status)).length}
           </span>
         </button>
         <button
           onClick={() => setActiveTab("drafts")}
-          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === "drafts" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+          className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "drafts" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
           }`}
         >
           Drafts
-          <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs">
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
             {campaigns.filter((c) => c.status === "draft").length}
           </span>
         </button>
         <button
           onClick={() => setActiveTab("completed")}
-          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === "completed" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+          className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "completed" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
           }`}
         >
           <BarChart3 className="h-4 w-4" />
@@ -202,19 +202,19 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
       </div>
 
       {filteredCampaigns.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 py-20 text-gray-400">
-          <Calendar className="mb-4 h-12 w-12" />
-          <p className="text-lg font-medium">No campaigns yet</p>
-          <p className="text-sm">Create your first campaign to start generating content in bulk</p>
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-20 text-muted-foreground">
+          <Calendar className="mb-4 h-10 w-10 text-muted-foreground/50" />
+          <p className="text-base font-medium text-foreground">No campaigns yet</p>
+          <p className="mt-1 text-sm">Create your first campaign to start generating content in bulk</p>
           <button
             onClick={() => setActiveTab("new")}
-            className="mt-4 rounded-xl bg-orange-500 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-600"
+            className="mt-6 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             Create Campaign
           </button>
         </div>
       ) : (
-        <div className="grid gap-4">
+        <div className="grid gap-3">
           {filteredCampaigns.map((campaign) => (
             <CampaignListItem
               key={campaign.id}
@@ -230,14 +230,14 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
 
 function CampaignListItem({ campaign, onClick }: { campaign: Campaign; onClick: () => void }) {
   const statusColors: Record<string, string> = {
-    draft: "bg-gray-100 text-gray-600",
-    generating: "bg-orange-100 text-orange-700",
-    review: "bg-blue-100 text-blue-700",
-    scheduled: "bg-purple-100 text-purple-700",
-    active: "bg-green-100 text-green-700",
-    paused: "bg-yellow-100 text-yellow-700",
-    completed: "bg-gray-100 text-gray-600",
-    cancelled: "bg-red-100 text-red-700",
+    draft: "bg-muted text-muted-foreground",
+    generating: "bg-primary/10 text-primary",
+    review: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+    scheduled: "bg-primary/10 text-primary",
+    active: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+    paused: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+    completed: "bg-muted text-muted-foreground",
+    cancelled: "bg-destructive/10 text-destructive",
   };
 
   const progress = campaign.totalPosts > 0 ? (campaign.generatedPosts / campaign.totalPosts) * 100 : 0;
@@ -245,27 +245,27 @@ function CampaignListItem({ campaign, onClick }: { campaign: Campaign; onClick: 
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 text-left transition-shadow hover:shadow-md"
+      className="flex w-full items-center gap-4 rounded-xl border bg-card p-4 text-left transition-all hover:shadow-sm hover:border-border/80"
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-3">
-          <h3 className="text-sm font-semibold text-gray-900">{campaign.name}</h3>
-          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusColors[campaign.status] || "bg-gray-100 text-gray-600"}`}>
+          <h3 className="text-sm font-semibold text-foreground">{campaign.name}</h3>
+          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusColors[campaign.status] || "bg-muted text-muted-foreground"}`}>
             {campaign.status}
           </span>
         </div>
-        <p className="mt-1 text-xs text-gray-500">
+        <p className="mt-1 text-xs text-muted-foreground">
           {campaign.generatedPosts} of {campaign.totalPosts} posts generated
           {campaign.startDate && ` · Starts ${new Date(campaign.startDate).toLocaleDateString()}`}
         </p>
-        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted">
           <div
-            className="h-full rounded-full bg-orange-500 transition-all"
+            className="h-full rounded-full bg-primary transition-all"
             style={{ width: `${progress}%` }}
           />
         </div>
       </div>
-      <div className="text-right text-xs text-gray-400">
+      <div className="text-right text-xs text-muted-foreground">
         <div>{campaign.postsPerDay} posts/day</div>
         <div>{campaign.campaignLengthDays} days</div>
       </div>

@@ -39,11 +39,7 @@ export default async function Page() {
   const { error, orgId } = await getAuthContext();
 
   if (error || !orgId) {
-    return (
-      <div className="min-h-screen bg-gray-50 px-4 py-8">
-        <p className="text-sm text-gray-500">Please sign in to view Blitz.</p>
-      </div>
-    );
+    return <p className="py-8 text-sm text-muted-foreground">Please sign in to view Blitz.</p>;
   }
 
   const today = new Date();
@@ -115,11 +111,7 @@ export default async function Page() {
   }
 
   if (!campaign) {
-    return (
-      <div className="min-h-screen bg-gray-50 px-4 py-8">
-        <p className="text-sm text-gray-500">Could not initialize Blitz.</p>
-      </div>
-    );
+    return <p className="py-8 text-sm text-muted-foreground">Could not initialize Blitz.</p>;
   }
 
   // Fetch content items for the campaign
@@ -144,9 +136,5 @@ export default async function Page() {
     isRolled: row.cc.isRolled,
   }));
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <BlitzDailyView campaign={campaign as any} initialContentItems={contentItems as any} />
-    </div>
-  );
+  return <BlitzDailyView campaign={campaign as any} initialContentItems={contentItems as any} />;
 }

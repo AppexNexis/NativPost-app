@@ -64,21 +64,21 @@ type ViewMode = 'month' | 'week';
 // CONSTANTS
 // -----------------------------------------------------------
 const STATUS_CONFIG: Record<string, { dot: string; label: string; bar: string }> = {
-  draft: { dot: 'bg-zinc-300', label: 'Draft', bar: 'bg-zinc-200' },
-  pending_review: { dot: 'bg-amber-400', label: 'Pending review', bar: 'bg-amber-100' },
-  approved: { dot: 'bg-blue-400', label: 'Approved', bar: 'bg-blue-100' },
-  scheduled: { dot: 'bg-violet-500', label: 'Scheduled', bar: 'bg-violet-100' },
-  published: { dot: 'bg-emerald-500', label: 'Published', bar: 'bg-emerald-100' },
-  rejected: { dot: 'bg-red-400', label: 'Rejected', bar: 'bg-red-100' },
+  draft: { dot: 'bg-zinc-300', label: 'Draft', bar: 'bg-zinc-200 dark:bg-zinc-700/50' },
+  pending_review: { dot: 'bg-amber-400', label: 'Pending review', bar: 'bg-amber-100 dark:bg-amber-900/30' },
+  approved: { dot: 'bg-blue-400', label: 'Approved', bar: 'bg-blue-100 dark:bg-blue-900/30' },
+  scheduled: { dot: 'bg-primary', label: 'Scheduled', bar: 'bg-primary/10' },
+  published: { dot: 'bg-emerald-500', label: 'Published', bar: 'bg-emerald-100 dark:bg-emerald-900/30' },
+  rejected: { dot: 'bg-red-400', label: 'Rejected', bar: 'bg-red-100 dark:bg-red-900/30' },
 };
 
 const CATEGORY_CONFIG: Record<string, { label: string; color: string }> = {
-  educational: { label: 'Educational', color: 'bg-blue-50 text-blue-700 border-blue-200' },
-  social_proof: { label: 'Social proof', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  behind_the_scenes: { label: 'Behind the scenes', color: 'bg-amber-50 text-amber-700 border-amber-200' },
-  promotional: { label: 'Promotional', color: 'bg-pink-50 text-pink-700 border-pink-200' },
-  engagement: { label: 'Engagement', color: 'bg-orange-50 text-orange-700 border-orange-200' },
-  trending: { label: 'Trending', color: 'bg-purple-50 text-purple-700 border-purple-200' },
+  educational: { label: 'Educational', color: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800' },
+  social_proof: { label: 'Social proof', color: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800' },
+  behind_the_scenes: { label: 'Behind the scenes', color: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800' },
+  promotional: { label: 'Promotional', color: 'bg-pink-50 text-pink-700 border-pink-200 dark:bg-pink-900/20 dark:text-pink-400 dark:border-pink-800' },
+  engagement: { label: 'Engagement', color: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800' },
+  trending: { label: 'Trending', color: 'bg-primary/5 text-primary border-primary/20' },
 };
 
 const CONTENT_TYPE_ICON: Record<string, React.ElementType> = {
@@ -500,19 +500,19 @@ export default function CalendarPage() {
         <>
           {/* Locked state: upgrade prompt */}
           {isLocked && planState?.lockedReason && (
-            <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3.5">
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3.5">
               <div className="flex items-center gap-3">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-violet-100">
-                  <Sparkles className="size-4 text-violet-600" />
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                  <Sparkles className="size-4 text-primary" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-violet-900">Monthly Plan</p>
-                  <p className="text-xs text-violet-600">{planState.lockedReason}</p>
+                  <p className="text-sm font-medium">Monthly Plan</p>
+                  <p className="text-xs text-muted-foreground">{planState.lockedReason}</p>
                 </div>
               </div>
               <Link
                 href="/dashboard/billing"
-                className="shrink-0 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700"
+                className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 Upgrade
               </Link>
@@ -521,16 +521,16 @@ export default function CalendarPage() {
 
           {/* No plan yet: generate prompt */}
           {!isLocked && !hasPlan && planState && (
-            <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-dashed border-violet-300 bg-violet-50/50 px-4 py-3.5">
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-dashed border-primary/30 bg-primary/5 px-4 py-3.5">
               <div className="flex items-center gap-3">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-violet-100">
-                  <Calendar className="size-4 text-violet-600" />
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                  <Calendar className="size-4 text-primary" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-violet-900">
+                  <p className="text-sm font-medium">
                     No Monthly Plan for {formatMonthYear(currentDate)}
                   </p>
-                  <p className="text-xs text-violet-600">
+                  <p className="text-xs text-muted-foreground">
                     Generate {planMeta?.topicsAllowed} strategic content topics to fill your month.
                   </p>
                 </div>
@@ -539,7 +539,7 @@ export default function CalendarPage() {
                 type="button"
                 onClick={handleGeneratePlan}
                 disabled={isGenerating}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 disabled:opacity-60"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
               >
                 {isGenerating
                   ? <Loader2 className="size-3.5 animate-spin" />
@@ -551,23 +551,23 @@ export default function CalendarPage() {
 
           {/* Plan exists: status bar */}
           {!isLocked && hasPlan && planState && (
-            <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-violet-200/60 bg-violet-50/40 px-4 py-3">
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
               <div className="flex items-center gap-3">
-                <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-violet-100">
-                  <Sparkles className="size-3.5 text-violet-600" />
+                <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10">
+                  <Sparkles className="size-3.5 text-primary" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-violet-900">
+                  <p className="text-xs font-medium">
                     Monthly Plan active
                     {' '}
-                    <span className="font-normal text-violet-500">·</span>
+                    <span className="font-normal text-muted-foreground">·</span>
                     {' '}
-                    <span className="font-normal text-violet-600">
+                    <span className="font-normal text-primary">
                       {activeTopics.length} topic{activeTopics.length !== 1 ? 's' : ''} remaining
                     </span>
                   </p>
                   {planMeta && planMeta.regenerationsAllowed !== null && (
-                    <p className="text-[11px] text-violet-500">
+                    <p className="text-[11px] text-muted-foreground">
                       {planMeta.regenerationsAllowed - planMeta.regenerationsUsed} regeneration{planMeta.regenerationsAllowed - planMeta.regenerationsUsed !== 1 ? 's' : ''} left this month
                     </p>
                   )}
@@ -590,9 +590,9 @@ export default function CalendarPage() {
 
           {/* Plan generation error */}
           {planError && (
-            <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-              <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-500" />
-              <p className="text-sm text-red-700">{planError}</p>
+            <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3">
+              <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+              <p className="text-sm text-destructive">{planError}</p>
             </div>
           )}
         </>
@@ -668,7 +668,7 @@ export default function CalendarPage() {
                         return <span key={post.id} className={`size-1.5 rounded-full ${config.dot}`} />;
                       })}
                       {topics.slice(0, 3).map(t => (
-                        <span key={t.position} className="size-1.5 rounded-full border border-dashed border-violet-400 bg-violet-100" />
+                        <span key={t.position} className="size-1.5 rounded-full border border-dashed border-primary/50 bg-primary/20" />
                       ))}
                     </div>
                   )}
@@ -698,10 +698,10 @@ export default function CalendarPage() {
                   {topics.slice(0, Math.max(0, maxVisible - posts.length)).map((t) => (
                     <div
                       key={t.position}
-                      className="flex items-center gap-1.5 rounded border border-dashed border-violet-300 bg-violet-50 px-1.5 py-0.5"
+                      className="flex items-center gap-1.5 rounded border border-dashed border-primary/30 bg-primary/5 px-1.5 py-0.5"
                     >
-                      <span className="size-1.5 shrink-0 rounded-full bg-violet-400" />
-                      <span className="truncate text-[11px] font-medium text-violet-700">
+                      <span className="size-1.5 shrink-0 rounded-full bg-primary/60" />
+                      <span className="truncate text-[11px] font-medium text-primary">
                         {t.topic.slice(0, 28)}
                       </span>
                     </div>
@@ -738,8 +738,8 @@ export default function CalendarPage() {
           ))}
         {hasPlan && (
           <div className="flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full border border-dashed border-violet-400 bg-violet-100" />
-            <span className="text-[11px] font-medium text-violet-600">Suggested topic</span>
+            <span className="size-1.5 rounded-full border border-dashed border-primary/50 bg-primary/20" />
+            <span className="text-[11px] font-medium text-primary">Suggested topic</span>
           </div>
         )}
       </div>
@@ -794,7 +794,7 @@ export default function CalendarPage() {
               {selectedTopics.length > 0 && (
                 <div className="border-b">
                   <div className="px-5 py-3">
-                    <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-violet-500">
+                    <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-primary/70">
                       Monthly Plan suggestion{selectedTopics.length > 1 ? 's' : ''}
                     </p>
                     <div className="space-y-3">
@@ -806,7 +806,7 @@ export default function CalendarPage() {
                         return (
                           <div
                             key={t.position}
-                            className="rounded-xl border border-violet-200/70 bg-violet-50/60 p-3.5"
+                            className="rounded-xl border border-primary/20 bg-primary/5 p-3.5"
                           >
                             {/* Category + content type */}
                             <div className="mb-2 flex items-center gap-2">
@@ -820,13 +820,13 @@ export default function CalendarPage() {
                             </div>
 
                             {/* Topic */}
-                            <p className="mb-1.5 text-sm font-medium leading-snug text-violet-900">
+                            <p className="mb-1.5 text-sm font-medium leading-snug">
                               {t.topic}
                             </p>
 
                             {/* Rationale */}
                             {t.rationale && (
-                              <p className="mb-3 text-xs leading-relaxed text-violet-600">
+                              <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
                                 {t.rationale}
                               </p>
                             )}
@@ -835,7 +835,7 @@ export default function CalendarPage() {
                             <div className="flex gap-2">
                               <Link
                                 href={`/dashboard/content/create?topic=${encodeURIComponent(t.topic)}&contentType=${t.content_type}&scheduledDate=${t.suggested_date}`}
-                                className="flex-1 rounded-lg bg-violet-600 px-3 py-2 text-center text-xs font-medium text-white transition-colors hover:bg-violet-700"
+                                className="flex-1 rounded-lg bg-primary px-3 py-2 text-center text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                               >
                                 Create this post
                               </Link>
