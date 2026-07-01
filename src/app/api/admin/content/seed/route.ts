@@ -56,6 +56,10 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as {
       sources?: SourcePlatform[];
       limitPerSource?: number;
+      /** Optional override — falls back to each provider's curated SEED_ACCOUNTS list. */
+      instagramUsernames?: string[];
+      /** Optional override — falls back to each provider's curated SEED_ACCOUNTS list. */
+      tiktokUsernames?: string[];
     };
 
     if (!Array.isArray(body.sources) || body.sources.length === 0) {
@@ -131,17 +135,21 @@ export async function POST(req: NextRequest) {
       tiktok: sources.includes('tiktok')
         ? {
             apifyToken: apifyToken ?? '',
-            hashtags: ['viral', 'trending', 'smallbusiness', 'entrepreneur', 'africa'],
-            limit: limitPerSource ?? 50,
-            minViews: 10000,
+            // Providers fall back to the curated SEED_ACCOUNTS list
+            // (apify-tiktok.ts / seed-accounts.ts) when usernames is omitted.
+            usernames: body.tiktokUsernames,
+            limit: limitPerSource ?? 15,
+            minViews: 0,
           }
         : undefined,
       instagram: sources.includes('instagram')
         ? {
             apifyToken: apifyToken ?? '',
-            hashtags: ['smallbusiness', 'entrepreneur', 'viral', 'africanbusiness'],
-            limit: limitPerSource ?? 30,
-            minLikes: 500,
+            // Providers fall back to the curated SEED_ACCOUNTS list
+            // (apify-instagram.ts / seed-accounts.ts) when usernames is omitted.
+            usernames: body.instagramUsernames,
+            limit: limitPerSource ?? 15,
+            minLikes: 0,
           }
         : undefined,
       anthropicApiKey,
