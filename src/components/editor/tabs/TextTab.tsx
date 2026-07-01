@@ -8,9 +8,13 @@ const TEXT_COLORS = [
   '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899',
 ];
 
-const BG_COLORS = [
-  'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.7)', '#000000',
-  'rgba(255,255,255,0.15)', 'rgba(255,255,255,0)',
+// Three subtle presets — no more full-slab dark backgrounds that covered
+// the whole video. "None" is the new default; "Subtle"/"Strong" add a small
+// pill behind the text for legibility on busy backgrounds.
+const TEXT_BG_PRESETS: { label: string; value: string }[] = [
+  { label: 'None',   value: 'transparent' },
+  { label: 'Subtle', value: 'rgba(0,0,0,0.25)' },
+  { label: 'Strong', value: 'rgba(0,0,0,0.6)' },
 ];
 
 const CTA_COLORS = [
@@ -33,9 +37,29 @@ export function TextTab() {
       <div>
         <div className="mb-1.5 flex items-center justify-between">
           <label className="text-xs font-medium text-foreground">HOOK</label>
-          {state.timing?.hook?.durationSeconds && (
-            <span className="text-[11px] text-muted-foreground">{state.timing.hook.durationSeconds}s</span>
-          )}
+          <div className="flex items-center gap-2">
+            {state.timing?.hook?.durationSeconds && (
+              <span className="text-[11px] text-muted-foreground">{state.timing.hook.durationSeconds}s</span>
+            )}
+            {(() => {
+              const words = (state.script.hookText || '').trim().split(/\s+/).filter(Boolean);
+              const isTooLong = words.length > 12;
+              return (
+                <span className={`text-[11px] ${isTooLong ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                  {words.length} words
+                  {isTooLong && (
+                    <button
+                      type="button"
+                      onClick={() => updateScript('hookText', words.slice(0, 12).join(' '))}
+                      className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 hover:bg-amber-200"
+                    >
+                      Trim
+                    </button>
+                  )}
+                </span>
+              );
+            })()}
+          </div>
         </div>
         <textarea
           value={state.script.hookText || ''}
@@ -78,6 +102,28 @@ export function TextTab() {
           placeholder="Follow for more…"
           className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
         />
+      </div>
+
+      {/* Mention Business toggle */}
+      <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+        <div>
+          <label className="text-xs font-medium text-foreground">MENTION BUSINESS</label>
+          <p className="text-[11px] text-muted-foreground">Weave brand name into the copy</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            const current = (state.script as any).mentionBusiness !== 'false';
+            updateScript('mentionBusiness' as any, current ? 'false' : 'true');
+          }}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+            (state.script as any).mentionBusiness !== 'false' ? 'bg-primary' : 'bg-muted-foreground/30'
+          }`}
+        >
+          <span className={`inline-block size-3.5 rounded-full bg-white transition-transform ${
+            (state.script as any).mentionBusiness !== 'false' ? 'translate-x-[18px]' : 'translate-x-1'
+          }`} />
+        </button>
       </div>
 
       <div className="border-t border-border" />
@@ -135,22 +181,45 @@ export function TextTab() {
         </div>
       </div>
 
-      {/* Background */}
+      {/* Text background pill */}
       <div>
-        <label className="mb-2 block text-xs font-medium text-foreground">BACKGROUND</label>
-        <div className="flex flex-wrap gap-2">
-          {BG_COLORS.map((c, i) => (
+        <label className="mb-2 block text-xs font-medium text-foreground">TEXT BACKGROUND</label>
+        <div className="flex rounded-lg border border-border overflow-hidden">
+          {TEXT_BG_PRESETS.map(preset => (
             <button
-              key={i}
-              onClick={() => updateStyle('backgroundColor', c)}
-              className={`size-7 rounded-full border-2 transition-transform hover:scale-110 ${
-                state.style.backgroundColor === c ? 'border-primary scale-110' : 'border-border'
+              key={preset.label}
+              onClick={() => updateStyle('backgroundColor', preset.value)}
+              className={`flex-1 py-2 text-xs font-medium transition-colors ${
+                state.style.backgroundColor === preset.value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
-              style={{ backgroundColor: c === 'rgba(255,255,255,0)' ? 'transparent' : c }}
-              title={i === 4 ? 'None' : c}
-            />
+            >
+              {preset.label}
+            </button>
           ))}
         </div>
+      </div>
+
+      {/* Background dim (full-bleed scrim) — separate from text pill */}
+      <div>
+        <div className="mb-1.5 flex items-center justify-between">
+          <label className="text-xs font-medium text-foreground">BACKGROUND DIM</label>
+          <span className="text-xs text-muted-foreground">
+            {Math.round(((state.style as any).backgroundDimming ?? 0.3) * 100)}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={80}
+          value={Math.round(((state.style as any).backgroundDimming ?? 0.3) * 100)}
+          onChange={e => updateStyle('backgroundDimming', parseInt(e.target.value) / 100)}
+          className="w-full accent-primary"
+        />
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Darkens the source image/video so original text doesn't bleed through.
+        </p>
       </div>
 
       {/* Alignment */}

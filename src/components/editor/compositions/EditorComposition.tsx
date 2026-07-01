@@ -9,6 +9,29 @@ import {
   Video,
 } from 'remotion';
 
+// ── Font registration (mirrors engine-side; keeps preview & render in sync) ───
+import { loadFont as loadInter } from '@remotion/google-fonts/Inter';
+import { loadFont as loadRoboto } from '@remotion/google-fonts/Roboto';
+import { loadFont as loadMontserrat } from '@remotion/google-fonts/Montserrat';
+import { loadFont as loadOswald } from '@remotion/google-fonts/Oswald';
+import { loadFont as loadPlayfair } from '@remotion/google-fonts/PlayfairDisplay';
+
+import { EDITOR_FIXED_DURATION_SECONDS } from '@/lib/editor-constants';
+
+const FONT_REGISTRY: Record<string, { fontFamily: string }> = {
+  'Inter': loadInter(),
+  'Roboto': loadRoboto(),
+  'Montserrat': loadMontserrat(),
+  'Oswald': loadOswald(),
+  'Playfair Display': loadPlayfair(),
+};
+
+function resolveFont(fontFamily?: string): string {
+  const inter = FONT_REGISTRY['Inter']?.fontFamily ?? 'Inter';
+  if (!fontFamily) return inter;
+  return FONT_REGISTRY[fontFamily]?.fontFamily || fontFamily;
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export interface EditorScript {
@@ -27,6 +50,7 @@ export interface EditorStyle {
   weight?: 'normal' | 'bold';
   italic?: boolean;
   underline?: boolean;
+  backgroundDimming?: number;
 }
 
 export interface EditorSlide {
@@ -65,7 +89,8 @@ interface LayoutCoords {
 }
 
 function layoutPosition(layout: string, width: number, _height: number): LayoutCoords {
-  const p = Math.round(width * 0.05);
+  // Safe area: ≥6% of width so text never escapes phone-mockup overlay
+  const p = Math.round(width * 0.06);
 
   switch (layout) {
     case 'centered':
@@ -127,10 +152,12 @@ export function EditorComposition({
 
   const fontSize = style.fontSize || 20;
   const textBaseStyle: React.CSSProperties = {
-    fontFamily: style.fontFamily || 'Inter',
+    fontFamily: resolveFont(style.fontFamily),
     fontSize: `${fontSize}px`,
     color: style.color || '#ffffff',
-    backgroundColor: style.backgroundColor || 'rgba(0,0,0,0.5)',
+    // Default to transparent (no dark slab over the whole video). Users can opt
+    // into a Subtle / Strong preset via TextTab.
+    backgroundColor: style.backgroundColor ?? 'transparent',
     textAlign: textAlignFrom(style.align),
     fontWeight: style.weight === 'bold' ? 'bold' : 'normal',
     fontStyle: style.italic ? 'italic' : 'normal',
@@ -142,6 +169,9 @@ export function EditorComposition({
     wordBreak: 'break-word',
     display: 'inline-block',
     maxWidth: '100%',
+    // A subtle text shadow keeps light text legible on bright backgrounds
+    // without the heavy slab.
+    textShadow: '0 1px 3px rgba(0, 0, 0, 0.35)',
   };
 
   const pos = layoutPosition(layout, width, height);
@@ -152,11 +182,18 @@ export function EditorComposition({
   const hookInsetTop = Math.round(height * 0.05);
 
   const activeText = script.hookText || script.bodyText || script.ctaText;
-  const totalFrames = 8 * fps; // 8 seconds
+  const totalFrames = EDITOR_FIXED_DURATION_SECONDS * fps;
   const textStartFrame = noAnimation ? 0 : 10;
+  const hookStartFrame = noAnimation ? 0 : 15;
 
   const bodyFontSize = `${Math.max(16, fontSize * 0.8)}px`;
   const ctaFontSize = `${Math.max(14, fontSize * 0.7)}px`;
+
+  // Background dim: scrim between source media and text overlay so original
+  // pixels (e.g. "STARTUP" on a laptop in stock photo) don't bleed through.
+  // Default 0.3, user-configurable 0..0.8 via TextTab.
+  const dimming = Math.max(0, Math.min(0.8, style.backgroundDimming ?? 0.3));
+  const showDimming = Boolean(backgroundUrl) && dimming > 0;
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
@@ -176,6 +213,11 @@ export function EditorComposition({
           width: '100%', height: '100%',
           background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
         }} />
+      )}
+
+      {/* Dimming scrim (only when there's a background and dim > 0) */}
+      {showDimming && (
+        <AbsoluteFill style={{ backgroundColor: `rgba(0, 0, 0, ${dimming})`, zIndex: 5 }} />
       )}
 
       {/* Text overlays */}
@@ -212,7 +254,7 @@ export function EditorComposition({
                   ...textBaseStyle,
                   fontSize: ctaFontSize,
                   fontWeight: 'bold',
-                  backgroundColor: style.ctaBackgroundColor || style.backgroundColor || 'rgba(134, 79, 254, 0.85)',
+                  backgroundColor: style.ctaBackgroundColor || 'rgba(134, 79, 254, 0.85)',
                 }}
                 startFrame={noAnimation ? 0 : textStartFrame + 40}
                 duration={totalFrames - textStartFrame - 40}
@@ -225,7 +267,7 @@ export function EditorComposition({
 
       {/* Hook video inset */}
       {isHookVideoContent && hookVideoUrl && (
-        <Sequence from={noAnimation ? 0 : 15} durationInFrames={totalFrames - (noAnimation ? 0 : 15)}>
+        <Sequence from={hookStartFrame} durationInFrames={totalFrames - hookStartFrame}>
           <div style={{
             position: 'absolute', top: hookInsetTop, right: hookInsetRight,
             width: hookInsetWidth, height: hookInsetHeight,

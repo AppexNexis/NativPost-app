@@ -3,7 +3,6 @@ import { ArrowLeft, Check, Loader2, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { useEditor } from './EditorContext';
-import { VIDEO_ENGINE_URL, engineAuthHeaders } from '@/lib/ai-studio/engine';
 
 // ── Content type labels ──────────────────────────────────────────
 const CT_LABELS: Record<string, string> = {
@@ -18,14 +17,17 @@ const CT_LABELS: Record<string, string> = {
   green_screen: 'Green Screen',
 };
 
-// ── Engine render — compiles editor state into a permanent MP4 ───
+// ── Engine render — proxied via /api/editor/render so the engine API key
+//    (server-only env) is attached server-side. Previously this called the
+//    engine directly from the browser, which silently 401'd because
+//    NATIVPOST_ENGINE_API_KEY is never available in the client bundle.
 async function renderEditorVideo(
   editorState: { script: any; style: any; layout: string; aspectRatio: string; mediaSlots: any; contentType: string },
 ): Promise<string | null> {
   try {
-    const res = await fetch(`${VIDEO_ENGINE_URL}/render/editor-video`, {
+    const res = await fetch('/api/editor/render', {
       method: 'POST',
-      headers: engineAuthHeaders(),
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         script: editorState.script,
         style: editorState.style,
@@ -37,7 +39,10 @@ async function renderEditorVideo(
         slides: editorState.mediaSlots?.slides,
       }),
     });
-    if (!res.ok) throw new Error(`Engine render failed: ${res.status}`);
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Engine render failed: ${res.status} ${text}`);
+    }
     const data = await res.json();
     return data.url || null;
   } catch (err) {
@@ -45,6 +50,8 @@ async function renderEditorVideo(
     return null;
   }
 }
+
+type PublishStage = 'idle' | 'rendering' | 'saving' | 'redirecting';
 
 export function EditorLayout({
   preview,
@@ -55,13 +62,17 @@ export function EditorLayout({
 }) {
   const { state, saveEdit } = useEditor();
   const router = useRouter();
-  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishStage, setPublishStage] = useState<PublishStage>('idle');
+
+  const isPublishing = publishStage !== 'idle';
 
   const handleContinue = async () => {
     await saveEdit();
-    setIsPublishing(true);
+
+    setPublishStage('rendering');
 
     // Enrichment data with editor state — always stored so CSS overlays work
+    // for any old content items lacking a compiled URL.
     const enrichmentData: Record<string, any> = {
       editorScript: state.script,
       editorStyle: state.style,
@@ -69,25 +80,24 @@ export function EditorLayout({
       aspectRatio: state.aspectRatio,
     };
 
-    // If we already have a content item, render and update
+    const compiledVideoUrl = await renderEditorVideo({
+      script: state.script,
+      style: state.style,
+      layout: state.layout,
+      aspectRatio: state.aspectRatio,
+      mediaSlots: state.mediaSlots,
+      contentType: state.edit?.contentType || 'text',
+    });
+    if (compiledVideoUrl) {
+      enrichmentData.isCompiled = true;
+    }
+
+    setPublishStage('saving');
+
+    // ── Branch A: existing content item — single PATCH, await it.
     if (state.edit?.contentItemId) {
-      const compiledVideoUrl = await renderEditorVideo({
-        script: state.script,
-        style: state.style,
-        layout: state.layout,
-        aspectRatio: state.aspectRatio,
-        mediaSlots: state.mediaSlots,
-        contentType: state.edit?.contentType || 'text',
-      });
-
-      const updateBody: Record<string, any> = {
-        enrichmentData,
-      };
-
-      if (compiledVideoUrl) {
-        enrichmentData.isCompiled = true;
-        updateBody.graphicUrls = [compiledVideoUrl];
-      }
+      const updateBody: Record<string, any> = { enrichmentData };
+      if (compiledVideoUrl) updateBody.graphicUrls = [compiledVideoUrl];
 
       const patchRes = await fetch(`/api/content/${state.edit.contentItemId}`, {
         method: 'PATCH',
@@ -97,30 +107,18 @@ export function EditorLayout({
       if (!patchRes.ok) {
         console.error('[Publish] PATCH failed:', patchRes.status);
       }
+      setPublishStage('redirecting');
       router.push(`/dashboard/content/${state.edit.contentItemId}`);
       return;
     }
 
-    // 1. Compile editor state into a permanent MP4 via Remotion engine
-    const compiledVideoUrl = await renderEditorVideo({
-      script: state.script,
-      style: state.style,
-      layout: state.layout,
-      aspectRatio: state.aspectRatio,
-      mediaSlots: state.mediaSlots,
-      contentType: state.edit?.contentType || 'text',
-    });
-
-    if (compiledVideoUrl) {
-      enrichmentData.isCompiled = true;
-    }
-
-    // Use compiled video as primary; fall back to raw source
+    // ── Branch B: new content item. Build the FULL body (incl. enrichment +
+    //    graphicUrls) and POST once. No follow-up PATCH means no race
+    //    condition between create and isCompiled being set on the row.
     const allMediaUrls: string[] = [];
     if (compiledVideoUrl) {
       allMediaUrls.push(compiledVideoUrl);
     } else {
-      // Fallback: raw source URLs — CSS overlays will use enrichmentData on detail page
       if (state.mediaSlots?.background?.url) allMediaUrls.push(state.mediaSlots.background.url);
       if (state.mediaSlots?.hookVideo?.url) allMediaUrls.push(state.mediaSlots.hookVideo.url);
       if (state.mediaSlots?.demoVideo?.url) allMediaUrls.push(state.mediaSlots.demoVideo.url);
@@ -135,7 +133,6 @@ export function EditorLayout({
       state.script?.ctaText,
     ].filter(Boolean).join('\n\n');
 
-    // 2. Create content item
     try {
       const res = await fetch('/api/content', {
         method: 'POST',
@@ -148,6 +145,7 @@ export function EditorLayout({
           graphicUrls: allMediaUrls,
           aspectRatio: state.aspectRatio || state.edit?.aspectRatio || '9:16',
           contentMode: state.edit?.contentMode || null,
+          enrichmentData,
         }),
       });
 
@@ -159,25 +157,19 @@ export function EditorLayout({
       const data = await res.json();
       const contentId = data.item?.id;
 
-      // 3. Link edit session to content item
+      // Link edit session to the new content item (best-effort, awaited).
       if (contentId && state.edit?.id) {
-        await fetch(`/api/content/edit/${state.edit.id}`, {
+        const linkRes = await fetch(`/api/content/edit/${state.edit.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ contentItemId: contentId }),
-        }).catch(() => {});
+        });
+        if (!linkRes.ok) {
+          console.error('[Publish] Link edit→content failed:', linkRes.status);
+        }
       }
 
-      // 4. Save editor state & compiled flag on the content item
-      if (contentId) {
-        await fetch(`/api/content/${contentId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ enrichmentData }),
-        }).catch(() => {});
-      }
-
-      // 5. Redirect to detail page
+      setPublishStage('redirecting');
       if (contentId) {
         router.push(`/dashboard/content/${contentId}`);
       } else {
@@ -185,9 +177,8 @@ export function EditorLayout({
       }
     } catch (err) {
       console.error('[Publish] Failed:', err);
+      setPublishStage('idle');
       router.push('/dashboard/posts');
-    } finally {
-      setIsPublishing(false);
     }
   };
 
@@ -202,6 +193,12 @@ export function EditorLayout({
   const isRemix = state.edit?.source === 'remix';
   const contentType = state.edit?.contentType || '';
   const displayType = CT_LABELS[contentType] || contentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+  const publishLabel =
+    publishStage === 'rendering'   ? 'Rendering video…' :
+    publishStage === 'saving'      ? 'Saving…' :
+    publishStage === 'redirecting' ? 'Opening post…' :
+    'Schedule & Publish';
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
@@ -269,7 +266,7 @@ export function EditorLayout({
             ) : (
               <Check className="size-3.5" />
             )}
-            {isPublishing ? 'Publishing...' : 'Schedule & Publish'}
+            {publishLabel}
           </button>
         </div>
       </header>

@@ -15,6 +15,7 @@ export type EditorState = {
   audioTrack: AudioTrack | null;
   aspectRatio: string;
   targetPlatforms: string[];
+  contentMode: string;
   isSaving: boolean;
   isDirty: boolean;
   error: string | null;
@@ -30,6 +31,7 @@ type EditorAction =
   | { type: 'SET_AUDIO_TRACK'; payload: AudioTrack | null }
   | { type: 'SET_ASPECT_RATIO'; payload: string }
   | { type: 'SET_TARGET_PLATFORMS'; payload: string[] }
+  | { type: 'SET_CONTENT_MODE'; payload: string }
   | { type: 'SET_SAVING'; payload: boolean }
   | { type: 'SET_DIRTY'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
@@ -49,6 +51,7 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
         audioTrack: action.payload.audioTrack || null,
         aspectRatio: action.payload.aspectRatio || '9:16',
         targetPlatforms: action.payload.targetPlatforms || [],
+        contentMode: action.payload.contentMode || 'normal',
         isDirty: false,
         error: null,
       };
@@ -68,6 +71,8 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
       return { ...state, aspectRatio: action.payload, isDirty: true };
     case 'SET_TARGET_PLATFORMS':
       return { ...state, targetPlatforms: action.payload, isDirty: true };
+    case 'SET_CONTENT_MODE':
+      return { ...state, contentMode: action.payload, isDirty: true };
     case 'SET_SAVING':
       return { ...state, isSaving: action.payload };
     case 'SET_DIRTY':
@@ -109,6 +114,7 @@ export function EditorProvider({
     audioTrack: initialEdit?.audioTrack || null,
     aspectRatio: initialEdit?.aspectRatio || '9:16',
     targetPlatforms: initialEdit?.targetPlatforms || [],
+    contentMode: initialEdit?.contentMode || 'normal',
     isSaving: false,
     isDirty: false,
     error: null,
@@ -130,6 +136,7 @@ export function EditorProvider({
           audioTrack: state.audioTrack,
           aspectRatio: state.aspectRatio,
           targetPlatforms: state.targetPlatforms,
+          contentMode: state.contentMode,
         }),
       });
       if (!res.ok) throw new Error('Failed to save');
@@ -138,7 +145,7 @@ export function EditorProvider({
       dispatch({ type: 'SET_ERROR', payload: err instanceof Error ? err.message : 'Save failed' });
       dispatch({ type: 'SET_SAVING', payload: false });
     }
-  }, [state.edit, state.isDirty, state.script, state.style, state.layout, state.timing, state.mediaSlots, state.audioTrack, state.aspectRatio, state.targetPlatforms]);
+  }, [state.edit, state.isDirty, state.script, state.style, state.layout, state.timing, state.mediaSlots, state.audioTrack, state.aspectRatio, state.targetPlatforms, state.contentMode]);
 
   // Autosave: debounce 1500ms whenever isDirty becomes true
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

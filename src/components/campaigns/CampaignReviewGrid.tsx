@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
-import { RefreshCw, Pencil, Trash2, Clock, Calendar, Check, AlertTriangle } from 'lucide-react';
+import { RefreshCw, Pencil, SkipForward, Trash2, Clock, Calendar, Check, AlertTriangle } from 'lucide-react';
 import type { ContentItem, Campaign } from '@/types/v2';
 
 interface CampaignReviewGridProps {
@@ -10,6 +10,7 @@ interface CampaignReviewGridProps {
   onReRoll: (itemId: string) => void;
   onDelete: (itemId: string) => void;
   onApprove: (itemId: string) => void;
+  onSkip?: (itemId: string) => void;
   onScheduleChange: (itemId: string, date: string, time: string) => void;
 }
 
@@ -20,6 +21,7 @@ export function CampaignReviewGrid({
   onReRoll,
   onDelete,
   onApprove,
+  onSkip,
   onScheduleChange,
 }: CampaignReviewGridProps) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -84,6 +86,7 @@ export function CampaignReviewGrid({
               onReRoll={() => handleReRoll(item.id)}
               onDelete={() => onDelete(item.id)}
               onApprove={() => onApprove(item.id)}
+              onSkip={onSkip ? () => onSkip(item.id) : undefined}
               onScheduleChange={(date, time) => onScheduleChange(item.id, date, time)}
             />
           ))}
@@ -128,6 +131,7 @@ function ReviewCard({
   onReRoll,
   onDelete,
   onApprove,
+  onSkip,
   onScheduleChange,
 }: {
   item: ContentItem & { sequenceIndex?: number; scheduledDate?: string; scheduledTime?: string; isRolled?: boolean };
@@ -138,6 +142,7 @@ function ReviewCard({
   onReRoll: () => void;
   onDelete: () => void;
   onApprove: () => void;
+  onSkip?: () => void;
   onScheduleChange: (date: string, time: string) => void;
 }) {
   const [isHovered, setIsHovered] = useState(false);
@@ -203,6 +208,9 @@ function ReviewCard({
           <div className="flex gap-1">
             <ActionButton onClick={onEdit} icon={<Pencil className="h-3 w-3" />} label="Edit" />
             <ActionButton onClick={onReRoll} icon={<RefreshCw className="h-3 w-3" />} label="Re-roll" disabled={!canReRoll} />
+            {onSkip && (
+              <ActionButton onClick={onSkip} icon={<SkipForward className="h-3 w-3" />} label="Skip" />
+            )}
             <ActionButton onClick={onDelete} icon={<Trash2 className="h-3 w-3" />} label="Delete" />
             {!isApproved && (
               <ActionButton onClick={onApprove} icon={<Check className="h-3 w-3" />} label="Approve" variant="green" />

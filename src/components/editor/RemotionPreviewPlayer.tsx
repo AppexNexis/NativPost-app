@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { Player } from '@remotion/player';
 
 import { EditorComposition } from './compositions/EditorComposition';
+import { EDITOR_TOTAL_FRAMES, EDITOR_FPS } from '@/lib/editor-constants';
 
 // All content types use the universal EditorComposition which accepts
 // the full editor state (script, style, layout, mediaSlots, aspectRatio)
@@ -18,11 +19,6 @@ interface RemotionPreviewPlayerProps {
 export function RemotionPreviewPlayer({ contentType, inputProps }: RemotionPreviewPlayerProps) {
   const Composition = DEFAULT_COMPOSITION;
 
-  // 8 seconds at 30fps (matches engine's FIXED_DURATION_SECONDS)
-  const durationInFrames = useMemo(() => {
-    return 8 * 30;
-  }, []);
-
   const { width, height } = useMemo(() => {
     const ar = inputProps.aspectRatio || '9:16';
     const [w, h] = ar.split(':').map(Number);
@@ -36,10 +32,10 @@ export function RemotionPreviewPlayer({ contentType, inputProps }: RemotionPrevi
       <Player
         component={Composition}
         inputProps={inputProps}
-        durationInFrames={durationInFrames}
+        durationInFrames={EDITOR_TOTAL_FRAMES}
         compositionWidth={width}
         compositionHeight={height}
-        fps={30}
+        fps={EDITOR_FPS}
         controls
         style={{
           width: '100%',

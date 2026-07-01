@@ -49,8 +49,15 @@ const CT_LABELS: Record<string, string> = {
   green_screen: 'Green Screen',
 };
 
+const CONTENT_MODES = [
+  { id: 'normal', label: 'Normal' },
+  { id: 'promo', label: 'Promo' },
+  { id: 'educational', label: 'Educate' },
+  { id: 'trending', label: 'Trending' },
+] as const;
+
 export function EditorSidebar() {
-  const { state } = useEditor();
+  const { state, dispatch } = useEditor();
   const contentType = state.edit?.contentType ?? 'text_only';
   const isRemix = state.edit?.source === 'remix';
 
@@ -79,21 +86,36 @@ export function EditorSidebar() {
   return (
     <div className="flex h-full flex-col">
       {/* ── Header ─────────────────────────────────── */}
-      <div className="shrink-0 border-b border-border px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
-              {displayLabel}
+      <div className="shrink-0 border-b border-border px-4 py-3 space-y-2.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
+            {displayLabel}
+          </span>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+            {state.aspectRatio}
+          </span>
+          {isRemix && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+              Remix
             </span>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-              {state.aspectRatio}
-            </span>
-            {isRemix && (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                Remix
-              </span>
-            )}
-          </div>
+          )}
+        </div>
+        {/* Mode toggle */}
+        <div className="flex gap-1 rounded-lg bg-muted p-0.5">
+          {CONTENT_MODES.map(m => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => dispatch({ type: 'SET_CONTENT_MODE', payload: m.id })}
+              className={`flex-1 rounded-md py-1 text-[11px] font-medium transition-colors ${
+                state.contentMode === m.id
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {m.label}
+            </button>
+          ))}
         </div>
       </div>
 

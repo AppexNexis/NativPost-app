@@ -90,6 +90,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (body.generatedPosts !== undefined) updates.generatedPosts = body.generatedPosts;
     if (body.reRollsRemaining !== undefined) updates.reRollsRemaining = body.reRollsRemaining;
     if (body.qualityThreshold !== undefined) updates.qualityThreshold = body.qualityThreshold;
+    if (body.pinterestPercent !== undefined) updates.pinterestPercent = body.pinterestPercent;
+    if (body.enabledInfluencerIds !== undefined) updates.enabledInfluencerIds = body.enabledInfluencerIds;
     if (body.totalEngagement !== undefined) updates.totalEngagement = body.totalEngagement;
     if (body.avgEngagementRate !== undefined) updates.avgEngagementRate = body.avgEngagementRate;
     updates.updatedAt = new Date();

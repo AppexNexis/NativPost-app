@@ -1,17 +1,101 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { Loader2, RefreshCw, Sparkles } from 'lucide-react';
 
 import { useEditor } from './EditorContext';
 import { RemotionPreviewPlayer } from './RemotionPreviewPlayer';
 
+async function regenerateScript(
+  state: ReturnType<typeof useEditor>['state'],
+  mode: 'improve' | 'regenerate',
+): Promise<{ hookText?: string; bodyText?: string; ctaText?: string } | null> {
+  const caption = [state.script.hookText, state.script.bodyText, state.script.ctaText]
+    .filter(Boolean)
+    .join('\n\n');
+
+  const topic = mode === 'improve'
+    ? `Improve and sharpen this content:\n${caption}`
+    : caption || 'General content';
+
+  const res = await fetch('/api/content/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      topic,
+      contentType: state.edit?.contentType || 'text_only',
+      targetPlatforms: state.targetPlatforms?.length ? state.targetPlatforms : ['instagram'],
+      numVariants: 1,
+      contentMode: state.contentMode || 'normal',
+    }),
+  });
+
+  if (!res.ok) return null;
+  const data = await res.json();
+  const variant = data.variants?.[0];
+  if (!variant) return null;
+
+  // Split the caption back into hook/body/cta by newlines or sentence structure
+  const full: string = variant.caption || '';
+  const lines = full.split('\n').filter((l: string) => l.trim());
+  return {
+    hookText: lines[0] || state.script.hookText,
+    bodyText: lines.slice(1, -1).join('\n') || state.script.bodyText,
+    ctaText: lines[lines.length - 1] || state.script.ctaText,
+  };
+}
+
 export function EditorPreview() {
-  const { state } = useEditor();
+  const { state, dispatch } = useEditor();
+  const [aiWorking, setAiWorking] = useState<'improve' | 'regenerate' | null>(null);
 
   const contentType = state.edit?.contentType || 'text';
   const aspectRatio = state.aspectRatio || '9:16';
   const isPortrait = aspectRatio === '9:16';
 
+  const handleAiAction = async (mode: 'improve' | 'regenerate') => {
+    setAiWorking(mode);
+    try {
+      const result = await regenerateScript(state, mode);
+      if (result) {
+        dispatch({ type: 'UPDATE_SCRIPT', payload: result });
+      }
+    } finally {
+      setAiWorking(null);
+    }
+  };
+
   return (
     <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-gradient-to-br from-muted/50 via-background to-muted/30">
+      {/* Floating AI action buttons */}
+      <div className="absolute right-3 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-2">
+        <button
+          type="button"
+          onClick={() => handleAiAction('improve')}
+          disabled={aiWorking !== null}
+          title="Improve with AI"
+          className="flex flex-col items-center gap-1 rounded-xl border border-border bg-card/90 px-2.5 py-2.5 text-[10px] font-medium text-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-primary/10 hover:text-primary disabled:opacity-50"
+        >
+          {aiWorking === 'improve' ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Sparkles className="size-4" />
+          )}
+          Improve
+        </button>
+        <button
+          type="button"
+          onClick={() => handleAiAction('regenerate')}
+          disabled={aiWorking !== null}
+          title="Regenerate"
+          className="flex flex-col items-center gap-1 rounded-xl border border-border bg-card/90 px-2.5 py-2.5 text-[10px] font-medium text-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-muted disabled:opacity-50"
+        >
+          {aiWorking === 'regenerate' ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <RefreshCw className="size-4" />
+          )}
+          Regen
+        </button>
+      </div>
       {/* Subtle dot-grid background pattern */}
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.03]"

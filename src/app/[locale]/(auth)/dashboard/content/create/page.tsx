@@ -671,15 +671,15 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
 
       {/* ── Scheduled date banner ─────────────────────────── */}
       {scheduledDate && (
-        <div className="mb-5 flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
-          <div className="size-1.5 shrink-0 rounded-full bg-violet-500" />
-          <p className="text-sm text-muted-foreground">
-            Will be scheduled for{' '}
-            <span className="font-medium text-foreground">
-              {new Date(`${scheduledDate}T12:00:00`).toLocaleDateString('en-US', {
-                weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
-              })}
-            </span>
+        <div className="mb-5 flex items-center gap-3 rounded-xl border border-violet-200/60 bg-violet-50/60 px-4 py-3 dark:border-violet-800/40 dark:bg-violet-950/30">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-white">
+            <span className="size-1.5 rounded-full bg-white" />
+            Scheduled
+          </span>
+          <p className="text-sm font-medium text-violet-900 dark:text-violet-100">
+            {new Date(`${scheduledDate}T12:00:00`).toLocaleDateString('en-US', {
+              weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+            })}
           </p>
         </div>
       )}

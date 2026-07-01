@@ -25,6 +25,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { PageHeader } from '@/features/dashboard/PageHeader';
+import { RemotionPreviewPlayer } from '@/components/editor/RemotionPreviewPlayer';
 
 // -----------------------------------------------------------
 // TYPES
@@ -858,7 +859,12 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                 )}
               </div>
 
-              {/* Media display — compiled video or raw video + CSS overlays */}
+              {/* Media display — unified framing matches the editor preview.
+                  - Compiled videos: <video controls> inside the same thin frame.
+                  - Non-compiled videos w/ editor enrichment: <RemotionPreviewPlayer>
+                    so the detail page is frame-identical to what the user just
+                    saw in the editor (font, dimming, animations included).
+                  - Plain videos w/o enrichment: simple <video controls>. */}
               {hasMedia ? (
                 <div className="space-y-4">
                   {VIDEO_CONTENT_TYPES.includes(item.contentType) ? (
@@ -866,15 +872,18 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                       {(() => {
                         const videoUrl = item.graphicUrls[0]!;
                         const aspect = item.aspectRatio?.replace(':', '/') || '9/16';
+                        const aspectRatio = item.aspectRatio || '9:16';
 
-                        // Detect compiled video: engine-rendered MP4 with text baked in
                         const isCompiledVideo = (item.enrichmentData as any)?.isCompiled === true;
 
-                        // Use enrichmentData for CSS overlays when video isn't compiled
-                        const ed = (item.enrichmentData || {}) as { editorScript?: { hookText?: string; bodyText?: string; ctaText?: string }; editorStyle?: Record<string, unknown>; editorLayout?: string };
-                        const editorScript = ed.editorScript;
-                        const editorStyle = ed.editorStyle as { fontFamily?: string; fontSize?: number; color?: string; backgroundColor?: string; align?: string } | undefined;
-                        const editorLayout = ed.editorLayout;
+                        const ed = (item.enrichmentData || {}) as {
+                          editorScript?: { hookText?: string; bodyText?: string; ctaText?: string };
+                          editorStyle?: Record<string, unknown>;
+                          editorLayout?: string;
+                        };
+                        const hasEditorState = Boolean(
+                          ed.editorScript && (ed.editorScript.hookText || ed.editorScript.bodyText || ed.editorScript.ctaText),
+                        );
 
                         const posterUrl = isCompiledVideo
                           ? videoUrl
@@ -882,124 +891,54 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                             ? item.graphicUrls[item.graphicUrls.length - 1]!
                             : videoUrl;
 
-                        const textOverlayStyle: React.CSSProperties = {
-                          fontFamily: editorStyle?.fontFamily || 'Inter',
-                          fontSize: `${editorStyle?.fontSize || 20}px`,
-                          color: editorStyle?.color || '#ffffff',
-                          backgroundColor: editorStyle?.backgroundColor || 'rgba(0,0,0,0.5)',
-                          textAlign: (editorStyle?.align as React.CSSProperties['textAlign']) || 'center',
-                          fontWeight: 'normal',
-                          lineHeight: 1.25,
-                          padding: '8px 12px',
-                          borderRadius: '6px',
-                          wordBreak: 'break-word',
-                        };
+                        const isPortrait = aspectRatio === '9:16' || aspectRatio === '3:4' || aspectRatio === '2:3';
+                        const frameWidth = isPortrait ? 360 : 640;
 
-                        const textPosClass: Record<string, string> = {
-                          centered: 'inset-0 flex items-center justify-center p-4',
-                          bottom_caption: 'bottom-0 left-0 right-0 p-3',
-                          top_caption: 'top-0 left-0 right-0 p-3',
-                          wall_of_text: 'inset-0 flex items-center justify-center p-4',
-                        };
-                        const displayOverlay = textPosClass[editorLayout || ''] || 'bottom-0 left-0 right-0 p-3';
-                        const activeText = !isCompiledVideo && (editorScript?.hookText || editorScript?.bodyText || editorScript?.ctaText);
+                        // ── Branch 1: non-compiled with editor enrichment → render the
+                        //    SAME composition the editor preview used. Pixel-identical.
+                        if (!isCompiledVideo && hasEditorState) {
+                          const inputProps = {
+                            backgroundUrl: videoUrl,
+                            script: ed.editorScript || {},
+                            style: ed.editorStyle || {},
+                            layout: ed.editorLayout || 'centered',
+                            aspectRatio,
+                            contentType: item.contentType,
+                          };
 
-                        // Match editor preview framing exactly
-                        const isPortrait = item.aspectRatio === '9:16' || item.aspectRatio === '3:4' || item.aspectRatio === '2:3';
-                        const phoneFrame = isPortrait;
-                        const phoneWidth = 320;
+                          return (
+                            <div
+                              className="relative overflow-hidden rounded-[2rem] border-[1.5px] border-white/[0.06] bg-neutral-900/40 shadow-2xl"
+                              style={{ width: frameWidth, aspectRatio: aspect }}
+                            >
+                              <RemotionPreviewPlayer
+                                contentType={item.contentType}
+                                inputProps={inputProps}
+                              />
+                            </div>
+                          );
+                        }
 
+                        // ── Branch 2: compiled video OR plain video → <video controls>
+                        //    inside the same thin frame.
                         return (
-                          <div className="flex justify-center">
-                            {phoneFrame ? (
-                              // ── Phone mockup (matches EditorPreview for portrait) ──
-                              <div className="relative overflow-hidden rounded-[24px] border-4 border-neutral-700 bg-neutral-950 shadow-2xl"
-                                style={{ width: phoneWidth, aspectRatio: aspect }}
-                              >
-                                {/* Notch */}
-                                <div className="absolute left-1/2 top-0 z-20 h-5 w-28 -translate-x-1/2 rounded-b-2xl bg-neutral-900" />
-                                <video
-                                  src={toVideoSrc(videoUrl)}
-                                  poster={posterUrl}
-                                  className="size-full object-cover rounded-[20px]"
-                                  controls
-                                  autoPlay
-                                  muted
-                                  loop
-                                  preload="metadata"
-                                  playsInline
-                                >
-                                  <img src={posterUrl} alt="Content preview" className="size-full object-cover" />
-                                </video>
-                                {/* CSS overlays for old content (no compiled video) — inside phone frame */}
-                                {activeText && (
-                                  <div className={`pointer-events-none absolute z-10 ${displayOverlay}`}
-                                    style={{ position: 'absolute', inset: 0 }}
-                                  >
-                                    <div style={{ maxWidth: '90%' }}>
-                                      {editorScript?.hookText && (
-                                        <p style={{ ...textOverlayStyle, marginBottom: editorScript.bodyText ? '8px' : 0 }}>
-                                          {editorScript.hookText}
-                                        </p>
-                                      )}
-                                      {editorScript?.bodyText && (
-                                        <p style={{ ...textOverlayStyle, fontSize: `${Math.max(14, (editorStyle?.fontSize || 20) * 0.7)}px`, marginBottom: editorScript.ctaText ? '8px' : 0 }}>
-                                          {editorScript.bodyText}
-                                        </p>
-                                      )}
-                                      {editorScript?.ctaText && (
-                                        <p style={{ ...textOverlayStyle, fontSize: `${Math.max(12, (editorStyle?.fontSize || 20) * 0.6)}px` }}>
-                                          {editorScript.ctaText}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              // ── Framed container (landscape/square) ──
-                              <div className="relative w-full overflow-hidden rounded-lg border bg-neutral-950 shadow-lg"
-                                style={{ maxWidth: 640, aspectRatio: aspect }}
-                              >
-                                <video
-                                  src={toVideoSrc(videoUrl)}
-                                  poster={posterUrl}
-                                  className="size-full object-cover"
-                                  controls
-                                  autoPlay
-                                  muted
-                                  loop
-                                  preload="metadata"
-                                  playsInline
-                                >
-                                  <img src={posterUrl} alt="Content preview" className="size-full object-cover" />
-                                </video>
-                                {/* CSS overlays for old content (no compiled video) — inside frame */}
-                                {activeText && (
-                                  <div className={`pointer-events-none absolute z-10 ${displayOverlay}`}
-                                    style={{ position: 'absolute', inset: 0 }}
-                                  >
-                                    <div style={{ maxWidth: '90%' }}>
-                                      {editorScript?.hookText && (
-                                        <p style={{ ...textOverlayStyle, marginBottom: editorScript.bodyText ? '8px' : 0 }}>
-                                          {editorScript.hookText}
-                                        </p>
-                                      )}
-                                      {editorScript?.bodyText && (
-                                        <p style={{ ...textOverlayStyle, fontSize: `${Math.max(14, (editorStyle?.fontSize || 20) * 0.7)}px`, marginBottom: editorScript.ctaText ? '8px' : 0 }}>
-                                          {editorScript.bodyText}
-                                        </p>
-                                      )}
-                                      {editorScript?.ctaText && (
-                                        <p style={{ ...textOverlayStyle, fontSize: `${Math.max(12, (editorStyle?.fontSize || 20) * 0.6)}px` }}>
-                                          {editorScript.ctaText}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
+                          <div
+                            className="relative overflow-hidden rounded-[2rem] border-[1.5px] border-white/[0.06] bg-neutral-900/40 shadow-2xl"
+                            style={{ width: frameWidth, aspectRatio: aspect }}
+                          >
+                            <video
+                              src={toVideoSrc(videoUrl)}
+                              poster={posterUrl}
+                              className="size-full object-contain"
+                              controls
+                              autoPlay
+                              muted
+                              loop
+                              preload="metadata"
+                              playsInline
+                            >
+                              <img src={posterUrl} alt="Content preview" className="size-full object-contain" />
+                            </video>
                           </div>
                         );
                       })()}
@@ -1009,7 +948,7 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                       {(() => {
                         const aspect = item.aspectRatio?.replace(':', '/') || '1/1';
                         return (
-                          <div className="w-full max-w-[360px] overflow-hidden rounded-lg border bg-neutral-950">
+                          <div className="w-full max-w-[360px] overflow-hidden rounded-[2rem] border-[1.5px] border-white/[0.06] bg-neutral-900/40 shadow-lg">
                             <img src={item.graphicUrls[0]!} alt="Content image" className="w-full object-contain" style={{ aspectRatio: aspect }} />
                           </div>
                         );

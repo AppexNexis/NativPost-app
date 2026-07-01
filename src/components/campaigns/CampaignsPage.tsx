@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { Plus, Calendar, BarChart3, AlertTriangle } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { CampaignWizard } from "@/components/campaigns/CampaignWizard";
 // import { CampaignReviewGrid } from "@/components/campaigns/CampaignReviewGrid";
 import type { Campaign, ContentAngle, SocialAccount } from "@/types/v2";
@@ -14,6 +15,7 @@ interface CampaignsPageProps {
 }
 
 export function CampaignsPage({ campaigns, angles, accounts, influencers }: CampaignsPageProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<"active" | "drafts" | "completed" | "new">("active");
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
 
@@ -44,6 +46,8 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
       }
 
       const { item } = await res.json() as { item: Campaign };
+      // Re-fetch server-provided campaigns list so the new campaign shows up.
+      router.refresh();
       return item;
     } catch (err: any) {
       const message = err.message || "Failed to create campaign";
@@ -71,6 +75,8 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
 
       const result = await res.json() as { totalPosts: number; generatedPosts: number; failedPosts: number };
       console.log("Campaign generation complete:", result);
+      // Re-fetch so generatedPosts/status updates are visible without reload.
+      router.refresh();
     } catch (err: any) {
       const message = err.message || "Failed to generate campaign posts";
       setError(message);
@@ -97,6 +103,8 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
 
       const result = await res.json() as { success: boolean; scheduledPosts: number };
       console.log("Campaign launched:", result);
+      // Re-fetch so status transition (draft/review → active/scheduled) is visible.
+      router.refresh();
     } catch (err: any) {
       const message = err.message || "Failed to launch campaign";
       setError(message);

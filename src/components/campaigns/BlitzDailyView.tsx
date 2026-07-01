@@ -117,6 +117,19 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
     setContentItems((prev) => prev.map((i) => (i.id === itemId ? { ...i, ...data.item } : i)));
   };
 
+  const handleSkip = async (itemId: string) => {
+    const res = await fetch(`/api/content/${itemId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'skipped' }),
+    });
+    if (!res.ok) {
+      setError('Skip failed');
+      return;
+    }
+    setContentItems((prev) => prev.filter((i) => i.id !== itemId));
+  };
+
   const handleScheduleChange = async (itemId: string, date: string, time: string) => {
     const res = await fetch(`/api/campaigns/${campaign.id}/content/${itemId}/schedule`, {
       method: 'PATCH',
@@ -209,6 +222,7 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
           onReRoll={handleReRoll}
           onDelete={handleDelete}
           onApprove={handleApprove}
+          onSkip={handleSkip}
           onScheduleChange={handleScheduleChange}
         />
       )}
@@ -224,8 +238,11 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
           angles: (campaign.angles ?? []) as { angleId: string; weight: number }[],
           mentionFrequency: campaign.mentionFrequency ?? 'sometimes',
           ownMediaMix: campaign.ownMediaMix ?? 50,
+          pinterestPercent: (campaign as any).pinterestPercent ?? 0,
           influencerFrequency: campaign.influencerFrequency ?? 0,
+          enabledInfluencerIds: ((campaign as any).enabledInfluencerIds ?? []) as string[],
           targetAccounts: (campaign.targetAccounts ?? []) as { accountId: string; platform: string }[],
+          genderPreference: campaign.genderPreference ?? 'any',
           postsPerDay: campaign.postsPerDay ?? 3,
           qualityThreshold: campaign.qualityThreshold ?? 0.7,
         }}
