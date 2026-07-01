@@ -87,7 +87,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       </aside>
 
       {/* Mobile header */}
-      <div className="flex flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 items-center justify-between border-b bg-card px-4 lg:px-6">
           <div className="flex items-center gap-2 lg:hidden">
             <Shield className="h-5 w-5 text-primary" />
@@ -157,7 +157,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         </div>
 
         {/* Content Area */}
-        <main className="flex-1 p-4 lg:p-6">{children}</main>
+        <main className="min-w-0 flex-1 overflow-x-hidden p-4 lg:p-6">{children}</main>
       </div>
     </div>
   );

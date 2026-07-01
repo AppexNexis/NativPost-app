@@ -426,8 +426,12 @@ export default function CurationQueue() {
   ]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
-    // hide heavy columns on first load — user can toggle back on
+    // hide heavy/redundant columns on first load — user can toggle back on
     angles: false,
+    niches: false,
+    duration: false,
+    createdAt: false,
+    sourcePlatform: false, // platform icon already shown in preview + creator cells
   });
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 25 });
@@ -461,7 +465,7 @@ export default function CurationQueue() {
     },
     {
       id: 'preview',
-      size: 72,
+      size: 56,
       enableHiding: false,
       enableSorting: false,
       header: () => <span>Preview</span>,
@@ -471,12 +475,12 @@ export default function CurationQueue() {
           <button
             type="button"
             onClick={() => setPreviewTemplate(template)}
-            className="relative block overflow-hidden rounded-md"
+            className="relative block size-10 overflow-hidden rounded-md"
             aria-label="Open preview"
           >
             <PreviewThumbnail template={template} />
             <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition hover:opacity-100">
-              <Play className="size-4 text-white" />
+              <Play className="size-3.5 text-white" />
             </div>
           </button>
         );
@@ -485,12 +489,12 @@ export default function CurationQueue() {
     {
       id: 'sourcePlatform',
       accessorKey: 'sourcePlatform',
-      size: 120,
+      size: 100,
       header: ({ column }) => (
         <SortButton column={column} label="Platform" />
       ),
       cell: ({ row }) => (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
           <PlatformIcon platform={row.original.sourcePlatform} />
           <span className="truncate text-sm">{row.original.sourcePlatform}</span>
         </div>
@@ -499,40 +503,47 @@ export default function CurationQueue() {
     {
       id: 'creator',
       accessorKey: 'creatorName',
-      size: 200,
       header: ({ column }) => <SortButton column={column} label="Creator" />,
-      cell: ({ row }) => (
-        <div className="min-w-0">
-          <button
-            type="button"
-            onClick={() => openDrawer(row.original)}
-            className="block max-w-full truncate font-medium text-primary hover:underline"
-            title={row.original.creatorName}
-          >
-            {row.original.creatorName}
-          </button>
-          <div className="mt-0.5 line-clamp-1 max-w-full text-xs text-muted-foreground">
-            {row.original.sourceUrl}
+      cell: ({ row }) => {
+        const t = row.original;
+        return (
+          <div className="flex min-w-0 items-center gap-2">
+            <PlatformIcon platform={t.sourcePlatform} />
+            <div className="min-w-0 flex-1">
+              <button
+                type="button"
+                onClick={() => openDrawer(t)}
+                className="block w-full truncate text-left text-sm font-medium text-primary hover:underline"
+                title={t.creatorName}
+              >
+                {t.creatorName}
+              </button>
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span className="truncate">{new Date(t.createdAt).toLocaleDateString()}</span>
+                <span>·</span>
+                <span className="tabular-nums">{formatDuration(t.duration)}</span>
+              </div>
+            </div>
           </div>
-        </div>
-      ),
+        );
+      },
     },
     {
       id: 'contentType',
       accessorKey: 'contentType',
-      size: 140,
+      size: 120,
       meta: { className: 'hidden md:table-cell' },
       header: ({ column }) => <SortButton column={column} label="Type" />,
       cell: ({ row }) => <ContentBadge type={row.original.contentType} />,
     },
     {
       id: 'niches',
-      size: 200,
+      size: 160,
       enableSorting: false,
-      meta: { className: 'hidden lg:table-cell' },
+      meta: { className: 'hidden xl:table-cell' },
       header: () => <span>Niches</span>,
       cell: ({ row }) => (
-        <div className="flex max-w-[220px] flex-wrap gap-1">
+        <div className="flex max-w-full flex-wrap gap-1 overflow-hidden">
           {row.original.niches.slice(0, 2).map(n => (
             <Badge key={n} variant="secondary" className="text-xs">
               {n}
@@ -549,12 +560,12 @@ export default function CurationQueue() {
     },
     {
       id: 'angles',
-      size: 200,
+      size: 160,
       enableSorting: false,
       meta: { className: 'hidden xl:table-cell' },
       header: () => <span>Angles</span>,
       cell: ({ row }) => (
-        <div className="flex max-w-[220px] flex-wrap gap-1">
+        <div className="flex max-w-full flex-wrap gap-1 overflow-hidden">
           {row.original.angles.slice(0, 2).map(a => (
             <Badge key={a} variant="outline" className="text-xs">
               {a}
@@ -572,15 +583,15 @@ export default function CurationQueue() {
     {
       id: 'engagementScore',
       accessorFn: row => row.engagementScore ?? -1,
-      size: 120,
-      meta: { className: 'hidden md:table-cell' },
-      header: ({ column }) => <SortButton column={column} label="Engagement" />,
+      size: 100,
+      meta: { className: 'hidden lg:table-cell' },
+      header: ({ column }) => <SortButton column={column} label="Score" />,
       cell: ({ row }) => (
         row.original.engagementScore
           ? (
               <div className="flex items-center gap-1">
                 <TrendingUp className="size-3 text-green-600" />
-                <span className="font-medium">{Math.round(row.original.engagementScore * 100)}</span>
+                <span className="text-sm font-medium">{Math.round(row.original.engagementScore * 100)}</span>
               </div>
             )
           : <span className="text-muted-foreground">—</span>
@@ -589,8 +600,8 @@ export default function CurationQueue() {
     {
       id: 'duration',
       accessorKey: 'duration',
-      size: 100,
-      meta: { className: 'hidden lg:table-cell' },
+      size: 80,
+      meta: { className: 'hidden xl:table-cell' },
       header: ({ column }) => <SortButton column={column} label="Duration" />,
       cell: ({ row }) => (
         <span className="text-sm tabular-nums">{formatDuration(row.original.duration)}</span>
@@ -599,8 +610,8 @@ export default function CurationQueue() {
     {
       id: 'createdAt',
       accessorFn: row => new Date(row.createdAt).getTime(),
-      size: 120,
-      meta: { className: 'hidden md:table-cell' },
+      size: 100,
+      meta: { className: 'hidden xl:table-cell' },
       header: ({ column }) => <SortButton column={column} label="Created" />,
       cell: ({ row }) => (
         <span className="text-xs text-muted-foreground tabular-nums">
@@ -610,7 +621,7 @@ export default function CurationQueue() {
     },
     {
       id: 'actions',
-      size: 100,
+      size: 88,
       enableHiding: false,
       enableSorting: false,
       header: () => <span className="sr-only">Actions</span>,
@@ -781,7 +792,7 @@ export default function CurationQueue() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
+      <div className="min-w-0 space-y-6">
         {/* Header Stats */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Card>
@@ -1032,20 +1043,18 @@ export default function CurationQueue() {
             </div>
 
             {/* Table body */}
-            <div className="w-full overflow-x-auto">
+            <div className="w-full">
               <Table className="w-full table-fixed">
                 <TableHeader className="sticky top-0 z-10 bg-card">
                   {table.getHeaderGroups().map(headerGroup => (
                     <TableRow key={headerGroup.id}>
                       {headerGroup.headers.map((header) => {
                         const metaClass = header.column.columnDef.meta?.className ?? '';
+                        const size = header.column.columnDef.size;
                         return (
                           <TableHead
                             key={header.id}
-                            style={{
-                              width: header.getSize(),
-                              minWidth: header.getSize(),
-                            }}
+                            style={size ? { width: `${size}px` } : undefined}
                             className={`text-xs font-semibold uppercase tracking-wide text-muted-foreground ${metaClass}`}
                           >
                             {header.isPlaceholder
@@ -1093,8 +1102,7 @@ export default function CurationQueue() {
                                 return (
                                   <TableCell
                                     key={cell.id}
-                                    style={{ width: cell.column.getSize() }}
-                                    className={`py-2 align-middle ${metaClass}`}
+                                    className={`overflow-hidden py-2 align-middle ${metaClass}`}
                                   >
                                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                   </TableCell>
