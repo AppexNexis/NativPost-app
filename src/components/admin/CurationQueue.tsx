@@ -358,7 +358,16 @@ export default function CurationQueue() {
       t => t.status === 'rejected' && t.updatedAt.startsWith(today),
     ).length;
     const pending = templates.filter(t => t.status === 'pending').length;
-    return { pending, approvedToday, rejectedToday };
+    const pendingByPlatform = templates.reduce<Record<Platform, number>>(
+      (acc, t) => {
+        if (t.status === 'pending') {
+          acc[t.sourcePlatform] = (acc[t.sourcePlatform] ?? 0) + 1;
+        }
+        return acc;
+      },
+      { TikTok: 0, Instagram: 0, YouTube: 0, Pexels: 0, Unknown: 0 },
+    );
+    return { pending, approvedToday, rejectedToday, pendingByPlatform };
   }, [templates]);
 
   const toggleSelect = (id: string) => {
@@ -490,6 +499,31 @@ export default function CurationQueue() {
             <CardContent>
               <div className="text-2xl font-bold">{stats.pending}</div>
               <p className="text-xs text-muted-foreground">In queue</p>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {(['TikTok', 'Instagram', 'YouTube', 'Pexels'] as Platform[]).map((p) => {
+                  const count = stats.pendingByPlatform[p] ?? 0;
+                  if (count === 0) {
+                    return null;
+                  }
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setFilterPlatform(filterPlatform === p ? 'all' : p)}
+                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition ${
+                        filterPlatform === p
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border text-muted-foreground hover:bg-muted'
+                      }`}
+                    >
+                      <PlatformIcon platform={p} />
+                      {p}
+                      {' '}
+                      <span className="font-semibold">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </CardContent>
           </Card>
           <Card>
@@ -1056,6 +1090,7 @@ function PreviewPlayer({ template }: { template: Template }) {
   const isPlayable = isCloudinaryVideoUrl(mediaUrl) || /\.(mp4|mov|webm|ogg|mkv)(\?.*)?$/i.test(mediaUrl || '');
   const posterUrl = getVideoPosterUrl(template.thumbnailUrl, { width: 608, height: 1080 });
   const videoSrc = isPlayable ? getOptimizedVideoUrl(mediaUrl) : null;
+  const hasAnyMedia = Boolean(template.mediaUrl || template.thumbnailUrl);
 
   if (isPlayable && videoSrc) {
     return (
@@ -1070,12 +1105,35 @@ function PreviewPlayer({ template }: { template: Template }) {
     );
   }
 
+  if (hasAnyMedia) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={posterUrl}
+        alt={template.contentType}
+        className="size-full object-cover"
+      />
+    );
+  }
+
+  // No hosted media — fall back to a link to the original source (e.g. legacy
+  // TikTok scrapes that were stored without media_url/thumbnail_url).
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={posterUrl}
-      alt={template.contentType}
-      className="size-full object-cover"
-    />
+    <div className="flex size-full flex-col items-center justify-center gap-2 p-4 text-center text-white">
+      <PlatformIcon platform={template.sourcePlatform} />
+      <p className="text-xs text-white/70">No hosted preview available.</p>
+      {template.sourceUrl && (
+        <a
+          href={template.sourceUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs font-medium text-white underline underline-offset-2"
+        >
+          Open on
+          {' '}
+          {template.sourcePlatform}
+        </a>
+      )}
+    </div>
   );
 }

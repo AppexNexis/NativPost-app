@@ -219,8 +219,8 @@ export const apifyTikTokProvider: ViralSourceProvider = {
         profileScrapeSections: ['videos'],
         profileSorting: 'latest',
         maxRequestRetries: 3,
-        shouldDownloadVideos: false,
-        shouldDownloadCovers: false,
+        shouldDownloadVideos: true,
+        shouldDownloadCovers: true,
         shouldDownloadSubtitles: false,
         // Enable slideshow image extraction so photo posts import as slideshows
         shouldDownloadSlideshowImages: true,
