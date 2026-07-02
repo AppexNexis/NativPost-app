@@ -15,10 +15,6 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { hydrateTikTokMedia } from '@/lib/template-seed/hydrate-tiktok';
 
-// Backfill can process up to 200 items at ~5-6s each — raise the
-// serverless timeout above Vercel's default 300s ceiling.
-export const maxDuration = 800;
-
 export async function GET(req: NextRequest) {
   if (req.headers.get('authorization') !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
