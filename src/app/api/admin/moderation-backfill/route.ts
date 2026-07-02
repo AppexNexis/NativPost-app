@@ -124,6 +124,21 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Cloudinary SDK throws plain objects like { error: { message, http_code } }
+  // — not Error instances — so a naive String(err) yields "[object Object]".
+  // Extract every plausible shape so backfill diagnostics stay useful.
+  function serializeErr(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    if (typeof err === 'string') return err;
+    if (err && typeof err === 'object') {
+      const anyErr = err as any;
+      if (anyErr.error?.message) return `${anyErr.error.message}${anyErr.error.http_code ? ` (http ${anyErr.error.http_code})` : ''}`;
+      if (anyErr.message) return String(anyErr.message);
+      try { return JSON.stringify(err); } catch { return '[unserializable]'; }
+    }
+    return String(err);
+  }
+
   let queued = 0;
   let failed = 0;
   const details: Array<{ id: string; publicId: string | null; outcome: string; kind?: string; error?: string }> = [];
@@ -172,7 +187,7 @@ export async function POST(req: NextRequest) {
         id: row.id,
         publicId: row.publicId,
         outcome: 'cloudinary-failed',
-        error: err instanceof Error ? err.message : String(err),
+        error: serializeErr(err),
       });
     }
     await sleep(DELAY_BETWEEN_CALLS_MS);
