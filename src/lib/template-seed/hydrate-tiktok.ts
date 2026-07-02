@@ -25,6 +25,7 @@ import { db } from '@/lib/db';
 import { contentTemplateSchema } from '@/models/Schema';
 
 import { configureCloudinary, uploadVideoFromUrl } from './cloudinary';
+import { getModerationForProvider, getModerationWebhookUrl } from './moderation-policy';
 import { resolveTikTokMedia } from './providers/tikwm';
 
 export type HydrateTikTokDeps = {
@@ -145,7 +146,10 @@ export async function hydrateTikTokMedia(
 
     let upload: Awaited<ReturnType<typeof uploadVideoFromUrl>>;
     try {
-      upload = await uploadVideoFromUrl(resolved.playUrl, publicId);
+      upload = await uploadVideoFromUrl(resolved.playUrl, publicId, {
+        moderation: getModerationForProvider('tiktok', 'video'),
+        notificationUrl: getModerationWebhookUrl(),
+      });
     } catch (err) {
       result.failed++;
       result.details.push({
@@ -163,12 +167,33 @@ export async function hydrateTikTokMedia(
     const nextThumbnail =
       upload.thumbnailUrl || resolved.thumbnailUrl || row.thumbnailUrl || '';
 
+    // Gate on moderation status. rejected → deactivate + surface reason.
+    // pending (aws_rek_video is async) → deactivate until webhook flips.
+    // approved / null (moderation disabled) → keep row's existing is_active.
+    const moderationStatus = upload.moderation?.status ?? null;
+    const moderationKind = upload.moderation?.kind ?? null;
+    const isRejected = moderationStatus === 'rejected';
+    const isPending = moderationStatus === 'pending';
+
     try {
       await db
         .update(contentTemplateSchema)
         .set({
           mediaUrl: upload.secureUrl,
           thumbnailUrl: nextThumbnail,
+          cloudinaryPublicId: upload.publicId,
+          moderationStatus,
+          moderationKind,
+          moderationLabels: upload.moderationAll as any,
+          moderationCheckedAt: moderationStatus ? new Date() : null,
+          // Hide rejected + pending rows from the library until the webhook
+          // (or a human) confirms they are safe to deliver.
+          ...(isRejected || isPending
+            ? {
+                isActive: false,
+                curationStatus: isRejected ? 'rejected' : 'pending_moderation',
+              }
+            : {}),
           lastRefreshedAt: new Date(),
         })
         .where(eq(contentTemplateSchema.id, row.id));

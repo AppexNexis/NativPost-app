@@ -19,6 +19,19 @@ export function configureCloudinary(config: CloudinaryConfig) {
   });
 }
 
+/**
+ * ModerationStatus reflects Cloudinary's moderation response for a single
+ * add-on. Video moderation is async — the initial upload returns 'pending'
+ * and the final verdict arrives at the notification_url webhook.
+ */
+export type ModerationStatus = 'approved' | 'rejected' | 'pending' | 'overridden' | null;
+
+export interface ModerationResult {
+  kind: string; // 'aws_rek' | 'aws_rek_video' | 'webpurify' | 'google_video_moderation' | ...
+  status: ModerationStatus;
+  response?: unknown; // raw response.moderation_labels + confidence, when present
+}
+
 export interface UploadResult {
   publicId: string;
   url: string;
@@ -27,11 +40,47 @@ export interface UploadResult {
   durationSeconds: number | null;
   width: number | null;
   height: number | null;
+  /** First moderation verdict from `result.moderation`, if the upload requested any. */
+  moderation: ModerationResult | null;
+  /** All moderation verdicts, in the order Cloudinary returned them. */
+  moderationAll: ModerationResult[];
+}
+
+export interface UploadOptions {
+  /**
+   * Cloudinary moderation add-on(s) to run on this upload. Examples:
+   *   'aws_rek_video'                    — AWS Rekognition video moderation
+   *   'aws_rek'                          — AWS Rekognition image moderation
+   *   'webpurify'                        — WebPurify image moderation
+   *   'aws_rek_video|webpurify'          — multi-moderation pipeline
+   *
+   * When unset, Cloudinary skips moderation entirely (unless the upload preset
+   * has moderation configured).
+   */
+  moderation?: string;
+  /**
+   * URL Cloudinary POSTs async moderation results to. REQUIRED for video
+   * moderation since AWS Rekognition Video is not synchronous — the upload
+   * response contains status='pending' until the webhook fires.
+   */
+  notificationUrl?: string;
+}
+
+function normalizeModeration(raw: unknown): ModerationResult[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((m): m is Record<string, unknown> => typeof m === 'object' && m !== null)
+    .map((m) => ({
+      kind: String(m.kind ?? ''),
+      status: (m.status as ModerationStatus) ?? null,
+      response: m.response,
+    }));
 }
 
 export async function uploadVideoFromUrl(
   sourceUrl: string,
   publicId: string,
+  options: UploadOptions = {},
 ): Promise<UploadResult> {
   const result = await cloudinary.uploader.upload(sourceUrl, {
     resource_type: 'video',
@@ -42,7 +91,11 @@ export async function uploadVideoFromUrl(
       { width: 720, height: 1280, crop: 'limit', format: 'mp4' },
     ],
     eager_async: false,
+    ...(options.moderation ? { moderation: options.moderation } : {}),
+    ...(options.notificationUrl ? { notification_url: options.notificationUrl } : {}),
   });
+
+  const moderationAll = normalizeModeration((result as any).moderation);
 
   return {
     publicId: result.public_id as string,
@@ -52,19 +105,26 @@ export async function uploadVideoFromUrl(
     durationSeconds: result.duration ? Number(result.duration) : null,
     width: result.width ? Number(result.width) : null,
     height: result.height ? Number(result.height) : null,
+    moderation: moderationAll[0] ?? null,
+    moderationAll,
   };
 }
 
 export async function uploadImageFromUrl(
   sourceUrl: string,
   publicId: string,
+  options: UploadOptions = {},
 ): Promise<UploadResult> {
   const result = await cloudinary.uploader.upload(sourceUrl, {
     resource_type: 'image',
     public_id: publicId,
     folder: 'nativpost/templates',
     overwrite: true,
+    ...(options.moderation ? { moderation: options.moderation } : {}),
+    ...(options.notificationUrl ? { notification_url: options.notificationUrl } : {}),
   });
+
+  const moderationAll = normalizeModeration((result as any).moderation);
 
   return {
     publicId: result.public_id as string,
@@ -74,7 +134,29 @@ export async function uploadImageFromUrl(
     durationSeconds: null,
     width: result.width ? Number(result.width) : null,
     height: result.height ? Number(result.height) : null,
+    moderation: moderationAll[0] ?? null,
+    moderationAll,
   };
+}
+
+/**
+ * Re-moderate an already-uploaded asset via the explicit API.
+ * Used for backfilling existing content_template rows uploaded before
+ * moderation was wired into the ingestion pipeline.
+ */
+export async function moderateExistingAsset(
+  publicId: string,
+  resourceType: 'image' | 'video',
+  moderation: string,
+  notificationUrl?: string,
+): Promise<ModerationResult[]> {
+  const result = await cloudinary.uploader.explicit(publicId, {
+    type: 'upload',
+    resource_type: resourceType,
+    moderation,
+    ...(notificationUrl ? { notification_url: notificationUrl } : {}),
+  });
+  return normalizeModeration((result as any).moderation);
 }
 
 export function getThumbnailUrl(publicId: string, width = 400): string {

@@ -168,35 +168,60 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ seeded: 0, errors }, { status: 200 });
     }
 
-    const values = templates.map(t => ({
-      sourceUrl: t.sourceUrl,
-      sourcePlatform: t.sourcePlatform,
-      sourceCreator: t.sourceCreator,
-      sourceVideoId: t.sourceVideoId,
-      sourcePostId: t.sourcePostId,
-      mediaUrl: t.mediaUrl,
-      thumbnailUrl: t.thumbnailUrl,
-      thumbnailUrls: Array.isArray(t.thumbnailUrls) ? t.thumbnailUrls : {},
-      slideCaptions: Array.isArray(t.slideCaptions) ? t.slideCaptions : {},
-      durationSeconds: t.durationSeconds,
-      contentType: t.contentType,
-      niches: t.niches,
-      angles: t.angles,
-      structure: t.structure,
-      engagementScore: t.engagementScore,
-      viewCount: t.viewCount,
-      likeCount: t.likeCount,
-      shareCount: null,
-      commentCount: null,
-      curationStatus: 'pending' as const,
-      curatedBy: null,
-      curatedAt: null,
-      remixCount: 0,
-      publishCount: 0,
-      avgRemixPerformance: null,
-      isActive: true,
-      trainingUsed: false,
-    }));
+    // Drop moderation-rejected uploads entirely — Cloudinary won't deliver
+    // them and keeping them just risks re-upload and further AUP strikes.
+    const safe = templates.filter((t) => t.cloudinary?.moderation?.status !== 'rejected');
+    const droppedByModeration = templates.length - safe.length;
+    if (droppedByModeration > 0) {
+      console.warn(`[admin/seed] moderation rejected ${droppedByModeration}/${templates.length} items`);
+    }
+
+    const values = safe.map((t) => {
+      const moderationStatus = t.cloudinary?.moderation?.status ?? null;
+      const moderationKind = t.cloudinary?.moderation?.kind ?? null;
+      const isModerationApproved = moderationStatus === 'approved';
+      // Sync-approved (aws_rek on images) → live.
+      // Async-pending (aws_rek_video) → hidden until webhook flips.
+      // No moderation run (skipUpload / add-on unset) → keep live for backward compat.
+      const isActive = moderationStatus === null ? true : isModerationApproved;
+      const curationStatus = moderationStatus === 'pending'
+        ? 'pending_moderation'
+        : ('pending' as const);
+      return {
+        sourceUrl: t.sourceUrl,
+        sourcePlatform: t.sourcePlatform,
+        sourceCreator: t.sourceCreator,
+        sourceVideoId: t.sourceVideoId,
+        sourcePostId: t.sourcePostId,
+        mediaUrl: t.mediaUrl,
+        thumbnailUrl: t.thumbnailUrl,
+        thumbnailUrls: Array.isArray(t.thumbnailUrls) ? t.thumbnailUrls : {},
+        slideCaptions: Array.isArray(t.slideCaptions) ? t.slideCaptions : {},
+        durationSeconds: t.durationSeconds,
+        contentType: t.contentType,
+        niches: t.niches,
+        angles: t.angles,
+        structure: t.structure,
+        engagementScore: t.engagementScore,
+        viewCount: t.viewCount,
+        likeCount: t.likeCount,
+        shareCount: null,
+        commentCount: null,
+        curationStatus,
+        curatedBy: null,
+        curatedAt: null,
+        remixCount: 0,
+        publishCount: 0,
+        avgRemixPerformance: null,
+        isActive,
+        trainingUsed: false,
+        cloudinaryPublicId: t.cloudinary?.publicId ?? null,
+        moderationStatus,
+        moderationKind,
+        moderationLabels: (t.cloudinary?.moderationAll ?? []) as any,
+        moderationCheckedAt: moderationStatus ? new Date() : null,
+      };
+    });
 
     const inserted = await db
       .insert(contentTemplateSchema)
@@ -205,7 +230,7 @@ export async function POST(req: NextRequest) {
       .returning({ id: contentTemplateSchema.id });
 
     return NextResponse.json(
-      { seeded: inserted.length, errors },
+      { seeded: inserted.length, moderationRejected: droppedByModeration, errors },
       { status: 200 },
     );
   } catch (err) {

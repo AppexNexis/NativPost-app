@@ -8,6 +8,7 @@
 
 import { enrichTemplateWithAI } from './ai';
 import { configureCloudinary, type UploadResult, uploadVideoFromUrl } from './cloudinary';
+import { getModerationForProvider, getModerationWebhookUrl } from './moderation-policy';
 import { type ApifyInstagramOptions, apifyInstagramProvider } from './providers/apify-instagram';
 // import { tiktokResearchProvider, type TikTokResearchOptions } from './providers/tiktok-research';
 // import { instagramProvider, type InstagramOptions } from './providers/instagram';
@@ -218,7 +219,10 @@ async function uploadToCloudinary(
         const publicId = sanitizePublicId(
           `pexels_${template.sourceVideoId}_${Date.now()}`,
         );
-        const result = await uploadVideoFromUrl(template.mediaUrl!, publicId);
+        const result = await uploadVideoFromUrl(template.mediaUrl!, publicId, {
+          moderation: getModerationForProvider(template.sourcePlatform, 'video'),
+          notificationUrl: getModerationWebhookUrl(),
+        });
         options.onProgress?.(`Uploaded ${index + 1}/${uploadable.length}: ${publicId}`);
         return { template, result };
       } catch (err) {

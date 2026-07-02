@@ -3,6 +3,7 @@ import { apifySeedRunSchema, contentTemplateSchema } from './../../../models/Sch
 import { eq } from 'drizzle-orm';
 import { enrichTemplateWithAI } from '../ai';
 import { configureCloudinary, uploadVideoFromUrl } from '../cloudinary';
+import { getModerationForProvider, getModerationWebhookUrl } from '../moderation-policy';
 import { DEFAULT_USERNAMES as IG_DEFAULT_USERNAMES } from './apify-instagram';
 import { DEFAULT_USERNAMES as TT_DEFAULT_USERNAMES } from './apify-tiktok';
 import type { RawTemplate } from '../types';
@@ -208,24 +209,67 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
 
     if (deps.cloudinary) configureCloudinary(deps.cloudinary);
 
+    // Cloudinary moderation config for this provider. TikTok/IG get the
+    // strictest policy (aws_rek_video); Pexels a lighter one. See
+    // ../moderation-policy.ts.
+    const moderationParam = getModerationForProvider(run.provider, 'video');
+    const notificationUrl = getModerationWebhookUrl();
+
     let inserted = 0;
+    let rejected = 0;
     for (const raw of rawTemplates) {
       try {
         const enriched = await enrichTemplateWithAI(raw, deps.anthropicApiKey);
 
         let mediaUrl = enriched.mediaUrl;
         let thumbnailUrl = enriched.thumbnailUrl;
+        let cloudinaryPublicId: string | null = null;
+        let moderationStatus: string | null = null;
+        let moderationKind: string | null = null;
+        let moderationLabels: unknown = [];
 
         if (deps.cloudinary && mediaUrl) {
           const publicId = sanitizePublicId(`${run.provider}_${raw.sourceVideoId}_${Date.now()}`);
           try {
-            const upload = await uploadVideoFromUrl(mediaUrl, publicId);
+            const upload = await uploadVideoFromUrl(mediaUrl, publicId, {
+              moderation: moderationParam,
+              notificationUrl,
+            });
             mediaUrl = upload.secureUrl;
             thumbnailUrl = upload.thumbnailUrl ?? thumbnailUrl;
-          } catch {
-            // keep original media/thumbnail URLs on upload failure
+            cloudinaryPublicId = upload.publicId;
+            moderationStatus = upload.moderation?.status ?? null;
+            moderationKind = upload.moderation?.kind ?? null;
+            moderationLabels = upload.moderationAll;
+          } catch (err) {
+            // keep original media/thumbnail URLs on upload failure — do not
+            // silently insert as approved though; mark it pending so the row
+            // stays hidden until a human reviews or the hydrator retries.
+            console.error(`[ApifyAsync/${run.provider}] upload failed:`, err);
+            moderationStatus = 'pending';
           }
         }
+
+        // Reject → skip DB entirely. Cloudinary already refuses to deliver
+        // rejected assets; storing them just risks re-upload and further AUP
+        // strikes if a future backfill re-touches them.
+        if (moderationStatus === 'rejected') {
+          rejected++;
+          console.warn(
+            `[ApifyAsync/${run.provider}] rejected by ${moderationKind}: ${raw.sourceUrl}`,
+          );
+          continue;
+        }
+
+        // Approved (sync moderation, e.g. aws_rek on images) → visible.
+        // Pending (async, e.g. aws_rek_video) → hidden until the webhook
+        // flips it. Missing (moderation disabled/failed) → conservative:
+        // treat like pending so we never silently expose un-moderated media.
+        const isModerationApproved = moderationStatus === 'approved';
+        const insertActive = isModerationApproved;
+        const insertCurationStatus = isModerationApproved
+          ? ((run.params as any)?.curationStatus ?? 'pending')
+          : 'pending_moderation';
 
         await db.insert(contentTemplateSchema)
           .values({
@@ -244,13 +288,27 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
             likeCount: (enriched as any).likeCount,
             shareCount: (enriched as any).shareCount,
             commentCount: (enriched as any).commentCount,
-            curationStatus: (run.params as any)?.curationStatus ?? 'pending',
+            curationStatus: insertCurationStatus,
+            isActive: insertActive,
+            cloudinaryPublicId,
+            moderationStatus,
+            moderationKind,
+            moderationLabels: moderationLabels as any,
+            moderationCheckedAt: moderationStatus ? new Date() : null,
           })
           .onConflictDoUpdate({
             target: contentTemplateSchema.sourceUrl,
             set: {
               mediaUrl,
               thumbnailUrl: thumbnailUrl ?? '',
+              cloudinaryPublicId,
+              moderationStatus,
+              moderationKind,
+              moderationLabels: moderationLabels as any,
+              moderationCheckedAt: moderationStatus ? new Date() : null,
+              // If moderation is pending on a re-ingested row, hide it again
+              // until the webhook re-confirms.
+              isActive: insertActive,
               lastRefreshedAt: new Date(),
             },
           });
@@ -258,6 +316,11 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
       } catch (err) {
         console.error(`[ApifyAsync/${run.provider}] item failed:`, err);
       }
+    }
+    if (rejected > 0) {
+      console.warn(
+        `[ApifyAsync/${run.provider}] moderation rejected ${rejected}/${rawTemplates.length} items`,
+      );
     }
 
     await db.update(apifySeedRunSchema)

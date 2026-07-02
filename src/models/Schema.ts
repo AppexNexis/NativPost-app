@@ -511,6 +511,20 @@ export const contentTemplateSchema = pgTable(
     curationStatus: text('curation_status').default('pending'),
     curatedBy: text('curated_by'),
     curatedAt: timestamp('curated_at', { mode: 'date' }),
+    // Cloudinary public_id — required to run explicit-API re-moderation and to
+    // match webhook notifications back to a template row.
+    cloudinaryPublicId: text('cloudinary_public_id'),
+    // Latest Cloudinary moderation verdict. Nullable because pre-moderation
+    // rows exist (backfill will fill them in).
+    // Values: 'approved' | 'rejected' | 'pending' | 'overridden'
+    moderationStatus: text('moderation_status'),
+    // Add-on that produced the current verdict: 'aws_rek' | 'aws_rek_video' |
+    // 'webpurify' | 'google_video_moderation' | 'manual' | ...
+    moderationKind: text('moderation_kind'),
+    // Raw labels + confidence scores from the moderation provider, useful for
+    // debugging false positives.
+    moderationLabels: jsonb('moderation_labels').default([]),
+    moderationCheckedAt: timestamp('moderation_checked_at', { mode: 'date' }),
     remixCount: integer('remix_count').default(0),
     publishCount: integer('publish_count').default(0),
     avgRemixPerformance: real('avg_remix_performance'),

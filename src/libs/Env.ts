@@ -14,6 +14,11 @@ export const Env = createEnv({
     // Optional — middleware fails closed (denies all admin access) if unset.
     // Set in Vercel env vars. Never hardcode the value.
     NATIVPOST_TEAM_ORG_ID: z.string().min(1).optional(),
+    // Optional. When set, uploads in the seed pipeline pass this URL to
+    // Cloudinary as `notification_url` so async video-moderation verdicts
+    // POST back to /api/webhooks/cloudinary-moderation.
+    // Format: https://<prod-host>/api/webhooks/cloudinary-moderation
+    CLOUDINARY_MODERATION_WEBHOOK: z.string().url().optional(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().optional(),
@@ -36,6 +41,7 @@ export const Env = createEnv({
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     NATIVPOST_TEAM_ORG_ID: process.env.NATIVPOST_TEAM_ORG_ID,
+    CLOUDINARY_MODERATION_WEBHOOK: process.env.CLOUDINARY_MODERATION_WEBHOOK,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
     NEXT_PUBLIC_CLERK_SIGN_IN_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL,

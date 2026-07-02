@@ -116,34 +116,56 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 6. Map elements to table schema mapping
-    const values = seeded.map((t) => ({
-      sourceUrl: t.sourceUrl,
-      sourcePlatform: t.sourcePlatform,
-      sourceCreator: t.sourceCreator,
-      sourceVideoId: t.sourceVideoId,
-      mediaUrl: t.mediaUrl,
-      thumbnailUrl: t.thumbnailUrl,
-      thumbnailUrls: {},
-      durationSeconds: t.durationSeconds,
-      contentType: t.contentType,
-      niches: t.niches,
-      angles: t.angles,
-      structure: t.structure,
-      engagementScore: t.engagementScore,
-      viewCount: t.viewCount,
-      likeCount: t.likeCount,
-      shareCount: null,
-      commentCount: null,
-      curationStatus: autoApprove ? 'approved' : 'pending',
-      curatedBy: autoApprove ? 'automated-cron' : null,
-      curatedAt: autoApprove ? new Date() : null,
-      remixCount: 0,
-      publishCount: 0,
-      avgRemixPerformance: null,
-      isActive: true,
-      trainingUsed: false,
-    }));
+    // 6. Filter moderation-rejected uploads and map to schema.
+    const safeSeeded = seeded.filter((t) => t.cloudinary?.moderation?.status !== 'rejected');
+    const moderationRejected = seeded.length - safeSeeded.length;
+    if (moderationRejected > 0) {
+      console.warn(`[Cron Seed Pipeline] moderation rejected ${moderationRejected}/${seeded.length} items`);
+    }
+
+    const values = safeSeeded.map((t) => {
+      const moderationStatus = t.cloudinary?.moderation?.status ?? null;
+      const moderationKind = t.cloudinary?.moderation?.kind ?? null;
+      const isModerationApproved = moderationStatus === 'approved';
+      // Auto-approval only applies if moderation cleared. Async-pending video
+      // moderation hides the row until the webhook flips it.
+      const isActive = moderationStatus === null ? true : isModerationApproved;
+      const curationStatus = moderationStatus === 'pending'
+        ? 'pending_moderation'
+        : (autoApprove && isActive ? 'approved' : 'pending');
+      return {
+        sourceUrl: t.sourceUrl,
+        sourcePlatform: t.sourcePlatform,
+        sourceCreator: t.sourceCreator,
+        sourceVideoId: t.sourceVideoId,
+        mediaUrl: t.mediaUrl,
+        thumbnailUrl: t.thumbnailUrl,
+        thumbnailUrls: {},
+        durationSeconds: t.durationSeconds,
+        contentType: t.contentType,
+        niches: t.niches,
+        angles: t.angles,
+        structure: t.structure,
+        engagementScore: t.engagementScore,
+        viewCount: t.viewCount,
+        likeCount: t.likeCount,
+        shareCount: null,
+        commentCount: null,
+        curationStatus,
+        curatedBy: autoApprove && isActive ? 'automated-cron' : null,
+        curatedAt: autoApprove && isActive ? new Date() : null,
+        remixCount: 0,
+        publishCount: 0,
+        avgRemixPerformance: null,
+        isActive,
+        trainingUsed: false,
+        cloudinaryPublicId: t.cloudinary?.publicId ?? null,
+        moderationStatus,
+        moderationKind,
+        moderationLabels: (t.cloudinary?.moderationAll ?? []) as any,
+        moderationCheckedAt: moderationStatus ? new Date() : null,
+      };
+    });
 
     // 7. Persist records inside database instance via transactional upsert mechanics
     const inserted = await db
@@ -159,6 +181,7 @@ export async function GET(request: NextRequest) {
       scraped: seeded.length,
       rawCount,
       inserted: inserted.length,
+      moderationRejected,
       status: autoApprove ? 'approved' : 'pending',
       nextOffset,
       errors: pipelineErrors.length ? pipelineErrors : undefined,
