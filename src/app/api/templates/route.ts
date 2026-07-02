@@ -16,6 +16,9 @@ export const dynamic = 'force-dynamic';
 function serializeTemplate(item: typeof contentTemplateSchema.$inferSelect): ContentTemplate {
   return {
     ...item,
+    // content_template has no aspect_ratio column; templates are 9:16 by
+    // convention. Surface as null so the frontend type stays satisfied.
+    aspectRatio: null,
     sourcePlatform: item.sourcePlatform as ContentTemplate['sourcePlatform'],
     contentType: item.contentType as ContentTemplate['contentType'],
     niches: (item.niches ?? []) as ContentTemplate['niches'],
