@@ -169,6 +169,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (body.enrichmentApplied !== undefined) {
       updates.enrichmentApplied = body.enrichmentApplied;
     }
+    if (body.aspectRatio !== undefined) {
+      const validAspectRatios = ['9:16', '16:9', '1:1', '4:5', '3:4', '2:3'];
+      if (body.aspectRatio === null || validAspectRatios.includes(body.aspectRatio)) {
+        updates.aspectRatio = body.aspectRatio;
+      } else {
+        return NextResponse.json(
+          { error: `aspectRatio must be one of ${validAspectRatios.join(', ')}` },
+          { status: 400 },
+        );
+      }
+    }
 
     const [updated] = await db
       .update(contentItemSchema)

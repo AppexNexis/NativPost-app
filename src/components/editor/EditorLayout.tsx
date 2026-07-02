@@ -106,6 +106,7 @@ export function EditorLayout({
     if (state.edit?.contentItemId) {
       const updateBody: Record<string, any> = { enrichmentData };
       if (compiledVideoUrl) updateBody.graphicUrls = [compiledVideoUrl];
+      if (state.aspectRatio) updateBody.aspectRatio = state.aspectRatio;
 
       const patchRes = await fetch(`/api/content/${state.edit.contentItemId}`, {
         method: 'PATCH',
