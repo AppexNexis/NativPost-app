@@ -298,7 +298,15 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
     .from(apifySeedRunSchema)
     .where(eq(apifySeedRunSchema.status, 'pending'));
 
-  const results: Array<{ runId: string; outcome: string; fetched?: number; inserted?: number; remaining?: number }> = [];
+  const results: Array<{
+    runId: string;
+    outcome: string;
+    fetched?: number;
+    inserted?: number;
+    remaining?: number;
+    skippedExisting?: number;
+    rejected?: number;
+  }> = [];
 
   // Vercel Hobby caps functions at 300s. Each Cloudinary upload takes
   // ~2-3s (image) or ~10-15s (video sync transcode). An IG carousel with
@@ -631,7 +639,17 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
       })
       .where(eq(apifySeedRunSchema.id, run.id));
 
-    results.push({ runId: run.id, outcome: 'processed', fetched: rawTemplates.length, inserted });
+    // Include skippedExisting + rejected so the caller can distinguish
+    // "0 inserted because all items were already in DB (dedup)" from
+    // "0 inserted because AI rejected them" or upload failures.
+    results.push({
+      runId: run.id,
+      outcome: 'processed',
+      fetched: rawTemplates.length,
+      inserted,
+      skippedExisting,
+      rejected,
+    });
   }
 
   return results;
