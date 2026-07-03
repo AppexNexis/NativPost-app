@@ -306,6 +306,9 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
     remaining?: number;
     skippedExisting?: number;
     rejected?: number;
+    noSlideUrls?: number;
+    uploadFailed?: number;
+    errored?: number;
   }> = [];
 
   // Vercel Hobby caps functions at 300s. Each Cloudinary upload takes
@@ -404,6 +407,9 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
     let inserted = 0;
     let rejected = 0;
     let skippedExisting = 0;
+    let noSlideUrls = 0;
+    let uploadFailedCount = 0;
+    let errored = 0;
     let hitCap = false;
     for (const raw of rawTemplates) {
       // Resume-safe: repeat /process invocations re-fetch the same Apify
@@ -446,8 +452,9 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
 
           if (slideUrls.length === 0) {
             console.warn(
-              `[ApifyAsync/${run.provider}] no slide URLs for videoId=${raw.sourceVideoId} — skipping`,
+              `[ApifyAsync/${run.provider}] no slide URLs for videoId=${raw.sourceVideoId} — enriched.thumbnailUrls type=${typeof enriched.thumbnailUrls} isArray=${Array.isArray(enriched.thumbnailUrls)} rawLen=${rawSlides.length}`,
             );
+            noSlideUrls++;
             continue;
           }
 
@@ -500,6 +507,7 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
           } else if (uploadFailed) {
             // No slides uploaded — skip DB write entirely so we don't store
             // a slideshow row pointing at raw TikTok CDN URLs (they expire).
+            uploadFailedCount++;
             continue;
           }
         } else if (deps.cloudinary && mediaUrl) {
@@ -604,6 +612,7 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
         inserted++;
         totalProcessedThisInvocation++;
       } catch (err) {
+        errored++;
         console.error(`[ApifyAsync/${run.provider}] item failed:`, err);
       }
     }
@@ -639,9 +648,9 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
       })
       .where(eq(apifySeedRunSchema.id, run.id));
 
-    // Include skippedExisting + rejected so the caller can distinguish
-    // "0 inserted because all items were already in DB (dedup)" from
-    // "0 inserted because AI rejected them" or upload failures.
+    // Include every silent-drop counter so a "0 inserted" result is
+    // self-explaining: dedup vs AI-reject vs empty-slides vs upload-fail
+    // vs thrown-error are all now visible.
     results.push({
       runId: run.id,
       outcome: 'processed',
@@ -649,6 +658,9 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
       inserted,
       skippedExisting,
       rejected,
+      noSlideUrls,
+      uploadFailed: uploadFailedCount,
+      errored,
     });
   }
 
