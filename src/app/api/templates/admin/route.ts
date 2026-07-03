@@ -6,6 +6,8 @@ import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { contentTemplateSchema } from '@/models/Schema';
 
+export const dynamic = 'force-dynamic';
+
 const ADMIN_ORG_ID = process.env.NATIVPOST_TEAM_ORG_ID;
 
 function forbidden(message: string) {
@@ -113,6 +115,7 @@ export async function POST(request: NextRequest) {
         curationStatus: status,
         curatedBy: reviewedBy ?? userId ?? 'admin',
         curatedAt: now,
+        isActive: status === 'approved',
         updatedAt: now,
       })
       .where(inArray(contentTemplateSchema.id, ids))

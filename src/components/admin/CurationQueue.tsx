@@ -359,6 +359,7 @@ export default function CurationQueue() {
       for (let page = 0; page < 20; page++) {
         const res = await fetch(
           `/api/templates/admin?status=pending&limit=${pageSize}&offset=${offset}`,
+          { cache: 'no-store' },
         );
         if (!res.ok) {
           throw new Error('Failed to load queue');
