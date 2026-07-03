@@ -77,6 +77,22 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
+// Cloudinary SDK throws plain objects like { error: { message, http_code } } —
+// not Error instances — so naive String(err) yields "[object Object]".
+// Unwrap every plausible shape so failure diagnostics stay useful.
+function formatCloudinaryError(err: unknown): string {
+  if (err && typeof err === 'object') {
+    const e = err as any;
+    if (e.error?.message) {
+      return e.error.http_code
+        ? `${e.error.message} (${e.error.http_code})`
+        : e.error.message;
+    }
+    if (e.message) return String(e.message);
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
 export async function hydrateTikTokMedia(
   deps: HydrateTikTokDeps,
 ): Promise<HydrateTikTokResult> {
@@ -98,6 +114,10 @@ export async function hydrateTikTokMedia(
     .where(
       and(
         eq(contentTemplateSchema.sourcePlatform, 'tiktok'),
+        // Slideshows have no video to hydrate — their media pipeline runs
+        // per-slide inside processPendingApifyRuns. Exclude them so we don't
+        // waste TikWM calls (which don't resolve /photo/ URLs anyway).
+        sql`${contentTemplateSchema.contentType} != 'slideshow'`,
         or(
           isNull(contentTemplateSchema.mediaUrl),
           sql`${contentTemplateSchema.mediaUrl} = ''`,
@@ -156,7 +176,7 @@ export async function hydrateTikTokMedia(
         templateId: row.id,
         sourceUrl: row.sourceUrl,
         outcome: 'cloudinary-failed',
-        error: err instanceof Error ? err.message : String(err),
+        error: formatCloudinaryError(err),
       });
       await sleep(delayMs);
       continue;
@@ -203,7 +223,7 @@ export async function hydrateTikTokMedia(
         templateId: row.id,
         sourceUrl: row.sourceUrl,
         outcome: 'db-failed',
-        error: err instanceof Error ? err.message : String(err),
+        error: formatCloudinaryError(err),
       });
       await sleep(delayMs);
       continue;

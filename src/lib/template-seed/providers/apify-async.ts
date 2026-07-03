@@ -200,6 +200,22 @@ function sanitizePublicId(input: string): string {
   return input.toLowerCase().replace(/[^a-z0-9_.\-/]/g, '_').replace(/_{2,}/g, '_').slice(0, 120);
 }
 
+// Cloudinary SDK throws plain objects like { error: { message, http_code } } —
+// not Error instances — so naive String(err) yields "[object Object]".
+// Unwrap every plausible shape so failure diagnostics stay useful.
+function formatCloudinaryError(err: unknown): string {
+  if (err && typeof err === 'object') {
+    const e = err as any;
+    if (e.error?.message) {
+      return e.error.http_code
+        ? `${e.error.message} (${e.error.http_code})`
+        : e.error.message;
+    }
+    if (e.message) return String(e.message);
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
 type ProcessDeps = {
   apifyToken: string;
   anthropicApiKey: string;
@@ -341,8 +357,7 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
               }
             } catch (err) {
               console.error(
-                `[ApifyAsync/${run.provider}] slide upload failed (${i + 1}/${slideUrls.length}):`,
-                err,
+                `[ApifyAsync/${run.provider}] slide upload failed (${i + 1}/${slideUrls.length}): ${formatCloudinaryError(err)}`,
               );
               uploadFailed = true;
               moderationStatus = 'pending';
@@ -378,7 +393,7 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
             // keep original media/thumbnail URLs on upload failure — do not
             // silently insert as approved though; mark it pending so the row
             // stays hidden until a human reviews or the hydrator retries.
-            console.error(`[ApifyAsync/${run.provider}] upload failed:`, err);
+            console.error(`[ApifyAsync/${run.provider}] upload failed: ${formatCloudinaryError(err)}`);
             moderationStatus = 'pending';
           }
         }
