@@ -1,7 +1,7 @@
 'use client';
 
-import { Eye, Heart, Images, Play } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Eye, Heart, Images, Play } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { getOptimizedVideoUrl, getVideoPosterUrl, isCloudinaryVideoUrl } from '@/lib/cloudinary';
 import type { ContentTemplate } from '@/types/v2';
@@ -21,12 +21,52 @@ export function TemplateCard({ template, onRemix }: TemplateCardProps) {
 
   const mediaUrl = template.mediaUrl || template.thumbnailUrl;
   const isPlayable = isCloudinaryVideoUrl(mediaUrl) || isDirectVideoFile(mediaUrl);
-  const posterUrl = getVideoPosterUrl(template.thumbnailUrl, { width: 608, height: 1080 });
   const videoSrc = isPlayable ? getOptimizedVideoUrl(mediaUrl) : null;
 
-  const slideCount = Array.isArray(template.thumbnailUrls)
-    ? template.thumbnailUrls.length
-    : Object.keys(template.thumbnailUrls ?? {}).length;
+  // Normalize thumbnailUrls (Record<string,string> | string[]) into an ordered
+  // slide array so we can page through carousel slides. Numeric-keyed records
+  // (e.g. { "0": url, "1": url }) are sorted by key so slide order matches
+  // upload order — string keys fall back to insertion order.
+  const slides = useMemo(() => {
+    const urls = template.thumbnailUrls;
+    if (Array.isArray(urls)) {
+      return urls.filter((u): u is string => typeof u === 'string' && u.length > 0);
+    }
+    if (urls && typeof urls === 'object') {
+      const keys = Object.keys(urls);
+      const allNumeric = keys.every(k => /^\d+$/.test(k));
+      const orderedKeys = allNumeric ? keys.sort((a, b) => Number(a) - Number(b)) : keys;
+      return orderedKeys
+        .map(k => (urls as Record<string, string>)[k])
+        .filter((u): u is string => typeof u === 'string' && u.length > 0);
+    }
+    return [];
+  }, [template.thumbnailUrls]);
+
+  const slideCount = slides.length;
+  // Only enable carousel navigation for multi-slide, non-video content.
+  // Playable videos keep the hover-to-play behavior instead.
+  const isCarousel = !isPlayable && slideCount > 1;
+  const [activeSlide, setActiveSlide] = useState(0);
+
+  // Preserve original single-poster behavior for videos + single-image posts.
+  const singlePosterUrl = getVideoPosterUrl(template.thumbnailUrl, { width: 608, height: 1080 });
+  const carouselSlideUrl = isCarousel
+    ? getVideoPosterUrl(slides[activeSlide] ?? template.thumbnailUrl, {
+        width: 608,
+        height: 1080,
+      })
+    : singlePosterUrl;
+  const posterUrl = isCarousel ? carouselSlideUrl : singlePosterUrl;
+
+  const goPrev = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActiveSlide(s => (s - 1 + slideCount) % slideCount);
+  };
+  const goNext = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActiveSlide(s => (s + 1) % slideCount);
+  };
 
   useEffect(() => {
     const video = videoRef.current;
@@ -46,6 +86,12 @@ export function TemplateCard({ template, onRemix }: TemplateCardProps) {
       video.pause();
     }
   }, [isHovered, isPlayable]);
+
+  // Reset the broken-image flag when the active slide changes so one bad
+  // slide doesn't hide all subsequent ones.
+  useEffect(() => {
+    setImageError(false);
+  }, [activeSlide]);
 
   return (
     <div
@@ -70,12 +116,50 @@ export function TemplateCard({ template, onRemix }: TemplateCardProps) {
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
+            key={isCarousel ? `slide-${activeSlide}` : 'single'}
             src={imageError ? undefined : posterUrl}
             alt={template.contentType}
             className="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover:scale-105"
             loading="lazy"
             onError={() => setImageError(true)}
           />
+        )}
+
+        {/* Carousel navigation — only for multi-slide, non-video content. */}
+        {isCarousel && (
+          <>
+            <button
+              type="button"
+              aria-label="Previous slide"
+              onClick={goPrev}
+              className="absolute left-2 top-1/2 z-10 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white opacity-0 backdrop-blur-sm transition-opacity duration-200 hover:bg-black/70 group-hover:opacity-100"
+            >
+              <ChevronLeft className="size-4" />
+            </button>
+            <button
+              type="button"
+              aria-label="Next slide"
+              onClick={goNext}
+              className="absolute right-2 top-1/2 z-10 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white opacity-0 backdrop-blur-sm transition-opacity duration-200 hover:bg-black/70 group-hover:opacity-100"
+            >
+              <ChevronRight className="size-4" />
+            </button>
+
+            {/* Slide indicator dots — pointer-events-none so clicks on
+                dots don't steal focus from the underlying tile. */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-12 z-[5] flex justify-center gap-1">
+              {slides.map((_, idx) => (
+                <span
+                  key={idx}
+                  className={`h-1.5 rounded-full transition-all duration-200 ${
+                    idx === activeSlide
+                      ? 'w-4 bg-white'
+                      : 'w-1.5 bg-white/50'
+                  }`}
+                />
+              ))}
+            </div>
+          </>
         )}
 
         {/* Top overlay row */}
