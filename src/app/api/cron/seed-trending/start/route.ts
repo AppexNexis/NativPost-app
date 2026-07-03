@@ -1,6 +1,7 @@
 // src/app/api/cron/seed-trending/start/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  startInstagramCarouselIngest,
   startInstagramIngest,
   startTikTokIngest,
   startTikTokSlideshowIngest,
@@ -44,6 +45,23 @@ export async function GET(req: NextRequest) {
       started['tiktok-slideshow'] = await startTikTokSlideshowIngest({
         apifyToken,
         urls,
+        limit,
+        curationStatus,
+      });
+    }
+  }
+  if (sources.includes('instagram-carousel')) {
+    // Profile-based carousel discovery. Pass comma-separated handles via
+    // ?instagramCarouselUsernames=; the actor pulls each profile's recent
+    // posts and groupInstagramCarousels() filters to sidecar posts only.
+    const usernames = (searchParams.get('instagramCarouselUsernames') ?? '')
+      .split(',')
+      .map(s => s.trim().replace(/^@/, ''))
+      .filter(Boolean);
+    if (usernames.length > 0) {
+      started['instagram-carousel'] = await startInstagramCarouselIngest({
+        apifyToken,
+        usernames,
         limit,
         curationStatus,
       });

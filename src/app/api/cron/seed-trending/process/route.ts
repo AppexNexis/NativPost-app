@@ -11,7 +11,12 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const hydrate = searchParams.get('hydrate') !== 'false';
-  const hydrateLimit = Number(searchParams.get('hydrateLimit')) || 50;
+  // Default lowered from 50 → 10 to stay under Vercel's 300s function cap
+  // when processing an Apify run + hydration in the same invocation.
+  // Cloudinary sync transcode runs ~10-20s per item; 10 keeps us at ~2min
+  // for hydration alone, leaving headroom for the slideshow/carousel path.
+  // Callers can override with ?hydrateLimit=N when running standalone.
+  const hydrateLimit = Number(searchParams.get('hydrateLimit')) || 10;
 
   const cloudinary = {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME!,

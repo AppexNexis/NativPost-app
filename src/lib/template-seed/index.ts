@@ -10,7 +10,16 @@ export {
   scrapeInstagramPosts,
 } from './providers/apify-instagram-post';
 export { type ApifyTikTokOptions, apifyTikTokProvider } from './providers/apify-tiktok';
-export { startTikTokSlideshowIngest } from './providers/apify-async';
+export {
+  startInstagramCarouselIngest,
+  startTikTokSlideshowIngest,
+} from './providers/apify-async';
+export {
+  type ApifyInstagramProfileOptions,
+  buildInstagramProfileInput,
+  groupInstagramCarousels,
+  INSTAGRAM_PROFILE_ACTOR_ID,
+} from './providers/apify-instagram-profile';
 export {
   type ApifyTikTokSlideshowOptions,
   buildSlideshowInput,

@@ -11,6 +11,11 @@ import {
   groupTikTokSlideshowItems,
   SLIDESHOW_ACTOR_ID,
 } from './apify-tiktok-slideshow';
+import {
+  buildInstagramProfileInput,
+  groupInstagramCarousels,
+  INSTAGRAM_PROFILE_ACTOR_ID,
+} from './apify-instagram-profile';
 import type { RawTemplate } from '../types';
 
 const IG_ACTOR_ID = 'apify~instagram-reel-scraper';
@@ -126,6 +131,45 @@ export async function startTikTokSlideshowIngest(params: StartSlideshowParams) {
     status: 'pending',
     params: {
       urls,
+      limit,
+      curationStatus: params.curationStatus ?? 'pending',
+    },
+  });
+
+  return runId;
+}
+
+type StartInstagramCarouselParams = {
+  apifyToken: string;
+  usernames: string[];
+  limit?: number;
+  curationStatus?: 'pending' | 'approved' | 'rejected';
+};
+
+export async function startInstagramCarouselIngest(
+  params: StartInstagramCarouselParams,
+) {
+  const usernames = (params.usernames ?? [])
+    .map(u => u.replace(/^@/, '').trim())
+    .filter(Boolean);
+  if (usernames.length === 0) {
+    throw new Error('startInstagramCarouselIngest: no valid usernames provided');
+  }
+  const limit = params.limit ?? Math.min(usernames.length * 12, 200);
+
+  const runId = await startActorRun(
+    INSTAGRAM_PROFILE_ACTOR_ID,
+    buildInstagramProfileInput(usernames, limit),
+    params.apifyToken,
+  );
+
+  await db.insert(apifySeedRunSchema).values({
+    id: runId,
+    provider: 'instagram-carousel',
+    actorId: INSTAGRAM_PROFILE_ACTOR_ID,
+    status: 'pending',
+    params: {
+      usernames,
       limit,
       curationStatus: params.curationStatus ?? 'pending',
     },
@@ -274,6 +318,12 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
         // thumbnailUrls[] is the ordered list of slide URLs.
         rawTemplates = groupTikTokSlideshowItems(rawItems);
         break;
+      case 'instagram-carousel':
+        // Profile scrape returns all post types; the grouping helper
+        // filters to carousels (sidecar) only and normalizes slide URLs
+        // into thumbnailUrls[] so the per-slide upload path handles it.
+        rawTemplates = groupInstagramCarousels(rawItems);
+        break;
       default:
         console.warn(`[ApifyAsync] unknown provider "${run.provider}" — skipping run ${run.id}`);
         results.push({ runId: run.id, outcome: `unknown-provider:${run.provider}` });
@@ -282,12 +332,21 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
 
     if (deps.cloudinary) configureCloudinary(deps.cloudinary);
 
-    // Slideshows are images; everything else is video. Moderation policy
-    // is keyed on ('tiktok', 'image') vs ('tiktok', 'video'), and
-    // 'tiktok-slideshow' isn't in the policy table (see moderation-policy.ts),
-    // so we normalize the provider key here.
-    const isSlideshow = run.provider === 'tiktok-slideshow';
-    const policyProviderKey = isSlideshow ? 'tiktok' : run.provider;
+    // Slideshows (TikTok photo posts + Instagram carousels) are images;
+    // everything else is video. Moderation policy is keyed on the base
+    // provider ('tiktok' / 'instagram'), and the derived providers
+    // ('tiktok-slideshow' / 'instagram-carousel') aren't in the policy table
+    // (see moderation-policy.ts), so we normalize the provider key here.
+    const isSlideshow =
+      run.provider === 'tiktok-slideshow' || run.provider === 'instagram-carousel';
+    let policyProviderKey: string;
+    if (run.provider === 'tiktok-slideshow') {
+      policyProviderKey = 'tiktok';
+    } else if (run.provider === 'instagram-carousel') {
+      policyProviderKey = 'instagram';
+    } else {
+      policyProviderKey = run.provider;
+    }
     const resourceKind: 'image' | 'video' = isSlideshow ? 'image' : 'video';
     const rawModerationParam = getModerationForProvider(policyProviderKey, resourceKind);
 
@@ -339,7 +398,7 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
 
           for (let i = 0; i < slideUrls.length; i++) {
             const publicId = sanitizePublicId(
-              `tiktok_slide_${raw.sourceVideoId}_${i + 1}_${Date.now()}`,
+              `${run.provider}_slide_${raw.sourceVideoId}_${i + 1}_${Date.now()}`,
             );
             try {
               const upload = await uploadImageFromUrl(slideUrls[i]!, publicId, {
