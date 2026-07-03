@@ -1,0 +1,2 @@
+ALTER TABLE "content_template" ADD COLUMN "moderation_public_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "content_template" ADD COLUMN "moderation_approved_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;

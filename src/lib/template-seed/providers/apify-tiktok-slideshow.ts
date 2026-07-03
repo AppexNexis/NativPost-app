@@ -4,9 +4,11 @@
  * Actor: maximedupre/tiktok-slideshow-downloader
  * Docs:  https://apify.com/maximedupre/tiktok-slideshow-downloader/api
  *
- * This provider targets TikTok photo-slideshow URLs and extracts the image
- * assets plus background audio. Slideshows are mapped to the 'slideshow'
- * content type with all slide URLs in thumbnailUrls.
+ * The actor emits ONE dataset row per photo (fields: videoId, photoIndex,
+ * photoCount, sourceImageUrl, downloadUrl, authorUsername, caption, post.*,
+ * audio.*, contentType=MIME). This module groups those rows by videoId and
+ * emits one RawTemplate per slideshow post with all slide URLs in
+ * thumbnailUrls (ordered by photoIndex).
  *
  * Env var required: APIFY_TOKEN
  */
@@ -28,96 +30,90 @@ export type ApifyTikTokSlideshowOptions = {
   limit?: number;
 };
 
-const ACTOR_ID = 'maximedupre~tiktok-slideshow-downloader';
+export const SLIDESHOW_ACTOR_ID = 'maximedupre~tiktok-slideshow-downloader';
 
-function extractSlideUrls(item: Record<string, unknown>): string[] {
-  const candidates: unknown[] = [
-    ...(Array.isArray(item.images) ? item.images : []),
-    ...(Array.isArray(item.slides) ? item.slides : []),
-    ...(Array.isArray(item.photos) ? item.photos : []),
-    ...(Array.isArray(item.imageUrls) ? item.imageUrls : []),
-    ...(Array.isArray(item.image_urls) ? item.image_urls : []),
-    ...(Array.isArray(item.slideUrls) ? item.slideUrls : []),
-    ...(Array.isArray(item.slide_urls) ? item.slide_urls : []),
-  ];
-
-  const urls: string[] = [];
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string') {
-      if (candidate.startsWith('http')) {
-        urls.push(candidate);
-      }
-      continue;
-    }
-    if (!candidate || typeof candidate !== 'object') {
-      continue;
-    }
-    const media = candidate as Record<string, unknown>;
-    const url = String(
-      media.url ?? media.imageUrl ?? media.image_url ?? media.src ?? media.displayUrl ?? media.display_url ?? '',
-    );
-    if (url.startsWith('http')) {
-      urls.push(url);
-    }
-  }
-
-  // Some actor versions return a single images object with indexed keys
-  if (urls.length === 0 && item.images && typeof item.images === 'object' && !Array.isArray(item.images)) {
-    const imageMap = item.images as Record<string, unknown>;
-    for (const value of Object.values(imageMap)) {
-      if (typeof value === 'string' && value.startsWith('http')) {
-        urls.push(value);
-      }
-    }
-  }
-
-  return Array.from(new Set(urls));
+/** Build the actor input shape for `maximedupre/tiktok-slideshow-downloader`. */
+export function buildSlideshowInput(urls: string[], limit: number): Record<string, unknown> {
+  return {
+    slideshowUrls: urls.map(url => ({ url })),
+    maxItems: limit,
+  };
 }
 
-function mapItem(item: Record<string, unknown>): RawTemplate | null {
-  const id = String(item.id ?? item.videoId ?? item.video_id ?? item.awemeId ?? item.aweme_id ?? '').trim();
-  if (!id) {
-    return null;
+/**
+ * Canonicalize a slideshow post URL. The actor's `sourceUrl` field is often
+ * a tracked share link (`?_r=1&u_code=…&share_item_id=…`) or the m.tiktok.com
+ * variant. We store canonical `https://www.tiktok.com/@user/photo/{videoId}`
+ * so `content_template.source_url`'s unique index doesn't collect dupes.
+ */
+function canonicalizeSlideshowUrl(authorUsername: string, videoId: string): string {
+  return `https://www.tiktok.com/@${authorUsername}/photo/${videoId}`;
+}
+
+/**
+ * Group per-photo dataset rows into one RawTemplate per videoId.
+ *
+ * Exported so `apify-async.ts` (async processor) can reuse the same grouping
+ * logic as the sync provider.
+ */
+export function groupTikTokSlideshowItems(items: unknown[]): RawTemplate[] {
+  const groups = new Map<string, Array<Record<string, unknown>>>();
+
+  for (const raw of items) {
+    if (!raw || typeof raw !== 'object') continue;
+    const item = raw as Record<string, unknown>;
+    const videoId = String(item.videoId ?? item.video_id ?? item.id ?? '').trim();
+    const imgUrl = String(item.sourceImageUrl ?? item.source_image_url ?? '').trim();
+    if (!videoId || !imgUrl.startsWith('http')) continue;
+    const existing = groups.get(videoId) ?? [];
+    existing.push(item);
+    groups.set(videoId, existing);
   }
 
-  const description = String(item.text ?? item.desc ?? item.description ?? item.caption ?? '');
-  const authorName = String(
-    item.author ?? item.username ?? item.authorName ?? item.author_name ?? item.nickname ?? '',
-  );
+  const templates: RawTemplate[] = [];
+  for (const [videoId, rows] of groups) {
+    // Sort by photoIndex ascending so slide 1 is always thumbnailUrl.
+    rows.sort((a, b) => Number(a.photoIndex ?? 0) - Number(b.photoIndex ?? 0));
 
-  const slideUrls = extractSlideUrls(item);
-  const thumbnailUrl
-    = slideUrls[0]
-      || String(item.coverUrl ?? item.cover ?? item.thumbnailUrl ?? item.thumbnail_url ?? '');
+    const first = rows[0]!;
+    const authorUsername = String(first.authorUsername ?? first.author_username ?? '').trim();
+    const authorName = String(first.authorName ?? first.author_name ?? '').trim();
 
-  // The slideshow downloader often exposes the original background audio URL
-  const mediaUrl = String(item.musicUrl ?? item.music_url ?? item.audioUrl ?? item.audio_url ?? '');
+    // caption may be null on some slideshows; fall back to empty string
+    const caption = rows.find(r => typeof r.caption === 'string' && (r.caption as string).length > 0);
+    const captionText = caption ? String(caption.caption) : '';
 
-  if (!thumbnailUrl) {
-    return null;
+    const slideUrls = rows
+      .map(r => String(r.sourceImageUrl ?? r.source_image_url ?? ''))
+      .filter(u => u.startsWith('http'));
+
+    if (slideUrls.length === 0) continue;
+
+    const post = (first.post ?? {}) as Record<string, unknown>;
+
+    templates.push({
+      // NOTE: `content_template` schema has no source_post_id column, so the
+      // videoId lives in `sourceVideoId` for slideshows (kept nullable-safe
+      // by the DB layer).
+      sourceUrl: canonicalizeSlideshowUrl(authorUsername || 'user', videoId),
+      sourcePlatform: 'tiktok' as SourcePlatform,
+      sourceCreator: authorUsername || authorName || null,
+      sourceVideoId: videoId,
+      sourcePostId: videoId,
+      mediaUrl: null, // slideshows have no video/audio URL; audio.title is metadata only
+      thumbnailUrl: slideUrls[0]!,
+      thumbnailUrls: slideUrls,
+      slideCaptions: [],
+      durationSeconds: null,
+      contentType: 'slideshow',
+      viewCount: asNumber(post.playCount ?? post.play_count),
+      likeCount: asNumber(post.likeCount ?? post.like_count),
+      title: captionText.slice(0, 120) || 'TikTok slideshow',
+      description: captionText,
+    });
   }
 
-  const sourceUrl = String(
-    item.webVideoUrl ?? item.videoUrl ?? item.url ?? `https://www.tiktok.com/@${authorName}/video/${id}`,
-  );
-
-  return {
-    sourceUrl,
-    sourcePlatform: 'tiktok' as SourcePlatform,
-    sourceCreator: authorName || null,
-    sourceVideoId: null,
-    sourcePostId: id,
-    mediaUrl: mediaUrl || null,
-    thumbnailUrl,
-    thumbnailUrls: slideUrls.length > 0 ? slideUrls : {},
-    slideCaptions: [],
-    durationSeconds: asNumber(item.duration ?? item.videoDuration ?? item.video_duration),
-    contentType: 'slideshow',
-    viewCount: asNumber(item.playCount ?? item.views ?? item.viewCount),
-    likeCount: asNumber(item.diggCount ?? item.likesCount ?? item.likes),
-    title: description.slice(0, 120) || 'TikTok slideshow',
-    description,
-  };
+  return templates;
 }
 
 export async function scrapeTikTokSlideshows(
@@ -134,27 +130,22 @@ export async function scrapeTikTokSlideshows(
     return [];
   }
 
-  const limit = Math.min(typeof options.limit === 'number' ? options.limit : urls.length * 2, 200);
+  const limit = Math.min(typeof options.limit === 'number' ? options.limit : urls.length * 10, 200);
 
   console.log(`[Apify/TikTokSlideshow] Scraping ${urls.length} slideshow(s)`);
 
   try {
-    const input = {
-      directUrls: urls,
-      resultsLimit: limit,
-    };
-
-    const run = await startApifyRun(ACTOR_ID, token, input);
+    const run = await startApifyRun(SLIDESHOW_ACTOR_ID, token, buildSlideshowInput(urls, limit));
     console.log(`[Apify/TikTokSlideshow] Run started: ${run.id}`);
 
     await waitForApifyRun(run.id, token, { maxMs: 300_000 });
     console.log('[Apify/TikTokSlideshow] Run complete. Fetching dataset...');
 
     const items = await fetchApifyDataset<Record<string, unknown>>(run.defaultDatasetId, token, limit);
-    console.log(`[Apify/TikTokSlideshow] Raw items: ${items.length}`);
+    console.log(`[Apify/TikTokSlideshow] Raw photo rows: ${items.length}`);
 
-    const templates = items.map(mapItem).filter((t): t is RawTemplate => t !== null);
-    console.log(`[Apify/TikTokSlideshow] Mapped templates: ${templates.length}`);
+    const templates = groupTikTokSlideshowItems(items);
+    console.log(`[Apify/TikTokSlideshow] Grouped slideshows: ${templates.length}`);
     return templates;
   } catch (err) {
     console.error('[Apify/TikTokSlideshow] Failed:', err instanceof Error ? err.message : err);

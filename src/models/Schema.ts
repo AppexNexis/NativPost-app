@@ -525,6 +525,15 @@ export const contentTemplateSchema = pgTable(
     // debugging false positives.
     moderationLabels: jsonb('moderation_labels').default([]),
     moderationCheckedAt: timestamp('moderation_checked_at', { mode: 'date' }),
+    // All Cloudinary public_ids the moderation webhook should match against
+    // for THIS row. For single-asset rows (video), this is just
+    // [cloudinaryPublicId]. For slideshows, one entry per slide so that a
+    // rejection on any slide can flip the whole row.
+    moderationPublicIds: jsonb('moderation_public_ids').$type<string[]>().default([]).notNull(),
+    // Public_ids that have received an 'approved' callback so far. Row only
+    // flips to isActive=true once approvedIds ⊇ publicIds and no rejection
+    // has been recorded.
+    moderationApprovedIds: jsonb('moderation_approved_ids').$type<string[]>().default([]).notNull(),
     remixCount: integer('remix_count').default(0),
     publishCount: integer('publish_count').default(0),
     avgRemixPerformance: real('avg_remix_performance'),
@@ -783,7 +792,7 @@ export const engineRequestLogSchema = pgTable('engine_request_log', {
 // -----------------------------------------------------------
 export const apifySeedRunSchema = pgTable('apify_seed_run', {
   id: text('id').primaryKey(), // Apify run ID (external ID, like organizationSchema.id pattern)
-  provider: text('provider').notNull(), // 'instagram' | 'tiktok'
+  provider: text('provider').notNull(), // 'instagram' | 'tiktok' | 'tiktok-slideshow'
   actorId: text('actor_id').notNull(),
   status: text('status').default('pending').notNull(), // pending | succeeded | failed | processed
   params: jsonb('params').default({}), // { usernames, limit, minLikes/minViews, curationStatus, offset }

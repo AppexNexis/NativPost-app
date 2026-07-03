@@ -10,9 +10,13 @@ export {
   scrapeInstagramPosts,
 } from './providers/apify-instagram-post';
 export { type ApifyTikTokOptions, apifyTikTokProvider } from './providers/apify-tiktok';
+export { startTikTokSlideshowIngest } from './providers/apify-async';
 export {
   type ApifyTikTokSlideshowOptions,
+  buildSlideshowInput,
+  groupTikTokSlideshowItems,
   scrapeTikTokSlideshows,
+  SLIDESHOW_ACTOR_ID,
 } from './providers/apify-tiktok-slideshow';
 export { type InstagramOptions, instagramProvider } from './providers/instagram';
 export {

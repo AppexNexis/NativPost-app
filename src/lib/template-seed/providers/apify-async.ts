@@ -2,10 +2,15 @@ import { db } from '@/lib/db'; // adjust to your actual db client path
 import { apifySeedRunSchema, contentTemplateSchema } from './../../../models/Schema';
 import { eq } from 'drizzle-orm';
 import { enrichTemplateWithAI } from '../ai';
-import { configureCloudinary, uploadVideoFromUrl } from '../cloudinary';
+import { configureCloudinary, uploadImageFromUrl, uploadVideoFromUrl } from '../cloudinary';
 import { getModerationForProvider, getModerationWebhookUrl } from '../moderation-policy';
 import { DEFAULT_USERNAMES as IG_DEFAULT_USERNAMES } from './apify-instagram';
 import { DEFAULT_USERNAMES as TT_DEFAULT_USERNAMES } from './apify-tiktok';
+import {
+  buildSlideshowInput,
+  groupTikTokSlideshowItems,
+  SLIDESHOW_ACTOR_ID,
+} from './apify-tiktok-slideshow';
 import type { RawTemplate } from '../types';
 
 const IG_ACTOR_ID = 'apify~instagram-reel-scraper';
@@ -87,6 +92,41 @@ export async function startTikTokIngest(params: StartParams) {
       usernames,
       limit,
       minViews: params.minViews ?? 0,
+      curationStatus: params.curationStatus ?? 'pending',
+    },
+  });
+
+  return runId;
+}
+
+type StartSlideshowParams = {
+  apifyToken: string;
+  urls: string[];
+  limit?: number;
+  curationStatus?: 'pending' | 'approved' | 'rejected';
+};
+
+export async function startTikTokSlideshowIngest(params: StartSlideshowParams) {
+  const urls = (params.urls ?? []).filter(u => u.startsWith('http'));
+  if (urls.length === 0) {
+    throw new Error('startTikTokSlideshowIngest: no valid URLs provided');
+  }
+  const limit = params.limit ?? Math.min(urls.length * 15, 200);
+
+  const runId = await startActorRun(
+    SLIDESHOW_ACTOR_ID,
+    buildSlideshowInput(urls, limit),
+    params.apifyToken,
+  );
+
+  await db.insert(apifySeedRunSchema).values({
+    id: runId,
+    provider: 'tiktok-slideshow',
+    actorId: SLIDESHOW_ACTOR_ID,
+    status: 'pending',
+    params: {
+      urls,
+      limit,
       curationStatus: params.curationStatus ?? 'pending',
     },
   });
@@ -204,15 +244,36 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
       continue;
     }
 
-    const mapper = run.provider === 'instagram' ? mapInstagramItem : mapTikTokItem;
-    const rawTemplates = rawItems.map(mapper).filter((t): t is RawTemplate => t !== null);
+    let rawTemplates: RawTemplate[];
+    switch (run.provider) {
+      case 'instagram':
+        rawTemplates = rawItems.map(mapInstagramItem).filter((t): t is RawTemplate => t !== null);
+        break;
+      case 'tiktok':
+        rawTemplates = rawItems.map(mapTikTokItem).filter((t): t is RawTemplate => t !== null);
+        break;
+      case 'tiktok-slideshow':
+        // Actor emits one row per photo — the grouping helper collapses
+        // rows sharing a videoId into a single RawTemplate whose
+        // thumbnailUrls[] is the ordered list of slide URLs.
+        rawTemplates = groupTikTokSlideshowItems(rawItems);
+        break;
+      default:
+        console.warn(`[ApifyAsync] unknown provider "${run.provider}" — skipping run ${run.id}`);
+        results.push({ runId: run.id, outcome: `unknown-provider:${run.provider}` });
+        continue;
+    }
 
     if (deps.cloudinary) configureCloudinary(deps.cloudinary);
 
-    // Cloudinary moderation config for this provider. TikTok/IG get the
-    // strictest policy (aws_rek_video); Pexels a lighter one. See
-    // ../moderation-policy.ts.
-    const moderationParam = getModerationForProvider(run.provider, 'video');
+    // Slideshows are images; everything else is video. Moderation policy
+    // is keyed on ('tiktok', 'image') vs ('tiktok', 'video'), and
+    // 'tiktok-slideshow' isn't in the policy table (see moderation-policy.ts),
+    // so we normalize the provider key here.
+    const isSlideshow = run.provider === 'tiktok-slideshow';
+    const policyProviderKey = isSlideshow ? 'tiktok' : run.provider;
+    const resourceKind: 'image' | 'video' = isSlideshow ? 'image' : 'video';
+    const moderationParam = getModerationForProvider(policyProviderKey, resourceKind);
     const notificationUrl = getModerationWebhookUrl();
 
     let inserted = 0;
@@ -223,12 +284,83 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
 
         let mediaUrl = enriched.mediaUrl;
         let thumbnailUrl = enriched.thumbnailUrl;
+        let thumbnailUrls: string[] | Record<string, string> | undefined = enriched.thumbnailUrls;
         let cloudinaryPublicId: string | null = null;
+        let moderationPublicIds: string[] = [];
         let moderationStatus: string | null = null;
         let moderationKind: string | null = null;
         let moderationLabels: unknown = [];
 
-        if (deps.cloudinary && mediaUrl) {
+        if (isSlideshow && deps.cloudinary) {
+          // Slideshow path: upload EACH slide as an image with per-slide
+          // moderation. All publicIds are tracked in moderationPublicIds so
+          // the webhook can flip the row on any rejection (see
+          // src/app/api/webhooks/cloudinary-moderation/route.ts).
+          const rawSlides = Array.isArray(enriched.thumbnailUrls)
+            ? (enriched.thumbnailUrls as string[])
+            : [];
+          const slideUrls = rawSlides.filter(u => typeof u === 'string' && u.startsWith('http'));
+
+          if (slideUrls.length === 0) {
+            console.warn(
+              `[ApifyAsync/${run.provider}] no slide URLs for videoId=${raw.sourceVideoId} — skipping`,
+            );
+            continue;
+          }
+
+          const uploadedUrls: string[] = [];
+          const uploadedPublicIds: string[] = [];
+          let uploadFailed = false;
+
+          for (let i = 0; i < slideUrls.length; i++) {
+            const publicId = sanitizePublicId(
+              `tiktok_slide_${raw.sourceVideoId}_${i + 1}_${Date.now()}`,
+            );
+            try {
+              const upload = await uploadImageFromUrl(slideUrls[i]!, publicId, {
+                moderation: moderationParam,
+                notificationUrl,
+              });
+              uploadedUrls.push(upload.secureUrl);
+              uploadedPublicIds.push(upload.publicId);
+              // Any per-slide sync verdict (aws_rek returns synchronously)
+              // takes over the row-level fields. Rejection short-circuits.
+              const slideStatus = upload.moderation?.status ?? null;
+              if (slideStatus === 'rejected') {
+                moderationStatus = 'rejected';
+                moderationKind = upload.moderation?.kind ?? null;
+                moderationLabels = upload.moderationAll;
+                break;
+              }
+              if (slideStatus === 'pending') {
+                moderationStatus = 'pending';
+                moderationKind = upload.moderation?.kind ?? null;
+              } else if (slideStatus === 'approved' && moderationStatus !== 'rejected') {
+                moderationStatus = moderationStatus ?? 'approved';
+                moderationKind = upload.moderation?.kind ?? null;
+              }
+            } catch (err) {
+              console.error(
+                `[ApifyAsync/${run.provider}] slide upload failed (${i + 1}/${slideUrls.length}):`,
+                err,
+              );
+              uploadFailed = true;
+              moderationStatus = 'pending';
+              break;
+            }
+          }
+
+          if (uploadedUrls.length > 0) {
+            thumbnailUrls = uploadedUrls;
+            thumbnailUrl = uploadedUrls[0]!;
+            cloudinaryPublicId = uploadedPublicIds[0]!;
+            moderationPublicIds = uploadedPublicIds;
+          } else if (uploadFailed) {
+            // No slides uploaded — skip DB write entirely so we don't store
+            // a slideshow row pointing at raw TikTok CDN URLs (they expire).
+            continue;
+          }
+        } else if (deps.cloudinary && mediaUrl) {
           const publicId = sanitizePublicId(`${run.provider}_${raw.sourceVideoId}_${Date.now()}`);
           try {
             const upload = await uploadVideoFromUrl(mediaUrl, publicId, {
@@ -238,6 +370,7 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
             mediaUrl = upload.secureUrl;
             thumbnailUrl = upload.thumbnailUrl ?? thumbnailUrl;
             cloudinaryPublicId = upload.publicId;
+            moderationPublicIds = [upload.publicId];
             moderationStatus = upload.moderation?.status ?? null;
             moderationKind = upload.moderation?.kind ?? null;
             moderationLabels = upload.moderationAll;
@@ -279,6 +412,7 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
             sourceVideoId: enriched.sourceVideoId,
             mediaUrl,
             thumbnailUrl: thumbnailUrl ?? '',
+            thumbnailUrls: (thumbnailUrls as any) ?? {},
             durationSeconds: enriched.durationSeconds,
             contentType: (enriched as any).contentType ?? 'unknown',
             niches: (enriched as any).niches ?? [],
@@ -291,6 +425,8 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
             curationStatus: insertCurationStatus,
             isActive: insertActive,
             cloudinaryPublicId,
+            moderationPublicIds,
+            moderationApprovedIds: [],
             moderationStatus,
             moderationKind,
             moderationLabels: moderationLabels as any,
@@ -301,7 +437,10 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
             set: {
               mediaUrl,
               thumbnailUrl: thumbnailUrl ?? '',
+              thumbnailUrls: (thumbnailUrls as any) ?? {},
               cloudinaryPublicId,
+              moderationPublicIds,
+              moderationApprovedIds: [],
               moderationStatus,
               moderationKind,
               moderationLabels: moderationLabels as any,

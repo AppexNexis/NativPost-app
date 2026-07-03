@@ -26,7 +26,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { v2 as cloudinary } from 'cloudinary';
-import { eq } from 'drizzle-orm';
+import { eq, or, sql } from 'drizzle-orm';
 
 import { getDb } from '@/libs/DB';
 import { contentTemplateSchema } from '@/models/Schema';
@@ -99,35 +99,92 @@ export async function POST(req: NextRequest) {
 
   const db = await getDb();
 
-  // Match by our stored public_id first (fast, indexed). Fall back to a
-  // substring match on media_url for rows uploaded before we started tracking
-  // public_id explicitly.
+  // Match by `cloudinary_public_id` (single-asset rows, video path) OR by
+  // membership in `moderation_public_ids` (slideshow rows track every
+  // slide's publicId here — see apify-async.ts slideshow upload loop).
+  //
+  // Slideshow gating semantics:
+  //   - ANY 'rejected' callback → whole row rejected + hidden immediately.
+  //   - 'approved' callbacks accumulate in `moderation_approved_ids`. Row
+  //     only flips to visible once approvedIds ⊇ publicIds AND no
+  //     rejection has been recorded.
   let rowsUpdated = 0;
   try {
-    const updateSet = {
-      moderationStatus,
-      moderationKind,
-      moderationLabels: (payload.moderation_response ?? []) as any,
-      moderationCheckedAt: new Date(),
-      // If Cloudinary rejects, hard-hide the row. Cloudinary itself will
-      // stop delivering the asset — leaving it visible just shows a blank
-      // tile like the 2026-07-02 incident.
-      ...(moderationStatus === 'rejected'
-        ? { isActive: false, curationStatus: 'rejected' as const }
-        : moderationStatus === 'approved'
-          // Only flip is_active back on if it was hidden BECAUSE of a
-          // pending moderation. We don't want the webhook to overturn
-          // human/admin decisions.
-          ? { isActive: true }
-          : {}),
-    };
+    // Fetch matching rows first — we need moderationPublicIds + existing
+    // moderationApprovedIds to decide whether this callback closes the
+    // approval quorum for a slideshow.
+    const matches = await db
+      .select({
+        id: contentTemplateSchema.id,
+        moderationStatus: contentTemplateSchema.moderationStatus,
+        moderationPublicIds: contentTemplateSchema.moderationPublicIds,
+        moderationApprovedIds: contentTemplateSchema.moderationApprovedIds,
+      })
+      .from(contentTemplateSchema)
+      .where(
+        or(
+          eq(contentTemplateSchema.cloudinaryPublicId, publicId),
+          sql`${contentTemplateSchema.moderationPublicIds} @> ${JSON.stringify([publicId])}::jsonb`,
+        ),
+      );
 
-    const updated = await db
-      .update(contentTemplateSchema)
-      .set(updateSet)
-      .where(eq(contentTemplateSchema.cloudinaryPublicId, publicId))
-      .returning({ id: contentTemplateSchema.id });
-    rowsUpdated = updated.length;
+    for (const row of matches) {
+      const publicIds = (row.moderationPublicIds ?? []) as string[];
+      const approvedSoFar = new Set((row.moderationApprovedIds ?? []) as string[]);
+      const alreadyRejected = row.moderationStatus === 'rejected';
+
+      let updateSet: Record<string, unknown> = {
+        moderationKind,
+        moderationLabels: (payload.moderation_response ?? []) as any,
+        moderationCheckedAt: new Date(),
+      };
+
+      if (moderationStatus === 'rejected') {
+        // Any single-slide rejection fails the whole row. Cloudinary refuses
+        // to deliver rejected assets — leaving the row visible produces
+        // blank tiles (see 2026-07-02 incident).
+        updateSet = {
+          ...updateSet,
+          moderationStatus: 'rejected',
+          isActive: false,
+          curationStatus: 'rejected' as const,
+        };
+      } else if (moderationStatus === 'approved') {
+        if (alreadyRejected) {
+          // Never un-reject via a later approve — keep the row hidden.
+          updateSet = {
+            ...updateSet,
+            // don't touch moderationStatus / isActive / curationStatus
+          };
+        } else {
+          approvedSoFar.add(publicId);
+          const nextApprovedIds = Array.from(approvedSoFar);
+          const allApproved
+            = publicIds.length > 0
+              && publicIds.every(id => approvedSoFar.has(id));
+
+          updateSet = {
+            ...updateSet,
+            moderationApprovedIds: nextApprovedIds,
+            // Only flip status/isActive once every tracked publicId approved.
+            // For single-asset rows (video), publicIds.length===1 so this
+            // fires on the first callback — matches prior behavior.
+            ...(allApproved
+              ? { moderationStatus: 'approved', isActive: true }
+              : { moderationStatus: 'pending' }),
+          };
+        }
+      } else {
+        // Unknown/other status — record it and move on.
+        updateSet = { ...updateSet, moderationStatus };
+      }
+
+      await db
+        .update(contentTemplateSchema)
+        .set(updateSet)
+        .where(eq(contentTemplateSchema.id, row.id));
+      rowsUpdated++;
+    }
   } catch (err) {
     console.error('[cloudinary-moderation] db update failed:', err);
     return NextResponse.json({ error: 'db-failed' }, { status: 500 });
