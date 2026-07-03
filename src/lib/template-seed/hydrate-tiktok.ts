@@ -144,6 +144,12 @@ export async function hydrateTikTokMedia(
 
   configureCloudinary(deps.cloudinary);
 
+  // Killswitch: MODERATION_BYPASS_VIDEO=true skips aws_rek_video (e.g. when
+  // its monthly Cloudinary quota is exhausted) and forces every hydrated row
+  // into a 'pending_manual' state so it stays hidden until an admin approves
+  // it. See memory `cloudinary-aup-moderation.md` for context.
+  const bypassVideo = process.env.MODERATION_BYPASS_VIDEO === 'true';
+
   for (const row of queue) {
     // Resolve the raw .mp4 via TikWM
     const resolved = await resolveTikTokMedia(row.sourceUrl, deps.tikwmApiKey);
@@ -167,8 +173,8 @@ export async function hydrateTikTokMedia(
     let upload: Awaited<ReturnType<typeof uploadVideoFromUrl>>;
     try {
       upload = await uploadVideoFromUrl(resolved.playUrl, publicId, {
-        moderation: getModerationForProvider('tiktok', 'video'),
-        notificationUrl: getModerationWebhookUrl(),
+        moderation: bypassVideo ? undefined : getModerationForProvider('tiktok', 'video'),
+        notificationUrl: bypassVideo ? undefined : getModerationWebhookUrl(),
       });
     } catch (err) {
       result.failed++;
@@ -189,11 +195,17 @@ export async function hydrateTikTokMedia(
 
     // Gate on moderation status. rejected → deactivate + surface reason.
     // pending (aws_rek_video is async) → deactivate until webhook flips.
+    // pending_manual (bypass mode) → deactivate until admin approves.
     // approved / null (moderation disabled) → keep row's existing is_active.
-    const moderationStatus = upload.moderation?.status ?? null;
-    const moderationKind = upload.moderation?.kind ?? null;
+    const moderationStatus = bypassVideo
+      ? 'pending_manual'
+      : (upload.moderation?.status ?? null);
+    const moderationKind = bypassVideo
+      ? 'bypass'
+      : (upload.moderation?.kind ?? null);
     const isRejected = moderationStatus === 'rejected';
     const isPending = moderationStatus === 'pending';
+    const isPendingManual = moderationStatus === 'pending_manual';
 
     try {
       await db
@@ -206,9 +218,9 @@ export async function hydrateTikTokMedia(
           moderationKind,
           moderationLabels: upload.moderationAll as any,
           moderationCheckedAt: moderationStatus ? new Date() : null,
-          // Hide rejected + pending rows from the library until the webhook
-          // (or a human) confirms they are safe to deliver.
-          ...(isRejected || isPending
+          // Hide rejected + pending + bypass-mode rows from the library
+          // until the webhook (or an admin) confirms they're safe to deliver.
+          ...(isRejected || isPending || isPendingManual
             ? {
                 isActive: false,
                 curationStatus: isRejected ? 'rejected' : 'pending_moderation',

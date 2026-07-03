@@ -289,8 +289,17 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
     const isSlideshow = run.provider === 'tiktok-slideshow';
     const policyProviderKey = isSlideshow ? 'tiktok' : run.provider;
     const resourceKind: 'image' | 'video' = isSlideshow ? 'image' : 'video';
-    const moderationParam = getModerationForProvider(policyProviderKey, resourceKind);
-    const notificationUrl = getModerationWebhookUrl();
+    const rawModerationParam = getModerationForProvider(policyProviderKey, resourceKind);
+
+    // Killswitch: MODERATION_BYPASS_VIDEO=true skips the aws_rek_video add-on
+    // (e.g. when quota is exhausted) and forces the row into a 'pending_manual'
+    // state so it stays hidden until a human approves it in admin.
+    // Only applies to video uploads — slideshows use the image moderation
+    // add-on which is on a separate quota.
+    const bypassVideo =
+      !isSlideshow && process.env.MODERATION_BYPASS_VIDEO === 'true';
+    const moderationParam = bypassVideo ? undefined : rawModerationParam;
+    const notificationUrl = bypassVideo ? undefined : getModerationWebhookUrl();
 
     let inserted = 0;
     let rejected = 0;
@@ -389,6 +398,14 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
             moderationStatus = upload.moderation?.status ?? null;
             moderationKind = upload.moderation?.kind ?? null;
             moderationLabels = upload.moderationAll;
+            // Bypass mode: no moderation ran → force manual review state.
+            // The insert logic below already hides anything not 'approved',
+            // so 'pending_manual' rows stay isActive=false + hidden until
+            // an admin approves them.
+            if (bypassVideo) {
+              moderationStatus = 'pending_manual';
+              moderationKind = 'bypass';
+            }
           } catch (err) {
             // keep original media/thumbnail URLs on upload failure — do not
             // silently insert as approved though; mark it pending so the row
