@@ -17,6 +17,10 @@ export async function GET(req: NextRequest) {
   // for hydration alone, leaving headroom for the slideshow/carousel path.
   // Callers can override with ?hydrateLimit=N when running standalone.
   const hydrateLimit = Number(searchParams.get('hydrateLimit')) || 10;
+  // Per-invocation cap on Apify template uploads. Each IG carousel = up
+  // to 10 slides × ~3s Cloudinary = ~30s; 6 templates ≈ 3min worst case,
+  // leaves headroom under the 300s Vercel timeout. Overridable via query.
+  const maxTemplates = Number(searchParams.get('maxTemplates')) || 6;
 
   const cloudinary = {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME!,
@@ -28,13 +32,21 @@ export async function GET(req: NextRequest) {
     apifyToken: process.env.APIFY_TOKEN!,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
     cloudinary,
+    maxTemplatesPerInvocation: maxTemplates,
   });
+
+  // If any run is 'partial' we're actively draining a large dataset —
+  // skip the ambient hydration bridge on this call to reserve compute
+  // for the next /process invocation. Once all runs are 'processed',
+  // hydration resumes as normal.
+  const anyPartial = results.some(r => r.outcome === 'partial');
+  const skipHydrateThisRun = anyPartial;
 
   // Bridge tiktok.com page URLs → raw mp4 → Cloudinary so the queue
   // preview can actually play. Runs whether the Apify step processed
   // anything this cycle or not — this doubles as an ambient backfill.
   let hydration = null;
-  if (hydrate) {
+  if (hydrate && !skipHydrateThisRun) {
     try {
       hydration = await hydrateTikTokMedia({
         cloudinary,

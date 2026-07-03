@@ -264,7 +264,33 @@ type ProcessDeps = {
   apifyToken: string;
   anthropicApiKey: string;
   cloudinary?: { cloudName: string; apiKey: string; apiSecret: string };
+  /** Cap total items uploaded per invocation to stay under Vercel's 300s cap. */
+  maxTemplatesPerInvocation?: number;
 };
+
+const CLOUDINARY_HOST_HINT = 'res.cloudinary.com';
+
+// Skip templates whose sourceUrl already exists in DB with a Cloudinary-hosted
+// media or thumbnail. Repeat /process calls re-fetch the same Apify dataset,
+// so without this check we'd re-upload the same items every time and never
+// drain the queue.
+async function isAlreadyFullyProcessed(sourceUrl: string): Promise<boolean> {
+  const existing = await db
+    .select({
+      mediaUrl: contentTemplateSchema.mediaUrl,
+      thumbnailUrl: contentTemplateSchema.thumbnailUrl,
+    })
+    .from(contentTemplateSchema)
+    .where(eq(contentTemplateSchema.sourceUrl, sourceUrl))
+    .limit(1);
+  const row = existing[0];
+  if (!row) return false;
+  const media = (row.mediaUrl ?? '').toLowerCase();
+  const thumb = (row.thumbnailUrl ?? '').toLowerCase();
+  // Video path: mediaUrl on Cloudinary = done.
+  // Slideshow path: mediaUrl is null by design; thumbnailUrl on Cloudinary = done.
+  return media.includes(CLOUDINARY_HOST_HINT) || thumb.includes(CLOUDINARY_HOST_HINT);
+}
 
 export async function processPendingApifyRuns(deps: ProcessDeps) {
   const pending = await db
@@ -272,9 +298,16 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
     .from(apifySeedRunSchema)
     .where(eq(apifySeedRunSchema.status, 'pending'));
 
-  const results: Array<{ runId: string; outcome: string; fetched?: number; inserted?: number }> = [];
+  const results: Array<{ runId: string; outcome: string; fetched?: number; inserted?: number; remaining?: number }> = [];
 
-  for (const run of pending) {
+  // Vercel Hobby caps functions at 300s. Each Cloudinary upload takes
+  // ~2-3s (image) or ~10-15s (video sync transcode). An IG carousel with
+  // 8 slides = ~24s alone. Cap total per-invocation uploads so we always
+  // return before the timeout; the caller can re-invoke to drain the rest.
+  const maxTemplates = Math.max(1, deps.maxTemplatesPerInvocation ?? 6);
+  let totalProcessedThisInvocation = 0;
+
+  outer: for (const run of pending) {
     let statusData: { status: string; defaultDatasetId: string };
     try {
       statusData = await getRunStatus(run.id, deps.apifyToken);
@@ -362,7 +395,25 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
 
     let inserted = 0;
     let rejected = 0;
+    let skippedExisting = 0;
+    let hitCap = false;
     for (const raw of rawTemplates) {
+      // Resume-safe: repeat /process invocations re-fetch the same Apify
+      // dataset, so we must skip items we already uploaded to Cloudinary
+      // on a prior invocation. Otherwise a large IG carousel run never
+      // drains — every /process call re-uploads the first N items.
+      if (await isAlreadyFullyProcessed(raw.sourceUrl)) {
+        skippedExisting++;
+        continue;
+      }
+
+      // Per-invocation cap so we return before Vercel's 300s timeout.
+      // Leave the run in 'pending' status; the next /process call resumes.
+      if (totalProcessedThisInvocation >= maxTemplates) {
+        hitCap = true;
+        break;
+      }
+
       try {
         const enriched = await enrichTemplateWithAI(raw, deps.anthropicApiKey);
 
@@ -543,6 +594,7 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
             },
           });
         inserted++;
+        totalProcessedThisInvocation++;
       } catch (err) {
         console.error(`[ApifyAsync/${run.provider}] item failed:`, err);
       }
@@ -551,6 +603,22 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
       console.warn(
         `[ApifyAsync/${run.provider}] moderation rejected ${rejected}/${rawTemplates.length} items`,
       );
+    }
+
+    // Only flip run → 'processed' when we drained every item. If we hit the
+    // per-invocation cap, leave it 'pending' so the next /process call
+    // picks up remaining items (isAlreadyFullyProcessed skips finished ones).
+    const remaining = rawTemplates.length - skippedExisting - inserted - rejected;
+    if (hitCap && remaining > 0) {
+      results.push({
+        runId: run.id,
+        outcome: 'partial',
+        fetched: rawTemplates.length,
+        inserted,
+        remaining,
+      });
+      // Break out of the outer run loop too — we've hit our compute budget.
+      break outer;
     }
 
     await db.update(apifySeedRunSchema)
