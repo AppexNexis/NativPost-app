@@ -552,15 +552,32 @@ export async function processPendingApifyRuns(deps: ProcessDeps) {
           continue;
         }
 
-        // Approved (sync moderation, e.g. aws_rek on images) → visible.
-        // Pending (async, e.g. aws_rek_video) → hidden until the webhook
-        // flips it. Missing (moderation disabled/failed) → conservative:
-        // treat like pending so we never silently expose un-moderated media.
+        // Routing rules (order matters):
+        //   'approved'       — sync verdict good → visible + active.
+        //   'pending'        — async webhook expected (aws_rek_video only)
+        //                      → 'pending_moderation', hidden until webhook.
+        //   'pending_manual' — explicit bypass (MODERATION_BYPASS_VIDEO)
+        //                      → route into normal 'pending' queue so an
+        //                      admin can manually approve. Hidden until then.
+        //   null / undefined — moderation add-on quota exhausted OR errored
+        //                      (WebPurify/Rekognition Free = 50/mo). No
+        //                      webhook is coming, so treat the same as
+        //                      pending_manual: put in the queue for manual
+        //                      review instead of silently hiding forever.
         const isModerationApproved = moderationStatus === 'approved';
+        const isAsyncWebhookExpected = moderationStatus === 'pending';
         const insertActive = isModerationApproved;
-        const insertCurationStatus = isModerationApproved
-          ? ((run.params as any)?.curationStatus ?? 'pending')
-          : 'pending_moderation';
+        const paramCurationStatus = (run.params as any)?.curationStatus ?? 'pending';
+        let insertCurationStatus: string;
+        if (isModerationApproved) {
+          insertCurationStatus = paramCurationStatus;
+        } else if (isAsyncWebhookExpected) {
+          insertCurationStatus = 'pending_moderation';
+        } else {
+          // pending_manual OR moderation-quota-exhausted OR upload error
+          // path — route into the visible admin queue.
+          insertCurationStatus = 'pending';
+        }
 
         await db.insert(contentTemplateSchema)
           .values({
