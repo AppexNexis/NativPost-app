@@ -483,7 +483,13 @@ export async function publishToTwitter(
   onTokenRefresh?: (newAccessToken: string, newRefreshToken: string) => Promise<void>,
   oauthToken?: string,
   oauthTokenSecret?: string,
-): Promise<{ success: boolean; platformPostId?: string; error?: string }> {
+  username?: string,
+): Promise<{ success: boolean; platformPostId?: string; permalink?: string; error?: string }> {
+  const buildPermalink = (tweetId: string): string | undefined => {
+    const handle = username?.replace(/^@/, '').trim();
+    if (!handle) return undefined;
+    return `https://x.com/${handle}/status/${tweetId}`;
+  };
   try {
     const mediaIds: string[] = [];
     let mediaUploadFailed = false;
@@ -551,14 +557,24 @@ export async function publishToTwitter(
       }
       if (onTokenRefresh) await onTokenRefresh(refreshed.accessToken, refreshed.refreshToken);
       const retried = await postTweet(refreshed.accessToken, tweetBody);
-      return { success: retried.success, platformPostId: retried.platformPostId, error: retried.error };
+      return {
+        success: retried.success,
+        platformPostId: retried.platformPostId,
+        permalink: retried.platformPostId ? buildPermalink(retried.platformPostId) : undefined,
+        error: retried.error,
+      };
     }
 
     if (result.success && mediaUploadFailed) {
       logTwitterStep('publishedWithoutMedia', { platformPostId: result.platformPostId }, 'warn');
     }
 
-    return { success: result.success, platformPostId: result.platformPostId, error: result.error };
+    return {
+      success: result.success,
+      platformPostId: result.platformPostId,
+      permalink: result.platformPostId ? buildPermalink(result.platformPostId) : undefined,
+      error: result.error,
+    };
   } catch (err) {
     logTwitterStep('fatalError', { error: String(err) }, 'error');
     return { success: false, error: `Twitter error: ${err}` };

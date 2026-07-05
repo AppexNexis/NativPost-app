@@ -261,6 +261,7 @@ export const publishingQueueSchema = pgTable('publishing_queue', {
   scheduledFor: timestamp('scheduled_for', { mode: 'date' }).notNull(),
   status: text('status').default('queued').notNull(),
   platformPostId: text('platform_post_id'),
+  permalink: text('permalink'),
   errorMessage: text('error_message'),
   retryCount: integer('retry_count').default(0),
   publishedAt: timestamp('published_at', { mode: 'date' }),

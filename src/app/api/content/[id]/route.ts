@@ -6,7 +6,12 @@ import { NextResponse } from 'next/server';
 import { getAuthContext } from '@/lib/auth';
 import { sendScheduledNotification } from '@/lib/email';
 import { getDb } from '@/libs/DB';
-import { brandProfileSchema, contentItemSchema } from '@/models/Schema';
+import {
+  brandProfileSchema,
+  contentItemSchema,
+  publishingQueueSchema,
+  socialAccountSchema,
+} from '@/models/Schema';
 import { notifyApprovalNeeded } from '@/lib/notify-connect';
 
 type RouteParams = {
@@ -70,7 +75,40 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Content item not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ item }, { status: 200 });
+    // Fetch per-platform publication rows so the detail page can surface
+    // "Open post" links + status. Joined with social_account for the
+    // platform_username / platform_user_id fallback the URL helper needs.
+    const publicationRows = await db
+      .select({
+        platform: publishingQueueSchema.platform,
+        status: publishingQueueSchema.status,
+        platformPostId: publishingQueueSchema.platformPostId,
+        permalink: publishingQueueSchema.permalink,
+        errorMessage: publishingQueueSchema.errorMessage,
+        publishedAt: publishingQueueSchema.publishedAt,
+        createdAt: publishingQueueSchema.createdAt,
+        platformUsername: socialAccountSchema.platformUsername,
+        platformUserId: socialAccountSchema.platformUserId,
+      })
+      .from(publishingQueueSchema)
+      .leftJoin(
+        socialAccountSchema,
+        eq(publishingQueueSchema.socialAccountId, socialAccountSchema.id),
+      )
+      .where(eq(publishingQueueSchema.contentItemId, id));
+
+    // Deduplicate to the most recent row per platform (a re-publish will
+    // insert a new row; the UI should show the latest attempt).
+    const latestByPlatform = new Map<string, typeof publicationRows[number]>();
+    for (const row of publicationRows) {
+      const prev = latestByPlatform.get(row.platform);
+      const rowTime = (row.publishedAt || row.createdAt || new Date(0)).getTime();
+      const prevTime = prev ? (prev.publishedAt || prev.createdAt || new Date(0)).getTime() : -1;
+      if (rowTime >= prevTime) latestByPlatform.set(row.platform, row);
+    }
+    const publications = Array.from(latestByPlatform.values());
+
+    return NextResponse.json({ item, publications }, { status: 200 });
   } catch (err) {
     console.error('Failed to fetch content item:', err);
     return NextResponse.json({ error: 'Failed to fetch content item' }, { status: 500 });

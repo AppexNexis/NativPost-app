@@ -19,6 +19,7 @@ import { publishToSnapchat } from './snapchat-publisher';
 export type PublishResult = {
   success: boolean;
   platformPostId?: string;
+  permalink?: string;
   error?: string;
 };
 
@@ -159,6 +160,15 @@ export async function publishToFacebook(
   videoUrl?: string,
   onTokenRefresh?: (newToken: string) => Promise<void>,
 ): Promise<PublishResult> {
+  // Build FB post URL from returned id:
+  //   - feed/video/carousel post ids look like "{pageId}_{suffix}" → /{pageId}/posts/{suffix}
+  //   - single photo ids are bare numeric        → /{pageId}/photos/{id}
+  const fbPermalink = (id: string, kind: 'post' | 'photo'): string => {
+    if (kind === 'photo') return `https://www.facebook.com/${pageId}/photos/${id}`;
+    const idx = id.indexOf('_');
+    const suffix = idx >= 0 ? id.slice(idx + 1) : id;
+    return `https://www.facebook.com/${pageId}/posts/${suffix}`;
+  };
   try {
     // ── Video ──
     if (videoUrl) {
@@ -172,7 +182,7 @@ export async function publishToFacebook(
         onTokenRefresh,
       );
       const data = await res.json();
-      if (data.id) return { success: true, platformPostId: data.id };
+      if (data.id) return { success: true, platformPostId: data.id, permalink: fbPermalink(data.id, 'post') };
       return { success: false, error: data.error?.message || 'Facebook video post failed' };
     }
 
@@ -188,7 +198,7 @@ export async function publishToFacebook(
         onTokenRefresh,
       );
       const data = await res.json();
-      if (data.id) return { success: true, platformPostId: data.id };
+      if (data.id) return { success: true, platformPostId: data.id, permalink: fbPermalink(data.id, 'post') };
       return { success: false, error: data.error?.message || 'Facebook text post failed' };
     }
 
@@ -206,7 +216,7 @@ export async function publishToFacebook(
         onTokenRefresh,
       );
       const data = await res.json();
-      if (data.id) return { success: true, platformPostId: data.id };
+      if (data.id) return { success: true, platformPostId: data.id, permalink: fbPermalink(data.id, 'photo') };
       return { success: false, error: data.error?.message || 'Facebook image post failed' };
     }
 
@@ -250,7 +260,7 @@ export async function publishToFacebook(
       onTokenRefresh,
     );
     const feedData = await feedRes.json();
-    if (feedData.id) return { success: true, platformPostId: feedData.id };
+    if (feedData.id) return { success: true, platformPostId: feedData.id, permalink: fbPermalink(feedData.id, 'post') };
     return { success: false, error: feedData.error?.message || 'Facebook carousel post failed' };
   } catch (err) {
     return { success: false, error: `Facebook error: ${err}` };
@@ -260,6 +270,21 @@ export async function publishToFacebook(
 // ============================================================
 // INSTAGRAM
 // ============================================================
+
+// Fetches the shareable permalink for an IG media ID. Best-effort — on
+// failure we return undefined and let the read-side fallback kick in.
+async function fetchIgPermalink(mediaId: string, accessToken: string): Promise<string | undefined> {
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/${mediaId}?fields=permalink&access_token=${accessToken}`,
+    );
+    const data = await res.json();
+    if (typeof data.permalink === 'string' && data.permalink.length > 0) return data.permalink;
+  } catch (err) {
+    console.error('[Instagram] permalink fetch failed:', err);
+  }
+  return undefined;
+}
 
 export async function publishToInstagram(
   accessToken: string,
@@ -299,7 +324,10 @@ export async function publishToInstagram(
         body: JSON.stringify({ creation_id: containerData.id, access_token: accessToken }),
       });
       const publishData = await publishRes.json();
-      if (publishData.id) return { success: true, platformPostId: publishData.id };
+      if (publishData.id) {
+        const permalink = await fetchIgPermalink(publishData.id, accessToken);
+        return { success: true, platformPostId: publishData.id, permalink };
+      }
       return { success: false, error: publishData.error?.message || 'IG Reel publish failed' };
     }
 
@@ -334,7 +362,10 @@ export async function publishToInstagram(
         body: JSON.stringify({ creation_id: containerData.id, access_token: accessToken }),
       });
       const publishData = await publishRes.json();
-      if (publishData.id) return { success: true, platformPostId: publishData.id };
+      if (publishData.id) {
+        const permalink = await fetchIgPermalink(publishData.id, accessToken);
+        return { success: true, platformPostId: publishData.id, permalink };
+      }
       return { success: false, error: publishData.error?.message || 'IG publish failed' };
     }
 
@@ -393,7 +424,10 @@ export async function publishToInstagram(
     });
     const publishData = await publishRes.json();
     console.log(`[Instagram] Publish response:`, JSON.stringify(publishData));
-    if (publishData.id) return { success: true, platformPostId: publishData.id };
+    if (publishData.id) {
+      const permalink = await fetchIgPermalink(publishData.id, accessToken);
+      return { success: true, platformPostId: publishData.id, permalink };
+    }
     return { success: false, error: publishData.error?.message || 'IG carousel publish failed' };
   } catch (err) {
     return { success: false, error: `Instagram error: ${err}` };
@@ -1155,7 +1189,11 @@ async function _uploadToYouTube(
         uploadThumbnail(1).catch(() => null);
       }
 
-      return { success: true, platformPostId: videoId };
+      return {
+        success: true,
+        platformPostId: videoId,
+        permalink: `https://www.youtube.com/watch?v=${videoId}`,
+      };
     }
 
     return { success: false, error: 'YouTube upload completed but no video ID was returned.' };
@@ -1424,6 +1462,7 @@ export async function publishToplatform(
   oauthToken?: string,
   oauthTokenSecret?: string,
   platformSpecific?: Record<string, unknown>,
+  platformUsername?: string,
 ): Promise<PublishResult> {
   const isVideo = contentType === 'reel' || contentType === 'ugc_ad' || contentType === 'data_story';
   const verticalVideo = isVideo ? graphicUrls[0] : undefined;
@@ -1460,7 +1499,7 @@ export async function publishToplatform(
       return publishToLinkedInPage(accessToken, platformUserId, caption, imageUrls, squareVideo);
 
     case 'twitter':
-      return publishToTwitter(accessToken, caption, imageUrls, verticalVideo, refreshToken, onTokenRefresh, oauthToken, oauthTokenSecret);
+      return publishToTwitter(accessToken, caption, imageUrls, verticalVideo, refreshToken, onTokenRefresh, oauthToken, oauthTokenSecret, platformUsername);
 
     case 'tiktok': {
       const tiktokSettings = ps?.tiktok as {

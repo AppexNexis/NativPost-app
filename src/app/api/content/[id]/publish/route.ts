@@ -62,6 +62,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       platform: string;
       success: boolean;
       platformPostId?: string;
+      permalink?: string;
       error?: string;
     }> = [];
 
@@ -131,6 +132,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         (account as any).oauthToken || undefined,
         (account as any).oauthTokenSecret || undefined,
         mergedPlatformData,
+        account.platformUsername || undefined,
       );
 
       results.push({ platform, ...result });
@@ -143,6 +145,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         scheduledFor: new Date(),
         status: result.success ? 'published' : 'failed',
         platformPostId: result.platformPostId || null,
+        permalink: result.permalink || null,
         errorMessage: result.error || null,
         publishedAt: result.success ? new Date() : null,
       });

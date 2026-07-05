@@ -6,7 +6,9 @@ import {
   Check,
   ChevronRight,
   Copy,
+  AlertCircle,
   Edit3,
+  ExternalLink,
   ImageIcon,
   // Layers,
   Link2,
@@ -27,6 +29,7 @@ import { useEffect, useState } from 'react';
 import { PageHeader } from '@/features/dashboard/PageHeader';
 import { RemotionPreviewPlayer } from '@/components/editor/RemotionPreviewPlayer';
 import { renderEditorVideo } from '@/lib/editor/render-editor-video';
+import { getPostUrl, PLATFORM_META } from '@/lib/social-post-url';
 
 // -----------------------------------------------------------
 // TYPES
@@ -86,6 +89,18 @@ type ContentAngle = {
   id: string;
   name: string;
   color: string | null;
+};
+
+type Publication = {
+  platform: string;
+  status: string;
+  platformPostId: string | null;
+  permalink: string | null;
+  errorMessage: string | null;
+  publishedAt: string | null;
+  createdAt: string | null;
+  platformUsername: string | null;
+  platformUserId: string | null;
 };
 
 // -----------------------------------------------------------
@@ -178,6 +193,7 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
   const searchParams = useSearchParams();
 
   const [item, setItem] = useState<V2ContentItem | null>(null);
+  const [publications, setPublications] = useState<Publication[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editCaption, setEditCaption] = useState('');
@@ -212,6 +228,7 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
           const data = await res.json();
           const loadedItem = data.item as V2ContentItem;
           setItem(loadedItem);
+          setPublications((data.publications as Publication[]) || []);
           setEditCaption(loadedItem.caption);
 
           if (loadedItem.scheduledFor) {
@@ -307,7 +324,11 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
       const res = await fetch(`/api/content/${item.id}/publish`, { method: 'POST' });
       if (res.ok) {
         const refreshRes = await fetch(`/api/content/${item.id}`);
-        if (refreshRes.ok) setItem((await refreshRes.json()).item);
+        if (refreshRes.ok) {
+          const refreshed = await refreshRes.json();
+          setItem(refreshed.item);
+          setPublications((refreshed.publications as Publication[]) || []);
+        }
       }
     } finally {
       setActionLoading(null);
@@ -713,6 +734,95 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
     </div>
   );
 
+  // Published to Panel — one row per platform NativPost has tried to post to.
+  const PublishedToPanel = ({ compact = false }: { compact?: boolean }) => {
+    if (!publications || publications.length === 0) return null;
+
+    const statusMeta = (status: string): { label: string; className: string } => {
+      switch (status) {
+        case 'succeeded':
+        case 'published':
+        case 'completed':
+          return { label: 'Published', className: 'bg-emerald-50 text-emerald-700' };
+        case 'failed':
+        case 'error':
+          return { label: 'Failed', className: 'bg-red-50 text-red-700' };
+        case 'processing':
+        case 'in_progress':
+          return { label: 'Processing', className: 'bg-blue-50 text-blue-700' };
+        case 'queued':
+        case 'pending':
+        default:
+          return { label: 'Queued', className: 'bg-zinc-100 text-zinc-600' };
+      }
+    };
+
+    return (
+      <div className={`rounded-xl border bg-card ${compact ? 'p-4' : 'p-5'}`}>
+        <h3 className={`${compact ? 'mb-3' : 'mb-4'} border-b pb-3 text-sm font-semibold`}>Published to</h3>
+        <div className="space-y-2.5">
+          {publications.map((pub) => {
+            const meta = PLATFORM_META[pub.platform] || { label: pub.platform, brandColor: '#6b7280' };
+            const badge = statusMeta(pub.status);
+            const isPublished = badge.label === 'Published';
+            const { url, isFallback } = isPublished
+              ? getPostUrl({
+                  platform: pub.platform,
+                  platformPostId: pub.platformPostId,
+                  permalink: pub.permalink,
+                  platformUsername: pub.platformUsername,
+                  platformUserId: pub.platformUserId,
+                })
+              : { url: null, isFallback: false };
+
+            const fallbackTitle = isFallback
+              ? 'Opens Instagram profile — post permalink unavailable for older publishes.'
+              : undefined;
+
+            return (
+              <div key={pub.platform} className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    aria-hidden
+                    className="inline-block size-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: meta.brandColor }}
+                  />
+                  <span className="truncate text-sm font-medium">{meta.label}</span>
+                  <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${badge.className}`}>
+                    {badge.label}
+                  </span>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {badge.label === 'Failed' && pub.errorMessage && (
+                    <span
+                      title={pub.errorMessage}
+                      className="inline-flex items-center text-red-500"
+                      aria-label={`Error: ${pub.errorMessage}`}
+                    >
+                      <AlertCircle className="size-3.5" />
+                    </span>
+                  )}
+                  {isPublished && url && (
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={fallbackTitle}
+                      className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      Open
+                      <ExternalLink className="size-3" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   // -----------------------------------------------------------
   // Render
   // -----------------------------------------------------------
@@ -1096,6 +1206,9 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
           <div className="sticky top-6 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 5rem)' }}>
             <ActionsPanel />
 
+            {/* Published to */}
+            <PublishedToPanel />
+
             {/* Anti-Slop Score */}
             {item.antiSlopScore !== null && item.antiSlopScore !== undefined && (
               <div className="rounded-xl border bg-card p-5">
@@ -1184,6 +1297,8 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
 
       {/* Mobile sidebar content */}
       <div className={`mt-4 space-y-4 lg:hidden ${primaryAction ? 'pb-24' : ''}`}>
+        <PublishedToPanel compact />
+
         {item.antiSlopScore !== null && item.antiSlopScore !== undefined && (
           <div className="rounded-xl border bg-card p-4">
             <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Content quality</h3>
