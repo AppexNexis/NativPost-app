@@ -13,6 +13,7 @@
  */
 
 import { Buffer } from 'node:buffer';
+import { isVideoContentType } from '@/types/v2';
 import { publishToTwitter } from './twitter-publisher';
 import { publishToSnapchat } from './snapchat-publisher';
 
@@ -1464,7 +1465,7 @@ export async function publishToplatform(
   platformSpecific?: Record<string, unknown>,
   platformUsername?: string,
 ): Promise<PublishResult> {
-  const isVideo = contentType === 'reel' || contentType === 'ugc_ad' || contentType === 'data_story';
+  const isVideo = isVideoContentType(contentType);
   const verticalVideo = isVideo ? graphicUrls[0] : undefined;
   const squareVideo = isVideo ? (graphicUrls[1] || graphicUrls[0]) : undefined;
   const imageUrls = isVideo ? [] : graphicUrls;

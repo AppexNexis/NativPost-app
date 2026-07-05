@@ -16,6 +16,28 @@ export type ContentType =
   | 'ugc'
   | 'custom';
 
+// Content types that render/compile to a video file (mp4). Anything in this
+// list must be routed as VIDEO by publishers — not as an image URL. Kept in
+// one place so the publisher and the content-detail UI cannot drift.
+export const VIDEO_CONTENT_TYPES = [
+  'slideshow',
+  'reel',
+  'ugc',
+  'ugc_ad',
+  'data_story',
+  'wall_of_text',
+  'talking_head',
+  'green_screen',
+  'green_screen_meme',
+  'video_hook',
+  'video_hook_demo',
+] as const;
+
+export function isVideoContentType(contentType: string | null | undefined): boolean {
+  if (!contentType) return false;
+  return (VIDEO_CONTENT_TYPES as readonly string[]).includes(contentType);
+}
+
 export type SourcePlatform = 'tiktok' | 'instagram' | 'youtube' | 'pexels' | 'unknown';
 
 export type CurationStatus = 'pending' | 'approved' | 'rejected' | 'featured';

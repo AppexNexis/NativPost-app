@@ -30,6 +30,7 @@ import { PageHeader } from '@/features/dashboard/PageHeader';
 import { RemotionPreviewPlayer } from '@/components/editor/RemotionPreviewPlayer';
 import { renderEditorVideo } from '@/lib/editor/render-editor-video';
 import { getPostUrl, PLATFORM_META } from '@/lib/social-post-url';
+import { VIDEO_CONTENT_TYPES as SHARED_VIDEO_CONTENT_TYPES } from '@/types/v2';
 
 // -----------------------------------------------------------
 // TYPES
@@ -141,7 +142,7 @@ const MEDIA_CONTENT_TYPES = [
   'data_story', 'wall_of_text', 'talking_head', 'green_screen', 'video_hook',
   'carousel', 'ugc_ad',
 ];
-const VIDEO_CONTENT_TYPES = ['slideshow', 'reel', 'ugc', 'data_story', 'wall_of_text', 'talking_head', 'green_screen', 'video_hook', 'ugc_ad'];
+const VIDEO_CONTENT_TYPES: readonly string[] = SHARED_VIDEO_CONTENT_TYPES;
 
 const ASPECT_RATIO_LABELS: Record<string, string> = {
   '9:16': '9:16 — Vertical (Stories, Reels)',
