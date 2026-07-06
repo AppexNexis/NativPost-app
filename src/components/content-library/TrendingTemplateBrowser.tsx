@@ -22,6 +22,7 @@ import { useEffect, useState } from 'react';
 import type { ContentTemplate } from '@/types/v2';
 
 import { TemplateCard } from './TemplateCard';
+import { TrendingTemplateCarousel } from './TrendingTemplateCarousel';
 
 type Props = {
   contentType: string;
@@ -111,14 +112,22 @@ export function TrendingTemplateBrowser({ contentType, onRemix, limit = 12 }: Pr
     );
   }
 
-  // Horizontal scroll strip — mirrors the compact "trending row" pattern used
-  // elsewhere in the app. Grid falls back on wider screens so users can scan
-  // more options without scrolling.
+  // Two presentations from the same data:
+  //   - Mobile/narrow: Swiper Cards stack — feels native and matches the
+  //     Phase 5d reference (stacked deck, auto-advance every 5s)
+  //   - Desktop: 4-up grid so power users can scan and compare
+  // Both render TemplateCard so hover-play, slideshow arrows, and the Remix
+  // CTA stay identical to Content Library.
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-      {state.templates.map(template => (
-        <TemplateCard key={template.id} template={template} onRemix={onRemix} />
-      ))}
-    </div>
+    <>
+      <div className="lg:hidden">
+        <TrendingTemplateCarousel templates={state.templates} onRemix={onRemix} />
+      </div>
+      <div className="hidden lg:grid lg:grid-cols-4 lg:gap-3">
+        {state.templates.map(template => (
+          <TemplateCard key={template.id} template={template} onRemix={onRemix} />
+        ))}
+      </div>
+    </>
   );
 }
