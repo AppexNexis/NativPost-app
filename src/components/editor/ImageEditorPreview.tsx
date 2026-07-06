@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, ImageOff, Loader2, Plus, RefreshCw, Sparkles } from 'lucide-react';
 
 import { useEditor } from './EditorContext';
@@ -72,6 +72,86 @@ export function ImageEditorPreview() {
 
   const goPrev = () => setActiveIndex(i => (i - 1 + slideCount) % slideCount);
   const goNext = () => setActiveIndex(i => (i + 1) % slideCount);
+
+  // Remix caption backfill — when a slideshow/carousel/data_story loads with
+  // slides that have URLs but empty slideCopy entries (typical for freshly
+  // remixed content), sequentially call generate-slide-copy so each slide
+  // gets a caption tailored to its image + brand tone. Guarded per edit id so
+  // it never re-fires and never clobbers user-typed captions.
+  const backfilledEditIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const editId = state.edit?.id;
+    if (!editId) return;
+    if (!isMultiSlideKind) return;
+    if (backfilledEditIdRef.current === editId) return;
+    const currentSlides = state.mediaSlots?.slides ?? [];
+    const currentCopy = state.script?.slideCopy ?? [];
+    if (currentSlides.length === 0) return;
+
+    const emptyIndices: number[] = [];
+    for (let i = 0; i < currentSlides.length; i++) {
+      const slide = currentSlides[i];
+      if (!slide?.url) continue;
+      if ((slide as any).assetType === 'video') continue;
+      const entry = currentCopy[i];
+      const text = typeof entry === 'string' ? entry : entry?.text || '';
+      if (!text.trim()) emptyIndices.push(i);
+    }
+
+    backfilledEditIdRef.current = editId;
+    if (emptyIndices.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      setCaptionLoading(true);
+      const contextCaption = [state.script.hookText, state.script.bodyText, state.script.ctaText]
+        .filter(Boolean)
+        .join('\n');
+      const workingCopy: any[] = [...currentCopy];
+      for (const i of emptyIndices) {
+        if (cancelled) break;
+        const targetSlide = currentSlides[i];
+        if (!targetSlide?.url) continue;
+        const previousSlides = workingCopy
+          .slice(0, i)
+          .map(entry => (typeof entry === 'string' ? entry : entry?.text || ''))
+          .filter(Boolean);
+        try {
+          const res = await fetch('/api/content/generate-slide-copy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              imageUrl: targetSlide.url,
+              contentType,
+              slideIndex: i,
+              contextCaption,
+              previousSlides,
+            }),
+          });
+          if (res.ok) {
+            const data = (await res.json()) as { caption?: string };
+            if (data.caption && !cancelled) {
+              workingCopy[i] = data.caption;
+              dispatch({
+                type: 'UPDATE_SCRIPT',
+                payload: { slideCopy: [...workingCopy] },
+              });
+            }
+          }
+        } catch {
+          // Silent — user can still type captions manually.
+        }
+      }
+      if (!cancelled) setCaptionLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // Deliberately narrow deps: the ref guard prevents duplicate runs, and we
+    // only want this to trigger when the edit itself changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.edit?.id, isMultiSlideKind]);
 
   // Add-slide flow — user clicks the "+" tile in the thumbnail strip, picks a
   // media asset, and we auto-generate a per-slide caption from image + brand

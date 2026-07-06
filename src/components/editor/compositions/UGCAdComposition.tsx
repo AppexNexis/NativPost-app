@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { AbsoluteFill, Audio, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Audio, useVideoConfig, Video } from 'remotion';
 
 interface Props {
   script: {
@@ -42,11 +42,13 @@ export function UGCAdComposition({ script, style, mediaSlots, audioTrack }: Prop
         />
       )}
       {mediaSlots?.background?.url && (
-        <video
+        // Remotion's <Video> syncs with the Player timeline. A plain HTML
+        // <video> tag only shows the first frame because the Player drives
+        // playback via requestAnimationFrame, not the browser video clock.
+        <Video
           src={mediaSlots.background.url}
           style={{ width, height, objectFit: 'cover', position: 'absolute' }}
           muted
-          loop
         />
       )}
 

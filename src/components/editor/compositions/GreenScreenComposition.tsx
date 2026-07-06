@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { AbsoluteFill, Audio, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Audio, useVideoConfig, Video } from 'remotion';
 
 interface Props {
   script: {
@@ -43,11 +43,10 @@ export function GreenScreenComposition({ script, style, mediaSlots, audioTrack }
       )}
       {/* Background video or solid color */}
       {mediaSlots?.background?.url ? (
-        <video
+        <Video
           src={mediaSlots.background.url}
           style={{ width, height, objectFit: 'cover', position: 'absolute' }}
           muted
-          loop
         />
       ) : (
         <div

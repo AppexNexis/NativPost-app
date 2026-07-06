@@ -1029,7 +1029,15 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
             // gate on the editor kind and whether a compiled MP4 already exists.
             const editorKind = getEditorKind(item.contentType);
             const isCompiledVideo = (item.enrichmentData as any)?.isCompiled === true;
-            const useGallery = editorKind === 'image' && !isCompiledVideo;
+            // Image-kind content (slideshow / carousel / data_story /
+            // single_image) always renders as a gallery on the detail page —
+            // even after publish. The `isCompiled` flag EditorLayout sets on
+            // image publishes just means "engine round-trip completed"; the
+            // output URLs are still images, not an MP4, so gating gallery on
+            // !isCompiled would incorrectly route image kinds through the
+            // <video> branch. isCompiled remains meaningful for VIDEO kinds
+            // (drives the recompile banner below).
+            const useGallery = editorKind === 'image';
             const useVideoBranch = VIDEO_CONTENT_TYPES.includes(item.contentType) && !useGallery;
             return (
             <div className="rounded-xl border bg-card p-4 sm:p-5">

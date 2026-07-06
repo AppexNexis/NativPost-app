@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { AbsoluteFill, Audio, Sequence, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Audio, Sequence, useVideoConfig, Video } from 'remotion';
 
 interface Props {
   script: {
@@ -39,13 +39,13 @@ export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
-      {/* Background video */}
+      {/* Background video — use Remotion <Video> so playback syncs with the
+          Player timeline (plain HTML <video> only shows the first frame). */}
       {mediaSlots?.background?.url && (
-        <video
+        <Video
           src={mediaSlots.background.url}
           style={{ width, height, objectFit: 'cover', position: 'absolute' }}
           muted
-          loop
         />
       )}
 
