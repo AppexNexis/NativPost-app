@@ -1,31 +1,28 @@
 'use client';
 
 /**
- * TrendingTemplateCarousel — stacked-card carousel of trending templates
- * powered by Swiper's `EffectCards`.
+ * TrendingTemplateCarousel — fan-stack / depth coverflow carousel of trending
+ * templates powered by Swiper's `EffectCoverflow`.
  *
  * Behavior
- *   - Cards effect: 3-card z-stack, tap side to advance
+ *   - Coverflow effect: center card scale(1) opacity(1); side cards pushed
+ *     back with depth + stretch so they read as ~scale(0.88) opacity(0.6)
  *   - Autoplay 5000ms with `pauseOnMouseEnter` so hover-to-inspect never
  *     races the tick
+ *   - Loop only when >=3 templates (Swiper needs multiples to loop cleanly)
  *   - Uses `TemplateCard` per slide so all card affordances (video hover
  *     autoplay, slideshow arrows, engagement pills, Remix CTA) stay in sync
  *     with the Content Library grid
  *
- * Phase 5d UI polish for the Create Post browse step. The parent
- * (`TrendingTemplateBrowser`) picks between grid and carousel based on how
- * many templates are returned.
- *
- * Note on styles: Swiper ships CSS modules that must be imported at least
- * once. We import them here so any consumer gets carousel styling without
- * a separate global include.
+ * Phase 5d UI polish for the Create Post browse step, matching usefastlane's
+ * Fan Stack / Depth Carousel pattern.
  */
 
-import { Autoplay, EffectCards } from 'swiper/modules';
+import { Autoplay, EffectCoverflow } from 'swiper/modules';
 import { Swiper, SwiperSlide } from 'swiper/react';
 
 import 'swiper/css';
-import 'swiper/css/effect-cards';
+import 'swiper/css/effect-coverflow';
 
 import type { ContentTemplate } from '@/types/v2';
 
@@ -34,32 +31,45 @@ import { TemplateCard } from './TemplateCard';
 type Props = {
   templates: ContentTemplate[];
   onRemix: (template: ContentTemplate) => void;
+  autoplay?: boolean;
 };
 
-export function TrendingTemplateCarousel({ templates, onRemix }: Props) {
+export function TrendingTemplateCarousel({ templates, onRemix, autoplay = true }: Props) {
   if (templates.length === 0) return null;
 
   return (
-    <div className="mx-auto w-full max-w-[280px] py-6">
+    <div className="mx-auto w-full max-w-[800px] py-6">
       <Swiper
-        effect="cards"
-        modules={[EffectCards, Autoplay]}
+        effect="coverflow"
+        modules={[EffectCoverflow, Autoplay]}
         grabCursor
-        loop={templates.length > 2}
-        autoplay={{
-          delay: 5000,
-          pauseOnMouseEnter: true,
-          disableOnInteraction: false,
-        }}
-        cardsEffect={{
+        centeredSlides
+        slidesPerView="auto"
+        spaceBetween={16}
+        loop={templates.length >= 3}
+        autoplay={
+          autoplay
+            ? {
+                delay: 5000,
+                pauseOnMouseEnter: true,
+                disableOnInteraction: false,
+              }
+            : false
+        }
+        coverflowEffect={{
+          rotate: 0,
+          stretch: 60,
+          depth: 200,
+          modifier: 1,
           slideShadows: false,
-          perSlideOffset: 8,
-          perSlideRotate: 2,
         }}
         className="!overflow-visible"
       >
         {templates.map((template) => (
-          <SwiperSlide key={template.id} className="!h-auto">
+          <SwiperSlide
+            key={template.id}
+            className="!h-auto !w-[260px] sm:!w-[280px]"
+          >
             <TemplateCard template={template} onRemix={onRemix} />
           </SwiperSlide>
         ))}

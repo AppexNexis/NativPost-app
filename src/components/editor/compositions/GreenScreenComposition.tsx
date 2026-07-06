@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { AbsoluteFill, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Audio, useVideoConfig } from 'remotion';
 
 interface Props {
   script: {
@@ -18,9 +18,13 @@ interface Props {
   mediaSlots?: {
     background?: { url: string };
   };
+  audioTrack?: {
+    url: string;
+    volume?: number;
+  } | null;
 }
 
-export function GreenScreenComposition({ script, style, mediaSlots }: Props) {
+export function GreenScreenComposition({ script, style, mediaSlots, audioTrack }: Props) {
   const { width, height } = useVideoConfig();
 
   const fontFamily = style.fontFamily || 'Inter';
@@ -31,6 +35,12 @@ export function GreenScreenComposition({ script, style, mediaSlots }: Props) {
 
   return (
     <AbsoluteFill style={{ backgroundColor: bgColor }}>
+      {audioTrack && audioTrack.url && (
+        <Audio
+          src={audioTrack.url}
+          volume={Math.max(0, Math.min(1, (audioTrack.volume ?? 80) / 100))}
+        />
+      )}
       {/* Background video or solid color */}
       {mediaSlots?.background?.url ? (
         <video

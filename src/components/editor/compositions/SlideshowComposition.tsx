@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { AbsoluteFill, Sequence, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Audio, Sequence, useVideoConfig } from 'remotion';
 
 interface Props {
   script: {
@@ -15,21 +15,66 @@ interface Props {
     color?: string;
     backgroundColor?: string;
     align?: 'left' | 'center' | 'right';
+    weight?: 'normal' | 'bold';
+    italic?: boolean;
+    underline?: boolean;
+    backgroundDimming?: number;
   };
+  layout?: string;
+  // Accept both shapes:
+  //  - flat `slides` (Player path via EditorPreview inputProps)
+  //  - nested `mediaSlots.slides` (render-editor-video / legacy path)
+  slides?: Array<{ url: string }>;
   mediaSlots?: {
     slides?: Array<{ url: string }>;
   };
+  audioTrack?: {
+    url: string;
+    volume?: number;
+  } | null;
 }
 
-export function SlideshowComposition({ script, style, mediaSlots }: Props) {
+/**
+ * SlideshowComposition — MUST match ImageEditorPreview.tsx exactly.
+ * WYSIWYG rule: any style/layout logic added here must also live in the
+ * preview component, and vice versa.
+ */
+export function SlideshowComposition({ script, style, layout, mediaSlots, slides: slidesProp, audioTrack }: Props) {
   const { width, height, fps } = useVideoConfig();
 
   const fontFamily = style.fontFamily || 'Inter';
   const fontSize = style.fontSize || 48;
   const color = style.color || '#ffffff';
-  const bgColor = style.backgroundColor || 'rgba(0,0,0,0.6)';
+  const bgColor = style.backgroundColor || 'transparent';
+  const align = style.align || 'center';
+  const fontWeight = style.weight === 'bold' ? 700 : 400;
+  const fontStyle = style.italic ? 'italic' : 'normal';
+  const textDecoration = style.underline ? 'underline' : 'none';
+  const dim = Math.max(0, Math.min(1, style.backgroundDimming ?? 0));
 
-  const slides = mediaSlots?.slides || [];
+  const layoutKey = layout || 'centered';
+  const isWall = layoutKey === 'wall_of_text';
+
+  // Position mapping — mirrors ImageEditorPreview.
+  const layoutStyle: React.CSSProperties = (() => {
+    switch (layoutKey) {
+      case 'bottom_caption':
+        return { justifyContent: 'flex-end', paddingBottom: 120 };
+      case 'top_caption':
+        return { justifyContent: 'flex-start', paddingTop: 120 };
+      case 'wall_of_text':
+      case 'centered':
+      default:
+        return { justifyContent: 'center' };
+    }
+  })();
+
+  const alignItems =
+    align === 'left' ? 'flex-start'
+    : align === 'right' ? 'flex-end'
+    : 'center';
+
+  const slides = slidesProp ?? mediaSlots?.slides ?? [];
   const slideCopy = script.slideCopy || [];
   const defaultDuration = 3; // seconds per slide
 
@@ -37,6 +82,12 @@ export function SlideshowComposition({ script, style, mediaSlots }: Props) {
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
+      {audioTrack && audioTrack.url && (
+        <Audio
+          src={audioTrack.url}
+          volume={Math.max(0, Math.min(1, (audioTrack.volume ?? 80) / 100))}
+        />
+      )}
       {slides.map((slide, idx) => {
         const copyItem = slideCopy[idx];
         const copyText = typeof copyItem === 'string' ? copyItem : copyItem?.text || '';
@@ -61,32 +112,41 @@ export function SlideshowComposition({ script, style, mediaSlots }: Props) {
                   position: 'absolute',
                 }}
               />
+              {/* Full-bleed dim scrim — matches preview. */}
+              {dim > 0 && (
+                <AbsoluteFill
+                  style={{ backgroundColor: `rgba(0,0,0,${dim})` }}
+                />
+              )}
               {copyText && (
                 <AbsoluteFill
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
-                    justifyContent: 'flex-end',
-                    alignItems: 'center',
+                    alignItems,
                     padding: 40,
+                    ...layoutStyle,
                   }}
                 >
                   <div
                     style={{
                       backgroundColor: bgColor,
-                      padding: '16px 24px',
+                      padding: bgColor === 'transparent' ? 0 : '16px 24px',
                       borderRadius: 8,
-                      maxWidth: '90%',
+                      maxWidth: isWall ? '95%' : '90%',
                     }}
                   >
                     <p
                       style={{
                         fontFamily,
-                        fontSize,
+                        fontSize: isWall ? fontSize * 1.15 : fontSize,
                         color,
-                        fontWeight: 'bold',
-                        textAlign: 'center',
+                        fontWeight,
+                        fontStyle,
+                        textDecoration,
+                        textAlign: align,
                         lineHeight: 1.3,
+                        margin: 0,
                       }}
                     >
                       {copyText}
@@ -117,8 +177,10 @@ export function SlideshowComposition({ script, style, mediaSlots }: Props) {
                 fontFamily,
                 fontSize: fontSize * 1.2,
                 color,
-                fontWeight: 'bold',
-                textAlign: 'center',
+                fontWeight,
+                fontStyle,
+                textDecoration,
+                textAlign: align,
               }}
             >
               {script.hookText}

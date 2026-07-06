@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   AbsoluteFill,
+  Audio,
   Img,
   interpolate,
   Sequence,
@@ -57,6 +58,14 @@ export interface EditorSlide {
   url: string;
 }
 
+export interface EditorAudioTrack {
+  name?: string;
+  url: string;
+  publicId?: string;
+  source?: 'original' | 'library' | 'upload';
+  volume?: number;
+}
+
 export interface EditorInputProps {
   backgroundUrl?: string;
   hookVideoUrl?: string;
@@ -67,6 +76,7 @@ export interface EditorInputProps {
   aspectRatio: string;
   contentType: string;
   noAnimation?: boolean;
+  audioTrack?: EditorAudioTrack | null;
 }
 
 // ── Style helpers ──────────────────────────────────────────────────────────────
@@ -143,6 +153,7 @@ export function EditorComposition({
   layout,
   contentType,
   noAnimation: noAnimationFromProps,
+  audioTrack,
 }: EditorInputProps) {
   const { width, height, fps } = useVideoConfig();
 
@@ -280,6 +291,14 @@ export function EditorComposition({
             )}
           </div>
         </Sequence>
+      )}
+
+      {/* Background audio — baked into compiled MP4, played during preview */}
+      {audioTrack && audioTrack.url && (
+        <Audio
+          src={audioTrack.url}
+          volume={Math.max(0, Math.min(1, (audioTrack.volume ?? 80) / 100))}
+        />
       )}
 
       {/* Slideshow preview strip */}

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { AbsoluteFill, Sequence, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Audio, Sequence, useVideoConfig } from 'remotion';
 
 interface Props {
   script: {
@@ -19,9 +19,13 @@ interface Props {
     hookVideo?: { url: string };
     demoVideo?: { url: string };
   };
+  audioTrack?: {
+    url: string;
+    volume?: number;
+  } | null;
 }
 
-export function VideoHookComposition({ script, style, mediaSlots }: Props) {
+export function VideoHookComposition({ script, style, mediaSlots, audioTrack }: Props) {
   const { width, height, fps } = useVideoConfig();
 
   const fontFamily = style.fontFamily || 'Inter';
@@ -35,6 +39,12 @@ export function VideoHookComposition({ script, style, mediaSlots }: Props) {
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
+      {audioTrack && audioTrack.url && (
+        <Audio
+          src={audioTrack.url}
+          volume={Math.max(0, Math.min(1, (audioTrack.volume ?? 80) / 100))}
+        />
+      )}
       {/* Hook video */}
       <Sequence from={0} durationInFrames={hookFrames}>
         <AbsoluteFill>

@@ -21,7 +21,7 @@ type ContentLibraryBrowserProps = {
   onRemix: (template: ContentTemplate) => void;
 };
 
-const CONTENT_TYPE_OPTIONS: { value: ContentType; label: string }[] = [
+export const CONTENT_TYPE_OPTIONS: { value: ContentType; label: string }[] = [
   { value: 'slideshow', label: 'Slideshow' },
   { value: 'wall_of_text', label: 'Wall of Text' },
   { value: 'talking_head', label: 'Talking Head' },
@@ -31,7 +31,7 @@ const CONTENT_TYPE_OPTIONS: { value: ContentType; label: string }[] = [
   { value: 'custom', label: 'Custom' },
 ];
 
-const NICHE_OPTIONS: { value: NicheTag; label: string }[] = [
+export const NICHE_OPTIONS: { value: NicheTag; label: string }[] = [
   { value: 'b2b_saas', label: 'B2B SaaS' },
   { value: 'agency', label: 'Agency' },
   { value: 'ecommerce', label: 'E-commerce' },

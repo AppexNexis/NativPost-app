@@ -29,6 +29,19 @@ export function ImageEditorPreview() {
   const contentType = state.edit?.contentType || 'single_image';
   const slides = state.mediaSlots?.slides ?? [];
   const background = state.mediaSlots?.background;
+  const slideCopy = state.script?.slideCopy ?? [];
+  const layout = state.layout || 'centered';
+  const isPerSlide = contentType !== 'single_image' && slides.length > 1;
+
+  // Read a slide's caption from slideCopy — supports both string and
+  // { text, durationSeconds } shapes. Fallback chain lets old rows that
+  // still carry global body text remain readable.
+  const readSlideCopy = (i: number): string => {
+    const entry = slideCopy[i];
+    if (typeof entry === 'string') return entry;
+    if (entry && typeof entry === 'object') return entry.text || '';
+    return '';
+  };
 
   // For a single-image type, we render a synthetic single-slide array so the
   // rest of the component (indicators/nav) has a uniform shape.
@@ -168,57 +181,139 @@ export function ImageEditorPreview() {
             </div>
           )}
 
-          {/* Text overlays — hook/body/cta rendered exactly like the Remotion
-              composition so WYSIWYG is preserved between preview and compile. */}
-          {(state.script.hookText || state.script.bodyText || state.script.ctaText) && activeSlide?.url && (
+          {/* Full-bleed background dim scrim — sits between media and text so
+              text stays legible even on busy source images. WYSIWYG: mirrors
+              SlideshowComposition.tsx exactly. */}
+          {activeSlide?.url && (state.style?.backgroundDimming ?? 0) > 0 && (
             <div
-              className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center"
+              className="pointer-events-none absolute inset-0"
               style={{
-                fontFamily: state.style?.fontFamily || 'Inter',
-                color: state.style?.color || '#ffffff',
-                textAlign: (state.style?.align as any) || 'center',
+                backgroundColor: `rgba(0,0,0,${state.style?.backgroundDimming ?? 0})`,
               }}
-            >
-              {state.script.hookText && (
-                <div
-                  className="rounded-md px-3 py-2"
-                  style={{
-                    backgroundColor: state.style?.backgroundColor || 'rgba(0,0,0,0.5)',
-                    fontSize: (state.style?.fontSize || 20) * 0.6,
-                    fontWeight: 700,
-                    lineHeight: 1.2,
-                  }}
-                >
-                  {state.script.hookText}
-                </div>
-              )}
-              {state.script.bodyText && (
-                <div
-                  className="rounded-md px-3 py-1.5"
-                  style={{
-                    backgroundColor: state.style?.backgroundColor || 'rgba(0,0,0,0.4)',
-                    fontSize: (state.style?.fontSize || 20) * 0.45,
-                    lineHeight: 1.35,
-                    maxWidth: '92%',
-                  }}
-                >
-                  {state.script.bodyText}
-                </div>
-              )}
-              {state.script.ctaText && (
-                <div
-                  className="rounded-full px-3 py-1"
-                  style={{
-                    backgroundColor: state.style?.ctaBackgroundColor || 'rgba(255,255,255,0.15)',
-                    fontSize: (state.style?.fontSize || 20) * 0.45,
-                    fontWeight: 600,
-                  }}
-                >
-                  {state.script.ctaText}
-                </div>
-              )}
-            </div>
+            />
           )}
+
+          {/* Text overlay — for multi-slide image kinds, we render only the
+              per-slide caption at the position dictated by state.layout. For
+              single_image we still show hook/body/cta together. */}
+          {activeSlide?.url && (() => {
+            const align = (state.style?.align as 'left' | 'center' | 'right') || 'center';
+            const fontWeight = state.style?.weight === 'bold' ? 700 : 400;
+            const fontStyle = state.style?.italic ? 'italic' : 'normal';
+            const textDecoration = state.style?.underline ? 'underline' : 'none';
+            const baseFontFamily = state.style?.fontFamily || 'Inter';
+            const baseColor = state.style?.color || '#ffffff';
+
+            // Position class from state.layout — mirrors SlideshowComposition.
+            const positionClass = (() => {
+              switch (layout) {
+                case 'bottom_caption':
+                  return 'items-center justify-end pb-14';
+                case 'top_caption':
+                  return 'items-center justify-start pt-14';
+                case 'wall_of_text':
+                  return 'items-center justify-center';
+                case 'centered':
+                default:
+                  return 'items-center justify-center';
+              }
+            })();
+
+            const alignItemsClass =
+              align === 'left' ? 'items-start text-left'
+              : align === 'right' ? 'items-end text-right'
+              : 'items-center text-center';
+
+            if (isPerSlide) {
+              const caption = readSlideCopy(activeIndex) || state.script.bodyText || '';
+              if (!caption) return null;
+              const isWall = layout === 'wall_of_text';
+              return (
+                <div
+                  className={`absolute inset-0 flex flex-col gap-3 px-6 ${positionClass} ${alignItemsClass}`}
+                  style={{
+                    fontFamily: baseFontFamily,
+                    color: baseColor,
+                    textAlign: align,
+                  }}
+                >
+                  <div
+                    className="rounded-md px-3 py-2"
+                    style={{
+                      backgroundColor: state.style?.backgroundColor || 'transparent',
+                      fontSize: (state.style?.fontSize || 20) * (isWall ? 0.7 : 0.5),
+                      fontWeight,
+                      fontStyle,
+                      textDecoration,
+                      lineHeight: 1.3,
+                      maxWidth: isWall ? '95%' : '90%',
+                    }}
+                  >
+                    {caption}
+                  </div>
+                </div>
+              );
+            }
+
+            // single_image / fallback: keep hook/body/cta layered
+            if (!state.script.hookText && !state.script.bodyText && !state.script.ctaText) {
+              return null;
+            }
+            return (
+              <div
+                className={`absolute inset-0 flex flex-col gap-3 px-6 ${positionClass} ${alignItemsClass}`}
+                style={{
+                  fontFamily: baseFontFamily,
+                  color: baseColor,
+                  textAlign: align,
+                }}
+              >
+                {state.script.hookText && (
+                  <div
+                    className="rounded-md px-3 py-2"
+                    style={{
+                      backgroundColor: state.style?.backgroundColor || 'transparent',
+                      fontSize: (state.style?.fontSize || 20) * 0.6,
+                      fontWeight,
+                      fontStyle,
+                      textDecoration,
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {state.script.hookText}
+                  </div>
+                )}
+                {state.script.bodyText && (
+                  <div
+                    className="rounded-md px-3 py-1.5"
+                    style={{
+                      backgroundColor: state.style?.backgroundColor || 'transparent',
+                      fontSize: (state.style?.fontSize || 20) * 0.45,
+                      fontWeight,
+                      fontStyle,
+                      textDecoration,
+                      lineHeight: 1.35,
+                      maxWidth: '92%',
+                    }}
+                  >
+                    {state.script.bodyText}
+                  </div>
+                )}
+                {state.script.ctaText && (
+                  <div
+                    className="rounded-full px-3 py-1"
+                    style={{
+                      backgroundColor: state.style?.ctaBackgroundColor || 'rgba(255,255,255,0.15)',
+                      fontSize: (state.style?.fontSize || 20) * 0.45,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {state.script.ctaText}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Prev / Next arrows */}
           {canNavigate && (

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useEditor } from '../EditorContext';
+import { getEditorKind } from '@/lib/editor/content-type-registry';
 
 const FONTS = ['Inter', 'Roboto', 'Montserrat', 'Oswald', 'Playfair Display'];
 
@@ -31,78 +32,143 @@ export function TextTab() {
   const updateStyle = (key: string, value: unknown) =>
     dispatch({ type: 'UPDATE_STYLE', payload: { [key]: value } });
 
+  const contentType = state.edit?.contentType || 'single_image';
+  const kind = getEditorKind(contentType);
+  const slideMediaCount = state.mediaSlots?.slides?.length ?? 0;
+  const slideCopyCount = state.script?.slideCopy?.length ?? 0;
+  const slideCount = Math.max(slideMediaCount, slideCopyCount, 1);
+  const isPerSlide = kind === 'image' && slideCount > 1;
+
+  const getSlideText = (i: number): string => {
+    const entry = state.script?.slideCopy?.[i];
+    if (!entry) return '';
+    return typeof entry === 'string' ? entry : (entry.text || '');
+  };
+
+  const updateSlideText = (i: number, value: string) => {
+    const current = state.script?.slideCopy ?? [];
+    const next: Array<string | { text: string; durationSeconds?: number }> = [];
+    for (let idx = 0; idx < Math.max(slideCount, current.length); idx += 1) {
+      if (idx === i) {
+        const existing = current[idx];
+        if (typeof existing === 'object' && existing !== null) {
+          next.push({ ...existing, text: value });
+        } else {
+          next.push(value);
+        }
+      } else {
+        next.push(current[idx] ?? '');
+      }
+    }
+    dispatch({ type: 'UPDATE_SCRIPT', payload: { slideCopy: next } });
+  };
+
   return (
     <div className="space-y-5">
-      {/* Hook */}
-      <div>
-        <div className="mb-1.5 flex items-center justify-between">
-          <label className="text-xs font-medium text-foreground">HOOK</label>
-          <div className="flex items-center gap-2">
-            {state.timing?.hook?.durationSeconds && (
-              <span className="text-[11px] text-muted-foreground">{state.timing.hook.durationSeconds}s</span>
-            )}
-            {(() => {
-              const words = (state.script.hookText || '').trim().split(/\s+/).filter(Boolean);
-              const isTooLong = words.length > 12;
-              return (
-                <span className={`text-[11px] ${isTooLong ? 'text-amber-600' : 'text-muted-foreground'}`}>
-                  {words.length} words
-                  {isTooLong && (
-                    <button
-                      type="button"
-                      onClick={() => updateScript('hookText', words.slice(0, 12).join(' '))}
-                      className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 hover:bg-amber-200"
-                    >
-                      Trim
-                    </button>
-                  )}
-                </span>
-              );
-            })()}
+      {isPerSlide ? (
+        <div className="space-y-4">
+          <div className="text-xs font-medium text-foreground">
+            PER-SLIDE TEXT
+            <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+              {slideCount} slide{slideCount === 1 ? '' : 's'} — one text box each
+            </span>
           </div>
+          {Array.from({ length: slideCount }).map((_, i) => {
+            const value = getSlideText(i);
+            const words = value.trim().split(/\s+/).filter(Boolean).length;
+            return (
+              <div key={i}>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Slide {i + 1}
+                  </label>
+                  <span className="text-[11px] text-muted-foreground">{words} words</span>
+                </div>
+                <textarea
+                  value={value}
+                  onChange={e => updateSlideText(i, e.target.value)}
+                  rows={3}
+                  placeholder={`Caption for slide ${i + 1}…`}
+                  className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+            );
+          })}
         </div>
-        <textarea
-          value={state.script.hookText || ''}
-          onChange={e => updateScript('hookText', e.target.value)}
-          rows={2}
-          placeholder="Grab attention in 3 seconds…"
-          className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-        />
-      </div>
+      ) : (
+        <>
+          {/* Hook */}
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="text-xs font-medium text-foreground">HOOK</label>
+              <div className="flex items-center gap-2">
+                {state.timing?.hook?.durationSeconds && (
+                  <span className="text-[11px] text-muted-foreground">{state.timing.hook.durationSeconds}s</span>
+                )}
+                {(() => {
+                  const words = (state.script.hookText || '').trim().split(/\s+/).filter(Boolean);
+                  const isTooLong = words.length > 12;
+                  return (
+                    <span className={`text-[11px] ${isTooLong ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                      {words.length} words
+                      {isTooLong && (
+                        <button
+                          type="button"
+                          onClick={() => updateScript('hookText', words.slice(0, 12).join(' '))}
+                          className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 hover:bg-amber-200"
+                        >
+                          Trim
+                        </button>
+                      )}
+                    </span>
+                  );
+                })()}
+              </div>
+            </div>
+            <textarea
+              value={state.script.hookText || ''}
+              onChange={e => updateScript('hookText', e.target.value)}
+              rows={2}
+              placeholder="Grab attention in 3 seconds…"
+              className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
 
-      {/* Body */}
-      <div>
-        <div className="mb-1.5 flex items-center justify-between">
-          <label className="text-xs font-medium text-foreground">BODY</label>
-          {state.timing?.body?.durationSeconds && (
-            <span className="text-[11px] text-muted-foreground">{state.timing.body.durationSeconds}s</span>
-          )}
-        </div>
-        <textarea
-          value={state.script.bodyText || ''}
-          onChange={e => updateScript('bodyText', e.target.value)}
-          rows={4}
-          placeholder="Main content…"
-          className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-        />
-      </div>
+          {/* Body */}
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="text-xs font-medium text-foreground">BODY</label>
+              {state.timing?.body?.durationSeconds && (
+                <span className="text-[11px] text-muted-foreground">{state.timing.body.durationSeconds}s</span>
+              )}
+            </div>
+            <textarea
+              value={state.script.bodyText || ''}
+              onChange={e => updateScript('bodyText', e.target.value)}
+              rows={4}
+              placeholder="Main content…"
+              className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
 
-      {/* CTA */}
-      <div>
-        <div className="mb-1.5 flex items-center justify-between">
-          <label className="text-xs font-medium text-foreground">CTA</label>
-          {state.timing?.cta?.durationSeconds && (
-            <span className="text-[11px] text-muted-foreground">{state.timing.cta.durationSeconds}s</span>
-          )}
-        </div>
-        <textarea
-          value={state.script.ctaText || ''}
-          onChange={e => updateScript('ctaText', e.target.value)}
-          rows={2}
-          placeholder="Follow for more…"
-          className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-        />
-      </div>
+          {/* CTA */}
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="text-xs font-medium text-foreground">CTA</label>
+              {state.timing?.cta?.durationSeconds && (
+                <span className="text-[11px] text-muted-foreground">{state.timing.cta.durationSeconds}s</span>
+              )}
+            </div>
+            <textarea
+              value={state.script.ctaText || ''}
+              onChange={e => updateScript('ctaText', e.target.value)}
+              rows={2}
+              placeholder="Follow for more…"
+              className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+        </>
+      )}
 
       {/* Mention Business toggle */}
       <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
@@ -206,14 +272,14 @@ export function TextTab() {
         <div className="mb-1.5 flex items-center justify-between">
           <label className="text-xs font-medium text-foreground">BACKGROUND DIM</label>
           <span className="text-xs text-muted-foreground">
-            {Math.round(((state.style as any).backgroundDimming ?? 0.3) * 100)}%
+            {Math.round((state.style.backgroundDimming ?? 0.3) * 100)}%
           </span>
         </div>
         <input
           type="range"
           min={0}
           max={80}
-          value={Math.round(((state.style as any).backgroundDimming ?? 0.3) * 100)}
+          value={Math.round((state.style.backgroundDimming ?? 0.3) * 100)}
           onChange={e => updateStyle('backgroundDimming', parseInt(e.target.value) / 100)}
           className="w-full accent-primary"
         />
@@ -302,26 +368,31 @@ export function TextTab() {
         </div>
       </div>
 
-      {/* Animation Toggle */}
-      <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
-        <div>
-          <label className="text-xs font-medium text-foreground">ANIMATION</label>
-          <p className="text-[11px] text-muted-foreground">Sequential text fade-in</p>
+      {/* Animation Toggle — video-only. Slideshow/carousel/data_story swap
+          slides on fixed cadence and don't render Remotion's fade-in overlays,
+          so the toggle is meaningless there. Gate on editor kind rather than
+          hiding via CSS so the setting cannot silently persist between remixes. */}
+      {kind === 'video' && (
+        <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+          <div>
+            <label className="text-xs font-medium text-foreground">ANIMATION</label>
+            <p className="text-[11px] text-muted-foreground">Sequential text fade-in</p>
+          </div>
+          <button
+            onClick={() => {
+              const current = (state.style as any).noAnimation;
+              dispatch({ type: 'UPDATE_STYLE', payload: { noAnimation: !current } });
+            }}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+              (state.style as any).noAnimation ? 'bg-muted-foreground/30' : 'bg-primary'
+            }`}
+          >
+            <span className={`inline-block size-3.5 rounded-full bg-white transition-transform ${
+              (state.style as any).noAnimation ? 'translate-x-1' : 'translate-x-[18px]'
+            }`} />
+          </button>
         </div>
-        <button
-          onClick={() => {
-            const current = (state.style as any).noAnimation;
-            dispatch({ type: 'UPDATE_STYLE', payload: { noAnimation: !current } });
-          }}
-          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-            (state.style as any).noAnimation ? 'bg-muted-foreground/30' : 'bg-primary'
-          }`}
-        >
-          <span className={`inline-block size-3.5 rounded-full bg-white transition-transform ${
-            (state.style as any).noAnimation ? 'translate-x-1' : 'translate-x-[18px]'
-          }`} />
-        </button>
-      </div>
+      )}
     </div>
   );
 }

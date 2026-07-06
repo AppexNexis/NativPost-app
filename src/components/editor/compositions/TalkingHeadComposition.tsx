@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { AbsoluteFill, Sequence, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Audio, Sequence, useVideoConfig } from 'remotion';
 
 interface Props {
   script: {
@@ -18,9 +18,13 @@ interface Props {
   mediaSlots?: {
     background?: { url: string };
   };
+  audioTrack?: {
+    url: string;
+    volume?: number;
+  } | null;
 }
 
-export function TalkingHeadComposition({ script, style, mediaSlots }: Props) {
+export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }: Props) {
   const { width, height, fps, durationInFrames } = useVideoConfig();
 
   const hookFrames = 3 * fps;
@@ -134,6 +138,12 @@ export function TalkingHeadComposition({ script, style, mediaSlots }: Props) {
           </Sequence>
         )}
       </AbsoluteFill>
+      {audioTrack && audioTrack.url && (
+        <Audio
+          src={audioTrack.url}
+          volume={Math.max(0, Math.min(1, (audioTrack.volume ?? 80) / 100))}
+        />
+      )}
     </AbsoluteFill>
   );
 }

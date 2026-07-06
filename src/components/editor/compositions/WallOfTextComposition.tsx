@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { AbsoluteFill, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Audio, useVideoConfig } from 'remotion';
 
 interface Props {
   script: {
@@ -15,9 +15,13 @@ interface Props {
     backgroundColor?: string;
     align?: 'left' | 'center' | 'right';
   };
+  audioTrack?: {
+    url: string;
+    volume?: number;
+  } | null;
 }
 
-export function WallOfTextComposition({ script, style }: Props) {
+export function WallOfTextComposition({ script, style, audioTrack }: Props) {
   const { width, height } = useVideoConfig();
 
   const fontFamily = style.fontFamily || 'Inter';
@@ -55,6 +59,12 @@ export function WallOfTextComposition({ script, style }: Props) {
       >
         {allText}
       </p>
+      {audioTrack && audioTrack.url && (
+        <Audio
+          src={audioTrack.url}
+          volume={Math.max(0, Math.min(1, (audioTrack.volume ?? 80) / 100))}
+        />
+      )}
     </AbsoluteFill>
   );
 }

@@ -421,6 +421,24 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
 
     setIsApproving(true);
     try {
+      const mediaSlots = buildRemixMediaSlots(template);
+      const slideCount = mediaSlots.slides?.length ?? 0;
+
+      // Seed slideCopy from the template's original per-slide captions so
+      // the per-slide text UX in TextTab renders N pre-filled textareas.
+      // Falls back to an empty array of the right length so the user still
+      // sees N boxes to type into.
+      let slideCopy: Array<string | { text: string; durationSeconds?: number }> | undefined;
+      if (slideCount > 1) {
+        const captionSource = template.slideCaptions;
+        const captions: string[] = Array.isArray(captionSource)
+          ? captionSource
+          : captionSource && typeof captionSource === 'object'
+            ? Object.values(captionSource as Record<string, string>)
+            : [];
+        slideCopy = Array.from({ length: slideCount }).map((_, i) => captions[i] || '');
+      }
+
       const editId = await createEditSession({
         source: 'remix',
         templateId,
@@ -432,16 +450,18 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
           hookText: template.structure?.hook?.text || '',
           bodyText: template.structure?.body?.text || '',
           ctaText: template.structure?.cta?.text || '',
+          ...(slideCopy ? { slideCopy } : {}),
         },
         style: {
           fontFamily: 'Inter',
           fontSize: 20,
           color: '#ffffff',
-          backgroundColor: 'rgba(0,0,0,0.5)',
+          backgroundColor: 'transparent',
           align: 'center',
+          backgroundDimming: 0.3,
         },
         layout: 'centered',
-        mediaSlots: buildRemixMediaSlots(template),
+        mediaSlots,
         audioTrack: null,
       });
       router.push(`/dashboard/editor?edit=${editId}`);
@@ -821,7 +841,27 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
               </div>
             )}
 
-            {step === 'configure' && (
+            {/* Template-loading skeleton — the Remix redirect from the
+                Trending Template Browser previously flashed empty state for
+                ~500ms while /api/templates/[id] resolved. Show a low-jitter
+                shimmer so the transition into the configure form feels smooth. */}
+            {step === 'configure' && isRemix && !template && (
+              <div className="grid gap-6 lg:grid-cols-5" aria-label="Loading template">
+                <div className="space-y-4 lg:col-span-3">
+                  <div className="h-8 w-40 animate-pulse rounded bg-muted" />
+                  <div className="h-24 w-full animate-pulse rounded-lg bg-muted/70" />
+                  <div className="h-24 w-full animate-pulse rounded-lg bg-muted/60" />
+                  <div className="h-32 w-full animate-pulse rounded-lg bg-muted/50" />
+                </div>
+                <div className="space-y-3 lg:col-span-2">
+                  <div className="h-40 w-full animate-pulse rounded-lg bg-muted/70" />
+                  <div className="h-6 w-3/4 animate-pulse rounded bg-muted/60" />
+                  <div className="h-6 w-1/2 animate-pulse rounded bg-muted/50" />
+                </div>
+              </div>
+            )}
+
+            {step === 'configure' && (!isRemix || template) && (
               <div className="grid gap-6 lg:grid-cols-5">
               <div className="space-y-6 lg:col-span-3">
                 {/* Content type badge */}

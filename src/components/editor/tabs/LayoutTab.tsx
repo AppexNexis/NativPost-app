@@ -1,5 +1,6 @@
 import React from 'react';
 import { useEditor } from '../EditorContext';
+import { getEditorKind } from '@/lib/editor/content-type-registry';
 
 // ── Layout definitions ───────────────────────────────────────────
 type LayoutDef = {
@@ -8,6 +9,11 @@ type LayoutDef = {
   description: string;
   contentTypes: string[]; // empty = all
 };
+
+// Layouts that only make sense for video kind (motion / camera-driven).
+const VIDEO_ONLY_LAYOUTS = new Set(['talking_head', 'green_screen', 'video_hook']);
+// Layouts that only make sense for image kind (static overlay).
+const IMAGE_ONLY_LAYOUTS = new Set(['wall_of_text']);
 
 const ALL_LAYOUTS: LayoutDef[] = [
   { id: 'centered', label: 'Centered', description: 'Text centered on screen', contentTypes: [] },
@@ -25,8 +31,23 @@ const ASPECT_RATIOS = ['9:16', '1:1', '16:9'];
 export function LayoutTab() {
   const { state, dispatch } = useEditor();
 
-  // Filter available layouts — show all layouts for any content type
-  const layouts = ALL_LAYOUTS;
+  // Branch layout options on editor kind — image editor never renders
+  // motion/talking-head layouts; video editor never renders static wall-of-text
+  // (unless the content type itself is `wall_of_text`).
+  const contentType = state.edit?.contentType ?? null;
+  const editorKind = getEditorKind(contentType);
+
+  const layouts = ALL_LAYOUTS.filter(layout => {
+    if (editorKind === 'image' && VIDEO_ONLY_LAYOUTS.has(layout.id)) return false;
+    if (
+      editorKind === 'video'
+      && IMAGE_ONLY_LAYOUTS.has(layout.id)
+      && contentType !== 'wall_of_text'
+    ) {
+      return false;
+    }
+    return true;
+  });
 
   return (
     <div className="space-y-5">

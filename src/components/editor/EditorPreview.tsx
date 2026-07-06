@@ -130,6 +130,7 @@ export function EditorPreview() {
                     layout: state.layout,
                     aspectRatio: state.aspectRatio,
                     contentType,
+                    audioTrack: state.audioTrack ?? null,
                   }}
                 />
                 {state.isSaving && (
@@ -161,6 +162,7 @@ export function EditorPreview() {
                 layout: state.layout,
                 aspectRatio: state.aspectRatio,
                 contentType,
+                audioTrack: state.audioTrack ?? null,
               }}
             />
             {state.isSaving && (

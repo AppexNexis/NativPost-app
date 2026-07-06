@@ -18,6 +18,13 @@ export type RenderEditorVideoInput = {
   aspectRatio: string;
   mediaSlots: any;
   contentType: string;
+  audioTrack?: {
+    name?: string;
+    url: string;
+    publicId?: string;
+    source?: 'original' | 'library' | 'upload';
+    volume?: number;
+  } | null;
 };
 
 export type RenderProgressCallback = (percent: number, stage: RenderStage) => void;
@@ -43,6 +50,7 @@ export async function renderEditorVideo(
       backgroundUrl: input.mediaSlots?.background?.url,
       hookVideoUrl: input.mediaSlots?.hookVideo?.url,
       slides: input.mediaSlots?.slides,
+      audioTrack: input.audioTrack ?? null,
     }),
   });
   if (!res.ok) {

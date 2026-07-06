@@ -425,6 +425,8 @@ export type TextStyle = {
   italic?: boolean;
   underline?: boolean;
   noAnimation?: boolean;
+  /** 0-1 fraction — full-bleed dark scrim applied under text overlay. */
+  backgroundDimming?: number;
 };
 
 export type MediaSlot = {

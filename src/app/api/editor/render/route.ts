@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { script, style, layout, aspectRatio, contentType, backgroundUrl, hookVideoUrl, slides } = body as {
+  const { script, style, layout, aspectRatio, contentType, backgroundUrl, hookVideoUrl, slides, audioTrack } = body as {
     script?: Record<string, unknown>;
     style?: Record<string, unknown>;
     layout?: string;
@@ -41,6 +41,13 @@ export async function POST(request: NextRequest) {
     backgroundUrl?: string;
     hookVideoUrl?: string;
     slides?: Array<{ url: string }>;
+    audioTrack?: {
+      name?: string;
+      url: string;
+      publicId?: string;
+      source?: string;
+      volume?: number;
+    } | null;
   };
 
   if (!script || typeof script !== 'object') {
@@ -63,6 +70,7 @@ export async function POST(request: NextRequest) {
         backgroundUrl,
         hookVideoUrl,
         slides: slides || [],
+        audioTrack: audioTrack && audioTrack.url ? audioTrack : null,
       }),
     });
 

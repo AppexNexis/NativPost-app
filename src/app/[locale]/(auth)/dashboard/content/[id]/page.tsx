@@ -27,7 +27,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { PageHeader } from '@/features/dashboard/PageHeader';
+import { GalleryPreview } from '@/components/content-library/GalleryPreview';
 import { RemotionPreviewPlayer } from '@/components/editor/RemotionPreviewPlayer';
+import { getEditorKind } from '@/lib/editor/content-type-registry';
 import { renderEditorVideo } from '@/lib/editor/render-editor-video';
 import { getPostUrl, PLATFORM_META } from '@/lib/social-post-url';
 import { VIDEO_CONTENT_TYPES as SHARED_VIDEO_CONTENT_TYPES } from '@/types/v2';
@@ -456,6 +458,7 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
           aspectRatio: item.aspectRatio || '9:16',
           contentType: item.contentType,
           mediaSlots,
+          audioTrack: ed.audioTrack ?? null,
         },
         (percent, stage) => {
           setRecompilePercent(percent);
@@ -1018,12 +1021,22 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
           )}
 
           {/* Media Preview — v2 improvements */}
-          {needsMedia && (
+          {needsMedia && (() => {
+            // Slice C: image-kind content (slideshow / carousel / data_story) must
+            // NOT flow through the <video> branch. The publisher's
+            // VIDEO_CONTENT_TYPES list intentionally includes 'slideshow' for
+            // MIME gating (see team memory), but for detail-page rendering we
+            // gate on the editor kind and whether a compiled MP4 already exists.
+            const editorKind = getEditorKind(item.contentType);
+            const isCompiledVideo = (item.enrichmentData as any)?.isCompiled === true;
+            const useGallery = editorKind === 'image' && !isCompiledVideo;
+            const useVideoBranch = VIDEO_CONTENT_TYPES.includes(item.contentType) && !useGallery;
+            return (
             <div className="rounded-xl border bg-card p-4 sm:p-5">
               <div className="mb-4 flex items-center gap-2 border-b pb-4">
-                {VIDEO_CONTENT_TYPES.includes(item.contentType) ? <Video className="size-4 text-muted-foreground" /> : <ImageIcon className="size-4 text-muted-foreground" />}
+                {useVideoBranch ? <Video className="size-4 text-muted-foreground" /> : <ImageIcon className="size-4 text-muted-foreground" />}
                 <h3 className="text-sm font-semibold">
-                  {VIDEO_CONTENT_TYPES.includes(item.contentType) ? 'Video' : isCarousel ? 'Carousel' : 'Image'}
+                  {useVideoBranch ? 'Video' : useGallery && item.graphicUrls.length > 1 ? 'Slideshow' : isCarousel ? 'Carousel' : 'Image'}
                 </h3>
                 {item.aspectRatio && (
                   <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
@@ -1043,7 +1056,7 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                   - Plain videos w/o enrichment: simple <video controls>. */}
               {hasMedia ? (
                 <div className="space-y-4">
-                  {VIDEO_CONTENT_TYPES.includes(item.contentType) && (item.enrichmentData as any)?.isCompiled !== true && (
+                  {useVideoBranch && (item.enrichmentData as any)?.isCompiled !== true && (
                     <div className="flex flex-col items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-center">
                       <p className="text-xs text-amber-800">
                         This video has no baked-in overlays — the preview above is rendered live. Compile a standalone MP4 to enable downloads and social publishing with overlays.
@@ -1072,14 +1085,20 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                       {recompileError && <p className="text-[11px] text-red-600">{recompileError}</p>}
                     </div>
                   )}
-                  {VIDEO_CONTENT_TYPES.includes(item.contentType) ? (
+                  {useGallery ? (
+                    <div className="flex justify-center">
+                      <GalleryPreview
+                        slides={item.graphicUrls}
+                        slideCopy={((item.enrichmentData as any)?.editorScript?.slideCopy) as Array<string | { text: string; durationSeconds?: number }> | undefined}
+                        aspectRatio={item.aspectRatio || null}
+                      />
+                    </div>
+                  ) : useVideoBranch ? (
                     <div className="flex justify-center">
                       {(() => {
                         const videoUrl = item.graphicUrls[0]!;
                         const aspect = item.aspectRatio?.replace(':', '/') || '9/16';
                         const aspectRatio = item.aspectRatio || '9:16';
-
-                        const isCompiledVideo = (item.enrichmentData as any)?.isCompiled === true;
 
                         const ed = (item.enrichmentData || {}) as {
                           editorScript?: { hookText?: string; bodyText?: string; ctaText?: string };
@@ -1191,7 +1210,8 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                 </div>
               )}
             </div>
-          )}
+            );
+          })()}
 
           {/* Rejection feedback */}
           {item.rejectionFeedback && (

@@ -94,6 +94,7 @@ export function EditorLayout({
             aspectRatio: state.aspectRatio,
             mediaSlots: state.mediaSlots,
             contentType: state.edit?.contentType || 'text',
+            audioTrack: state.audioTrack ?? null,
           },
           (percent, stage) => {
             setRenderPercent(percent);
