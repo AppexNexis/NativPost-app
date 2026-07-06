@@ -4,12 +4,34 @@ import { useMemo } from 'react';
 import { Player } from '@remotion/player';
 
 import { EditorComposition } from './compositions/EditorComposition';
+import { SlideshowComposition } from './compositions/SlideshowComposition';
+import { WallOfTextComposition } from './compositions/WallOfTextComposition';
+import { TalkingHeadComposition } from './compositions/TalkingHeadComposition';
+import { GreenScreenComposition } from './compositions/GreenScreenComposition';
+import { VideoHookComposition } from './compositions/VideoHookComposition';
+import { UGCAdComposition } from './compositions/UGCAdComposition';
+import { DataStoryComposition } from './compositions/DataStoryComposition';
 import { EDITOR_TOTAL_FRAMES, EDITOR_FPS } from '@/lib/editor-constants';
 
-// All content types use the universal EditorComposition which accepts
-// the full editor state (script, style, layout, mediaSlots, aspectRatio)
-// and renders text overlays directly into the video frames.
-const DEFAULT_COMPOSITION = EditorComposition;
+// Per-content-type Remotion composition dispatch. Each composition file has
+// existed for a while but was never wired — RemotionPreviewPlayer used to
+// route every content type through EditorComposition, which was video-shaped
+// and blanked slideshows out completely. See lib/editor/content-type-registry
+// for the enum this table mirrors.
+const COMPOSITION_BY_TYPE: Record<string, React.ComponentType<any>> = {
+  slideshow: SlideshowComposition,
+  carousel: SlideshowComposition,
+  data_story: DataStoryComposition,
+  wall_of_text: WallOfTextComposition,
+  talking_head: TalkingHeadComposition,
+  green_screen: GreenScreenComposition,
+  video_hook: VideoHookComposition,
+  ugc: UGCAdComposition,
+  // reel + single_image fall through to the universal EditorComposition,
+  // which handles a plain background + text overlays.
+  reel: EditorComposition,
+  single_image: EditorComposition,
+};
 
 interface RemotionPreviewPlayerProps {
   contentType: string;
@@ -17,7 +39,7 @@ interface RemotionPreviewPlayerProps {
 }
 
 export function RemotionPreviewPlayer({ contentType, inputProps }: RemotionPreviewPlayerProps) {
-  const Composition = DEFAULT_COMPOSITION;
+  const Composition = COMPOSITION_BY_TYPE[contentType] || EditorComposition;
 
   const { width, height } = useMemo(() => {
     const ar = inputProps.aspectRatio || '9:16';

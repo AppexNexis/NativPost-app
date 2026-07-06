@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { isMultiSlideTemplate, parseTemplateSlides } from '@/lib/content/template-slides';
 import { getDb } from '@/libs/DB';
 import { brandProfileSchema, contentItemSchema, contentTemplateSchema } from '@/models/Schema';
 
@@ -105,9 +106,21 @@ async function saveVariant(
   templateId: string,
   aspectRatio: string,
   contentFormat: string,
+  sourceMediaSlots: { slides?: { url: string; assetType: 'image' }[] } | null,
 ) {
   const { contentType, topic, contentMode, enrichment } = body;
   const platformSpecific: Record<string, unknown> = variant.platform_specific || {};
+
+  // Preserve the original template's per-slide sources under enrichmentData so
+  // that reopening the variant via /dashboard/content/[id] → editor
+  // (?contentItemId=…) can rehydrate the slideshow structure instead of falling
+  // through to the legacy single-media path in EditorPage.
+  const enrichmentData: Record<string, unknown> = {
+    ...(enrichment && typeof enrichment === 'object' ? enrichment as Record<string, unknown> : {}),
+  };
+  if (sourceMediaSlots && sourceMediaSlots.slides && sourceMediaSlots.slides.length > 0) {
+    enrichmentData.sourceMediaSlots = sourceMediaSlots;
+  }
 
   const values: Record<string, unknown> = {
     orgId,
@@ -126,7 +139,7 @@ async function saveVariant(
     antiSlopScore: variant.anti_slop_score || null,
     qualityFlags: variant.quality_flags || [],
     contentMode: contentMode || 'normal',
-    enrichmentData: enrichment || {},
+    enrichmentData,
     enrichmentApplied: variant.enrichment_applied || [],
     // v2 fields
     templateId,
@@ -233,6 +246,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: 'No Brand Profile found. Complete your Brand Profile first.' }, { status: 400 });
     }
 
+    // 6b. Normalize template slide arrays once — used both for the engine
+    // context (so the model can reason about slide count / captions) and for
+    // enrichmentData.sourceMediaSlots (so re-open on the editor rehydrates).
+    const slideUrls = parseTemplateSlides(template.thumbnailUrls as any);
+    const slideCaptionsArr = parseTemplateSlides(template.slideCaptions as any);
+    const isMultiSlide = isMultiSlideTemplate(template.contentType, slideUrls);
+    const sourceMediaSlots = isMultiSlide && slideUrls.length > 0
+      ? { slides: slideUrls.map(url => ({ url, assetType: 'image' as const })) }
+      : null;
+
     // 7. Build template context for the engine
     const templateContextRaw = {
       content_type: template.contentType,
@@ -244,6 +267,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       angles: template.angles || [],
       visual_style: (template.structure as any)?.textOverlayStyle || null,
       music_style: (template.structure as any)?.musicStyle || null,
+      // Multi-slide hints — slideshow / carousel / data_story rows expose the
+      // per-slide sources so the AI variants can be shaped to the slide count.
+      thumbnail_urls: slideUrls,
+      slide_captions: slideCaptionsArr,
+      slide_count: slideUrls.length,
+      moderation_approved_ids: (template as any).moderationApprovedIds || [],
     };
 
     // 7b. Analyze template via the content engine
@@ -342,7 +371,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           enrichment: Object.keys(enrichment).length > 0 ? enrichment : null,
           sourceUrl: template.sourceUrl,
           remixEdits,
-        }, template.id, aspectRatio, template.contentType),
+        }, template.id, aspectRatio, template.contentType, sourceMediaSlots),
       ),
     );
 

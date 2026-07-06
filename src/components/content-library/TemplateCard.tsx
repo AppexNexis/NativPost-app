@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Eye, Heart, Images, Play } from 'lucide-reac
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { getOptimizedVideoUrl, getVideoPosterUrl, isCloudinaryVideoUrl } from '@/lib/cloudinary';
+import { parseTemplateSlides } from '@/lib/content/template-slides';
 import type { ContentTemplate } from '@/types/v2';
 import { formatCount } from '@/utils/format';
 
@@ -23,25 +24,13 @@ export function TemplateCard({ template, onRemix }: TemplateCardProps) {
   const isPlayable = isCloudinaryVideoUrl(mediaUrl) || isDirectVideoFile(mediaUrl);
   const videoSrc = isPlayable ? getOptimizedVideoUrl(mediaUrl) : null;
 
-  // Normalize thumbnailUrls (Record<string,string> | string[]) into an ordered
-  // slide array so we can page through carousel slides. Numeric-keyed records
-  // (e.g. { "0": url, "1": url }) are sorted by key so slide order matches
-  // upload order — string keys fall back to insertion order.
-  const slides = useMemo(() => {
-    const urls = template.thumbnailUrls;
-    if (Array.isArray(urls)) {
-      return urls.filter((u): u is string => typeof u === 'string' && u.length > 0);
-    }
-    if (urls && typeof urls === 'object') {
-      const keys = Object.keys(urls);
-      const allNumeric = keys.every(k => /^\d+$/.test(k));
-      const orderedKeys = allNumeric ? keys.sort((a, b) => Number(a) - Number(b)) : keys;
-      return orderedKeys
-        .map(k => (urls as Record<string, string>)[k])
-        .filter((u): u is string => typeof u === 'string' && u.length > 0);
-    }
-    return [];
-  }, [template.thumbnailUrls]);
+  // Normalized ordered slide URLs — see @/lib/content/template-slides for the
+  // Record<string,string> | string[] normalization rules (shared with the
+  // Create page mediaSlots builder so preview + editor stay in sync).
+  const slides = useMemo(
+    () => parseTemplateSlides(template.thumbnailUrls),
+    [template.thumbnailUrls],
+  );
 
   const slideCount = slides.length;
   // Only enable carousel navigation for multi-slide, non-video content.

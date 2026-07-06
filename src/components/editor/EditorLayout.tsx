@@ -4,19 +4,8 @@ import { useRouter } from 'next/navigation';
 
 import { useEditor } from './EditorContext';
 import { renderEditorVideo } from '@/lib/editor/render-editor-video';
-
-// ── Content type labels ──────────────────────────────────────────
-const CT_LABELS: Record<string, string> = {
-  text_only: 'Text',
-  single_image: 'Image',
-  slideshow: 'Slideshow',
-  reel: 'Video',
-  ugc: 'UGC',
-  data_story: 'Data Story',
-  wall_of_text: 'Wall of Text',
-  talking_head: 'Talking Head',
-  green_screen: 'Green Screen',
-};
+import { renderEditorImage } from '@/lib/editor/render-editor-image';
+import { getEditorKind, getEditorLabel } from '@/lib/editor/content-type-registry';
 
 // Render helper (with polling) lives in @/lib/editor/render-editor-video.
 // Shared with the detail-page recompile flow so both paths handle the
@@ -67,23 +56,55 @@ export function EditorLayout({
       sourceMediaSlots: state.mediaSlots,
     };
 
+    // Kind-aware render: image kind (single_image / slideshow / carousel /
+    // data_story) routes through /api/editor/render-image (Image Engine);
+    // video kind routes through /api/editor/render (video engine). Text kind
+    // has no compile step — falls straight through to save.
+    const publishKind = getEditorKind(state.edit?.contentType);
     let compiledVideoUrl: string | null = null;
+    let compiledImageUrls: string[] | null = null;
     try {
-      compiledVideoUrl = await renderEditorVideo(
-        {
-          script: state.script,
-          style: state.style,
-          layout: state.layout,
-          aspectRatio: state.aspectRatio,
-          mediaSlots: state.mediaSlots,
-          contentType: state.edit?.contentType || 'text',
-        },
-        (percent, stage) => {
-          setRenderPercent(percent);
-          setPublishStage(stage === 'uploading' ? 'uploading' : 'rendering');
-        },
-      );
-      enrichmentData.isCompiled = true;
+      if (publishKind === 'image') {
+        const imageResult = await renderEditorImage(
+          {
+            script: state.script,
+            style: state.style,
+            layout: state.layout,
+            aspectRatio: state.aspectRatio,
+            mediaSlots: state.mediaSlots,
+            contentType: state.edit?.contentType || 'single_image',
+          },
+          (percent, stage) => {
+            setRenderPercent(percent);
+            setPublishStage(stage === 'uploading' ? 'uploading' : 'rendering');
+          },
+        );
+        compiledImageUrls = imageResult.urls;
+        // source: 'source_media' means we passed the source slides through
+        // without an engine round-trip. Still mark isCompiled so the detail
+        // page doesn't re-fire the recompile flow every open.
+        enrichmentData.isCompiled = true;
+        enrichmentData.imageRenderSource = imageResult.source;
+      } else if (publishKind === 'video') {
+        compiledVideoUrl = await renderEditorVideo(
+          {
+            script: state.script,
+            style: state.style,
+            layout: state.layout,
+            aspectRatio: state.aspectRatio,
+            mediaSlots: state.mediaSlots,
+            contentType: state.edit?.contentType || 'text',
+          },
+          (percent, stage) => {
+            setRenderPercent(percent);
+            setPublishStage(stage === 'uploading' ? 'uploading' : 'rendering');
+          },
+        );
+        enrichmentData.isCompiled = true;
+      } else {
+        // text_only — no compile step
+        enrichmentData.isCompiled = true;
+      }
     } catch (err) {
       console.error('[Publish] Engine render failed:', err);
       if (!opts.proceedWithRaw) {
@@ -106,6 +127,7 @@ export function EditorLayout({
     if (state.edit?.contentItemId) {
       const updateBody: Record<string, any> = { enrichmentData };
       if (compiledVideoUrl) updateBody.graphicUrls = [compiledVideoUrl];
+      if (compiledImageUrls && compiledImageUrls.length > 0) updateBody.graphicUrls = compiledImageUrls;
       if (state.aspectRatio) updateBody.aspectRatio = state.aspectRatio;
 
       const patchRes = await fetch(`/api/content/${state.edit.contentItemId}`, {
@@ -127,6 +149,8 @@ export function EditorLayout({
     const allMediaUrls: string[] = [];
     if (compiledVideoUrl) {
       allMediaUrls.push(compiledVideoUrl);
+    } else if (compiledImageUrls && compiledImageUrls.length > 0) {
+      allMediaUrls.push(...compiledImageUrls);
     } else {
       if (state.mediaSlots?.background?.url) allMediaUrls.push(state.mediaSlots.background.url);
       if (state.mediaSlots?.hookVideo?.url) allMediaUrls.push(state.mediaSlots.hookVideo.url);
@@ -203,7 +227,7 @@ export function EditorLayout({
 
   const isRemix = state.edit?.source === 'remix';
   const contentType = state.edit?.contentType || '';
-  const displayType = CT_LABELS[contentType] || contentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  const displayType = getEditorLabel(contentType);
 
   // Unified progress: render fills 0–95%, upload jumps to 100%, save/redirect
   // holds at 100%. One label — "Saving X%" — replaces the noisy multi-stage

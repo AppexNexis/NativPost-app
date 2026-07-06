@@ -4,6 +4,7 @@ import { Film, Loader2, X } from 'lucide-react';
 import { useEditor } from '../EditorContext';
 import { getVideoPosterUrl } from '@/lib/cloudinary';
 import type { ContentTemplate } from '@/types/v2';
+import { getEditorMediaSlots } from '@/lib/editor/content-type-registry';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -394,17 +395,8 @@ export function MediaTab() {
 }
 
 // ── Slot visibility per content type ─────────────────────────────
+// Delegates to the editor content-type registry so slot mapping stays in
+// sync with EditorSidebar tabs and EditorLayout publish branching.
 function getSlotsForContentType(ct: string): string[] {
-  const map: Record<string, string[]> = {
-    text_only: [],
-    single_image: ['background'],
-    slideshow: ['slides'],
-    reel: ['background', 'hookVideo'],
-    ugc: ['demoVideo'],
-    data_story: ['charts'],
-    wall_of_text: ['background'],
-    talking_head: ['background', 'faceVideo'],
-    green_screen: ['background', 'subjectVideo'],
-  };
-  return map[ct] || ['background'];
+  return getEditorMediaSlots(ct);
 }

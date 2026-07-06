@@ -27,8 +27,9 @@ import React, { Suspense, useEffect, useRef, useState } from 'react';
 
 import { PLATFORMS } from '@/components/icons/PlatformIcons';
 import type { RemixEdits } from '@/components/content-library/RemixEditor';
-import type { ContentTemplate } from '@/types/v2';
+import type { ContentTemplate, MediaSlot } from '@/types/v2';
 import { getOptimizedVideoUrl, getVideoPosterUrl, isCloudinaryVideoUrl } from '@/lib/cloudinary';
+import { isMultiSlideTemplate, parseTemplateSlides } from '@/lib/content/template-slides';
 
 // -----------------------------------------------------------
 // TYPES
@@ -95,6 +96,45 @@ const CONTENT_MODES = [
   { id: 'concise', label: 'Concise', description: 'Stripped to essentials' },
   { id: 'controversial', label: 'Controversial', description: 'Takes a position, sparks debate' },
 ];
+
+// -----------------------------------------------------------
+// REMIX → MediaSlots builder
+// -----------------------------------------------------------
+// Templates come in two flavors:
+//   1. Single-media (reel / single_image / talking_head / etc.) —
+//      Editor's `background` slot is populated from `template.mediaUrl`.
+//   2. Multi-slide (slideshow / carousel / data_story) — Editor's
+//      `slides[]` slot is populated from `template.thumbnailUrls`.
+// Slideshow/carousel/data_story templates historically stored the composite
+// thumbnail in `mediaUrl` but the actual per-slide sources in `thumbnailUrls`,
+// so we deliberately DO NOT fall back to `mediaUrl` for multi-slide types —
+// that's what was collapsing carousels into a single background before.
+function buildRemixMediaSlots(template: ContentTemplate): {
+  background?: MediaSlot;
+  slides?: MediaSlot[];
+} {
+  const slideUrls = parseTemplateSlides(template.thumbnailUrls);
+  const multiSlide = isMultiSlideTemplate(template.contentType, slideUrls);
+
+  if (multiSlide && slideUrls.length > 0) {
+    return {
+      slides: slideUrls.map(url => ({ url, assetType: 'image' as const })),
+    };
+  }
+
+  if (template.mediaUrl) {
+    const looksLikeVideo = isCloudinaryVideoUrl(template.mediaUrl)
+      || /\.(mp4|mov|webm|m3u8)(\?.*)?$/i.test(template.mediaUrl);
+    return {
+      background: {
+        url: template.mediaUrl,
+        assetType: looksLikeVideo ? 'video' : 'image',
+      },
+    };
+  }
+
+  return {};
+}
 
 const EMPTY_ENRICHMENT: Enrichment = {
   cta_url: '',
@@ -396,11 +436,7 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
           align: 'center',
         },
         layout: 'centered',
-        mediaSlots: {
-          background: template.mediaUrl
-            ? { url: template.mediaUrl, assetType: 'video' }
-            : undefined,
-        },
+        mediaSlots: buildRemixMediaSlots(template),
         audioTrack: null,
       });
       router.push(`/dashboard/editor?edit=${editId}`);

@@ -5,7 +5,7 @@ import type { ContentEdit } from '@/types/v2';
 
 import { EditorProvider } from './EditorContext';
 import { EditorLayout } from './EditorLayout';
-import { EditorPreview } from './EditorPreview';
+import { EditorPreviewDispatcher } from './EditorPreviewDispatcher';
 import { EditorSidebar } from './EditorSidebar';
 
 // ---------------------------------------------------------------------------
@@ -174,7 +174,7 @@ export default function EditorPage({
   return (
     <EditorProvider initialEdit={edit}>
       <EditorLayout
-        preview={<EditorPreview />}
+        preview={<EditorPreviewDispatcher />}
         sidebar={<EditorSidebar />}
       />
     </EditorProvider>

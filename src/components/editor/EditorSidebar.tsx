@@ -6,6 +6,7 @@ import { TextTab } from './tabs/TextTab';
 import { LayoutTab } from './tabs/LayoutTab';
 import { MediaTab } from './tabs/MediaTab';
 import { AudioTab } from './tabs/AudioTab';
+import { getEditorTabs, getEditorLabel, CONTENT_MODES } from '@/lib/editor/content-type-registry';
 
 // ── Tab definitions ──────────────────────────────────────────────
 type TabDef = {
@@ -21,47 +22,14 @@ const ALL_TABS: TabDef[] = [
   { id: 'audio', label: 'Audio', Icon: Music },
 ];
 
-// Content types that skip some tabs
-const TABS_BY_CONTENT_TYPE: Record<string, string[]> = {
-  text_only: ['text'],
-  single_image: ['text', 'media'],
-  slideshow: ['text', 'layout', 'media', 'audio'],
-  reel: ['text', 'layout', 'media', 'audio'],
-  ugc: ['text', 'layout', 'media', 'audio'],
-  data_story: ['text', 'layout', 'media', 'audio'],
-  wall_of_text: ['text', 'layout', 'audio'],
-  talking_head: ['text', 'layout', 'media', 'audio'],
-  green_screen: ['text', 'layout', 'media', 'audio'],
-};
-
 type TabId = (typeof ALL_TABS)[number]['id'];
-
-// ── Content type descriptions ────────────────────────────────────
-const CT_LABELS: Record<string, string> = {
-  text_only: 'Text',
-  single_image: 'Image',
-  slideshow: 'Slideshow',
-  reel: 'Video',
-  ugc: 'UGC',
-  data_story: 'Data Story',
-  wall_of_text: 'Wall of Text',
-  talking_head: 'Talking Head',
-  green_screen: 'Green Screen',
-};
-
-const CONTENT_MODES = [
-  { id: 'normal', label: 'Normal' },
-  { id: 'promo', label: 'Promo' },
-  { id: 'educational', label: 'Educate' },
-  { id: 'trending', label: 'Trending' },
-] as const;
 
 export function EditorSidebar() {
   const { state, dispatch } = useEditor();
   const contentType = state.edit?.contentType ?? 'text_only';
   const isRemix = state.edit?.source === 'remix';
 
-  const availableTabs = TABS_BY_CONTENT_TYPE[contentType] || ['text', 'layout', 'media', 'audio'];
+  const availableTabs = getEditorTabs(contentType);
   const [activeTab, setActiveTab] = useState<TabId>(availableTabs[0] as TabId);
 
   // Sync active tab when content type changes
@@ -71,7 +39,7 @@ export function EditorSidebar() {
     }
   }, [contentType]);
 
-  const displayLabel = CT_LABELS[contentType] || contentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  const displayLabel = getEditorLabel(contentType);
 
   const renderTabContent = () => {
     switch (activeTab) {
