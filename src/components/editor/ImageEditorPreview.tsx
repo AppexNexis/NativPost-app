@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, ImageOff, Loader2, Plus, RefreshCw, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ImageOff, Loader2, Plus, RefreshCw, Sparkles, X } from 'lucide-react';
 
 import { useEditor } from './EditorContext';
 import { PhoneMockup } from './PhoneMockup';
@@ -152,6 +152,33 @@ export function ImageEditorPreview() {
     // only want this to trigger when the edit itself changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.edit?.id, isMultiSlideKind]);
+
+  // Remove a slide by index — drops the media entry AND the paired slideCopy
+  // entry so the two arrays stay index-aligned. Autosave picks this up.
+  const handleRemoveSlide = (index: number) => {
+    const currentSlides = state.mediaSlots?.slides ?? [];
+    if (index < 0 || index >= currentSlides.length) return;
+    const nextSlides = currentSlides.filter((_, i) => i !== index);
+    dispatch({
+      type: 'UPDATE_MEDIA_SLOTS',
+      payload: { slides: nextSlides },
+    });
+    const currentCopy = state.script?.slideCopy ?? [];
+    if (currentCopy.length > 0) {
+      dispatch({
+        type: 'UPDATE_SCRIPT',
+        payload: { slideCopy: currentCopy.filter((_, i) => i !== index) },
+      });
+    }
+    // Keep activeIndex in range — snap to the previous slide (or 0) so the
+    // preview doesn't briefly show "No media yet" while React re-renders.
+    setActiveIndex(prev => {
+      const nextLen = nextSlides.length;
+      if (nextLen === 0) return 0;
+      if (prev >= nextLen) return nextLen - 1;
+      return prev;
+    });
+  };
 
   // Add-slide flow — user clicks the "+" tile in the thumbnail strip, picks a
   // media asset, and we auto-generate a per-slide caption from image + brand
@@ -503,28 +530,43 @@ export function ImageEditorPreview() {
         {(isMultiSlideKind || slideCount > 1) && (
           <div className="flex max-w-[400px] flex-wrap items-center justify-center gap-2 px-4">
             {displaySlides.map((slide, i) => (
-              <button
+              <div
                 key={`${slide.url}-${i}`}
-                type="button"
-                onClick={() => setActiveIndex(i)}
-                aria-label={`Preview slide ${i + 1}`}
-                className={`relative size-11 shrink-0 overflow-hidden rounded-md border-2 transition ${
-                  i === activeIndex
-                    ? 'border-primary shadow-sm'
-                    : 'border-transparent opacity-60 hover:opacity-100'
-                }`}
+                className="group relative size-11 shrink-0"
               >
-                {slide.url && (
-                  <img
-                    src={slide.url}
-                    alt={`Slide ${i + 1} thumbnail`}
-                    className="size-full object-cover"
-                  />
+                <button
+                  type="button"
+                  onClick={() => setActiveIndex(i)}
+                  aria-label={`Preview slide ${i + 1}`}
+                  className={`relative size-11 overflow-hidden rounded-md border-2 transition ${
+                    i === activeIndex
+                      ? 'border-primary shadow-sm'
+                      : 'border-transparent opacity-60 hover:opacity-100'
+                  }`}
+                >
+                  {slide.url && (
+                    <img
+                      src={slide.url}
+                      alt={`Slide ${i + 1} thumbnail`}
+                      className="size-full object-cover"
+                    />
+                  )}
+                  <span className="absolute bottom-0 right-0 rounded-tl bg-black/60 px-1 text-[9px] text-white/90">
+                    {i + 1}
+                  </span>
+                </button>
+                {isMultiSlideKind && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveSlide(i)}
+                    aria-label={`Remove slide ${i + 1}`}
+                    title="Remove slide"
+                    className="absolute -right-1.5 -top-1.5 z-10 flex size-4 items-center justify-center rounded-full bg-red-500 text-white opacity-0 shadow transition group-hover:opacity-100 hover:bg-red-600"
+                  >
+                    <X className="size-2.5" strokeWidth={3} />
+                  </button>
                 )}
-                <span className="absolute bottom-0 right-0 rounded-tl bg-black/60 px-1 text-[9px] text-white/90">
-                  {i + 1}
-                </span>
-              </button>
+              </div>
             ))}
             {isMultiSlideKind && (
               <button

@@ -171,6 +171,36 @@ export function EditorProvider({
         }),
       });
       if (!res.ok) throw new Error('Failed to save');
+
+      // Mirror the edit into the linked content item's enrichmentData so the
+      // content detail page can render the user's edits WITHOUT a full
+      // Publish (which runs the image/video engine). Without this, edits
+      // stay stranded in the contentEdit row and the detail page keeps
+      // showing the pre-edit template. `sourceMediaSlots` carries the
+      // authoritative slide array (including added / removed slides) — the
+      // detail page's gallery falls back to it when the item's graphicUrls
+      // are stale (see content/[id]/page.tsx). Fire-and-forget: a mirror
+      // failure must not block Saved status.
+      const linkedContentItemId = (state.edit as any)?.contentItemId;
+      if (linkedContentItemId) {
+        void fetch(`/api/content/${linkedContentItemId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            enrichmentData: {
+              editorScript: state.script,
+              editorStyle: state.style,
+              editorLayout: state.layout,
+              aspectRatio: state.aspectRatio,
+              sourceMediaSlots: state.mediaSlots,
+            },
+            aspectRatio: state.aspectRatio,
+          }),
+        }).catch(() => {
+          // Silent — Save is still recorded on the edit row.
+        });
+      }
+
       dispatch({ type: 'MARK_SAVED' });
     } catch (err) {
       dispatch({ type: 'SET_ERROR', payload: err instanceof Error ? err.message : 'Save failed' });

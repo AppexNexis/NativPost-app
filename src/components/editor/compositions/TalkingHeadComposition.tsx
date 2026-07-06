@@ -49,19 +49,21 @@ export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }
         />
       )}
 
-      {/* Text overlay */}
-      <AbsoluteFill
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          alignItems: align === 'center' ? 'center' : align === 'left' ? 'flex-start' : 'flex-end',
-          padding: 40,
-        }}
-      >
-        {/* Hook */}
-        {script.hookText && (
-          <Sequence from={0} durationInFrames={hookFrames}>
+      {/* Text overlay — each Sequence gets its own AbsoluteFill so flex layout
+          actually positions the caption. Wrapping Sequences inside a flex
+          parent doesn't work because Sequence renders as position:absolute,
+          which drops out of flex flow entirely. */}
+      {script.hookText && (
+        <Sequence from={0} durationInFrames={hookFrames}>
+          <AbsoluteFill
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: align === 'center' ? 'center' : align === 'left' ? 'flex-start' : 'flex-end',
+              padding: 40,
+            }}
+          >
             <div
               style={{
                 backgroundColor: bgColor,
@@ -78,17 +80,27 @@ export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }
                   fontWeight: 'bold',
                   textAlign: align,
                   lineHeight: 1.3,
+                  margin: 0,
                 }}
               >
                 {script.hookText}
               </p>
             </div>
-          </Sequence>
-        )}
+          </AbsoluteFill>
+        </Sequence>
+      )}
 
-        {/* Body */}
-        {script.bodyText && (
-          <Sequence from={hookFrames} durationInFrames={bodyFrames}>
+      {script.bodyText && (
+        <Sequence from={hookFrames} durationInFrames={bodyFrames}>
+          <AbsoluteFill
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: align === 'center' ? 'center' : align === 'left' ? 'flex-start' : 'flex-end',
+              padding: 40,
+            }}
+          >
             <div
               style={{
                 backgroundColor: bgColor,
@@ -104,17 +116,27 @@ export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }
                   color,
                   textAlign: align,
                   lineHeight: 1.4,
+                  margin: 0,
                 }}
               >
                 {script.bodyText}
               </p>
             </div>
-          </Sequence>
-        )}
+          </AbsoluteFill>
+        </Sequence>
+      )}
 
-        {/* CTA */}
-        {script.ctaText && (
-          <Sequence from={hookFrames + bodyFrames} durationInFrames={ctaFrames}>
+      {script.ctaText && (
+        <Sequence from={hookFrames + bodyFrames} durationInFrames={ctaFrames}>
+          <AbsoluteFill
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: align === 'center' ? 'center' : align === 'left' ? 'flex-start' : 'flex-end',
+              padding: 40,
+            }}
+          >
             <div
               style={{
                 backgroundColor: bgColor,
@@ -130,14 +152,15 @@ export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }
                   color,
                   fontWeight: 'bold',
                   textAlign: align,
+                  margin: 0,
                 }}
               >
                 {script.ctaText}
               </p>
             </div>
-          </Sequence>
-        )}
-      </AbsoluteFill>
+          </AbsoluteFill>
+        </Sequence>
+      )}
       {audioTrack && audioTrack.url && (
         <Audio
           src={audioTrack.url}

@@ -1093,15 +1093,32 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                       {recompileError && <p className="text-[11px] text-red-600">{recompileError}</p>}
                     </div>
                   )}
-                  {useGallery ? (
-                    <div className="flex justify-center">
-                      <GalleryPreview
-                        slides={item.graphicUrls}
-                        slideCopy={((item.enrichmentData as any)?.editorScript?.slideCopy) as Array<string | { text: string; durationSeconds?: number }> | undefined}
-                        aspectRatio={item.aspectRatio || null}
-                      />
-                    </div>
-                  ) : useVideoBranch ? (
+                  {useGallery ? (() => {
+                    // WYSIWYG source-of-truth for slides: `sourceMediaSlots.slides`
+                    // is the exact array state.mediaSlots.slides at save time
+                    // (stashed in enrichmentData by EditorLayout.runPublish so
+                    // re-editing doesn't stack overlays — see team memory
+                    // `preserve-raw-source-in-compile-pipeline`). Using it here
+                    // guarantees user-added slides + reorderings + removals
+                    // show on the detail page even if the image engine's
+                    // compiledImageUrls returned a different count than the
+                    // slides input. Falls back to graphicUrls when the stash
+                    // isn't populated (older items, or non-editor publishes).
+                    const editorSlides = (item.enrichmentData as any)?.sourceMediaSlots?.slides as Array<{ url?: string }> | undefined;
+                    const editedSlideUrls = Array.isArray(editorSlides)
+                      ? editorSlides.map(s => s?.url).filter((u): u is string => Boolean(u))
+                      : [];
+                    const gallerySlides = editedSlideUrls.length > 0 ? editedSlideUrls : item.graphicUrls;
+                    return (
+                      <div className="flex justify-center">
+                        <GalleryPreview
+                          slides={gallerySlides}
+                          slideCopy={((item.enrichmentData as any)?.editorScript?.slideCopy) as Array<string | { text: string; durationSeconds?: number }> | undefined}
+                          aspectRatio={item.aspectRatio || null}
+                        />
+                      </div>
+                    );
+                  })() : useVideoBranch ? (
                     <div className="flex justify-center">
                       {(() => {
                         const videoUrl = item.graphicUrls[0]!;
