@@ -122,9 +122,15 @@ export function EditorPreview() {
                 <RemotionPreviewPlayer
                   contentType={contentType}
                   inputProps={{
+                    // Flat shape for the universal EditorComposition (reel /
+                    // single_image); nested mediaSlots shape for every
+                    // per-type composition (ugc, talking_head, green_screen,
+                    // video_hook, slideshow, carousel, data_story). Passing
+                    // both keeps every dispatch target happy.
                     backgroundUrl: state.mediaSlots?.background?.url,
                     hookVideoUrl: state.mediaSlots?.hookVideo?.url,
                     slides: state.mediaSlots?.slides,
+                    mediaSlots: state.mediaSlots,
                     script: state.script,
                     style: state.style,
                     layout: state.layout,
@@ -157,6 +163,7 @@ export function EditorPreview() {
                 backgroundUrl: state.mediaSlots?.background?.url,
                 hookVideoUrl: state.mediaSlots?.hookVideo?.url,
                 slides: state.mediaSlots?.slides,
+                mediaSlots: state.mediaSlots,
                 script: state.script,
                 style: state.style,
                 layout: state.layout,

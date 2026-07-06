@@ -23,7 +23,7 @@ type ModalTab = 'trending' | 'library';
 // ---------------------------------------------------------------------------
 // MediaSelectModal
 // ---------------------------------------------------------------------------
-function MediaSelectModal({
+export function MediaSelectModal({
   slot,
   contentType,
   onSelect,
@@ -270,10 +270,49 @@ export function MediaTab() {
   const handleSelect = (slot: string, url: string, assetType: 'image' | 'video') => {
     if (slot === 'slides') {
       const current = slots.slides || [];
+      const newIndex = current.length;
       dispatch({
         type: 'UPDATE_MEDIA_SLOTS',
         payload: { slides: [...current, { url, assetType }] },
       });
+
+      // Auto-generate a per-slide caption for multi-slide image kinds. Fire
+      // and forget — the endpoint always resolves (falls back to a derived
+      // caption if the AI call fails), and slideCopy is autosaved by the
+      // context after 1.5s of dirty state.
+      const isMultiSlideKind = (['slideshow', 'carousel', 'data_story'] as string[]).includes(contentType);
+      if (isMultiSlideKind && assetType === 'image') {
+        const previousSlides = ((state.script.slideCopy ?? []) as Array<string | { text?: string }>)
+          .map(entry => (typeof entry === 'string' ? entry : entry?.text || ''))
+          .filter(Boolean);
+        const contextCaption = [state.script.hookText, state.script.bodyText, state.script.ctaText]
+          .filter(Boolean)
+          .join('\n');
+        fetch('/api/content/generate-slide-copy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageUrl: url,
+            contentType,
+            slideIndex: newIndex,
+            contextCaption,
+            previousSlides,
+          }),
+        })
+          .then(res => (res.ok ? res.json() : null))
+          .then((data: { caption?: string } | null) => {
+            if (!data?.caption) return;
+            dispatch({
+              type: 'UPDATE_SCRIPT',
+              payload: {
+                slideCopy: [...(state.script.slideCopy ?? []), data.caption],
+              },
+            });
+          })
+          .catch(() => {
+            // Swallow — user can still type the caption manually.
+          });
+      }
     } else {
       dispatch({
         type: 'UPDATE_MEDIA_SLOTS',

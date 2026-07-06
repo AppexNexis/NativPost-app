@@ -38,14 +38,17 @@ export function TrendingTemplateCarousel({ templates, onRemix, autoplay = true }
   if (templates.length === 0) return null;
 
   return (
-    <div className="mx-auto w-full max-w-[800px] py-6">
+    // Wrapper clips horizontally so side cards can't paint outside — was
+    // causing horizontal page scroll when Swiper's `!overflow-visible` let
+    // wide fan-stack side slides bleed into siblings.
+    <div className="mx-auto w-full max-w-[560px] overflow-x-hidden py-6">
       <Swiper
         effect="coverflow"
         modules={[EffectCoverflow, Autoplay]}
         grabCursor
         centeredSlides
         slidesPerView="auto"
-        spaceBetween={16}
+        spaceBetween={12}
         loop={templates.length >= 3}
         autoplay={
           autoplay
@@ -56,19 +59,20 @@ export function TrendingTemplateCarousel({ templates, onRemix, autoplay = true }
               }
             : false
         }
+        // Tighter fan-stack: 2 cards visible (center + 1 partial peek) instead
+        // of the previous 3-wide spread that overflowed on standard viewports.
         coverflowEffect={{
           rotate: 0,
-          stretch: 60,
-          depth: 200,
+          stretch: 20,
+          depth: 120,
           modifier: 1,
           slideShadows: false,
         }}
-        className="!overflow-visible"
       >
         {templates.map((template) => (
           <SwiperSlide
             key={template.id}
-            className="!h-auto !w-[260px] sm:!w-[280px]"
+            className="!h-auto !w-[220px] sm:!w-[240px]"
           >
             <TemplateCard template={template} onRemix={onRemix} />
           </SwiperSlide>

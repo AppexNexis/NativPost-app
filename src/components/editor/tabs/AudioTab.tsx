@@ -120,11 +120,6 @@ function AudioSelectModal({
             <div className="py-12 text-center">
               <Music className="mx-auto mb-2 size-8 text-muted-foreground/30" />
               <p className="text-sm text-muted-foreground">No audio tracks available yet.</p>
-              <p className="mt-1 text-xs text-muted-foreground/60">
-                Upload royalty-free tracks to Cloudinary folder{' '}
-                <code className="rounded bg-muted px-1 py-0.5 text-[10px]">nativpost/audio/</code>{' '}
-                — set the display name in context.custom.title.
-              </p>
             </div>
           )}
           <div className="space-y-2">

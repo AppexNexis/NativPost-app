@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, ImageOff, Loader2, RefreshCw, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ImageOff, Loader2, Plus, RefreshCw, Sparkles } from 'lucide-react';
 
 import { useEditor } from './EditorContext';
 import { PhoneMockup } from './PhoneMockup';
+import { MediaSelectModal } from './tabs/MediaTab';
 import { getEditorKind } from '@/lib/editor/content-type-registry';
 
 /**
@@ -25,6 +26,8 @@ import { getEditorKind } from '@/lib/editor/content-type-registry';
 export function ImageEditorPreview() {
   const { state, dispatch } = useEditor();
   const [aiWorking, setAiWorking] = useState<'improve' | 'regenerate' | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [captionLoading, setCaptionLoading] = useState(false);
 
   const contentType = state.edit?.contentType || 'single_image';
   const slides = state.mediaSlots?.slides ?? [];
@@ -32,6 +35,7 @@ export function ImageEditorPreview() {
   const slideCopy = state.script?.slideCopy ?? [];
   const layout = state.layout || 'centered';
   const isPerSlide = contentType !== 'single_image' && slides.length > 1;
+  const isMultiSlideKind = (['slideshow', 'carousel', 'data_story'] as string[]).includes(contentType);
 
   // Read a slide's caption from slideCopy — supports both string and
   // { text, durationSeconds } shapes. Fallback chain lets old rows that
@@ -68,6 +72,58 @@ export function ImageEditorPreview() {
 
   const goPrev = () => setActiveIndex(i => (i - 1 + slideCount) % slideCount);
   const goNext = () => setActiveIndex(i => (i + 1) % slideCount);
+
+  // Add-slide flow — user clicks the "+" tile in the thumbnail strip, picks a
+  // media asset, and we auto-generate a per-slide caption from image + brand
+  // profile so slide N inherits the tone of slides 0..N-1 without manual
+  // typing. Autosave picks up both dispatches.
+  const handleAddSlide = async (_slot: string, url: string, assetType: 'image' | 'video') => {
+    const currentSlides = state.mediaSlots?.slides ?? [];
+    const newIndex = currentSlides.length;
+    dispatch({
+      type: 'UPDATE_MEDIA_SLOTS',
+      payload: { slides: [...currentSlides, { url, assetType }] },
+    });
+    setPickerOpen(false);
+    setActiveIndex(newIndex);
+
+    if (assetType !== 'image' || !isMultiSlideKind) return;
+    setCaptionLoading(true);
+    try {
+      const previousSlides = (state.script?.slideCopy ?? [])
+        .map(entry => (typeof entry === 'string' ? entry : entry?.text || ''))
+        .filter(Boolean);
+      const contextCaption = [state.script.hookText, state.script.bodyText, state.script.ctaText]
+        .filter(Boolean)
+        .join('\n');
+      const res = await fetch('/api/content/generate-slide-copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageUrl: url,
+          contentType,
+          slideIndex: newIndex,
+          contextCaption,
+          previousSlides,
+        }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { caption?: string };
+        if (data.caption) {
+          dispatch({
+            type: 'UPDATE_SCRIPT',
+            payload: {
+              slideCopy: [...(state.script?.slideCopy ?? []), data.caption],
+            },
+          });
+        }
+      }
+    } catch {
+      // Silent — user can still type the caption manually.
+    } finally {
+      setCaptionLoading(false);
+    }
+  };
 
   // Regen / Improve — reuse the same /api/content/generate endpoint the video
   // editor uses; the split back into hook/body/cta matches EditorPreview.
@@ -359,8 +415,12 @@ export function ImageEditorPreview() {
           )}
         </PhoneMockup>
 
-        {/* Thumbnail strip — jump to any slide */}
-        {slideCount > 1 && (
+        {/* Thumbnail strip — jump to any slide + add-slide "+" tile.
+            Renders for any multi-slide content kind (slideshow / carousel /
+            data_story) OR whenever there are already 2+ slides. The "+" tile
+            opens the shared MediaSelectModal so add-slide reuses the same
+            picker as the Media tab. */}
+        {(isMultiSlideKind || slideCount > 1) && (
           <div className="flex max-w-[400px] flex-wrap items-center justify-center gap-2 px-4">
             {displaySlides.map((slide, i) => (
               <button
@@ -386,9 +446,32 @@ export function ImageEditorPreview() {
                 </span>
               </button>
             ))}
+            {isMultiSlideKind && (
+              <button
+                type="button"
+                onClick={() => setPickerOpen(true)}
+                aria-label="Add a slide"
+                className="relative flex size-11 shrink-0 items-center justify-center rounded-md border-2 border-dashed border-border/70 bg-muted/20 text-muted-foreground transition hover:border-primary hover:text-primary"
+              >
+                {captionLoading ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Plus className="size-4" />
+                )}
+              </button>
+            )}
           </div>
         )}
       </div>
+
+      {pickerOpen && (
+        <MediaSelectModal
+          slot="slides"
+          contentType={contentType}
+          onSelect={handleAddSlide}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }
