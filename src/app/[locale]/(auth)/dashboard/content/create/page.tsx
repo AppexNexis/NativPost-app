@@ -27,6 +27,7 @@ import React, { Suspense, useEffect, useRef, useState } from 'react';
 
 import { PLATFORMS } from '@/components/icons/PlatformIcons';
 import type { RemixEdits } from '@/components/content-library/RemixEditor';
+import { TrendingTemplateBrowser } from '@/components/content-library/TrendingTemplateBrowser';
 import type { ContentTemplate, MediaSlot } from '@/types/v2';
 import { getOptimizedVideoUrl, getVideoPosterUrl, isCloudinaryVideoUrl } from '@/lib/cloudinary';
 import { isMultiSlideTemplate, parseTemplateSlides } from '@/lib/content/template-slides';
@@ -249,9 +250,13 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
   const prefillContentType = searchParams.get('contentType') || '';
   const fromMonthlyPlan = !!(prefillTopic && prefillContentType);
 
-  const [step, setStep] = useState<'type' | 'configure' | 'review'>(
+  const [step, setStep] = useState<'type' | 'browse' | 'configure' | 'review'>(
     fromMonthlyPlan || isRemix ? 'configure' : 'type',
   );
+  // Set when the user picked a template from the in-flow browse step (as
+  // opposed to a deep link from the Content Library). Lets the Back button
+  // return to 'browse' instead of shooting off to /content-library.
+  const pickedFromBrowseRef = useRef(false);
   const [remixEdits] = useState<RemixEdits | null>(null);
   const [contentType, setContentType] = useState(prefillContentType);
   const [topic, setTopic] = useState(prefillTopic);
@@ -667,9 +672,19 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
             <button
               type="button"
               onClick={() => {
-                if (step === 'review') setStep('configure');
-                else if (isRemix) router.push('/dashboard/content-library');
-                else setStep('type');
+                if (step === 'review') return setStep('configure');
+                if (step === 'browse') return setStep('type');
+                // step === 'configure'
+                if (pickedFromBrowseRef.current) {
+                  // User picked a template from the in-flow browser — undo the
+                  // Remix and return to browse for the same content type.
+                  pickedFromBrowseRef.current = false;
+                  router.push('/dashboard/content/create');
+                  setStep('browse');
+                  return;
+                }
+                if (isRemix) return router.push('/dashboard/content-library');
+                setStep('type');
               }}
               className="inline-flex items-center gap-1.5 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
@@ -733,7 +748,12 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                       <button
                         key={type.id}
                         type="button"
-                        onClick={() => { setContentType(type.id); setStep('configure'); }}
+                        onClick={() => {
+                          setContentType(type.id);
+                          // Text-only has no visual trending templates — skip
+                          // straight to configure. Everything else browses.
+                          setStep(type.id === 'text_only' ? 'configure' : 'browse');
+                        }}
                         className="group flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-border/50 bg-card p-4 text-center transition-all hover:border-primary/40 hover:bg-primary/5"
                       >
                         <Icon className="size-7 text-muted-foreground/30 transition-colors group-hover:text-muted-foreground" strokeWidth={1.2} />
@@ -754,6 +774,50 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                     </Link>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* ── Browse Trending Templates (step 1.5) ────────── */}
+            {step === 'browse' && typeDef && (
+              <div className="space-y-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 text-sm font-medium">
+                      <typeDef.icon className="size-4" strokeWidth={1.5} />
+                      {typeDef.label}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setStep('type')}
+                      className="text-xs text-muted-foreground underline hover:text-foreground"
+                    >
+                      Change
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setStep('configure')}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
+                  >
+                    Start from scratch
+                  </button>
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold">
+                    Trending {typeDef.label.toLowerCase()} templates
+                  </h2>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Pick one to remix, or start from scratch above.
+                  </p>
+                </div>
+                <TrendingTemplateBrowser
+                  contentType={contentType}
+                  onRemix={(t) => {
+                    pickedFromBrowseRef.current = true;
+                    setStep('configure');
+                    router.push(`/dashboard/content/create?templateId=${t.id}`);
+                  }}
+                />
               </div>
             )}
 
