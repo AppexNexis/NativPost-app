@@ -24,6 +24,18 @@ type GalleryPreviewProps = {
   slides: string[];
   slideCopy?: Array<SlideCopyEntry> | undefined;
   aspectRatio?: '9:16' | '1:1' | '16:9' | string | null;
+  /**
+   * Editor-selected layout for the caption overlay. Detail page reads this
+   * from `enrichmentData.editorLayout` and forwards it here so the compiled
+   * gallery WYSIWYG-matches the editor preview. Missing / unknown values
+   * fall back to the historical bottom-caption behavior.
+   */
+  layout?: 'centered' | 'bottom_caption' | 'top_caption' | 'wall_of_text' | string | null;
+  /**
+   * Horizontal alignment for the caption text, sourced from
+   * `enrichmentData.editorStyle.align`. Missing → 'center'.
+   */
+  align?: 'left' | 'center' | 'right' | string | null;
 };
 
 const ASPECT_TO_CSS: Record<string, string> = {
@@ -48,7 +60,7 @@ function normalizeCopy(entry: SlideCopyEntry | undefined): string {
   return entry.text ?? '';
 }
 
-export function GalleryPreview({ slides, slideCopy, aspectRatio }: GalleryPreviewProps) {
+export function GalleryPreview({ slides, slideCopy, aspectRatio, layout, align }: GalleryPreviewProps) {
   const total = slides.length;
   const [index, setIndex] = useState(0);
 
@@ -102,14 +114,58 @@ export function GalleryPreview({ slides, slideCopy, aspectRatio }: GalleryPrevie
         className="size-full object-cover"
       />
 
-      {/* Optional caption overlay when slideCopy has content for this index. */}
-      {caption && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/40 to-transparent p-4 pt-10">
-          <p className="text-center text-sm font-medium leading-snug text-white drop-shadow">
-            {caption}
-          </p>
-        </div>
-      )}
+      {/* Optional caption overlay when slideCopy has content for this index.
+          Positioning mirrors the editor's ImageEditorPreview + Slideshow
+          composition: caption goes to top / center / bottom / full-bleed
+          depending on the editor's chosen layout, and horizontal alignment
+          follows the editor's align choice. */}
+      {caption && (() => {
+        const alignKey = (align === 'left' || align === 'right' || align === 'center')
+          ? align : 'center';
+        const textAlignClass =
+          alignKey === 'left' ? 'text-left'
+          : alignKey === 'right' ? 'text-right'
+          : 'text-center';
+
+        // Position + gradient direction based on layout. Wall-of-text fills
+        // the whole frame; top/bottom use directional gradients; centered
+        // uses a soft radial dim so the middle text is legible without a
+        // one-sided gradient.
+        let containerClass: string;
+        let innerClass: string;
+        switch (layout) {
+          case 'top_caption':
+            containerClass = 'absolute inset-x-0 top-0 flex items-start justify-center bg-gradient-to-b from-black/70 via-black/40 to-transparent p-4 pb-10';
+            innerClass = `w-full ${textAlignClass}`;
+            break;
+          case 'centered':
+            containerClass = 'absolute inset-0 flex items-center justify-center bg-black/25 p-6';
+            innerClass = `w-full ${textAlignClass}`;
+            break;
+          case 'wall_of_text':
+            containerClass = 'absolute inset-0 flex items-center justify-center bg-black/45 p-4';
+            innerClass = `w-full ${textAlignClass}`;
+            break;
+          case 'bottom_caption':
+          default:
+            containerClass = 'absolute inset-x-0 bottom-0 flex items-end justify-center bg-gradient-to-t from-black/70 via-black/40 to-transparent p-4 pt-10';
+            innerClass = `w-full ${textAlignClass}`;
+            break;
+        }
+
+        const isWall = layout === 'wall_of_text';
+        return (
+          <div className={`pointer-events-none ${containerClass}`}>
+            <p
+              className={`${innerClass} font-medium leading-snug text-white drop-shadow ${
+                isWall ? 'text-xl md:text-2xl' : 'text-sm'
+              }`}
+            >
+              {caption}
+            </p>
+          </div>
+        );
+      })()}
 
       {/* Prev / Next arrows — mirror TemplateCard styling. */}
       {showArrows && (

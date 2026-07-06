@@ -27,8 +27,13 @@ interface Props {
 export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }: Props) {
   const { width, height, fps, durationInFrames } = useVideoConfig();
 
-  const hookFrames = 3 * fps;
-  const bodyFrames = 5 * fps;
+  // Sizing note: the shared Player runs at EDITOR_TOTAL_FRAMES = 8s * 30fps
+  // = 240 frames. Earlier we used 3+5+2s = 300 frames, which pushed the CTA
+  // out of the playback window entirely (Player looped back to 0 before it
+  // ever entered its `from` mark). Splitting the 8s window into 2/4/2 keeps
+  // all three overlays visible while preserving hook > body > cta ordering.
+  const hookFrames = 2 * fps;
+  const bodyFrames = 4 * fps;
   const ctaFrames = 2 * fps;
 
   const fontFamily = style.fontFamily || 'Inter';

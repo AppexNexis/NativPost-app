@@ -1115,6 +1115,8 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                           slides={gallerySlides}
                           slideCopy={((item.enrichmentData as any)?.editorScript?.slideCopy) as Array<string | { text: string; durationSeconds?: number }> | undefined}
                           aspectRatio={item.aspectRatio || null}
+                          layout={((item.enrichmentData as any)?.editorLayout) as string | undefined}
+                          align={((item.enrichmentData as any)?.editorStyle?.align) as 'left' | 'center' | 'right' | undefined}
                         />
                       </div>
                     );

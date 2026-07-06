@@ -329,7 +329,7 @@ export function ImageEditorPreview() {
       />
 
       <div className="flex h-full max-h-[880px] w-auto flex-col items-center gap-3">
-        <PhoneMockup>
+        <PhoneMockup aspectRatio={state.aspectRatio || '9:16'}>
           {/* Slide media */}
           {activeSlide?.url ? (
             <img
