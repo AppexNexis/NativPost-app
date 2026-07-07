@@ -447,15 +447,30 @@ export async function generateCampaignPosts(
     percent: 5,
   });
 
-  // Call engine
-  const res = await fetch(`${ENGINE_URL}/api/campaign/generate`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${API_KEY}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  // Call engine — bound the wait so a hung engine surfaces as a real error
+  // instead of silently consuming Vercel's 300s budget and leaving the job
+  // stuck in 'processing'. 240s leaves ~60s headroom for post-insert work.
+  const engineController = new AbortController();
+  const engineTimeout = setTimeout(() => engineController.abort(), 240 * 1000);
+  let res: Response;
+  try {
+    res = await fetch(`${ENGINE_URL}/api/campaign/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+      signal: engineController.signal,
+    });
+  } catch (fetchErr: any) {
+    clearTimeout(engineTimeout);
+    if (fetchErr?.name === 'AbortError') {
+      throw new Error(`Campaign engine timed out after 240s at ${ENGINE_URL}. The engine may be down or overloaded.`);
+    }
+    throw new Error(`Campaign engine unreachable at ${ENGINE_URL}: ${fetchErr?.message || fetchErr}`);
+  }
+  clearTimeout(engineTimeout);
 
   if (!res.ok) {
     const text = await res.text().catch(() => 'Unknown error');

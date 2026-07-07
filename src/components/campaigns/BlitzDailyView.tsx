@@ -125,10 +125,18 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
       // progress bar accurate meanwhile.
       const started = Date.now();
       const MAX_WAIT_MS = 5 * 60 * 1000;
+      let lastJob: any = null;
       // eslint-disable-next-line no-constant-condition
       while (true) {
         if (Date.now() - started > MAX_WAIT_MS) {
-          throw new Error('Generation is taking longer than expected. Refresh to check status.');
+          // Timed out client-side. Surface whatever the server last reported
+          // so the user sees the real cause (stuck 'processing', engine
+          // error, etc.) instead of a generic timeout string.
+          const detail = lastJob?.errorMessage
+            || (lastJob?.status === 'processing'
+              ? `Still processing at step "${lastJob?.step ?? 'unknown'}" (${lastJob?.progress ?? 0}%). The engine may be slow or unreachable. Refresh in a minute.`
+              : `Generation stalled at status "${lastJob?.status ?? 'unknown'}". Refresh to retry.`);
+          throw new Error(detail);
         }
         await new Promise((r) => setTimeout(r, 2500));
         const statusRes = await fetch(
@@ -139,6 +147,7 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
         const statusData = await statusRes.json();
         const job = statusData?.job;
         if (!job) continue;
+        lastJob = job;
         if (job.status === 'done') break;
         if (job.status === 'failed') {
           throw new Error(job.errorMessage || 'Generation failed');

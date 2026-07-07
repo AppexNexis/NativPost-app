@@ -247,7 +247,7 @@ export function CampaignWizard({
         </div>
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
           <div
-            className="h-full rounded-full bg-orange-500 transition-all duration-300"
+            className="h-full rounded-full bg-primary transition-all duration-300"
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -274,7 +274,7 @@ export function CampaignWizard({
             <button
               onClick={handleLaunch}
               disabled={isLoading}
-              className="flex items-center gap-2 rounded-lg bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-600 disabled:opacity-60"
+              className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
               Continue to launch
               <ChevronRight className="h-4 w-4" />
@@ -283,7 +283,7 @@ export function CampaignWizard({
             <button
               onClick={handleNext}
               disabled={isGenerating || isLoading}
-              className="flex items-center gap-2 rounded-lg bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-600 disabled:opacity-60"
+              className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
               {isGenerating ? (
                 <>
@@ -301,7 +301,7 @@ export function CampaignWizard({
             <button
               onClick={handleNext}
               disabled={isLoading}
-              className="flex items-center gap-2 rounded-lg bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-600 disabled:opacity-60"
+              className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
               Continue
               <ChevronRight className="h-4 w-4" />
@@ -357,7 +357,7 @@ function StepBasics({ campaign, onUpdate }: StepProps) {
           placeholder="23rd June 2026 Campaign"
           value={campaign.name ?? ''}
           onChange={(e) => onUpdate({ name: e.target.value })}
-          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
       </div>
 
@@ -372,7 +372,7 @@ function StepBasics({ campaign, onUpdate }: StepProps) {
               ['slideshow', 'Slideshow', 'bg-yellow-400'],
               ['wallOfText', 'Wall of text', 'bg-blue-500'],
               ['greenScreen', 'Green screen', 'bg-green-500'],
-              ['videoHook', 'Video hook', 'bg-orange-400'],
+              ['videoHook', 'Video hook', 'bg-purple-400'],
             ] as [keyof ContentMix, string, string][]
           ).map(([key, label, color]) => (
             <div key={key} className="flex items-center gap-4">
@@ -412,7 +412,7 @@ function StepBasics({ campaign, onUpdate }: StepProps) {
           max={100}
           value={campaign.remixRatio ?? 50}
           onChange={(e) => onUpdate({ remixRatio: parseInt(e.target.value) })}
-          className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 accent-orange-500"
+          className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 accent-primary"
         />
         <div className="mt-1 flex justify-between text-xs text-gray-400">
           <span>Original</span>
@@ -462,7 +462,7 @@ function StepAngles({ campaign, angles, onUpdate }: StepProps) {
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Angle Distribution</span>
         <div className="flex items-center gap-2">
-          <button onClick={equalize} className="text-xs font-medium text-orange-600 hover:text-orange-700">
+          <button onClick={equalize} className="text-xs font-medium text-primary hover:text-primary/80">
             Equalize
           </button>
           <span className={`text-sm font-medium ${totalWeight === 100 ? 'text-green-600' : 'text-gray-900'}`}>
@@ -490,7 +490,7 @@ function StepAngles({ campaign, angles, onUpdate }: StepProps) {
                   max={100}
                   value={weight}
                   onChange={(e) => handleWeightChange(angle.id, parseInt(e.target.value))}
-                  className="w-48 accent-orange-500"
+                  className="w-48 accent-primary"
                 />
                 <span className="w-10 text-right text-sm font-medium">{weight}%</span>
               </div>
@@ -534,7 +534,7 @@ function StepVoice({ campaign, onUpdate }: StepProps) {
               key={freq.value}
               onClick={() => onUpdate({ mentionFrequency: freq.value as Campaign['mentionFrequency'] })}
               className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${campaign.mentionFrequency === freq.value
-                  ? 'border-orange-500 bg-orange-50 text-orange-700'
+                  ? 'border-primary bg-primary/10 text-primary'
                   : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'
                 }`}
             >
@@ -561,7 +561,7 @@ function StepVoice({ campaign, onUpdate }: StepProps) {
               key={option.value ?? 'all'}
               onClick={() => onUpdate({ genderPreference: option.value })}
               className={`rounded-lg border px-6 py-2.5 text-sm font-medium transition-colors ${campaign.genderPreference === option.value
-                  ? 'border-orange-500 bg-orange-50 text-orange-700'
+                  ? 'border-primary bg-primary/10 text-primary'
                   : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'
                 }`}
             >
@@ -601,7 +601,7 @@ function StepSources({ campaign, influencers, isLoading, onUpdate }: StepProps) 
           max={100}
           value={campaign.ownMediaMix ?? 50}
           onChange={(e) => onUpdate({ ownMediaMix: parseInt(e.target.value) })}
-          className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 accent-orange-500"
+          className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 accent-primary"
         />
         <div className="mt-1 flex justify-between text-xs text-gray-400">
           <span>Platform sources</span>
@@ -624,10 +624,10 @@ function StepSources({ campaign, influencers, isLoading, onUpdate }: StepProps) 
           value={campaign.influencerFrequency ?? 0}
           onChange={(e) => onUpdate({ influencerFrequency: parseInt(e.target.value) })}
           disabled={influencers.length === 0 || isLoading}
-          className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 accent-orange-500 disabled:opacity-40"
+          className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 accent-primary disabled:opacity-40"
         />
         {influencers.length === 0 && (
-          <p className="mt-2 text-xs text-orange-600">
+          <p className="mt-2 text-xs text-muted-foreground">
             Train at least one influencer in AI Studio to enable this feature.
           </p>
         )}
@@ -686,12 +686,12 @@ function StepAccounts({ campaign, accounts, onUpdate }: StepProps) {
                   <button
                     key={account.id}
                     onClick={() => toggleAccount(account)}
-                    className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors ${isSelected ? 'border-orange-300 bg-orange-50' : 'border-gray-200 bg-white hover:bg-gray-50'
+                    className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors ${isSelected ? 'border-primary bg-primary/10' : 'border-gray-200 bg-white hover:bg-gray-50'
                       }`}
                   >
                     <div className="flex items-center gap-3">
                       <div
-                        className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${isSelected ? 'border-orange-500 bg-orange-500' : 'border-gray-300'
+                        className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${isSelected ? 'border-primary bg-primary' : 'border-gray-300'
                           }`}
                       >
                         {isSelected && <Check className="h-3 w-3 text-white" />}
@@ -700,7 +700,7 @@ function StepAccounts({ campaign, accounts, onUpdate }: StepProps) {
                         @{account.platformUsername ?? account.platformUserId}
                       </span>
                     </div>
-                    <span className={`text-xs ${isSelected ? 'text-orange-600' : 'text-gray-400'}`}>
+                    <span className={`text-xs ${isSelected ? 'text-primary' : 'text-gray-400'}`}>
                       {isSelected ? 'Selected' : 'Connected'}
                     </span>
                   </button>
@@ -763,7 +763,7 @@ function StepCadence({ campaign, onUpdate }: StepProps) {
               key={opt.value}
               onClick={() => onUpdate({ campaignLengthDays: opt.value })}
               className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${campaign.campaignLengthDays === opt.value
-                  ? 'border-orange-500 bg-orange-50 text-orange-700'
+                  ? 'border-primary bg-primary/10 text-primary'
                   : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
                 }`}
             >
@@ -779,7 +779,7 @@ function StepCadence({ campaign, onUpdate }: StepProps) {
           type="date"
           value={campaign.startDate ?? ''}
           onChange={(e) => onUpdate({ startDate: e.target.value || null })}
-          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
         <p className="mt-1 text-xs text-gray-400">
           This campaign can start tomorrow at the earliest. Earliest: {new Date().toISOString().split('T')[0]}.

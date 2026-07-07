@@ -55,6 +55,56 @@ export async function POST(request: NextRequest) {
 
   const now = new Date();
 
+  // ── 0. Sweep stale 'processing' jobs ────────────────────────────────────
+  // Vercel silently kills functions past maxDuration (300s). If the previous
+  // worker hit that cap or crashed mid-flight, its job stays in 'processing'
+  // forever and the campaigns page polls a phantom "5%" indefinitely. Reset
+  // any processing job whose updatedAt is older than 6 minutes — either bump
+  // it back to 'queued' for retry, or mark 'failed' if attempts are spent.
+  const STALE_MS = 6 * 60 * 1000;
+  const staleCutoff = new Date(Date.now() - STALE_MS);
+  const staleJobs = await db
+    .select()
+    .from(campaignJobSchema)
+    .where(
+      and(
+        eq(campaignJobSchema.status, 'processing'),
+        lte(campaignJobSchema.updatedAt, staleCutoff),
+      ),
+    )
+    .limit(10);
+
+  for (const stale of staleJobs) {
+    const attempts = stale.attempts ?? 1;
+    if (attempts < MAX_ATTEMPTS) {
+      await db
+        .update(campaignJobSchema)
+        .set({
+          status: 'queued',
+          step: 'starting',
+          errorMessage: `Attempt ${attempts} timed out (function killed at 300s cap)`,
+          nextAttemptAt: new Date(Date.now() + 60 * 1000),
+          updatedAt: new Date(),
+        })
+        .where(eq(campaignJobSchema.id, stale.id));
+    } else {
+      await db
+        .update(campaignJobSchema)
+        .set({
+          status: 'failed',
+          step: 'error',
+          errorMessage: `Timed out after ${attempts} attempts (each killed at 300s cap). The engine may be unreachable or the campaign is too large.`,
+          completedAt: new Date(),
+        })
+        .where(eq(campaignJobSchema.id, stale.id));
+      // Reset the campaign so the UI can show a retry CTA.
+      await db
+        .update(campaignSchema)
+        .set({ status: 'draft', updatedAt: new Date() })
+        .where(eq(campaignSchema.id, stale.campaignId));
+    }
+  }
+
   // ── 1. Pick a job ───────────────────────────────────────────────────────
   // Prefer the explicit jobId path (fresh kick) — that job might have a
   // future nextAttemptAt from a backoff schedule, but if the client kicked
