@@ -4,6 +4,15 @@
 
 import { eq, and, gte, lt, sql } from 'drizzle-orm';
 
+import { applySetToSlots } from '@/lib/blitz/apply-set-to-slots';
+import { buildEditorScript, buildReasoning } from '@/lib/blitz/build-editor-script';
+import { buildSourceMediaSlots } from '@/lib/blitz/build-source-media-slots';
+import { pickDefaultSet } from '@/lib/blitz/pick-default-set';
+import {
+  BLITZ_ALLOWED_PLATFORMS,
+  getConnectedPlatforms,
+  NoConnectedChannelsError,
+} from '@/lib/social/connected-platforms';
 import {
   brandProfileSchema,
   campaignContentSchema,
@@ -304,12 +313,28 @@ function buildEngineBrandProfile(profile: any) {
   };
 }
 
+export type CampaignTemplateRow = {
+  id: string;
+  contentType: string;
+  sourceUrl: string | null;
+  structure: any;
+  angles: string[];
+  mediaUrl: string | null;
+  thumbnailUrl: string | null;
+  thumbnailUrls: Record<string, string> | string[] | null;
+  slideCaptions: Record<string, string> | string[] | null;
+  sourcePlatform: string | null;
+  sourceCreator: string | null;
+  viewCount: number | null;
+  likeCount: number | null;
+  commentCount: number | null;
+};
+
 async function fetchCampaignTemplates(
   db: any,
   _orgId: string,                    // prefix with _ to suppress unused warning
   contentMix: Record<string, number>,
-): Promise<Array<{ id: string; contentType: string; sourceUrl: string | null; structure: any; angles: string[] }>> {
-  // ...existing query code...
+): Promise<CampaignTemplateRow[]> {
   const mixKeys = Object.entries(contentMix)
     .filter(([, v]) => (v || 0) > 0)
     .map(([k]) => k);
@@ -326,6 +351,15 @@ async function fetchCampaignTemplates(
       sourceUrl: contentTemplateSchema.sourceUrl,
       structure: contentTemplateSchema.structure,
       angles: contentTemplateSchema.angles,
+      mediaUrl: contentTemplateSchema.mediaUrl,
+      thumbnailUrl: contentTemplateSchema.thumbnailUrl,
+      thumbnailUrls: contentTemplateSchema.thumbnailUrls,
+      slideCaptions: contentTemplateSchema.slideCaptions,
+      sourcePlatform: contentTemplateSchema.sourcePlatform,
+      sourceCreator: contentTemplateSchema.sourceCreator,
+      viewCount: contentTemplateSchema.viewCount,
+      likeCount: contentTemplateSchema.likeCount,
+      commentCount: contentTemplateSchema.commentCount,
     })
     .from(contentTemplateSchema)
     .where(
@@ -339,10 +373,19 @@ async function fetchCampaignTemplates(
     .filter((t) => uniqueTypes.includes(t.contentType))
     .map((t) => ({
       id: t.id,
-      contentType: t.contentType,    // ← camelCase, not content_type
-      sourceUrl: t.sourceUrl,        // ← camelCase, not source_url
+      contentType: t.contentType,
+      sourceUrl: t.sourceUrl ?? null,
       structure: t.structure || {},
       angles: (t.angles as string[]) || [],
+      mediaUrl: t.mediaUrl ?? null,
+      thumbnailUrl: t.thumbnailUrl ?? null,
+      thumbnailUrls: t.thumbnailUrls ?? null,
+      slideCaptions: t.slideCaptions ?? null,
+      sourcePlatform: t.sourcePlatform ?? null,
+      sourceCreator: t.sourceCreator ?? null,
+      viewCount: t.viewCount ?? null,
+      likeCount: t.likeCount ?? null,
+      commentCount: t.commentCount ?? null,
     }));
 }
 
@@ -376,18 +419,23 @@ export async function generateCampaignPosts(
     throw new Error('No Brand Profile found. Complete your Brand Profile first.');
   }
 
-  // Resolve target platforms
+  // Resolve target platforms — hard-gated to connected FB / IG / TikTok.
+  // Empty result throws NoConnectedChannelsError so the caller can render
+  // a "Connect a channel" CTA instead of silently generating posts for
+  // platforms the org can't publish to (per 2026-07-07 product decision).
+  const allowedPlatforms = BLITZ_ALLOWED_PLATFORMS as unknown as string[];
+  const connected = await getConnectedPlatforms(db, orgId, { restrictTo: allowedPlatforms });
   let targetPlatforms: string[];
   if (targetPlatformsOverride && targetPlatformsOverride.length > 0) {
-    targetPlatforms = targetPlatformsOverride;
+    // Intersect override with connected so callers can't publish to
+    // platforms the org hasn't connected.
+    const connectedSet = new Set(connected);
+    targetPlatforms = targetPlatformsOverride.filter((p) => connectedSet.has(p));
   } else {
-    const accounts = await db
-      .select({ platform: socialAccountSchema.platform })
-      .from(socialAccountSchema)
-      .where(and(eq(socialAccountSchema.orgId, orgId), eq(socialAccountSchema.isActive, true)));
-    targetPlatforms = accounts.length > 0
-      ? Array.from(new Set(accounts.map((a: any) => a.platform as string)))
-      : ['instagram', 'linkedin'];
+    targetPlatforms = connected;
+  }
+  if (targetPlatforms.length === 0) {
+    throw new NoConnectedChannelsError();
   }
 
   // Resolve angles with names
@@ -409,10 +457,14 @@ export async function generateCampaignPosts(
     });
   }
 
-  // Fetch templates for remix
-  const templates = campaign.remixRatio > 0
-    ? await fetchCampaignTemplates(db, orgId, contentMix)
-    : [];
+  // Fetch templates for remix. Every Blitz/Campaign post is a shallow
+  // clone of a Library template — text is regenerated, media is cloned
+  // (or swapped for a matching Set on safe-swap content types).
+  // If contentMix asks for types with no matching approved templates,
+  // the engine will fall back to text-only generation for those posts.
+  const templates = await fetchCampaignTemplates(db, orgId, contentMix);
+  const templatesById = new Map<string, CampaignTemplateRow>();
+  for (const t of templates) templatesById.set(t.id, t);
 
   // Build engine payload
   const payload = {
@@ -511,7 +563,75 @@ export async function generateCampaignPosts(
         percent: Math.round(((i + 1) / engineResult.total_posts) * 50) + 45,
       });
 
-      // Insert content item
+      // Look up the full source-template row so we can clone media and
+      // stash the sourceMediaSlots + editorScript the editor + preview
+      // pipeline expects. Mirrors /api/templates/[id]/remix/route.ts
+      // saveVariant — the canonical clone-from-template pattern.
+      const template = post.template_id ? templatesById.get(post.template_id) : undefined;
+
+      // Content type must mirror the source template, NOT the engine's
+      // guess. Falls back to the engine value only when no template is
+      // linked (rare — text-only-with-no-template case).
+      const resolvedContentType = template?.contentType || post.content_type;
+
+      // Build sourceMediaSlots from the template row. Blitz + Campaigns
+      // are media-remix, not from-scratch generation, so slots come from
+      // the template's mediaUrl / thumbnailUrls / slideCaptions.
+      let sourceMediaSlots = template ? buildSourceMediaSlots(template) : {};
+
+      // Attempt Media Set substitution for safe-swap content types
+      // (slideshow / carousel / wall_of_text). Other types keep template
+      // media as-is per user decision — mixing user assets into video
+      // hooks / talking-heads produces incoherent output.
+      if (template) {
+        try {
+          const set = await pickDefaultSet(db, orgId, resolvedContentType);
+          if (set) {
+            sourceMediaSlots = applySetToSlots(sourceMediaSlots, set, resolvedContentType);
+          }
+        } catch (setErr: any) {
+          // Set resolution is best-effort — log and fall through to
+          // template media so a broken Set doesn't fail the whole post.
+          console.warn(`[Campaign] Set substitution failed for post ${i}:`, setErr?.message || setErr);
+        }
+      }
+
+      const editorScript = template
+        ? buildEditorScript(
+            { caption: post.caption, content_type: post.content_type, template_id: post.template_id },
+            { contentType: resolvedContentType, slideCaptions: template.slideCaptions, thumbnailUrls: template.thumbnailUrls },
+          )
+        : {};
+
+      const reasoning = template
+        ? buildReasoning(
+            { angle_name: post.angle_name, is_remixed: post.is_remixed },
+            {
+              contentType: resolvedContentType,
+              sourcePlatform: template.sourcePlatform,
+              sourceCreator: template.sourceCreator,
+            },
+          )
+        : undefined;
+
+      const sourceTemplateSnapshot = template
+        ? {
+            sourceCreator: template.sourceCreator,
+            sourcePlatform: template.sourcePlatform,
+            viewCount: template.viewCount,
+            likeCount: template.likeCount,
+            commentCount: template.commentCount,
+            thumbnailUrls: template.thumbnailUrls,
+          }
+        : undefined;
+
+      // Preserve raw source media in graphicUrls[0] so compile can find
+      // the untouched original (team memory: preserve-raw-source-in-compile-pipeline).
+      const rawSource = template?.mediaUrl || template?.thumbnailUrl || null;
+
+      // Insert content item — populates templateId FK column AND full
+      // enrichmentData so downstream previews (Blitz swipe, detail page,
+      // editor rehydrate) find everything they need without extra fetches.
       const [contentItem] = await db
         .insert(contentItemSchema)
         .values({
@@ -519,19 +639,28 @@ export async function generateCampaignPosts(
           brandProfileId: profile.id,
           caption: post.caption,
           hashtags: post.hashtags || [],
-          contentType: post.content_type,
+          contentType: resolvedContentType,
           topic: post.angle_name || campaign.name || null,
-          graphicUrls: [],
+          graphicUrls: rawSource ? [rawSource] : [],
           variantGroupId: null,
           variantNumber: 1,
           isSelectedVariant: true,
+          templateId: post.template_id || null,
           targetPlatforms,
           platformSpecific: post.platform_specific || {},
           status: 'pending_review',
           antiSlopScore: post.anti_slop_score ?? null,
           qualityFlags: post.quality_flags || [],
           contentMode: 'normal',
-          enrichmentData: {},
+          enrichmentData: {
+            sourceMediaSlots,
+            editorScript,
+            editorStyle: {},
+            editorLayout: 'centered',
+            isCompiled: false,
+            ...(sourceTemplateSnapshot ? { sourceTemplateSnapshot } : {}),
+            ...(reasoning ? { reasoning } : {}),
+          },
           enrichmentApplied: [],
           campaignId: campaign.id,
           angleId: post.angle_id || null,
@@ -567,22 +696,27 @@ export async function generateCampaignPosts(
         scheduledTime,
       });
 
-      // Generate media asynchronously (don't block)
+      // Media already populated from the cloned template — Blitz/Campaigns
+      // never generate media from scratch (per architectural rebuild).
+      // If no template was linked (text-only path), fall back to the
+      // media generator; otherwise leave the cloned source in place.
       onProgress?.({
         postIndex: i,
         total: engineResult.total_posts,
-        status: 'generating_media',
+        status: 'finalizing_post',
         percent: Math.round(((i + 1) / engineResult.total_posts) * 100),
       });
 
-      generateMediaForContentItem(contentItem.id, post.content_type, orgId).catch((mediaErr: any) => {
-        console.warn(`[Campaign] Media generation failed for post ${i}:`, mediaErr.message);
-      });
+      if (!template) {
+        generateMediaForContentItem(contentItem.id, resolvedContentType, orgId).catch((mediaErr: any) => {
+          console.warn(`[Campaign] Media generation failed for post ${i}:`, mediaErr.message);
+        });
+      }
 
       onPostComplete?.({
         postIndex: i,
         contentItemId: contentItem.id,
-        contentType: post.content_type,
+        contentType: resolvedContentType,
         scheduledDate: scheduledDate.toISOString().slice(0, 10),
       });
     } catch (err: any) {

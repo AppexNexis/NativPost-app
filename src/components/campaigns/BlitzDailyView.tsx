@@ -3,35 +3,32 @@
 /**
  * BlitzDailyView — Tinder-style swipe queue for the daily Blitz.
  *
- * Behavior
- *   - Auto-generates today's queue on mount if empty (no more manual
- *     "Generate today's Blitz" button)
- *   - Renders remaining `pending_review` items as a swipeable card stack:
- *     the current item is the focus card; the next 2 sit behind it, scaled
- *     back so the user perceives depth
- *   - Two panels per card: personalized on the left (this item's caption +
- *     hero media), original template on the right (source it was cloned
- *     from — from templateId join)
- *   - Three actions per card: Reject (skip) / Edit (opens editor in
- *     `mode=blitz-edit` returning to /dashboard/blitz) / Approve (marks
- *     approved + navigates to detail page for scheduling)
- *   - Approvals/rejections leave the client-side queue immediately so the
- *     next card is always frictionless
+ * Rebuild (2026-07-07):
+ *   - Single viewport, no page scroll — action bar always visible
+ *   - Source panel (LEFT, phone frame + engagement counts) and personalized
+ *     card (RIGHT, Remotion preview) sit tight next to each other
+ *   - No caption text block below the card — the preview IS the content
+ *   - No placeholder strings; missing sourceMediaSlots after Phase 1 is a
+ *     system error, not a user-facing state
+ *   - framer-motion swipe: drag right to approve, left to reject, keyboard
+ *     arrows preserved as accessibility fallback
+ *   - Empty states are ONLY: dailyLimitReached, NO_CONNECTED_CHANNELS,
+ *     noTemplatesAvailable, and queueDone
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { AnimatePresence, motion, useMotionValue, useTransform } from 'framer-motion';
 import {
-  ArrowRight,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Eye,
   Heart,
+  Link as LinkIcon,
   Loader2,
   MessageCircle,
   Pencil,
-  RefreshCw,
   Settings2,
   Sparkles,
   X,
@@ -40,6 +37,7 @@ import {
 import type { Campaign, ContentItem } from '@/types/v2';
 import { BlitzSettings } from '@/components/blitz/BlitzSettings';
 import { RemotionPreviewPlayer } from '@/components/editor/RemotionPreviewPlayer';
+import { useBlitzPreviewProps } from '@/hooks/useBlitzPreviewProps';
 
 type BlitzItem = ContentItem & {
   sequenceIndex?: number;
@@ -54,21 +52,19 @@ type TemplateSummary = {
   mediaUrl?: string | null;
   thumbnailUrl?: string | null;
   contentType?: string | null;
-  structure?: {
-    hook?: string | null;
-    body?: string | null;
-    cta?: string | null;
-  } | null;
   sourceCreator?: string | null;
   sourcePlatform?: string | null;
   viewCount?: number | null;
   likeCount?: number | null;
-  shareCount?: number | null;
   commentCount?: number | null;
-  durationSeconds?: number | null;
-  thumbnailUrls?: string[] | null;
-  slideCaptions?: string[] | null;
+  thumbnailUrls?: Record<string, string> | string[] | null;
 };
+
+type GenerateOutcome =
+  | { kind: 'none' }
+  | { kind: 'dailyLimit'; count: number; limit: number; nextResetAt: string }
+  | { kind: 'noChannels' }
+  | { kind: 'noTemplates' };
 
 function formatCount(n?: number | null): string {
   if (!n || n < 1000) return String(n ?? 0);
@@ -76,27 +72,26 @@ function formatCount(n?: number | null): string {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
-// Content types that RemotionPreviewPlayer can render live. Keep in sync
-// with COMPOSITION_BY_TYPE in src/components/editor/RemotionPreviewPlayer.tsx.
-const LIVE_PREVIEW_TYPES = new Set([
-  'slideshow',
-  'carousel',
-  'data_story',
-  'wall_of_text',
-  'talking_head',
-  'green_screen',
-  'video_hook',
-  'ugc',
-  'reel',
-  'single_image',
-]);
+function parseSlideStrings(input: any): string[] {
+  if (!input) return [];
+  if (Array.isArray(input)) return input.filter((u): u is string => typeof u === 'string' && u.length > 0);
+  if (typeof input === 'object') {
+    const keys = Object.keys(input);
+    const allNumeric = keys.length > 0 && keys.every((k) => /^\d+$/.test(k));
+    const orderedKeys = allNumeric ? keys.sort((a, b) => Number(a) - Number(b)) : keys;
+    return orderedKeys
+      .map((k) => (input as Record<string, string>)[k])
+      .filter((u): u is string => typeof u === 'string' && u.length > 0);
+  }
+  return [];
+}
+
+const PENDING_STATUSES = new Set(['pending_review', 'draft', 'generating']);
 
 interface BlitzDailyViewProps {
   campaign: Campaign;
   initialContentItems: BlitzItem[];
 }
-
-const PENDING_STATUSES = new Set(['pending_review', 'draft', 'generating']);
 
 export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyViewProps) {
   const router = useRouter();
@@ -106,7 +101,9 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
   const [isGenerating, setIsGenerating] = useState(false);
   const [actionPending, setActionPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<GenerateOutcome>({ kind: 'none' });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [slideIdx, setSlideIdx] = useState(0);
   const autoGenAttempted = useRef(false);
 
   const queue = useMemo(
@@ -140,35 +137,49 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
   const runGenerate = useCallback(async () => {
     setIsGenerating(true);
     setError(null);
+    setOutcome({ kind: 'none' });
     try {
-      // POST /generate now returns 202 with { jobId } immediately — actual
-      // work happens in the background cron worker. Poll the status endpoint
-      // until the job reaches a terminal state, then refresh the queue.
       const res = await fetch(`/api/campaigns/${campaign.id}/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
+      const data = await res.json().catch(() => ({}));
+
+      // The generate route now returns terminal empty states as 200
+      // responses so the client can render distinct UI instead of a
+      // generic error banner.
+      if (data.errorCode === 'NO_CONNECTED_CHANNELS') {
+        setOutcome({ kind: 'noChannels' });
+        return;
+      }
+      if (data.dailyLimitReached) {
+        setOutcome({
+          kind: 'dailyLimit',
+          count: data.count,
+          limit: data.limit,
+          nextResetAt: data.nextResetAt,
+        });
+        return;
+      }
+      if (data.noTemplatesAvailable) {
+        setOutcome({ kind: 'noTemplates' });
+        return;
+      }
+
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Failed to generate Blitz');
       }
 
-      // Wait for the job to finish. Cap at ~5 minutes of polling (matches
-      // Vercel maxDuration on the worker) so we don't spin forever if
-      // something wedges — the campaigns list poller will keep the row's
-      // progress bar accurate meanwhile.
+      // Job enqueued — poll status until terminal state.
       const started = Date.now();
       const MAX_WAIT_MS = 5 * 60 * 1000;
       let lastJob: any = null;
       // eslint-disable-next-line no-constant-condition
       while (true) {
         if (Date.now() - started > MAX_WAIT_MS) {
-          // Timed out client-side. Surface whatever the server last reported
-          // so the user sees the real cause (stuck 'processing', engine
-          // error, etc.) instead of a generic timeout string.
           const detail = lastJob?.errorMessage
             || (lastJob?.status === 'processing'
-              ? `Still processing at step "${lastJob?.step ?? 'unknown'}" (${lastJob?.progress ?? 0}%). The engine may be slow or unreachable. Refresh in a minute.`
+              ? `Still processing at step "${lastJob?.step ?? 'unknown'}" (${lastJob?.progress ?? 0}%). Refresh in a minute.`
               : `Generation stalled at status "${lastJob?.status ?? 'unknown'}". Refresh to retry.`);
           throw new Error(detail);
         }
@@ -196,7 +207,7 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
     }
   }, [campaign.id, refresh]);
 
-  // Auto-generate today's queue exactly once on mount if nothing is queued.
+  // Auto-generate today's queue once on mount if nothing is queued.
   useEffect(() => {
     if (autoGenAttempted.current) return;
     if (items.length > 0) return;
@@ -205,8 +216,7 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Lazily hydrate template summaries for the next few cards so the source
-  // side of each card can render without a per-render fetch spin.
+  // Hydrate template summaries for the next few cards.
   useEffect(() => {
     const upcoming = queue.slice(0, 3);
     const missing = upcoming
@@ -224,9 +234,6 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
             const res = await fetch(`/api/templates/${tid}`, { cache: 'force-cache' });
             if (!res.ok) return;
             const data = await res.json();
-            // `/api/templates/[id]` returns `{ item }`. Fall back to legacy
-            // `{ template }` and to a bare object shape defensively so a
-            // future response reshape doesn't silently blank the panel.
             const t = data.item || data.template || data;
             if (!t || !t.id) return;
             results[tid] = {
@@ -234,12 +241,15 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
               mediaUrl: t.mediaUrl ?? null,
               thumbnailUrl: t.thumbnailUrl ?? null,
               contentType: t.contentType ?? null,
-              structure: t.structure ?? null,
               sourceCreator: t.sourceCreator ?? null,
               sourcePlatform: t.sourcePlatform ?? null,
+              viewCount: t.viewCount ?? null,
+              likeCount: t.likeCount ?? null,
+              commentCount: t.commentCount ?? null,
+              thumbnailUrls: t.thumbnailUrls ?? null,
             };
           } catch {
-            // Silent — the card falls back to a text-only source panel.
+            // Ignore; card falls back to enrichmentData.sourceMediaSlots.
           }
         }),
       );
@@ -272,13 +282,11 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
     if (actionPending) return;
     setActionPending(item.id);
     setError(null);
-    // Optimistic: drop immediately so the next card is instant.
     removeFromQueue(item.id);
     try {
       await patchStatus(item.id, 'skipped');
     } catch (err: any) {
       setError(err?.message || 'Reject failed');
-      // Best-effort resync in case the server disagrees.
       await refresh();
     } finally {
       setActionPending(null);
@@ -287,7 +295,7 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
 
   const handleEdit = (item: BlitzItem) => {
     if (actionPending) return;
-    const returnTo = encodeURIComponent('/dashboard/blitz');
+    const returnTo = encodeURIComponent(`/dashboard/campaigns/${campaign.id}`);
     router.push(
       `/dashboard/editor?contentItemId=${item.id}&mode=blitz-edit&returnTo=${returnTo}`,
     );
@@ -299,8 +307,6 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
     setError(null);
     try {
       await patchStatus(item.id, 'approved');
-      // Approve reuses the Schedule & Publish surface — send the user to
-      // the content detail page where they finalize schedule / platforms.
       router.push(`/dashboard/content/${item.id}`);
     } catch (err: any) {
       setError(err?.message || 'Approve failed');
@@ -310,12 +316,14 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
 
   const current = queue[0];
   const behind = queue.slice(1, 3);
-  const queueDone = !current && !isGenerating;
   const currentTemplate = current?.templateId ? templateCache[current.templateId] : undefined;
 
-  // Keyboard: left arrow rejects, right arrow approves the current card.
-  // Skip when the settings drawer is open or focus is inside a form field so
-  // we don't hijack typing.
+  // Reset slide index when the current card changes.
+  useEffect(() => {
+    setSlideIdx(0);
+  }, [current?.id]);
+
+  // Keyboard shortcuts.
   useEffect(() => {
     if (!current) return;
     const onKey = (e: KeyboardEvent) => {
@@ -337,39 +345,38 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id, settingsOpen, actionPending]);
 
-  return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
-      {/* Header */}
-      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10">
-            <Zap className="size-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Blitz</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Swipe through today&rsquo;s queue. Approve, edit, or reject each post.
-            </p>
-          </div>
-        </div>
+  // Loading OR the outcome empty states short-circuit the card view.
+  const queueDone = !current && !isGenerating && outcome.kind === 'none';
+  const showLoading = isGenerating && queue.length === 0;
 
-        <div className="flex items-center gap-2">
-          <span className="hidden items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground sm:inline-flex">
-            <CheckCircle2 className="size-3.5 text-emerald-500" />
-            {approvedCount} approved
-          </span>
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <Settings2 className="size-4" />
-            Settings
-          </button>
+  return (
+    <div className="flex h-[calc(100dvh-var(--header-h,64px))] flex-col overflow-hidden bg-background">
+      {/* Header: compact, title only */}
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3 sm:px-6">
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10">
+            <Zap className="size-4 text-primary" />
+          </div>
+          <h1 className="text-lg font-semibold tracking-tight text-foreground">Blitz</h1>
+          {totalToday > 0 && (
+            <span className="ml-2 inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground">
+              <CheckCircle2 className="size-3 text-emerald-500" />
+              {approvedCount} approved
+            </span>
+          )}
         </div>
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+          className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <Settings2 className="size-4" />
+          Settings
+        </button>
       </div>
 
       {error && (
-        <div className="mb-6 flex items-center justify-between rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div className="mx-4 mt-3 flex shrink-0 items-center justify-between rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive sm:mx-6">
           <span>{error}</span>
           <button
             type="button"
@@ -382,76 +389,36 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
         </div>
       )}
 
-      {/* Body */}
-      {isGenerating && queue.length === 0 ? (
-        <QueueLoading />
-      ) : queueDone ? (
-        <QueueDone
-          total={totalToday}
-          approved={approvedCount}
-          onRegenerate={runGenerate}
-          regenerating={isGenerating}
-        />
-      ) : current ? (
-        <div className="mx-auto max-w-5xl">
-          <div className="grid items-start gap-6 md:grid-cols-2">
-            {/* LEFT: Remixed From (source template with TikTok phone chrome) */}
-            <SourceTemplatePanel template={currentTemplate} />
-
-            {/* RIGHT: Personalized card (swipe stack) */}
-            <SwipeCard
-              item={current}
-              template={currentTemplate}
-              behindCount={behind.length}
-              actionPending={actionPending === current.id}
-            />
-          </div>
-
-          {/* Centered action bar spanning both panels */}
-          <div className="mt-6 flex items-center justify-center gap-4">
-            <button
-              type="button"
-              onClick={() => handleReject(current)}
-              disabled={actionPending === current.id}
-              title="Reject"
-              className="flex size-14 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-colors hover:bg-red-600 disabled:opacity-50"
-            >
-              <X className="size-6" />
-            </button>
-            <button
-              type="button"
-              onClick={() => handleEdit(current)}
-              disabled={actionPending === current.id}
-              className="inline-flex h-12 items-center gap-2 rounded-full border-2 border-border bg-background px-6 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60"
-            >
-              <Pencil className="size-4" />
-              Edit
-            </button>
-            <button
-              type="button"
-              onClick={() => handleApprove(current)}
-              disabled={actionPending === current.id}
-              title="Approve"
-              className="flex size-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg transition-colors hover:bg-emerald-600 disabled:opacity-60"
-            >
-              {actionPending === current.id ? (
-                <Loader2 className="size-6 animate-spin" />
-              ) : (
-                <CheckCircle2 className="size-6" />
-              )}
-            </button>
-          </div>
-
-          <p className="mt-3 text-center text-[11px] text-muted-foreground">
-            <span className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono">{'\u2190'}</span>
-            {' Reject   '}
-            <span className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono">{'\u2192'}</span>
-            {' Approve'}
-          </p>
-
-          <QueueMeter position={items.length - queue.length + 1} total={items.length} />
-        </div>
-      ) : null}
+      {/* Body: fills remaining viewport, centers content */}
+      <div className="flex flex-1 items-center justify-center overflow-hidden px-4 py-3 sm:px-6">
+        {showLoading ? (
+          <QueueLoading />
+        ) : outcome.kind === 'noChannels' ? (
+          <NoChannelsState />
+        ) : outcome.kind === 'noTemplates' ? (
+          <NoTemplatesState />
+        ) : outcome.kind === 'dailyLimit' ? (
+          <DailyLimitState
+            count={outcome.count}
+            limit={outcome.limit}
+            nextResetAt={outcome.nextResetAt}
+          />
+        ) : queueDone ? (
+          <QueueDone total={totalToday} approved={approvedCount} />
+        ) : current ? (
+          <CardPair
+            item={current}
+            template={currentTemplate}
+            behindCount={behind.length}
+            actionPending={actionPending === current.id}
+            slideIdx={slideIdx}
+            onSlideIdxChange={setSlideIdx}
+            onApprove={() => handleApprove(current)}
+            onReject={() => handleReject(current)}
+            onEdit={() => handleEdit(current)}
+          />
+        ) : null}
+      </div>
 
       <BlitzSettings
         campaignId={campaign.id}
@@ -480,133 +447,145 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
   );
 }
 
-/* ─── Subcomponents ─────────────────────────────────────────────────── */
+/* ─── Card pair (source + personalized + action bar) ───────────────── */
 
-function QueueLoading() {
-  return (
-    <div className="flex min-h-[360px] flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card p-12 text-center">
-      <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-primary/10">
-        <Loader2 className="size-6 animate-spin text-primary" />
-      </div>
-      <h3 className="text-base font-semibold text-foreground">Building today&rsquo;s queue</h3>
-      <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
-        Picking trending templates, cloning them, and generating personalized copy for your brand.
-      </p>
-    </div>
-  );
-}
-
-function QueueDone({
-  total,
-  approved,
-  onRegenerate,
-  regenerating,
+function CardPair({
+  item,
+  template,
+  behindCount,
+  actionPending,
+  slideIdx,
+  onSlideIdxChange,
+  onApprove,
+  onReject,
+  onEdit,
 }: {
-  total: number;
-  approved: number;
-  onRegenerate: () => void;
-  regenerating: boolean;
+  item: BlitzItem;
+  template?: TemplateSummary;
+  behindCount: number;
+  actionPending: boolean;
+  slideIdx: number;
+  onSlideIdxChange: (n: number) => void;
+  onApprove: () => void;
+  onReject: () => void;
+  onEdit: () => void;
 }) {
   return (
-    <div className="flex min-h-[360px] flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card p-12 text-center">
-      <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-emerald-500/10">
-        <CheckCircle2 className="size-7 text-emerald-500" />
+    <div className="flex w-full max-w-3xl flex-col items-center gap-4">
+      <div className="flex w-full items-center justify-center gap-3 md:gap-4">
+        <SourceTemplatePanel
+          template={template}
+          slideIdx={slideIdx}
+          onSlideIdxChange={onSlideIdxChange}
+        />
+        <SwipeCard
+          item={item}
+          template={template}
+          behindCount={behindCount}
+          slideIdx={slideIdx}
+          onSwipeApprove={onApprove}
+          onSwipeReject={onReject}
+        />
       </div>
-      <h3 className="text-base font-semibold text-foreground">You&rsquo;re done for today</h3>
-      <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
-        {total > 0
-          ? `You reviewed ${total} post${total === 1 ? '' : 's'}. ${approved} approved.`
-          : 'No posts were generated for today yet.'}
+
+      {/* Action bar */}
+      <div className="flex items-center justify-center gap-4">
+        <button
+          type="button"
+          onClick={onReject}
+          disabled={actionPending}
+          title="Reject"
+          className="flex size-14 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-colors hover:bg-red-600 disabled:opacity-50"
+        >
+          <X className="size-6" />
+        </button>
+        <button
+          type="button"
+          onClick={onEdit}
+          disabled={actionPending}
+          className="inline-flex h-12 items-center gap-2 rounded-full border-2 border-border bg-background px-6 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60"
+        >
+          <Pencil className="size-4" />
+          Edit
+        </button>
+        <button
+          type="button"
+          onClick={onApprove}
+          disabled={actionPending}
+          title="Approve"
+          className="flex size-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg transition-colors hover:bg-emerald-600 disabled:opacity-60"
+        >
+          {actionPending ? (
+            <Loader2 className="size-6 animate-spin" />
+          ) : (
+            <CheckCircle2 className="size-6" />
+          )}
+        </button>
+      </div>
+
+      <p className="text-[11px] text-muted-foreground">
+        <span className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono">{'\u2190'}</span>
+        {' Reject   '}
+        <span className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono">{'\u2192'}</span>
+        {' Approve'}
       </p>
-      <button
-        onClick={onRegenerate}
-        disabled={regenerating}
-        className="mt-6 inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60"
-      >
-        <RefreshCw className={`size-4 ${regenerating ? 'animate-spin' : ''}`} />
-        {regenerating ? 'Generating\u2026' : 'Generate more'}
-      </button>
     </div>
   );
 }
 
-function QueueMeter({ position, total }: { position: number; total: number }) {
-  if (total <= 0) return null;
-  return (
-    <div className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-      <span>
-        Card {Math.min(position, total)} of {total}
-      </span>
-      <ArrowRight className="size-3 text-muted-foreground/60" />
-    </div>
-  );
-}
+/* ─── SwipeCard (personalized) ─────────────────────────────────────── */
 
 function SwipeCard({
   item,
   template,
-  behindCount = 0,
-  actionPending: _actionPending,
+  behindCount,
+  slideIdx,
+  onSwipeApprove,
+  onSwipeReject,
 }: {
   item: BlitzItem;
   template?: TemplateSummary;
-  behindCount?: number;
-  actionPending: boolean;
+  behindCount: number;
+  slideIdx: number;
+  onSwipeApprove: () => void;
+  onSwipeReject: () => void;
 }) {
   const [whyOpen, setWhyOpen] = useState(false);
+  const previewProps = useBlitzPreviewProps({
+    contentType: String(item.contentType),
+    enrichmentData: item.enrichmentData,
+    aspectRatio: item.aspectRatio || '9:16',
+  });
 
   const enrichment = (item.enrichmentData as any) || {};
   const isCompiled = enrichment.isCompiled === true;
   const compiledUrl = (item.graphicUrls || [])[0] || null;
   const isCompiledVideo = compiledUrl?.match(/\.(mp4|webm|mov)(\?|$)/i);
 
-  // Live-preview eligibility: item has editor state OR its contentType maps
-  // to a Remotion composition. Falls back to source template media so the
-  // card is never black.
-  const hasEditorState = !!(
-    enrichment.editorScript
-    || enrichment.editorStyle
-    || enrichment.editorLayout
-    || enrichment.sourceMediaSlots
-  );
-  const canLivePreview =
-    !!item.contentType && LIVE_PREVIEW_TYPES.has(String(item.contentType));
+  // For slideshow cards, wire slideIdx into the input props so the swipe
+  // card and the source panel advance together.
+  const inputPropsWithSlide = useMemo(() => {
+    if (!previewProps) return null;
+    return {
+      ...previewProps.inputProps,
+      slideIndex: slideIdx,
+    };
+  }, [previewProps, slideIdx]);
 
-  // Reshape sourceMediaSlots per the detail page pattern
-  // (see src/app/[locale]/(auth)/dashboard/content/[id]/page.tsx:1180-1195).
-  const sourceSlots = enrichment.sourceMediaSlots || {};
-  const backgroundUrl = template?.mediaUrl || template?.thumbnailUrl || '';
-  const mediaSlots = {
-    background: sourceSlots.background || (backgroundUrl ? { url: backgroundUrl } : undefined),
-    hookVideo: sourceSlots.hookVideo,
-    demoVideo: sourceSlots.demoVideo,
-    slides: sourceSlots.slides,
-  };
-  const livePreviewInputProps = {
-    backgroundUrl,
-    mediaSlots,
-    script: enrichment.editorScript || {},
-    style: enrichment.editorStyle || {},
-    layout: enrichment.editorLayout || 'centered',
-    aspectRatio: '9:16',
-    contentType: item.contentType,
-  };
+  // framer-motion drag physics.
+  const x = useMotionValue(0);
+  const rotate = useTransform(x, [-200, 0, 200], [-15, 0, 15]);
+  const approveOpacity = useTransform(x, [0, 100], [0, 1]);
+  const rejectOpacity = useTransform(x, [-100, 0], [1, 0]);
 
-  // Template media fallback (only used when neither compiled nor live-preview
-  // paths are viable).
-  const templateHero = template?.mediaUrl || template?.thumbnailUrl || null;
-  const templateHeroIsVideo = templateHero?.match(/\.(mp4|webm|mov)(\?|$)/i);
-
-  const captionLines = (item.caption || '').split('\n').filter(Boolean);
-
-  // Derive a compact "Why This Content?" explanation from template
-  // engagement + any reasoning stored on the item. No schema changes yet;
-  // enrichment.reasoning is read opportunistically.
   const reasoningParts: string[] = [];
   if (enrichment.reasoning) reasoningParts.push(String(enrichment.reasoning));
-  if (template?.viewCount && template.viewCount > 1000) {
+  const snapshot = enrichment.sourceTemplateSnapshot || {};
+  const views = snapshot.viewCount ?? template?.viewCount ?? null;
+  const platform = snapshot.sourcePlatform || template?.sourcePlatform;
+  if (views && views > 1000) {
     reasoningParts.push(
-      `Modeled on a ${template.sourcePlatform || 'trending'} post with ${formatCount(template.viewCount)} views.`,
+      `Modeled on a ${platform || 'trending'} post with ${formatCount(views)} views.`,
     );
   }
   if (item.angleName) reasoningParts.push(`Angle: ${item.angleName}.`);
@@ -615,27 +594,32 @@ function SwipeCard({
   }
 
   return (
-    <div className="flex flex-col">
+    <div className="flex w-[min(38vw,300px)] shrink-0 flex-col">
       {/* Chip row above card */}
-      <div className="mb-2 flex items-center justify-between gap-2">
-        {item.contentType ? (
-          <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium capitalize text-foreground">
-            {String(item.contentType).replace(/_/g, ' ')}
-          </span>
-        ) : (
-          <span />
-        )}
+      <div className="mb-2 flex min-h-[28px] items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          {item.contentType && (
+            <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium capitalize text-foreground">
+              {String(item.contentType).replace(/_/g, ' ')}
+            </span>
+          )}
+          {item.angleName && (
+            <span className="rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-muted-foreground">
+              {item.angleName}
+            </span>
+          )}
+        </div>
         <div className="relative">
           <button
             type="button"
             onClick={() => setWhyOpen((v) => !v)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <Sparkles className="size-3" />
-            Why This Content?
+            Why?
           </button>
           {whyOpen && (
-            <div className="absolute right-0 top-full z-30 mt-2 w-72 rounded-xl border border-border bg-card p-3 text-xs text-foreground shadow-xl">
+            <div className="absolute right-0 top-full z-30 mt-2 w-64 rounded-xl border border-border bg-card p-3 text-xs text-foreground shadow-xl">
               <div className="mb-2 flex items-center justify-between">
                 <p className="font-semibold">Why we picked this</p>
                 <button
@@ -657,8 +641,8 @@ function SwipeCard({
         </div>
       </div>
 
-      {/* Card body (aspect 9/16 to match phone frame) with stack-depth dummies behind */}
-      <div className="relative mx-auto w-full max-w-[320px]">
+      {/* Card body — stack with framer-motion swipe on the top card */}
+      <div className="relative w-full">
         {behindCount >= 2 && (
           <div
             aria-hidden
@@ -673,37 +657,50 @@ function SwipeCard({
             style={{ transform: 'translateY(6px) scale(0.97)', opacity: 0.7 }}
           />
         )}
-      <div className="relative z-10 overflow-hidden rounded-2xl border border-border bg-neutral-900 shadow-lg">
-        <div className="relative aspect-[9/16] max-h-[560px] w-full">
-          {isCompiled && compiledUrl ? (
-            isCompiledVideo ? (
-              <video
-                src={compiledUrl}
-                className="size-full object-cover"
-                muted
-                loop
-                playsInline
-                autoPlay
-              />
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={compiledUrl}
-                alt={item.caption?.slice(0, 60) || 'Blitz post'}
-                className="size-full object-cover"
-              />
-            )
-          ) : canLivePreview && (hasEditorState || backgroundUrl) ? (
-            <RemotionPreviewPlayer
-              contentType={String(item.contentType)}
-              inputProps={livePreviewInputProps}
-            />
-          ) : templateHero ? (
-            <>
-              {templateHeroIsVideo ? (
+
+        <AnimatePresence mode="popLayout">
+          <motion.div
+            key={item.id}
+            className="relative z-10 aspect-[9/16] max-h-[min(65vh,560px)] w-full overflow-hidden rounded-2xl border border-border bg-neutral-900 shadow-lg"
+            style={{ x, rotate }}
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.9}
+            onDragEnd={(_, info) => {
+              if (info.offset.x > 120) {
+                onSwipeApprove();
+              } else if (info.offset.x < -120) {
+                onSwipeReject();
+              }
+            }}
+            initial={{ scale: 0.96, opacity: 0.8 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{
+              x: x.get() > 0 ? 400 : -400,
+              opacity: 0,
+              transition: { duration: 0.28 },
+            }}
+            transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+          >
+            {/* Approve / Reject stamps that fade in during drag */}
+            <motion.div
+              className="pointer-events-none absolute left-4 top-4 z-30 rounded-lg border-2 border-red-500 bg-red-500/20 px-3 py-1 text-xs font-bold uppercase tracking-wider text-red-500"
+              style={{ opacity: rejectOpacity }}
+            >
+              Skip
+            </motion.div>
+            <motion.div
+              className="pointer-events-none absolute right-4 top-4 z-30 rounded-lg border-2 border-emerald-500 bg-emerald-500/20 px-3 py-1 text-xs font-bold uppercase tracking-wider text-emerald-500"
+              style={{ opacity: approveOpacity }}
+            >
+              Approve
+            </motion.div>
+
+            {isCompiled && compiledUrl ? (
+              isCompiledVideo ? (
                 <video
-                  src={templateHero}
-                  className="size-full object-cover opacity-80"
+                  src={compiledUrl}
+                  className="size-full object-cover"
                   muted
                   loop
                   playsInline
@@ -712,99 +709,73 @@ function SwipeCard({
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={templateHero}
-                  alt="Template preview"
-                  className="size-full object-cover opacity-80"
+                  src={compiledUrl}
+                  alt={item.caption?.slice(0, 60) || 'Blitz post'}
+                  className="size-full object-cover"
                 />
-              )}
-              <div className="absolute inset-x-3 top-3 flex justify-center">
-                <span className="rounded-full bg-amber-500/90 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur">
-                  Compile pending
-                </span>
+              )
+            ) : previewProps && inputPropsWithSlide ? (
+              <div className="size-full">
+                <RemotionPreviewPlayer
+                  contentType={previewProps.contentType}
+                  inputProps={inputPropsWithSlide}
+                />
               </div>
-            </>
-          ) : (
-            <div className="flex size-full items-center justify-center text-sm text-white/60">
-              No preview yet
-            </div>
-          )}
-
-          {/* Angle chip (kept, overlaid) */}
-          {item.angleName && (
-            <span className="absolute left-3 top-3 z-10 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
-              {item.angleName}
-            </span>
-          )}
-        </div>
-      </div>
-      </div>
-
-      {/* Caption */}
-      <div className="mt-4 max-h-40 overflow-y-auto rounded-xl border border-border bg-card p-4 text-sm leading-relaxed text-foreground">
-        {captionLines.length > 0 ? (
-          captionLines.map((line, idx) => (
-            <p key={idx} className={idx === 0 ? 'font-semibold' : 'mt-2 text-muted-foreground'}>
-              {line}
-            </p>
-          ))
-        ) : (
-          <p className="text-muted-foreground">No caption yet.</p>
-        )}
+            ) : (
+              // After Phase 1 this is unreachable — sourceMediaSlots always
+              // populated. Kept as a defensive error banner rather than a
+              // silent "No preview yet" placeholder.
+              <div className="flex size-full items-center justify-center px-4 text-center text-xs text-red-400">
+                Missing preview data. Contact support.
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </div>
   );
 }
 
-function SourceTemplatePanel({ template }: { template?: TemplateSummary }) {
-  // Slide index for multi-image slideshow templates. Wired to the side
-  // arrows below the frame.
-  const slides = template?.thumbnailUrls?.filter(Boolean) ?? [];
+/* ─── SourceTemplatePanel (LEFT, TikTok phone frame) ───────────────── */
+
+function SourceTemplatePanel({
+  template,
+  slideIdx,
+  onSlideIdxChange,
+}: {
+  template?: TemplateSummary;
+  slideIdx: number;
+  onSlideIdxChange: (n: number) => void;
+}) {
+  const slides = useMemo(() => parseSlideStrings(template?.thumbnailUrls), [template?.thumbnailUrls]);
   const isSlideshow = slides.length > 1;
-  const [slideIdx, setSlideIdx] = useState(0);
-
-  // Reset index if we switch to a different template.
-  useEffect(() => {
-    setSlideIdx(0);
-  }, [template?.id]);
-
-  if (!template) {
-    return (
-      <div>
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Remixed From
-        </p>
-        <div className="flex aspect-[9/16] max-h-[560px] flex-col items-center justify-center gap-2 rounded-3xl border border-dashed border-border bg-card p-6 text-center text-xs text-muted-foreground">
-          <Sparkles className="size-4 text-muted-foreground/60" />
-          <span>No source template linked.</span>
-        </div>
-      </div>
-    );
-  }
-
-  const activeSlide = isSlideshow ? slides[slideIdx] : null;
-  const hero = activeSlide || template.mediaUrl || template.thumbnailUrl || null;
+  const activeSlide = isSlideshow ? slides[Math.min(slideIdx, slides.length - 1)] : null;
+  const hero = activeSlide || template?.mediaUrl || template?.thumbnailUrl || null;
   const isVideo = !activeSlide && hero?.match(/\.(mp4|webm|mov)(\?|$)/i);
 
   const prevSlide = () => {
     if (!isSlideshow) return;
-    setSlideIdx((i) => (i - 1 + slides.length) % slides.length);
+    const next = (slideIdx - 1 + slides.length) % slides.length;
+    onSlideIdxChange(next);
   };
   const nextSlide = () => {
     if (!isSlideshow) return;
-    setSlideIdx((i) => (i + 1) % slides.length);
+    const next = (slideIdx + 1) % slides.length;
+    onSlideIdxChange(next);
   };
 
+  // Render a skeleton frame while the template summary hydrates so the
+  // layout width stays stable — never render "No source template linked."
   return (
-    <div className="flex flex-col">
+    <div className="flex w-[min(38vw,300px)] shrink-0 flex-col">
       <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
         Remixed From
       </p>
 
-      {/* Phone bezel */}
-      <div className="relative mx-auto w-full max-w-[320px] rounded-3xl border border-border bg-neutral-950 p-2 shadow-lg">
-        <div className="relative aspect-[9/16] max-h-[560px] w-full overflow-hidden rounded-2xl bg-black">
-          {/* Red TikTok-style status bar */}
-          <div className="absolute inset-x-0 top-0 z-20 flex h-7 items-center justify-between bg-red-600 px-3 text-[10px] font-semibold text-white">
+      <div className="relative w-full rounded-3xl border border-border bg-neutral-950 p-1.5 shadow-lg">
+        <div className="relative aspect-[9/16] max-h-[min(65vh,560px)] w-full overflow-hidden rounded-2xl bg-black">
+          {/* Red status bar */}
+          <div className="absolute inset-x-0 top-0 z-20 flex h-6 items-center justify-between bg-red-600 px-3 text-[10px] font-semibold text-white">
             <span>9:41</span>
             <div className="flex items-center gap-1">
               <div className="h-1.5 w-3 rounded-sm bg-white/80" />
@@ -813,7 +784,6 @@ function SourceTemplatePanel({ template }: { template?: TemplateSummary }) {
             </div>
           </div>
 
-          {/* Media */}
           {hero ? (
             isVideo ? (
               <video src={hero} className="size-full object-cover" muted loop playsInline autoPlay />
@@ -822,40 +792,41 @@ function SourceTemplatePanel({ template }: { template?: TemplateSummary }) {
               <img src={hero} alt="Source template" className="size-full object-cover" />
             )
           ) : (
-            <div className="flex size-full items-center justify-center text-xs text-white/60">
-              No source preview
+            <div className="flex size-full items-center justify-center">
+              <Loader2 className="size-5 animate-spin text-white/60" />
             </div>
           )}
 
-          {/* Engagement overlay (right edge, vertical) */}
-          <div className="absolute bottom-6 right-3 z-20 flex flex-col items-center gap-4 text-white drop-shadow">
-            <div className="flex flex-col items-center">
-              <div className="flex size-9 items-center justify-center rounded-full bg-black/40 backdrop-blur">
-                <Heart className="size-4 fill-white text-white" />
+          {/* Engagement rail */}
+          {template && (
+            <div className="absolute bottom-6 right-2.5 z-20 flex flex-col items-center gap-3.5 text-white drop-shadow">
+              <div className="flex flex-col items-center">
+                <div className="flex size-8 items-center justify-center rounded-full bg-black/40 backdrop-blur">
+                  <Heart className="size-3.5 fill-white text-white" />
+                </div>
+                <span className="mt-0.5 text-[10px] font-semibold">
+                  {formatCount(template.likeCount)}
+                </span>
               </div>
-              <span className="mt-0.5 text-[10px] font-semibold">
-                {formatCount(template.likeCount)}
-              </span>
-            </div>
-            <div className="flex flex-col items-center">
-              <div className="flex size-9 items-center justify-center rounded-full bg-black/40 backdrop-blur">
-                <MessageCircle className="size-4 text-white" />
+              <div className="flex flex-col items-center">
+                <div className="flex size-8 items-center justify-center rounded-full bg-black/40 backdrop-blur">
+                  <MessageCircle className="size-3.5 text-white" />
+                </div>
+                <span className="mt-0.5 text-[10px] font-semibold">
+                  {formatCount(template.commentCount)}
+                </span>
               </div>
-              <span className="mt-0.5 text-[10px] font-semibold">
-                {formatCount(template.commentCount)}
-              </span>
-            </div>
-            <div className="flex flex-col items-center">
-              <div className="flex size-9 items-center justify-center rounded-full bg-black/40 backdrop-blur">
-                <Eye className="size-4 text-white" />
+              <div className="flex flex-col items-center">
+                <div className="flex size-8 items-center justify-center rounded-full bg-black/40 backdrop-blur">
+                  <Eye className="size-3.5 text-white" />
+                </div>
+                <span className="mt-0.5 text-[10px] font-semibold">
+                  {formatCount(template.viewCount)}
+                </span>
               </div>
-              <span className="mt-0.5 text-[10px] font-semibold">
-                {formatCount(template.viewCount)}
-              </span>
             </div>
-          </div>
+          )}
 
-          {/* Slideshow side arrows */}
           {isSlideshow && (
             <>
               <button
@@ -874,37 +845,143 @@ function SourceTemplatePanel({ template }: { template?: TemplateSummary }) {
               >
                 <ChevronRight className="size-4" />
               </button>
+              <div className="absolute inset-x-0 bottom-2 z-20 flex items-center justify-center gap-1.5">
+                {slides.map((_, i) => (
+                  <span
+                    key={i}
+                    className={`size-1.5 rounded-full ${i === slideIdx ? 'bg-white' : 'bg-white/40'}`}
+                  />
+                ))}
+              </div>
             </>
-          )}
-
-          {/* Dot pagination */}
-          {isSlideshow && (
-            <div className="absolute inset-x-0 bottom-2 z-20 flex items-center justify-center gap-1.5">
-              {slides.map((_, i) => (
-                <span
-                  key={i}
-                  className={`size-1.5 rounded-full ${i === slideIdx ? 'bg-white' : 'bg-white/40'}`}
-                />
-              ))}
-            </div>
           )}
         </div>
       </div>
 
-      {/* Creator handle */}
-      <div className="mt-3 text-center text-xs text-muted-foreground">
-        {template.sourceCreator ? (
+      <div className="mt-2 text-center text-[11px] text-muted-foreground">
+        {template?.sourceCreator ? (
           <span className="font-medium text-foreground">@{template.sourceCreator}</span>
         ) : (
           <span>Trending source</span>
         )}
-        {template.sourcePlatform && (
+        {template?.sourcePlatform && (
           <>
             {' \u00b7 '}
             <span className="capitalize">{template.sourcePlatform}</span>
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ─── Empty states ─────────────────────────────────────────────────── */
+
+function QueueLoading() {
+  return (
+    <div className="flex max-w-md flex-col items-center rounded-2xl border border-dashed border-border bg-card p-10 text-center">
+      <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-primary/10">
+        <Loader2 className="size-6 animate-spin text-primary" />
+      </div>
+      <h3 className="text-base font-semibold text-foreground">Building today&rsquo;s queue</h3>
+      <p className="mt-1.5 text-sm text-muted-foreground">
+        Cloning trending templates and personalizing copy for your brand.
+      </p>
+    </div>
+  );
+}
+
+function QueueDone({ total, approved }: { total: number; approved: number }) {
+  return (
+    <div className="flex max-w-md flex-col items-center rounded-2xl border border-dashed border-border bg-card p-10 text-center">
+      <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-emerald-500/10">
+        <CheckCircle2 className="size-7 text-emerald-500" />
+      </div>
+      <h3 className="text-base font-semibold text-foreground">You&rsquo;re done for today</h3>
+      <p className="mt-1.5 text-sm text-muted-foreground">
+        {total > 0
+          ? `You reviewed ${total} post${total === 1 ? '' : 's'}. ${approved} approved.`
+          : 'No posts left in the queue.'}
+      </p>
+      <p className="mt-4 text-xs text-muted-foreground">
+        New posts unlock at midnight.
+      </p>
+    </div>
+  );
+}
+
+function DailyLimitState({
+  count,
+  limit,
+  nextResetAt,
+}: {
+  count: number;
+  limit: number;
+  nextResetAt: string;
+}) {
+  const resetDate = useMemo(() => {
+    try {
+      return new Date(nextResetAt).toLocaleString(undefined, {
+        hour: 'numeric',
+        minute: '2-digit',
+        weekday: 'short',
+      });
+    } catch {
+      return 'midnight';
+    }
+  }, [nextResetAt]);
+
+  return (
+    <div className="flex max-w-md flex-col items-center rounded-2xl border border-dashed border-border bg-card p-10 text-center">
+      <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-emerald-500/10">
+        <CheckCircle2 className="size-7 text-emerald-500" />
+      </div>
+      <h3 className="text-base font-semibold text-foreground">
+        You&rsquo;ve reviewed today&rsquo;s Blitz
+      </h3>
+      <p className="mt-1.5 text-sm text-muted-foreground">
+        You&rsquo;ve seen {count} of {limit} posts scheduled for today.
+      </p>
+      <p className="mt-4 text-xs text-muted-foreground">
+        New posts unlock at {resetDate}.
+      </p>
+    </div>
+  );
+}
+
+function NoChannelsState() {
+  const router = useRouter();
+  return (
+    <div className="flex max-w-md flex-col items-center rounded-2xl border border-dashed border-border bg-card p-10 text-center">
+      <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-amber-500/10">
+        <LinkIcon className="size-6 text-amber-500" />
+      </div>
+      <h3 className="text-base font-semibold text-foreground">Connect a channel</h3>
+      <p className="mt-1.5 text-sm text-muted-foreground">
+        Connect Facebook, Instagram, or TikTok before generating Blitz posts.
+      </p>
+      <button
+        type="button"
+        onClick={() => router.push('/dashboard/social-accounts')}
+        className="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+      >
+        <LinkIcon className="size-4" />
+        Connect a channel
+      </button>
+    </div>
+  );
+}
+
+function NoTemplatesState() {
+  return (
+    <div className="flex max-w-md flex-col items-center rounded-2xl border border-dashed border-border bg-card p-10 text-center">
+      <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-muted">
+        <Sparkles className="size-6 text-muted-foreground" />
+      </div>
+      <h3 className="text-base font-semibold text-foreground">Content library is being refreshed</h3>
+      <p className="mt-1.5 text-sm text-muted-foreground">
+        Check back soon. We&rsquo;re adding fresh trending templates that match your content mix.
+      </p>
     </div>
   );
 }

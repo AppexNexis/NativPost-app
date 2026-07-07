@@ -2,10 +2,22 @@
 
 import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight, Sparkles, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sparkles, Check, Link as LinkIcon } from 'lucide-react';
 import type { Campaign, ContentAngle, CampaignAngle, ContentMix, TargetAccount, ContentItem } from '@/types/v2';
 import type { SocialAccount } from '@/types/v2';
 import { CampaignReviewGrid } from './CampaignReviewGrid';
+
+// Blitz + Campaigns are hard-gated to these three platforms per the
+// 2026-07-07 product decision. Mirrors BLITZ_ALLOWED_PLATFORMS in
+// src/lib/social/connected-platforms.ts — kept as a client-side constant
+// so the wizard doesn't need a server fetch just to render toggle rows.
+const CAMPAIGN_ALLOWED_PLATFORMS = ['facebook', 'instagram', 'tiktok'] as const;
+
+const PLATFORM_LABELS: Record<string, string> = {
+  facebook: 'Facebook',
+  instagram: 'Instagram',
+  tiktok: 'TikTok',
+};
 
 interface CampaignWizardProps {
   angles: ContentAngle[];
@@ -98,6 +110,20 @@ export function CampaignWizard({
   };
 
   const handleGenerate = async () => {
+    // Hard-block: no target accounts among the three allowed platforms
+    // means the campaign can't publish anywhere. Match the server-side
+    // NoConnectedChannelsError gate so users don't get a confusing
+    // 200-with-errorCode after clicking Generate.
+    const targets = (campaign.targetAccounts ?? []) as TargetAccount[];
+    const validTargets = targets.filter((a) =>
+      (CAMPAIGN_ALLOWED_PLATFORMS as readonly string[]).includes(a.platform),
+    );
+    if (validTargets.length === 0) {
+      setReviewError('Select at least one connected Facebook, Instagram, or TikTok account.');
+      setCurrentStep(4); // jump back to the Accounts step
+      return;
+    }
+
     setIsGenerating(true);
     setReviewError(null);
     try {
@@ -640,6 +666,7 @@ function StepSources({ campaign, influencers, isLoading, onUpdate }: StepProps) 
 // STEP 5: ACCOUNTS
 // ============================================================
 function StepAccounts({ campaign, accounts, onUpdate }: StepProps) {
+  const router = useRouter();
   const selectedIds = (campaign.targetAccounts ?? []).map((a) => a.accountId);
 
   const toggleAccount = (account: SocialAccount) => {
@@ -654,7 +681,15 @@ function StepAccounts({ campaign, accounts, onUpdate }: StepProps) {
     }
   };
 
-  const grouped = accounts.reduce<Record<string, SocialAccount[]>>((acc, account) => {
+  // Restrict to the three allowed platforms. Grouping is deterministic
+  // (always FB / IG / TikTok in that order) so the wizard shows a
+  // consistent set of toggle rows regardless of which platforms the org
+  // actually has connected. Missing platforms render a "Not connected"
+  // row with a link to /dashboard/social-accounts.
+  const allowedAccounts = accounts.filter((a) =>
+    (CAMPAIGN_ALLOWED_PLATFORMS as readonly string[]).includes(a.platform),
+  );
+  const grouped = allowedAccounts.reduce<Record<string, SocialAccount[]>>((acc, account) => {
     const list = acc[account.platform] ?? [];
     return { ...acc, [account.platform]: [...list, account] };
   }, {});
@@ -664,51 +699,72 @@ function StepAccounts({ campaign, accounts, onUpdate }: StepProps) {
       <div>
         <h3 className="text-lg font-semibold text-gray-900">Where should we post?</h3>
         <p className="text-sm text-gray-500">
-          Pick one or more accounts. You can mix your own connected accounts and warmed accounts, even on the same platform.
+          Campaigns publish to Facebook, Instagram, or TikTok. Connect one to enable it below.
         </p>
       </div>
 
-      {accounts.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-200 p-8 text-center">
-          <p className="text-sm text-gray-500">No accounts connected yet.</p>
-          <p className="mt-1 text-xs text-gray-400">Connect your social accounts in Settings to enable posting.</p>
-        </div>
-      ) : (
-        Object.entries(grouped).map(([platform, platformAccounts]) => (
+      {CAMPAIGN_ALLOWED_PLATFORMS.map((platform) => {
+        const platformAccounts = grouped[platform] ?? [];
+        const isConnected = platformAccounts.length > 0;
+        return (
           <div key={platform}>
             <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-500">
-              {platform}
+              {PLATFORM_LABELS[platform] ?? platform}
             </label>
-            <div className="space-y-2">
-              {platformAccounts.map((account) => {
-                const isSelected = selectedIds.includes(account.id);
-                return (
-                  <button
-                    key={account.id}
-                    onClick={() => toggleAccount(account)}
-                    className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors ${isSelected ? 'border-primary bg-primary/10' : 'border-gray-200 bg-white hover:bg-gray-50'
-                      }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${isSelected ? 'border-primary bg-primary' : 'border-gray-300'
-                          }`}
-                      >
-                        {isSelected && <Check className="h-3 w-3 text-white" />}
+
+            {isConnected ? (
+              <div className="space-y-2">
+                {platformAccounts.map((account) => {
+                  const isSelected = selectedIds.includes(account.id);
+                  return (
+                    <button
+                      key={account.id}
+                      type="button"
+                      onClick={() => toggleAccount(account)}
+                      className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors ${isSelected ? 'border-primary bg-primary/10' : 'border-gray-200 bg-white hover:bg-gray-50'
+                        }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${isSelected ? 'border-primary bg-primary' : 'border-gray-300'
+                            }`}
+                        >
+                          {isSelected && <Check className="h-3 w-3 text-white" />}
+                        </div>
+                        <span className="text-sm font-medium text-gray-900">
+                          @{account.platformUsername ?? account.platformUserId}
+                        </span>
                       </div>
-                      <span className="text-sm font-medium text-gray-900">
-                        @{account.platformUsername ?? account.platformUserId}
+                      <span className={`text-xs ${isSelected ? 'text-primary' : 'text-gray-400'}`}>
+                        {isSelected ? 'Selected' : 'Connected'}
                       </span>
-                    </div>
-                    <span className={`text-xs ${isSelected ? 'text-primary' : 'text-gray-400'}`}>
-                      {isSelected ? 'Selected' : 'Connected'}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => router.push('/dashboard/social-accounts')}
+                className="flex w-full items-center justify-between rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-left transition-colors hover:bg-gray-100"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-gray-300">
+                    <LinkIcon className="h-3 w-3 text-gray-400" />
+                  </div>
+                  <span className="text-sm font-medium text-gray-500">Not connected</span>
+                </div>
+                <span className="text-xs font-medium text-primary">Connect</span>
+              </button>
+            )}
           </div>
-        ))
+        );
+      })}
+
+      {selectedIds.length === 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          Select at least one connected account before generating your campaign.
+        </div>
       )}
     </div>
   );

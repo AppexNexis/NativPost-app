@@ -1,12 +1,18 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { checkFeatureAccess, checkPostLimit, hasActiveSubscription } from '@/lib/billing';
+import { BLITZ_ALLOWED_PLATFORMS, getConnectedPlatforms, NoConnectedChannelsError } from '@/lib/social/connected-platforms';
 import { getDb } from '@/libs/DB';
-import { campaignJobSchema, campaignSchema } from '@/models/Schema';
-import { BASE_URL } from '../../utils';
+import {
+  campaignJobSchema,
+  campaignSchema,
+  contentItemSchema,
+  contentTemplateSchema,
+} from '@/models/Schema';
+import { BASE_URL, mapMixKeyToContentType } from '../../utils';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -99,6 +105,97 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (hasVideo) {
       const videoCheck = await checkFeatureAccess(orgId!, 'videoGeneration');
       if (!videoCheck.allowed) return NextResponse.json({ error: videoCheck.reason }, { status: 403 });
+    }
+
+    // 2a. Connected-channel gate — hard-block if the org has no
+    // FB / IG / TikTok connection. The client renders a "Connect a channel"
+    // CTA on this errorCode instead of a generic error banner.
+    try {
+      const connected = await getConnectedPlatforms(db, orgId!, {
+        restrictTo: BLITZ_ALLOWED_PLATFORMS as unknown as string[],
+      });
+      if (connected.length === 0) {
+        return NextResponse.json(
+          {
+            error: 'Connect Facebook, Instagram, or TikTok before generating posts.',
+            errorCode: 'NO_CONNECTED_CHANNELS',
+          },
+          { status: 200 },
+        );
+      }
+    } catch (chanErr: any) {
+      if (chanErr instanceof NoConnectedChannelsError) {
+        return NextResponse.json(
+          { error: chanErr.message, errorCode: 'NO_CONNECTED_CHANNELS' },
+          { status: 200 },
+        );
+      }
+      throw chanErr;
+    }
+
+    // 2b. Daily-limit check — the ONLY acceptable "empty state" for Blitz.
+    // Count today's rows for this campaign in the reviewable states and
+    // stop enqueueing once we hit postsPerDay. Client renders a
+    // "You've reviewed today's Blitz" panel with the reset time.
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const nextResetAt = new Date(startOfDay);
+    nextResetAt.setDate(nextResetAt.getDate() + 1);
+
+    const todaysRows = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(contentItemSchema)
+      .where(
+        and(
+          eq(contentItemSchema.campaignId, id),
+          gte(contentItemSchema.createdAt, startOfDay),
+          inArray(contentItemSchema.status, ['pending_review', 'approved', 'skipped']),
+        ),
+      );
+    const todayCount = todaysRows[0]?.count ?? 0;
+    const dailyLimit = campaign.postsPerDay || 3;
+    if (todayCount >= dailyLimit) {
+      return NextResponse.json(
+        {
+          dailyLimitReached: true,
+          count: todayCount,
+          limit: dailyLimit,
+          nextResetAt: nextResetAt.toISOString(),
+        },
+        { status: 200 },
+      );
+    }
+
+    // 2c. No-templates guard — Blitz clones from the Library, so if no
+    // approved template matches the campaign's content mix we can't
+    // generate anything. Admin-facing message; end-users see it as
+    // "Content library is being refreshed" in the UI.
+    const mixKeys = Object.entries(mix)
+      .filter(([, v]) => (v || 0) > 0)
+      .map(([k]) => mapMixKeyToContentType(k));
+    const uniqueTypes = Array.from(new Set(mixKeys));
+    if (uniqueTypes.length > 0) {
+      const tmplRows = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(contentTemplateSchema)
+        .where(
+          and(
+            eq(contentTemplateSchema.curationStatus, 'approved'),
+            eq(contentTemplateSchema.isActive, true),
+            inArray(contentTemplateSchema.contentType, uniqueTypes),
+          ),
+        );
+      const tmplCount = tmplRows[0]?.count ?? 0;
+      if (!tmplCount || tmplCount === 0) {
+        return NextResponse.json(
+          {
+            noTemplatesAvailable: true,
+            errorCode: 'NO_TEMPLATES',
+            message: 'Content library is being refreshed. Check back soon.',
+          },
+          { status: 200 },
+        );
+      }
     }
 
     // 3. Read optional overrides from request body
