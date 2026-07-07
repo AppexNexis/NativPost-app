@@ -107,6 +107,9 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
     setIsGenerating(true);
     setError(null);
     try {
+      // POST /generate now returns 202 with { jobId } immediately — actual
+      // work happens in the background cron worker. Poll the status endpoint
+      // until the job reaches a terminal state, then refresh the queue.
       const res = await fetch(`/api/campaigns/${campaign.id}/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -115,6 +118,33 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Failed to generate Blitz');
       }
+
+      // Wait for the job to finish. Cap at ~5 minutes of polling (matches
+      // Vercel maxDuration on the worker) so we don't spin forever if
+      // something wedges — the campaigns list poller will keep the row's
+      // progress bar accurate meanwhile.
+      const started = Date.now();
+      const MAX_WAIT_MS = 5 * 60 * 1000;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        if (Date.now() - started > MAX_WAIT_MS) {
+          throw new Error('Generation is taking longer than expected. Refresh to check status.');
+        }
+        await new Promise((r) => setTimeout(r, 2500));
+        const statusRes = await fetch(
+          `/api/campaigns/${campaign.id}/generate/status`,
+          { cache: 'no-store' },
+        );
+        if (!statusRes.ok) continue;
+        const statusData = await statusRes.json();
+        const job = statusData?.job;
+        if (!job) continue;
+        if (job.status === 'done') break;
+        if (job.status === 'failed') {
+          throw new Error(job.errorMessage || 'Generation failed');
+        }
+      }
+
       await refresh();
     } catch (err: any) {
       setError(err?.message || 'Generation failed');
