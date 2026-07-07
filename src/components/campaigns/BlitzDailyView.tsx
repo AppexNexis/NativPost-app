@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 /**
  * BlitzDailyView — Tinder-style swipe queue for the daily Blitz.
@@ -13,11 +13,11 @@
  *   - framer-motion swipe: drag right to approve, left to reject, keyboard
  *     arrows preserved as accessibility fallback
  *   - Empty states are ONLY: dailyLimitReached, NO_CONNECTED_CHANNELS,
- *     noTemplatesAvailable, and queueDone
+ *     and queueDone. Blitz never surfaces a "no templates" state — when
+ *     the library is empty the insert loop falls back to
+ *     generateMediaForContentItem so posts still appear.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion, useMotionValue, useTransform } from 'framer-motion';
 import {
   CheckCircle2,
@@ -34,10 +34,13 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import type { Campaign, ContentItem } from '@/types/v2';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
 import { BlitzSettings } from '@/components/blitz/BlitzSettings';
 import { RemotionPreviewPlayer } from '@/components/editor/RemotionPreviewPlayer';
 import { useBlitzPreviewProps } from '@/hooks/useBlitzPreviewProps';
+import type { Campaign, ContentItem } from '@/types/v2';
 
 type BlitzItem = ContentItem & {
   sequenceIndex?: number;
@@ -63,24 +66,31 @@ type TemplateSummary = {
 type GenerateOutcome =
   | { kind: 'none' }
   | { kind: 'dailyLimit'; count: number; limit: number; nextResetAt: string }
-  | { kind: 'noChannels' }
-  | { kind: 'noTemplates' };
+  | { kind: 'noChannels' };
 
 function formatCount(n?: number | null): string {
-  if (!n || n < 1000) return String(n ?? 0);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}K`;
+  if (!n || n < 1000) {
+    return String(n ?? 0);
+  }
+  if (n < 1_000_000) {
+    return `${(n / 1000).toFixed(1)}K`;
+  }
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
 function parseSlideStrings(input: any): string[] {
-  if (!input) return [];
-  if (Array.isArray(input)) return input.filter((u): u is string => typeof u === 'string' && u.length > 0);
+  if (!input) {
+    return [];
+  }
+  if (Array.isArray(input)) {
+    return input.filter((u): u is string => typeof u === 'string' && u.length > 0);
+  }
   if (typeof input === 'object') {
     const keys = Object.keys(input);
-    const allNumeric = keys.length > 0 && keys.every((k) => /^\d+$/.test(k));
+    const allNumeric = keys.length > 0 && keys.every(k => /^\d+$/.test(k));
     const orderedKeys = allNumeric ? keys.sort((a, b) => Number(a) - Number(b)) : keys;
     return orderedKeys
-      .map((k) => (input as Record<string, string>)[k])
+      .map(k => (input as Record<string, string>)[k])
       .filter((u): u is string => typeof u === 'string' && u.length > 0);
   }
   return [];
@@ -88,10 +98,10 @@ function parseSlideStrings(input: any): string[] {
 
 const PENDING_STATUSES = new Set(['pending_review', 'draft', 'generating']);
 
-interface BlitzDailyViewProps {
+type BlitzDailyViewProps = {
   campaign: Campaign;
   initialContentItems: BlitzItem[];
-}
+};
 
 export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyViewProps) {
   const router = useRouter();
@@ -107,16 +117,18 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
   const autoGenAttempted = useRef(false);
 
   const queue = useMemo(
-    () => items.filter((i) => PENDING_STATUSES.has(String(i.status || 'pending_review'))),
+    () => items.filter(i => PENDING_STATUSES.has(String(i.status || 'pending_review'))),
     [items],
   );
-  const approvedCount = items.filter((i) => i.status === 'approved').length;
+  const approvedCount = items.filter(i => i.status === 'approved').length;
   const totalToday = items.length;
 
   const refresh = useCallback(async () => {
     try {
       const res = await fetch(`/api/campaigns/${campaign.id}`, { cache: 'no-store' });
-      if (!res.ok) return;
+      if (!res.ok) {
+        return;
+      }
       const data = await res.json();
       const loaded = (data.contentItems || []).map((cc: any) => ({
         ...(cc.contentItem || {}),
@@ -161,11 +173,6 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
         });
         return;
       }
-      if (data.noTemplatesAvailable) {
-        setOutcome({ kind: 'noTemplates' });
-        return;
-      }
-
       if (!res.ok) {
         throw new Error(data.error || 'Failed to generate Blitz');
       }
@@ -174,7 +181,7 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
       const started = Date.now();
       const MAX_WAIT_MS = 5 * 60 * 1000;
       let lastJob: any = null;
-      // eslint-disable-next-line no-constant-condition
+
       while (true) {
         if (Date.now() - started > MAX_WAIT_MS) {
           const detail = lastJob?.errorMessage
@@ -183,17 +190,23 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
               : `Generation stalled at status "${lastJob?.status ?? 'unknown'}". Refresh to retry.`);
           throw new Error(detail);
         }
-        await new Promise((r) => setTimeout(r, 2500));
+        await new Promise(r => setTimeout(r, 2500));
         const statusRes = await fetch(
           `/api/campaigns/${campaign.id}/generate/status`,
           { cache: 'no-store' },
         );
-        if (!statusRes.ok) continue;
+        if (!statusRes.ok) {
+          continue;
+        }
         const statusData = await statusRes.json();
         const job = statusData?.job;
-        if (!job) continue;
+        if (!job) {
+          continue;
+        }
         lastJob = job;
-        if (job.status === 'done') break;
+        if (job.status === 'done') {
+          break;
+        }
         if (job.status === 'failed') {
           throw new Error(job.errorMessage || 'Generation failed');
         }
@@ -209,8 +222,12 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
 
   // Auto-generate today's queue once on mount if nothing is queued.
   useEffect(() => {
-    if (autoGenAttempted.current) return;
-    if (items.length > 0) return;
+    if (autoGenAttempted.current) {
+      return;
+    }
+    if (items.length > 0) {
+      return;
+    }
     autoGenAttempted.current = true;
     void runGenerate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -220,10 +237,12 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
   useEffect(() => {
     const upcoming = queue.slice(0, 3);
     const missing = upcoming
-      .map((it) => it.templateId)
+      .map(it => it.templateId)
       .filter((tid): tid is string => Boolean(tid) && !templateCache[tid!]);
 
-    if (missing.length === 0) return;
+    if (missing.length === 0) {
+      return;
+    }
 
     let cancelled = false;
     (async () => {
@@ -232,10 +251,14 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
         missing.map(async (tid) => {
           try {
             const res = await fetch(`/api/templates/${tid}`, { cache: 'force-cache' });
-            if (!res.ok) return;
+            if (!res.ok) {
+              return;
+            }
             const data = await res.json();
             const t = data.item || data.template || data;
-            if (!t || !t.id) return;
+            if (!t || !t.id) {
+              return;
+            }
             results[tid] = {
               id: t.id,
               mediaUrl: t.mediaUrl ?? null,
@@ -253,9 +276,11 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
           }
         }),
       );
-      if (cancelled) return;
+      if (cancelled) {
+        return;
+      }
       if (Object.keys(results).length > 0) {
-        setTemplateCache((prev) => ({ ...prev, ...results }));
+        setTemplateCache(prev => ({ ...prev, ...results }));
       }
     })();
 
@@ -265,7 +290,7 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
   }, [queue, templateCache]);
 
   const removeFromQueue = (itemId: string) => {
-    setItems((prev) => prev.filter((i) => i.id !== itemId));
+    setItems(prev => prev.filter(i => i.id !== itemId));
   };
 
   const patchStatus = async (itemId: string, status: string) => {
@@ -274,12 +299,16 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     });
-    if (!res.ok) throw new Error(`Status update failed (${res.status})`);
+    if (!res.ok) {
+      throw new Error(`Status update failed (${res.status})`);
+    }
     return res.json();
   };
 
   const handleReject = async (item: BlitzItem) => {
-    if (actionPending) return;
+    if (actionPending) {
+      return;
+    }
     setActionPending(item.id);
     setError(null);
     removeFromQueue(item.id);
@@ -294,7 +323,9 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
   };
 
   const handleEdit = (item: BlitzItem) => {
-    if (actionPending) return;
+    if (actionPending) {
+      return;
+    }
     const returnTo = encodeURIComponent(`/dashboard/campaigns/${campaign.id}`);
     router.push(
       `/dashboard/editor?contentItemId=${item.id}&mode=blitz-edit&returnTo=${returnTo}`,
@@ -302,7 +333,9 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
   };
 
   const handleApprove = async (item: BlitzItem) => {
-    if (actionPending) return;
+    if (actionPending) {
+      return;
+    }
     setActionPending(item.id);
     setError(null);
     try {
@@ -325,13 +358,21 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
 
   // Keyboard shortcuts.
   useEffect(() => {
-    if (!current) return;
+    if (!current) {
+      return;
+    }
     const onKey = (e: KeyboardEvent) => {
-      if (settingsOpen) return;
+      if (settingsOpen) {
+        return;
+      }
       const el = document.activeElement as HTMLElement | null;
       const tag = el?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable) return;
-      if (actionPending) return;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable) {
+        return;
+      }
+      if (actionPending) {
+        return;
+      }
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
         void handleReject(current);
@@ -361,7 +402,9 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
           {totalToday > 0 && (
             <span className="ml-2 inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground">
               <CheckCircle2 className="size-3 text-emerald-500" />
-              {approvedCount} approved
+              {approvedCount}
+              {' '}
+              approved
             </span>
           )}
         </div>
@@ -395,8 +438,6 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
           <QueueLoading />
         ) : outcome.kind === 'noChannels' ? (
           <NoChannelsState />
-        ) : outcome.kind === 'noTemplates' ? (
-          <NoTemplatesState />
         ) : outcome.kind === 'dailyLimit' ? (
           <DailyLimitState
             count={outcome.count}
@@ -565,7 +606,9 @@ function SwipeCard({
   // For slideshow cards, wire slideIdx into the input props so the swipe
   // card and the source panel advance together.
   const inputPropsWithSlide = useMemo(() => {
-    if (!previewProps) return null;
+    if (!previewProps) {
+      return null;
+    }
     return {
       ...previewProps.inputProps,
       slideIndex: slideIdx,
@@ -579,7 +622,9 @@ function SwipeCard({
   const rejectOpacity = useTransform(x, [-100, 0], [1, 0]);
 
   const reasoningParts: string[] = [];
-  if (enrichment.reasoning) reasoningParts.push(String(enrichment.reasoning));
+  if (enrichment.reasoning) {
+    reasoningParts.push(String(enrichment.reasoning));
+  }
   const snapshot = enrichment.sourceTemplateSnapshot || {};
   const views = snapshot.viewCount ?? template?.viewCount ?? null;
   const platform = snapshot.sourcePlatform || template?.sourcePlatform;
@@ -588,7 +633,9 @@ function SwipeCard({
       `Modeled on a ${platform || 'trending'} post with ${formatCount(views)} views.`,
     );
   }
-  if (item.angleName) reasoningParts.push(`Angle: ${item.angleName}.`);
+  if (item.angleName) {
+    reasoningParts.push(`Angle: ${item.angleName}.`);
+  }
   if (reasoningParts.length === 0) {
     reasoningParts.push('Selected from your active content mix and audience angles.');
   }
@@ -612,7 +659,7 @@ function SwipeCard({
         <div className="relative">
           <button
             type="button"
-            onClick={() => setWhyOpen((v) => !v)}
+            onClick={() => setWhyOpen(v => !v)}
             className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <Sparkles className="size-3" />
@@ -754,12 +801,16 @@ function SourceTemplatePanel({
   const isVideo = !activeSlide && hero?.match(/\.(mp4|webm|mov)(\?|$)/i);
 
   const prevSlide = () => {
-    if (!isSlideshow) return;
+    if (!isSlideshow) {
+      return;
+    }
     const next = (slideIdx - 1 + slides.length) % slides.length;
     onSlideIdxChange(next);
   };
   const nextSlide = () => {
-    if (!isSlideshow) return;
+    if (!isSlideshow) {
+      return;
+    }
     const next = (slideIdx + 1) % slides.length;
     onSlideIdxChange(next);
   };
@@ -860,13 +911,16 @@ function SourceTemplatePanel({
 
       <div className="mt-2 text-center text-[11px] text-muted-foreground">
         {template?.sourceCreator ? (
-          <span className="font-medium text-foreground">@{template.sourceCreator}</span>
+          <span className="font-medium text-foreground">
+            @
+            {template.sourceCreator}
+          </span>
         ) : (
           <span>Trending source</span>
         )}
         {template?.sourcePlatform && (
           <>
-            {' \u00b7 '}
+            {' \u00B7 '}
             <span className="capitalize">{template.sourcePlatform}</span>
           </>
         )}
@@ -940,10 +994,21 @@ function DailyLimitState({
         You&rsquo;ve reviewed today&rsquo;s Blitz
       </h3>
       <p className="mt-1.5 text-sm text-muted-foreground">
-        You&rsquo;ve seen {count} of {limit} posts scheduled for today.
+        You&rsquo;ve seen
+        {' '}
+        {count}
+        {' '}
+        of
+        {' '}
+        {limit}
+        {' '}
+        posts scheduled for today.
       </p>
       <p className="mt-4 text-xs text-muted-foreground">
-        New posts unlock at {resetDate}.
+        New posts unlock at
+        {' '}
+        {resetDate}
+        .
       </p>
     </div>
   );
@@ -968,20 +1033,6 @@ function NoChannelsState() {
         <LinkIcon className="size-4" />
         Connect a channel
       </button>
-    </div>
-  );
-}
-
-function NoTemplatesState() {
-  return (
-    <div className="flex max-w-md flex-col items-center rounded-2xl border border-dashed border-border bg-card p-10 text-center">
-      <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-muted">
-        <Sparkles className="size-6 text-muted-foreground" />
-      </div>
-      <h3 className="text-base font-semibold text-foreground">Content library is being refreshed</h3>
-      <p className="mt-1.5 text-sm text-muted-foreground">
-        Check back soon. We&rsquo;re adding fresh trending templates that match your content mix.
-      </p>
     </div>
   );
 }

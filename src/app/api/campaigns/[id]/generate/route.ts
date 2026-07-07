@@ -10,9 +10,9 @@ import {
   campaignJobSchema,
   campaignSchema,
   contentItemSchema,
-  contentTemplateSchema,
 } from '@/models/Schema';
-import { BASE_URL, mapMixKeyToContentType } from '../../utils';
+
+import { BASE_URL } from '../../utils';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -32,7 +32,9 @@ type RouteParams = { params: Promise<{ id: string }> };
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 
@@ -100,11 +102,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     if (hasImages) {
       const imageCheck = await checkFeatureAccess(orgId!, 'imagePosts');
-      if (!imageCheck.allowed) return NextResponse.json({ error: imageCheck.reason }, { status: 403 });
+      if (!imageCheck.allowed) {
+        return NextResponse.json({ error: imageCheck.reason }, { status: 403 });
+      }
     }
     if (hasVideo) {
       const videoCheck = await checkFeatureAccess(orgId!, 'videoGeneration');
-      if (!videoCheck.allowed) return NextResponse.json({ error: videoCheck.reason }, { status: 403 });
+      if (!videoCheck.allowed) {
+        return NextResponse.json({ error: videoCheck.reason }, { status: 403 });
+      }
     }
 
     // 2a. Connected-channel gate — hard-block if the org has no
@@ -166,41 +172,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // 2c. No-templates guard — Blitz clones from the Library, so if no
-    // approved template matches the campaign's content mix we can't
-    // generate anything. Admin-facing message; end-users see it as
-    // "Content library is being refreshed" in the UI.
-    const mixKeys = Object.entries(mix)
-      .filter(([, v]) => (v || 0) > 0)
-      .map(([k]) => mapMixKeyToContentType(k));
-    const uniqueTypes = Array.from(new Set(mixKeys));
-    if (uniqueTypes.length > 0) {
-      const tmplRows = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(contentTemplateSchema)
-        .where(
-          and(
-            eq(contentTemplateSchema.curationStatus, 'approved'),
-            eq(contentTemplateSchema.isActive, true),
-            inArray(contentTemplateSchema.contentType, uniqueTypes),
-          ),
-        );
-      const tmplCount = tmplRows[0]?.count ?? 0;
-      if (!tmplCount || tmplCount === 0) {
-        return NextResponse.json(
-          {
-            noTemplatesAvailable: true,
-            errorCode: 'NO_TEMPLATES',
-            message: 'Content library is being refreshed. Check back soon.',
-          },
-          { status: 200 },
-        );
-      }
-    }
+    // 2c. No-templates: NOT a hard block. Blitz must always work per user
+    // directive — the only acceptable empty state is `dailyLimitReached`.
+    // When no approved templates match the mix the insert loop in
+    // `utils.ts` falls back to `generateMediaForContentItem`, so posts
+    // still land in Blitz. We keep a soft warning in the response for
+    // observability but no early return.
 
     // 3. Read optional overrides from request body
     let body: Record<string, unknown> = {};
-    try { body = await request.json(); } catch { /* no body is fine */ }
+    try {
+      body = await request.json();
+    } catch { /* no body is fine */ }
 
     const topicOverride = (body.topic as string) || null;
     const targetPlatformsOverride = Array.isArray(body.targetPlatforms)
