@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
-import { Plus, Calendar, BarChart3, AlertTriangle } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { Plus, Calendar, BarChart3, AlertTriangle, CalendarDays } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CampaignWizard } from "@/components/campaigns/CampaignWizard";
 // import { CampaignReviewGrid } from "@/components/campaigns/CampaignReviewGrid";
@@ -63,22 +64,25 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
     setError(null);
 
     try {
+      // Start endpoint is now async — returns 202 with { jobId } immediately.
+      // Generation happens in the background worker; the campaign row's
+      // progress bar polls via useCampaignJobProgress inside CampaignListItem.
       const res = await fetch(`/api/campaigns/${campaignId}/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: "Failed to generate campaign posts" }));
+        const data = await res.json().catch(() => ({ error: "Failed to start campaign generation" }));
         throw new Error(data.error || `HTTP ${res.status}`);
       }
 
-      const result = await res.json() as { totalPosts: number; generatedPosts: number; failedPosts: number };
-      console.log("Campaign generation complete:", result);
-      // Re-fetch so generatedPosts/status updates are visible without reload.
+      // Refresh the server-rendered list so the campaign flips to
+      // status='generating' immediately in the UI. Progress will stream in
+      // via the poller.
       router.refresh();
     } catch (err: any) {
-      const message = err.message || "Failed to generate campaign posts";
+      const message = err.message || "Failed to start campaign generation";
       setError(message);
       throw new Error(message);
     } finally {
@@ -228,6 +232,80 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
   );
 }
 
+function formatStep(step: string): string {
+  switch (step) {
+    case 'starting': return 'Queued';
+    case 'engine_generating':
+    case 'generating_text': return 'Generating text';
+    case 'saving_post':
+    case 'saving_posts': return 'Saving posts';
+    case 'generating_media': return 'Rendering media';
+    case 'done': return 'Complete';
+    case 'error': return 'Failed';
+    default: return step.replace(/_/g, ' ');
+  }
+}
+
+type CampaignJobStatus = {
+  id: string;
+  status: 'queued' | 'processing' | 'done' | 'failed';
+  progress: number;
+  step: string;
+  postsTotal: number;
+  postsCompleted: number;
+  postsFailed: number;
+  errorMessage: string | null;
+};
+
+function useCampaignJobProgress(campaign: Campaign) {
+  const [job, setJob] = useState<CampaignJobStatus | null>(null);
+  // Only poll for campaigns that are actively generating. Static rows stay
+  // idle so we don't hammer the API for every card on the page.
+  const shouldPoll = campaign.status === 'generating';
+  const routerRef = useRef(useRouter());
+
+  useEffect(() => {
+    if (!shouldPoll) {
+      setJob(null);
+      return;
+    }
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const tick = async () => {
+      try {
+        const res = await fetch(
+          `/api/campaigns/${campaign.id}/generate/status`,
+          { cache: 'no-store' },
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (cancelled) return;
+        setJob(data.job ?? null);
+
+        // Terminal state — refresh the server-rendered list so status
+        // pill + counts move to their final values, then stop polling.
+        if (data.job && (data.job.status === 'done' || data.job.status === 'failed')) {
+          routerRef.current.refresh();
+          return;
+        }
+      } catch (err) {
+        // Silent — the next tick will retry. Poll cadence is short enough
+        // that transient network blips resolve on their own.
+      }
+      if (!cancelled) timer = setTimeout(tick, 2500);
+    };
+
+    tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [campaign.id, shouldPoll]);
+
+  return job;
+}
+
 function CampaignListItem({ campaign, onClick }: { campaign: Campaign; onClick: () => void }) {
   const statusColors: Record<string, string> = {
     draft: "bg-muted text-muted-foreground",
@@ -240,35 +318,75 @@ function CampaignListItem({ campaign, onClick }: { campaign: Campaign; onClick: 
     cancelled: "bg-destructive/10 text-destructive",
   };
 
-  const progress = campaign.totalPosts > 0 ? (campaign.generatedPosts / campaign.totalPosts) * 100 : 0;
+  const job = useCampaignJobProgress(campaign);
+
+  // Live progress overrides the persisted generatedPosts/totalPosts while a
+  // job is running so the bar animates in real time instead of jumping from
+  // 0 → 100 on completion.
+  const progress = job
+    ? job.progress
+    : campaign.totalPosts > 0
+      ? (campaign.generatedPosts / campaign.totalPosts) * 100
+      : 0;
+
+  const stepLabel = job?.step && campaign.status === 'generating'
+    ? formatStep(job.step)
+    : null;
 
   return (
-    <button
-      onClick={onClick}
-      className="flex w-full items-center gap-4 rounded-xl border bg-card p-4 text-left transition-all hover:shadow-sm hover:border-border/80"
-    >
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-3">
-          <h3 className="text-sm font-semibold text-foreground">{campaign.name}</h3>
-          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusColors[campaign.status] || "bg-muted text-muted-foreground"}`}>
-            {campaign.status}
-          </span>
+    <div className="group flex w-full items-center gap-4 rounded-xl border bg-card p-4 transition-all hover:shadow-sm hover:border-border/80">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex flex-1 min-w-0 items-center gap-4 text-left"
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3">
+            <h3 className="text-sm font-semibold text-foreground">{campaign.name}</h3>
+            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusColors[campaign.status] || "bg-muted text-muted-foreground"}`}>
+              {campaign.status}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {job && campaign.status === 'generating' ? (
+              <>
+                {stepLabel} {Math.round(progress)}%
+                {job.postsTotal > 0 && ` · ${job.postsCompleted} of ${job.postsTotal} posts`}
+              </>
+            ) : (
+              <>
+                {campaign.generatedPosts} of {campaign.totalPosts} posts generated
+                {campaign.startDate && ` · Starts ${new Date(campaign.startDate).toLocaleDateString()}`}
+              </>
+            )}
+          </p>
+          <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className={`h-full rounded-full transition-all ${
+                job?.status === 'failed' ? 'bg-destructive' : 'bg-primary'
+              }`}
+              style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+            />
+          </div>
+          {job?.status === 'failed' && job.errorMessage && (
+            <p className="mt-1.5 line-clamp-1 text-xs text-destructive" title={job.errorMessage}>
+              {job.errorMessage}
+            </p>
+          )}
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {campaign.generatedPosts} of {campaign.totalPosts} posts generated
-          {campaign.startDate && ` · Starts ${new Date(campaign.startDate).toLocaleDateString()}`}
-        </p>
-        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-primary transition-all"
-            style={{ width: `${progress}%` }}
-          />
+        <div className="text-right text-xs text-muted-foreground">
+          <div>{campaign.postsPerDay} posts/day</div>
+          <div>{campaign.campaignLengthDays} days</div>
         </div>
-      </div>
-      <div className="text-right text-xs text-muted-foreground">
-        <div>{campaign.postsPerDay} posts/day</div>
-        <div>{campaign.campaignLengthDays} days</div>
-      </div>
-    </button>
+      </button>
+      <Link
+        href={`/dashboard/campaigns/${campaign.id}/calendar`}
+        className="flex flex-shrink-0 items-center gap-1.5 rounded-lg border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        title="Open calendar"
+      >
+        <CalendarDays className="h-3.5 w-3.5" />
+        Calendar
+      </Link>
+    </div>
   );
 }

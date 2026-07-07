@@ -1,6 +1,6 @@
 import React, { ReactNode, useState } from 'react';
 import { AlertTriangle, ArrowLeft, Check, Loader2, Save, X } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 import { useEditor } from './EditorContext';
 import { renderEditorVideo } from '@/lib/editor/render-editor-video';
@@ -27,11 +27,36 @@ export function EditorLayout({
 }) {
   const { state, saveEdit } = useEditor();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [publishStage, setPublishStage] = useState<PublishStage>('idle');
   const [publishError, setPublishError] = useState<PublishError | null>(null);
   const [renderPercent, setRenderPercent] = useState<number>(0);
+  const [blitzSaving, setBlitzSaving] = useState(false);
 
   const isPublishing = publishStage !== 'idle';
+
+  // Blitz-edit mode: launched from the Blitz swipe queue's Edit action.
+  // Swaps the "Schedule & Publish" CTA for a "Save Changes" + "Cancel" pair
+  // that returns to the queue on either action. Approve/Reject stay in the
+  // swipe UI — this editor session only persists overrides.
+  const isBlitzEdit = searchParams?.get('mode') === 'blitz-edit';
+  const returnTo = searchParams?.get('returnTo') || '/dashboard/blitz';
+
+  const handleBlitzSave = async () => {
+    if (blitzSaving) return;
+    setBlitzSaving(true);
+    try {
+      await saveEdit();
+      router.push(returnTo);
+    } catch (err) {
+      console.error('[BlitzEdit] Save failed:', err);
+      setBlitzSaving(false);
+    }
+  };
+
+  const handleBlitzCancel = () => {
+    router.push(returnTo);
+  };
 
   const runPublish = async (opts: { proceedWithRaw: boolean }) => {
     setPublishError(null);
@@ -257,7 +282,7 @@ export function EditorLayout({
           </button>
           <div className="flex items-center gap-2">
             <h1 className="text-sm font-semibold text-foreground leading-none">
-              {isRemix ? 'Remix Editor' : 'Editor'}
+              {isBlitzEdit ? 'Blitz Edit' : isRemix ? 'Remix Editor' : 'Editor'}
             </h1>
             {displayType && (
               <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
@@ -288,29 +313,59 @@ export function EditorLayout({
             )}
           </div>
 
-          {/* ── Save button ───────────────────────────────── */}
-          <button
-            onClick={saveEdit}
-            disabled={!state.isDirty}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
-          >
-            <Save className="size-3.5" />
-            Save
-          </button>
+          {isBlitzEdit ? (
+            <>
+              {/* ── Cancel (Blitz edit) ────────────────────── */}
+              <button
+                onClick={handleBlitzCancel}
+                disabled={blitzSaving}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+              >
+                <X className="size-3.5" />
+                Cancel
+              </button>
 
-          {/* ── Schedule & Publish ────────────────────────── */}
-          <button
-            onClick={handleContinue}
-            disabled={isPublishing}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
-          >
-            {isPublishing ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Check className="size-3.5" />
-            )}
-            {publishLabel}
-          </button>
+              {/* ── Save Changes (Blitz edit) ──────────────── */}
+              <button
+                onClick={handleBlitzSave}
+                disabled={blitzSaving}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+              >
+                {blitzSaving ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Check className="size-3.5" />
+                )}
+                {blitzSaving ? 'Saving\u2026' : 'Save Changes'}
+              </button>
+            </>
+          ) : (
+            <>
+              {/* ── Save button ─────────────────────────────── */}
+              <button
+                onClick={saveEdit}
+                disabled={!state.isDirty}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
+              >
+                <Save className="size-3.5" />
+                Save
+              </button>
+
+              {/* ── Schedule & Publish ──────────────────────── */}
+              <button
+                onClick={handleContinue}
+                disabled={isPublishing}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+              >
+                {isPublishing ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Check className="size-3.5" />
+                )}
+                {publishLabel}
+              </button>
+            </>
+          )}
         </div>
       </header>
 

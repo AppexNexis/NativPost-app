@@ -804,3 +804,47 @@ export const apifySeedRunSchema = pgTable('apify_seed_run', {
   completedAt: timestamp('completed_at', { mode: 'date' }),
   processedAt: timestamp('processed_at', { mode: 'date' }),
 });
+
+// -----------------------------------------------------------
+// CAMPAIGN JOB (async generation queue for long-running campaign builds)
+// -----------------------------------------------------------
+// Rows drive `POST /api/campaigns/[id]/generate` (creates a queued job and
+// returns immediately) and `POST /api/cron/campaigns/process` (drains the
+// queue, one job per invocation, with retry-with-backoff). The status +
+// progress fields power the campaigns list progress bar and any editor /
+// calendar polling that needs to reflect real % progress instead of a
+// spinner (per the long-running-progress team convention).
+// -----------------------------------------------------------
+export const campaignJobSchema = pgTable('campaign_job', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: text('org_id')
+    .references(() => organizationSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  campaignId: uuid('campaign_id')
+    .references(() => campaignSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  // queued | processing | done | failed
+  status: text('status').default('queued').notNull(),
+  progress: integer('progress').default(0).notNull(), // 0..100
+  // starting | engine_generating | saving_posts | done | error
+  step: text('step').default('starting').notNull(),
+  postsTotal: integer('posts_total').default(0).notNull(),
+  postsCompleted: integer('posts_completed').default(0).notNull(),
+  postsFailed: integer('posts_failed').default(0).notNull(),
+  errorMessage: text('error_message'),
+  // Optional overrides captured from the start-endpoint request body so the
+  // background worker can replay them without re-reading the HTTP request.
+  topicOverride: text('topic_override'),
+  targetPlatformsOverride: jsonb('target_platforms_override'),
+  attempts: integer('attempts').default(0).notNull(),
+  // Retry backoff — a queued job with nextAttemptAt in the future is skipped
+  // until the timestamp passes. Null = eligible immediately.
+  nextAttemptAt: timestamp('next_attempt_at', { mode: 'date' }),
+  startedAt: timestamp('started_at', { mode: 'date' }),
+  completedAt: timestamp('completed_at', { mode: 'date' }),
+  updatedAt: timestamp('updated_at', { mode: 'date' })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});

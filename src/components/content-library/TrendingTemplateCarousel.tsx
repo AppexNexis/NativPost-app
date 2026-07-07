@@ -46,7 +46,7 @@ export function TrendingTemplateCarousel({ templates, onRemix, autoplay = true }
     // fan (center + 2 on each side stepped back), each card at ~180px wide so
     // the phone silhouette reads clearly without cramping. max-w bumped so
     // the two edge cards don't clip on 1280px+ viewports.
-    <div className="mx-auto w-full max-w-[820px] overflow-x-hidden py-8">
+    <div className="mx-auto w-full max-w-[960px] overflow-x-hidden py-10">
       <Swiper
         effect="coverflow"
         modules={[EffectCoverflow, Autoplay]}
@@ -79,7 +79,7 @@ export function TrendingTemplateCarousel({ templates, onRemix, autoplay = true }
         {templates.map((template) => (
           <SwiperSlide
             key={template.id}
-            className="!h-auto !w-[170px] sm:!w-[180px]"
+            className="!h-auto !w-[200px] sm:!w-[220px]"
           >
             <TemplateCard template={template} onRemix={onRemix} />
           </SwiperSlide>

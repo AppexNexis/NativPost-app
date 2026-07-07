@@ -1,0 +1,24 @@
+name: Drain Campaign Generation Queue
+
+on:
+  schedule:
+    # Every 2 minutes. Long-running campaigns can take up to Vercel's 300s
+    # per-invocation cap, but each POST processes at most one job, so this
+    # tick rate covers backlog while keeping API load modest.
+    - cron: '*/2 * * * *'
+  workflow_dispatch:
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Drain one queued job
+        run: |
+          curl -X POST \
+            https://app.nativpost.com/api/cron/campaigns/process \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --data '{}' \
+            --fail \
+            --silent \
+            --show-error

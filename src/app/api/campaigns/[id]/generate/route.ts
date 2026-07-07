@@ -1,20 +1,28 @@
-import { eq, and } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { checkFeatureAccess, checkPostLimit, hasActiveSubscription } from '@/lib/billing';
 import { getDb } from '@/libs/DB';
-import { campaignSchema } from '@/models/Schema';
-import { generateCampaignPosts } from '../../utils';
+import { campaignJobSchema, campaignSchema } from '@/models/Schema';
+import { BASE_URL } from '../../utils';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-// -----------------------------------------------------------
-// POST /api/campaigns/[id]/generate
-// Starts batch campaign generation synchronously.
-// Returns a summary when all posts are processed.
-// -----------------------------------------------------------
+/**
+ * POST /api/campaigns/[id]/generate
+ *
+ * Enqueues an async campaign generation job and returns immediately with the
+ * job ID. Actual work happens in `POST /api/cron/campaigns/process` (drained
+ * by GitHub Actions cron every 2 minutes, and also kicked immediately from
+ * here so single-user starts feel instant).
+ *
+ * Response:
+ *   { jobId, campaignId, status: 'queued' }
+ *
+ * Poll `GET /api/campaigns/[id]/generate/status` for progress.
+ */
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
@@ -35,7 +43,28 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     if (campaign.status === 'generating') {
-      return NextResponse.json({ error: 'Campaign is already generating' }, { status: 409 });
+      // Check if there's already an in-flight job — return its id so the
+      // client can attach and poll instead of returning a hard 409.
+      const [existing] = await db
+        .select()
+        .from(campaignJobSchema)
+        .where(
+          and(
+            eq(campaignJobSchema.campaignId, id),
+            eq(campaignJobSchema.status, 'queued'),
+          ),
+        )
+        .orderBy(desc(campaignJobSchema.createdAt))
+        .limit(1);
+
+      if (existing) {
+        return NextResponse.json(
+          { jobId: existing.id, campaignId: id, status: 'queued', existing: true },
+          { status: 200 },
+        );
+      }
+      // No queued job but campaign is stuck in 'generating' — fall through to
+      // requeue. Prevents a stuck state from becoming permanent.
     }
 
     if (campaign.status === 'active' || campaign.status === 'completed') {
@@ -76,53 +105,56 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     let body: Record<string, unknown> = {};
     try { body = await request.json(); } catch { /* no body is fine */ }
 
-    const topicOverride = (body.topic as string) || undefined;
-    const targetPlatformsOverride = (body.targetPlatforms as string[]) || undefined;
+    const topicOverride = (body.topic as string) || null;
+    const targetPlatformsOverride = Array.isArray(body.targetPlatforms)
+      ? (body.targetPlatforms as string[])
+      : null;
 
-    // 4. Update status to generating
+    // 4. Insert job row + flip campaign to generating
+    const [job] = await db
+      .insert(campaignJobSchema)
+      .values({
+        orgId: orgId!,
+        campaignId: id,
+        status: 'queued',
+        progress: 0,
+        step: 'starting',
+        topicOverride,
+        targetPlatformsOverride: targetPlatformsOverride as any,
+      })
+      .returning();
+
     await db.update(campaignSchema)
       .set({ status: 'generating', updatedAt: new Date() })
       .where(eq(campaignSchema.id, id));
 
-    // 5. Generate all posts
-    const result = await generateCampaignPosts(
-      db,
-      orgId!,
-      campaign,
-      topicOverride,
-      targetPlatformsOverride,
-    );
-
-    // 6. Update campaign status and counts
-    const finalStatus = result.failedPosts === result.totalPosts ? 'draft' : 'review';
-    await db.update(campaignSchema)
-      .set({
-        status: finalStatus,
-        totalPosts: result.totalPosts,
-        generatedPosts: result.completedPosts,
-        updatedAt: new Date(),
-      })
-      .where(eq(campaignSchema.id, id));
-
-    return NextResponse.json({
-      campaignId: id,
-      totalPosts: result.totalPosts,
-      generatedPosts: result.completedPosts,
-      failedPosts: result.failedPosts,
-      status: finalStatus,
-    }, { status: 200 });
-  } catch (err: any) {
-    console.error('[Campaign Generate] Failed:', err);
-
-    // Best-effort: reset status to draft on catastrophic failure
-    try {
-      await db.update(campaignSchema)
-        .set({ status: 'draft', updatedAt: new Date() })
-        .where(eq(campaignSchema.id, id));
-    } catch { /* ignore */ }
+    // 5. Kick the processor immediately so the user doesn't wait for the
+    //    cron tick. Fire-and-forget — the process endpoint is idempotent and
+    //    the cron drain will pick it up if this fetch fails.
+    const cronSecret = process.env.CRON_SECRET;
+    if (cronSecret) {
+      fetch(`${BASE_URL}/api/cron/campaigns/process`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${cronSecret}`,
+          'Content-Type': 'application/json',
+        },
+        // Signal by jobId so the initial kick targets the just-queued job
+        // directly instead of racing for whichever queued job is first.
+        body: JSON.stringify({ jobId: job!.id }),
+      }).catch((kickErr: any) => {
+        console.warn('[CampaignGenerate] Kick failed (cron will retry):', kickErr?.message);
+      });
+    }
 
     return NextResponse.json(
-      { error: 'Campaign generation failed', detail: err.message },
+      { jobId: job!.id, campaignId: id, status: 'queued' },
+      { status: 202 },
+    );
+  } catch (err: any) {
+    console.error('[CampaignGenerate] Enqueue failed:', err);
+    return NextResponse.json(
+      { error: 'Failed to enqueue campaign generation', detail: err.message },
       { status: 500 },
     );
   }
