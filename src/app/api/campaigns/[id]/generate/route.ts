@@ -1,9 +1,11 @@
+import { waitUntil } from '@vercel/functions';
 import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { checkFeatureAccess, checkPostLimit, hasActiveSubscription } from '@/lib/billing';
+import { drainOneJob } from '@/lib/campaigns/drain-job';
 import { BLITZ_ALLOWED_PLATFORMS, getConnectedPlatforms, NoConnectedChannelsError } from '@/lib/social/connected-platforms';
 import { getDb } from '@/libs/DB';
 import {
@@ -12,17 +14,23 @@ import {
   contentItemSchema,
 } from '@/models/Schema';
 
-import { BASE_URL } from '../../utils';
+export const dynamic = 'force-dynamic';
+// Match the drain budget — `waitUntil(drainOneJob)` needs headroom because
+// the fresh-kick path runs the full generation in-process. GH Actions cron
+// still handles the backlog if this invocation is cut short.
+export const maxDuration = 300;
 
 type RouteParams = { params: Promise<{ id: string }> };
 
 /**
  * POST /api/campaigns/[id]/generate
  *
- * Enqueues an async campaign generation job and returns immediately with the
- * job ID. Actual work happens in `POST /api/cron/campaigns/process` (drained
- * by GitHub Actions cron every 2 minutes, and also kicked immediately from
- * here so single-user starts feel instant).
+ * Enqueues an async campaign generation job and returns immediately with
+ * the job ID. The drain runs in-process via `waitUntil(drainOneJob)` so
+ * the user doesn't wait for the next cron tick and the initial kick has
+ * NO dependency on `CRON_SECRET` (a missing/mis-set secret used to
+ * silently strand jobs at `attempts:0`). The GH Actions cron every 2min
+ * still drains the backlog if a specific invocation is cut short.
  *
  * Response:
  *   { jobId, campaignId, status: 'queued' }
@@ -208,24 +216,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .set({ status: 'generating', updatedAt: new Date() })
       .where(eq(campaignSchema.id, id));
 
-    // 5. Kick the processor immediately so the user doesn't wait for the
-    //    cron tick. Fire-and-forget — the process endpoint is idempotent and
-    //    the cron drain will pick it up if this fetch fails.
-    const cronSecret = process.env.CRON_SECRET;
-    if (cronSecret) {
-      fetch(`${BASE_URL}/api/cron/campaigns/process`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${cronSecret}`,
-          'Content-Type': 'application/json',
-        },
-        // Signal by jobId so the initial kick targets the just-queued job
-        // directly instead of racing for whichever queued job is first.
-        body: JSON.stringify({ jobId: job!.id }),
-      }).catch((kickErr: any) => {
-        console.warn('[CampaignGenerate] Kick failed (cron will retry):', kickErr?.message);
-      });
-    }
+    // 5. Kick the processor in-process so the user doesn't wait for the
+    //    cron tick. `waitUntil` keeps the Vercel invocation alive after
+    //    the response is sent, so the drain runs to completion. No HTTP
+    //    hop, no `CRON_SECRET` dependency — the GH Actions cron still
+    //    drains the backlog every 2 minutes if this invocation is cut
+    //    short or the drain throws.
+    waitUntil(
+      drainOneJob(db, { jobId: job!.id, sweepStale: false })
+        .then((result) => {
+          console.warn('[CampaignGenerate] Kick drain result:', JSON.stringify(result));
+        })
+        .catch((kickErr: any) => {
+          console.warn('[CampaignGenerate] Kick drain threw (cron will retry):', kickErr?.message);
+        }),
+    );
 
     return NextResponse.json(
       { jobId: job!.id, campaignId: id, status: 'queued' },
