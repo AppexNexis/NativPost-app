@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { AbsoluteFill, Audio, useVideoConfig, Video } from 'remotion';
+import { AbsoluteFill, Audio, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
 
 interface Props {
   script: {
@@ -13,7 +13,12 @@ interface Props {
     fontSize?: number;
     color?: string;
     backgroundColor?: string;
+    ctaBackgroundColor?: string;
     align?: 'left' | 'center' | 'right';
+    weight?: 'normal' | 'bold';
+    italic?: boolean;
+    underline?: boolean;
+    noAnimation?: boolean;
   };
   mediaSlots?: {
     background?: { url: string };
@@ -26,12 +31,26 @@ interface Props {
 
 export function UGCAdComposition({ script, style, mediaSlots, audioTrack }: Props) {
   const { width, height } = useVideoConfig();
+  const frame = useCurrentFrame();
 
   const fontFamily = style.fontFamily || 'Inter';
-  const fontSize = style.fontSize || 48;
+  const base = style.fontSize || 48;
   const color = style.color || '#ffffff';
   const bgColor = style.backgroundColor || 'rgba(0,0,0,0.5)';
+  const ctaBg = style.ctaBackgroundColor || '#864FFE';
   const align = style.align || 'center';
+  const alignItems = align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center';
+  const bodyWeight = style.weight === 'bold' ? 700 : 400;
+  const italicStyle = style.italic ? 'italic' : 'normal';
+  const underlineDeco = style.underline ? 'underline' : 'none';
+  const noAnimation = style.noAnimation === true;
+
+  const fadeIn = (from: number, to: number) => (
+    noAnimation ? 1 : interpolate(frame, [from, to], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  );
+  const riseIn = (from: number, to: number) => (
+    noAnimation ? 0 : interpolate(frame, [from, to], [10, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  );
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
@@ -42,9 +61,6 @@ export function UGCAdComposition({ script, style, mediaSlots, audioTrack }: Prop
         />
       )}
       {mediaSlots?.background?.url && (
-        // Remotion's <Video> syncs with the Player timeline. A plain HTML
-        // <video> tag only shows the first frame because the Player drives
-        // playback via requestAnimationFrame, not the browser video clock.
         <Video
           src={mediaSlots.background.url}
           style={{ width, height, objectFit: 'cover', position: 'absolute' }}
@@ -56,61 +72,100 @@ export function UGCAdComposition({ script, style, mediaSlots, audioTrack }: Prop
         style={{
           display: 'flex',
           flexDirection: 'column',
-          justifyContent: 'flex-end',
-          alignItems: align === 'center' ? 'center' : align === 'left' ? 'flex-start' : 'flex-end',
+          justifyContent: 'center',
+          alignItems,
           padding: 40,
+          gap: 16,
         }}
       >
-        <div
-          style={{
-            backgroundColor: bgColor,
-            padding: '20px 28px',
-            borderRadius: 12,
-            maxWidth: '90%',
-          }}
-        >
-          {script.hookText && (
+        {script.hookText && (
+          <div
+            style={{
+              backgroundColor: bgColor,
+              padding: '14px 22px',
+              borderRadius: 8,
+              maxWidth: '92%',
+              opacity: fadeIn(0, 15),
+              transform: `translateY(${riseIn(0, 15)}px)`,
+            }}
+          >
             <p
               style={{
                 fontFamily,
-                fontSize: fontSize * 1.1,
+                fontSize: base * 1.15,
                 color,
-                fontWeight: 'bold',
+                fontWeight: 700,
+                fontStyle: italicStyle,
+                textDecoration: underlineDeco,
                 textAlign: align,
-                marginBottom: 12,
+                lineHeight: 1.3,
+                margin: 0,
+                textShadow: '0 2px 4px rgba(0,0,0,0.35)',
               }}
             >
               {script.hookText}
             </p>
-          )}
-          {script.bodyText && (
+          </div>
+        )}
+
+        {script.bodyText && (
+          <div
+            style={{
+              backgroundColor: bgColor,
+              padding: '12px 20px',
+              borderRadius: 8,
+              maxWidth: '92%',
+              opacity: fadeIn(15, 30),
+              transform: `translateY(${riseIn(15, 30)}px)`,
+            }}
+          >
             <p
               style={{
                 fontFamily,
-                fontSize,
+                fontSize: base,
                 color,
+                fontWeight: bodyWeight,
+                fontStyle: italicStyle,
+                textDecoration: underlineDeco,
                 textAlign: align,
                 lineHeight: 1.4,
-                marginBottom: 12,
+                margin: 0,
+                textShadow: '0 2px 4px rgba(0,0,0,0.35)',
               }}
             >
               {script.bodyText}
             </p>
-          )}
-          {script.ctaText && (
+          </div>
+        )}
+
+        {script.ctaText && (
+          <div
+            style={{
+              backgroundColor: ctaBg,
+              padding: '12px 22px',
+              borderRadius: 999,
+              maxWidth: '92%',
+              opacity: fadeIn(30, 45),
+              transform: `translateY(${riseIn(30, 45)}px)`,
+            }}
+          >
             <p
               style={{
                 fontFamily,
-                fontSize: fontSize * 0.85,
-                color,
-                fontWeight: 'bold',
+                fontSize: base * 0.9,
+                color: '#ffffff',
+                fontWeight: 700,
+                fontStyle: italicStyle,
+                textDecoration: underlineDeco,
                 textAlign: align,
+                margin: 0,
+                textShadow: '0 2px 4px rgba(0,0,0,0.35)',
               }}
             >
               {script.ctaText}
             </p>
-          )}
-        </div>
+          </div>
+        )}
       </AbsoluteFill>
     </AbsoluteFill>
   );

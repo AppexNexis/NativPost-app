@@ -41,15 +41,20 @@ export function TrendingTemplateCarousel({ templates, onRemix, autoplay = true }
     // Wrapper clips horizontally so side cards can't paint outside — was
     // causing horizontal page scroll when Swiper's `!overflow-visible` let
     // wide fan-stack side slides bleed into siblings.
-    <div className="mx-auto w-full max-w-[560px] overflow-x-hidden py-6">
+    //
+    // Sizing tuned to match the usefastlane reference: 5 cards visible in the
+    // fan (center + 2 on each side stepped back), each card at ~180px wide so
+    // the phone silhouette reads clearly without cramping. max-w bumped so
+    // the two edge cards don't clip on 1280px+ viewports.
+    <div className="mx-auto w-full max-w-[820px] overflow-x-hidden py-8">
       <Swiper
         effect="coverflow"
         modules={[EffectCoverflow, Autoplay]}
         grabCursor
         centeredSlides
         slidesPerView="auto"
-        spaceBetween={12}
-        loop={templates.length >= 3}
+        spaceBetween={4}
+        loop={templates.length >= 5}
         autoplay={
           autoplay
             ? {
@@ -59,20 +64,22 @@ export function TrendingTemplateCarousel({ templates, onRemix, autoplay = true }
               }
             : false
         }
-        // Tighter fan-stack: 2 cards visible (center + 1 partial peek) instead
-        // of the previous 3-wide spread that overflowed on standard viewports.
+        // Fan-stack tuned for a 5-card spread. Higher stretch pulls neighbors
+        // in so five cards read as a cohesive fan; deeper depth gives the
+        // back-row cards clear separation without shrinking them past
+        // legibility.
         coverflowEffect={{
           rotate: 0,
-          stretch: 20,
-          depth: 120,
-          modifier: 1,
+          stretch: 60,
+          depth: 200,
+          modifier: 1.4,
           slideShadows: false,
         }}
       >
         {templates.map((template) => (
           <SwiperSlide
             key={template.id}
-            className="!h-auto !w-[220px] sm:!w-[240px]"
+            className="!h-auto !w-[170px] sm:!w-[180px]"
           >
             <TemplateCard template={template} onRemix={onRemix} />
           </SwiperSlide>

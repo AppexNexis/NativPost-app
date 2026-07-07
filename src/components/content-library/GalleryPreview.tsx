@@ -36,6 +36,13 @@ type GalleryPreviewProps = {
    * `enrichmentData.editorStyle.align`. Missing → 'center'.
    */
   align?: 'left' | 'center' | 'right' | string | null;
+  /**
+   * 0..1 dim scrim applied above the slide image and below the caption
+   * overlay — mirrors the editor's ImageEditorPreview / SlideshowComposition
+   * behavior so the compiled gallery WYSIWYG-matches what the user set in
+   * the Layout tab. Sourced from `enrichmentData.editorStyle.backgroundDimming`.
+   */
+  backgroundDimming?: number | null;
 };
 
 const ASPECT_TO_CSS: Record<string, string> = {
@@ -60,7 +67,7 @@ function normalizeCopy(entry: SlideCopyEntry | undefined): string {
   return entry.text ?? '';
 }
 
-export function GalleryPreview({ slides, slideCopy, aspectRatio, layout, align }: GalleryPreviewProps) {
+export function GalleryPreview({ slides, slideCopy, aspectRatio, layout, align, backgroundDimming }: GalleryPreviewProps) {
   const total = slides.length;
   const [index, setIndex] = useState(0);
 
@@ -113,6 +120,16 @@ export function GalleryPreview({ slides, slideCopy, aspectRatio, layout, align }
         alt={`Slide ${index + 1} of ${total}`}
         className="size-full object-cover"
       />
+
+      {/* Full-bleed dim scrim — mirrors ImageEditorPreview so users see the
+          same dim they picked in the Layout tab. Sits between image and
+          caption overlay so text stays legible. */}
+      {typeof backgroundDimming === 'number' && backgroundDimming > 0 && (
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{ backgroundColor: `rgba(0,0,0,${Math.min(1, Math.max(0, backgroundDimming))})` }}
+        />
+      )}
 
       {/* Optional caption overlay when slideCopy has content for this index.
           Positioning mirrors the editor's ImageEditorPreview + Slideshow

@@ -1117,6 +1117,7 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                           aspectRatio={item.aspectRatio || null}
                           layout={((item.enrichmentData as any)?.editorLayout) as string | undefined}
                           align={((item.enrichmentData as any)?.editorStyle?.align) as 'left' | 'center' | 'right' | undefined}
+                          backgroundDimming={((item.enrichmentData as any)?.editorStyle?.backgroundDimming) as number | undefined}
                         />
                       </div>
                     );
@@ -1170,8 +1171,22 @@ export default function ContentIdPage({ params }: { params: Promise<{ id: string
                         // ── Branch 1: non-compiled with editor enrichment → render the
                         //    SAME composition the editor preview used. Pixel-identical.
                         if (!isCompiledVideo && hasEditorState) {
+                          // Reconstruct the mediaSlots shape the per-type
+                          // compositions destructure (background/hookVideo/
+                          // slides) from the enrichmentData stash. Without
+                          // this, TalkingHead / UGC / GreenScreen render on
+                          // a black background because inputProps.mediaSlots
+                          // is undefined even though backgroundUrl is set.
+                          const sourceSlots = (item.enrichmentData as any)?.sourceMediaSlots || {};
+                          const mediaSlots = {
+                            background: sourceSlots.background || { url: videoUrl },
+                            hookVideo: sourceSlots.hookVideo,
+                            demoVideo: sourceSlots.demoVideo,
+                            slides: sourceSlots.slides,
+                          };
                           const inputProps = {
                             backgroundUrl: videoUrl,
+                            mediaSlots,
                             script: scriptWithFallback,
                             style: ed.editorStyle || {},
                             layout: ed.editorLayout || 'centered',

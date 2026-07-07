@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { AbsoluteFill, Audio, Sequence, useVideoConfig, Video } from 'remotion';
+import { AbsoluteFill, Audio, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
 
 interface Props {
   script: {
@@ -13,7 +13,12 @@ interface Props {
     fontSize?: number;
     color?: string;
     backgroundColor?: string;
+    ctaBackgroundColor?: string;
     align?: 'left' | 'center' | 'right';
+    weight?: 'normal' | 'bold';
+    italic?: boolean;
+    underline?: boolean;
+    noAnimation?: boolean;
   };
   mediaSlots?: {
     background?: { url: string };
@@ -25,27 +30,30 @@ interface Props {
 }
 
 export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }: Props) {
-  const { width, height, fps, durationInFrames } = useVideoConfig();
-
-  // Sizing note: the shared Player runs at EDITOR_TOTAL_FRAMES = 8s * 30fps
-  // = 240 frames. Earlier we used 3+5+2s = 300 frames, which pushed the CTA
-  // out of the playback window entirely (Player looped back to 0 before it
-  // ever entered its `from` mark). Splitting the 8s window into 2/4/2 keeps
-  // all three overlays visible while preserving hook > body > cta ordering.
-  const hookFrames = 2 * fps;
-  const bodyFrames = 4 * fps;
-  const ctaFrames = 2 * fps;
+  const { width, height } = useVideoConfig();
+  const frame = useCurrentFrame();
 
   const fontFamily = style.fontFamily || 'Inter';
-  const fontSize = style.fontSize || 48;
+  const base = style.fontSize || 48;
   const color = style.color || '#ffffff';
   const bgColor = style.backgroundColor || 'rgba(0,0,0,0.5)';
+  const ctaBg = style.ctaBackgroundColor || '#864FFE';
   const align = style.align || 'center';
+  const alignItems = align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center';
+  const bodyWeight = style.weight === 'bold' ? 700 : 400;
+  const italicStyle = style.italic ? 'italic' : 'normal';
+  const underlineDeco = style.underline ? 'underline' : 'none';
+  const noAnimation = style.noAnimation === true;
+
+  const fadeIn = (from: number, to: number) => (
+    noAnimation ? 1 : interpolate(frame, [from, to], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  );
+  const riseIn = (from: number, to: number) => (
+    noAnimation ? 0 : interpolate(frame, [from, to], [10, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  );
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
-      {/* Background video — use Remotion <Video> so playback syncs with the
-          Player timeline (plain HTML <video> only shows the first frame). */}
       {mediaSlots?.background?.url && (
         <Video
           src={mediaSlots.background.url}
@@ -54,118 +62,106 @@ export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }
         />
       )}
 
-      {/* Text overlay — each Sequence gets its own AbsoluteFill so flex layout
-          actually positions the caption. Wrapping Sequences inside a flex
-          parent doesn't work because Sequence renders as position:absolute,
-          which drops out of flex flow entirely. */}
-      {script.hookText && (
-        <Sequence from={0} durationInFrames={hookFrames}>
-          <AbsoluteFill
+      <AbsoluteFill
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems,
+          padding: 40,
+          gap: 16,
+        }}
+      >
+        {script.hookText && (
+          <div
             style={{
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              alignItems: align === 'center' ? 'center' : align === 'left' ? 'flex-start' : 'flex-end',
-              padding: 40,
+              backgroundColor: bgColor,
+              padding: '14px 22px',
+              borderRadius: 8,
+              maxWidth: '92%',
+              opacity: fadeIn(0, 15),
+              transform: `translateY(${riseIn(0, 15)}px)`,
             }}
           >
-            <div
+            <p
               style={{
-                backgroundColor: bgColor,
-                padding: '16px 24px',
-                borderRadius: 8,
-                maxWidth: '90%',
+                fontFamily,
+                fontSize: base * 1.15,
+                color,
+                fontWeight: 700,
+                fontStyle: italicStyle,
+                textDecoration: underlineDeco,
+                textAlign: align,
+                lineHeight: 1.3,
+                margin: 0,
+                textShadow: '0 2px 4px rgba(0,0,0,0.35)',
               }}
             >
-              <p
-                style={{
-                  fontFamily,
-                  fontSize: fontSize * 1.2,
-                  color,
-                  fontWeight: 'bold',
-                  textAlign: align,
-                  lineHeight: 1.3,
-                  margin: 0,
-                }}
-              >
-                {script.hookText}
-              </p>
-            </div>
-          </AbsoluteFill>
-        </Sequence>
-      )}
+              {script.hookText}
+            </p>
+          </div>
+        )}
 
-      {script.bodyText && (
-        <Sequence from={hookFrames} durationInFrames={bodyFrames}>
-          <AbsoluteFill
+        {script.bodyText && (
+          <div
             style={{
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              alignItems: align === 'center' ? 'center' : align === 'left' ? 'flex-start' : 'flex-end',
-              padding: 40,
+              backgroundColor: bgColor,
+              padding: '12px 20px',
+              borderRadius: 8,
+              maxWidth: '92%',
+              opacity: fadeIn(15, 30),
+              transform: `translateY(${riseIn(15, 30)}px)`,
             }}
           >
-            <div
+            <p
               style={{
-                backgroundColor: bgColor,
-                padding: '16px 24px',
-                borderRadius: 8,
-                maxWidth: '90%',
+                fontFamily,
+                fontSize: base,
+                color,
+                fontWeight: bodyWeight,
+                fontStyle: italicStyle,
+                textDecoration: underlineDeco,
+                textAlign: align,
+                lineHeight: 1.4,
+                margin: 0,
+                textShadow: '0 2px 4px rgba(0,0,0,0.35)',
               }}
             >
-              <p
-                style={{
-                  fontFamily,
-                  fontSize,
-                  color,
-                  textAlign: align,
-                  lineHeight: 1.4,
-                  margin: 0,
-                }}
-              >
-                {script.bodyText}
-              </p>
-            </div>
-          </AbsoluteFill>
-        </Sequence>
-      )}
+              {script.bodyText}
+            </p>
+          </div>
+        )}
 
-      {script.ctaText && (
-        <Sequence from={hookFrames + bodyFrames} durationInFrames={ctaFrames}>
-          <AbsoluteFill
+        {script.ctaText && (
+          <div
             style={{
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              alignItems: align === 'center' ? 'center' : align === 'left' ? 'flex-start' : 'flex-end',
-              padding: 40,
+              backgroundColor: ctaBg,
+              padding: '12px 22px',
+              borderRadius: 999,
+              maxWidth: '92%',
+              opacity: fadeIn(30, 45),
+              transform: `translateY(${riseIn(30, 45)}px)`,
             }}
           >
-            <div
+            <p
               style={{
-                backgroundColor: bgColor,
-                padding: '12px 20px',
-                borderRadius: 8,
-                maxWidth: '90%',
+                fontFamily,
+                fontSize: base * 0.9,
+                color: '#ffffff',
+                fontWeight: 700,
+                fontStyle: italicStyle,
+                textDecoration: underlineDeco,
+                textAlign: align,
+                margin: 0,
+                textShadow: '0 2px 4px rgba(0,0,0,0.35)',
               }}
             >
-              <p
-                style={{
-                  fontFamily,
-                  fontSize: fontSize * 0.9,
-                  color,
-                  fontWeight: 'bold',
-                  textAlign: align,
-                  margin: 0,
-                }}
-              >
-                {script.ctaText}
-              </p>
-            </div>
-          </AbsoluteFill>
-        </Sequence>
-      )}
+              {script.ctaText}
+            </p>
+          </div>
+        )}
+      </AbsoluteFill>
+
       {audioTrack && audioTrack.url && (
         <Audio
           src={audioTrack.url}

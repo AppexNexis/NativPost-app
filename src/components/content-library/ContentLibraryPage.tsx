@@ -123,13 +123,6 @@ export function ContentLibraryPage() {
         />
       </div>
 
-      {isRemixing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="rounded-xl bg-card p-6 shadow-xl">
-            <p className="text-sm font-medium text-card-foreground">Opening remix editor...</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { AbsoluteFill, Audio, useVideoConfig, Video } from 'remotion';
+import { AbsoluteFill, Audio, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
 
 interface Props {
   script: {
@@ -13,7 +13,12 @@ interface Props {
     fontSize?: number;
     color?: string;
     backgroundColor?: string;
+    ctaBackgroundColor?: string;
     align?: 'left' | 'center' | 'right';
+    weight?: 'normal' | 'bold';
+    italic?: boolean;
+    underline?: boolean;
+    noAnimation?: boolean;
   };
   mediaSlots?: {
     background?: { url: string };
@@ -26,22 +31,35 @@ interface Props {
 
 export function GreenScreenComposition({ script, style, mediaSlots, audioTrack }: Props) {
   const { width, height } = useVideoConfig();
+  const frame = useCurrentFrame();
 
   const fontFamily = style.fontFamily || 'Inter';
-  const fontSize = style.fontSize || 48;
+  const base = style.fontSize || 48;
   const color = style.color || '#ffffff';
-  const bgColor = style.backgroundColor || '#000000';
+  const bgColor = style.backgroundColor || 'rgba(0,0,0,0.5)';
+  const ctaBg = style.ctaBackgroundColor || '#864FFE';
   const align = style.align || 'center';
+  const alignItems = align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center';
+  const bodyWeight = style.weight === 'bold' ? 700 : 400;
+  const italicStyle = style.italic ? 'italic' : 'normal';
+  const underlineDeco = style.underline ? 'underline' : 'none';
+  const noAnimation = style.noAnimation === true;
+
+  const fadeIn = (from: number, to: number) => (
+    noAnimation ? 1 : interpolate(frame, [from, to], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  );
+  const riseIn = (from: number, to: number) => (
+    noAnimation ? 0 : interpolate(frame, [from, to], [10, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  );
 
   return (
-    <AbsoluteFill style={{ backgroundColor: bgColor }}>
+    <AbsoluteFill style={{ backgroundColor: '#000' }}>
       {audioTrack && audioTrack.url && (
         <Audio
           src={audioTrack.url}
           volume={Math.max(0, Math.min(1, (audioTrack.volume ?? 80) / 100))}
         />
       )}
-      {/* Background video or solid color */}
       {mediaSlots?.background?.url ? (
         <Video
           src={mediaSlots.background.url}
@@ -59,58 +77,103 @@ export function GreenScreenComposition({ script, style, mediaSlots, audioTrack }
         />
       )}
 
-      {/* Text overlay */}
       <AbsoluteFill
         style={{
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
-          alignItems: align === 'center' ? 'center' : align === 'left' ? 'flex-start' : 'flex-end',
+          alignItems,
           padding: 40,
+          gap: 16,
         }}
       >
         {script.hookText && (
-          <p
+          <div
             style={{
-              fontFamily,
-              fontSize: fontSize * 1.2,
-              color,
-              fontWeight: 'bold',
-              textAlign: align,
-              textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
-              marginBottom: 16,
+              backgroundColor: bgColor,
+              padding: '14px 22px',
+              borderRadius: 8,
+              maxWidth: '92%',
+              opacity: fadeIn(0, 15),
+              transform: `translateY(${riseIn(0, 15)}px)`,
             }}
           >
-            {script.hookText}
-          </p>
+            <p
+              style={{
+                fontFamily,
+                fontSize: base * 1.15,
+                color,
+                fontWeight: 700,
+                fontStyle: italicStyle,
+                textDecoration: underlineDeco,
+                textAlign: align,
+                lineHeight: 1.3,
+                margin: 0,
+                textShadow: '0 2px 4px rgba(0,0,0,0.35)',
+              }}
+            >
+              {script.hookText}
+            </p>
+          </div>
         )}
+
         {script.bodyText && (
-          <p
+          <div
             style={{
-              fontFamily,
-              fontSize,
-              color,
-              textAlign: align,
-              textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
-              marginBottom: 16,
+              backgroundColor: bgColor,
+              padding: '12px 20px',
+              borderRadius: 8,
+              maxWidth: '92%',
+              opacity: fadeIn(15, 30),
+              transform: `translateY(${riseIn(15, 30)}px)`,
             }}
           >
-            {script.bodyText}
-          </p>
+            <p
+              style={{
+                fontFamily,
+                fontSize: base,
+                color,
+                fontWeight: bodyWeight,
+                fontStyle: italicStyle,
+                textDecoration: underlineDeco,
+                textAlign: align,
+                lineHeight: 1.4,
+                margin: 0,
+                textShadow: '0 2px 4px rgba(0,0,0,0.35)',
+              }}
+            >
+              {script.bodyText}
+            </p>
+          </div>
         )}
+
         {script.ctaText && (
-          <p
+          <div
             style={{
-              fontFamily,
-              fontSize: fontSize * 0.8,
-              color,
-              fontWeight: 'bold',
-              textAlign: align,
-              textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
+              backgroundColor: ctaBg,
+              padding: '12px 22px',
+              borderRadius: 999,
+              maxWidth: '92%',
+              opacity: fadeIn(30, 45),
+              transform: `translateY(${riseIn(30, 45)}px)`,
             }}
           >
-            {script.ctaText}
-          </p>
+            <p
+              style={{
+                fontFamily,
+                fontSize: base * 0.9,
+                color: '#ffffff',
+                fontWeight: 700,
+                fontStyle: italicStyle,
+                textDecoration: underlineDeco,
+                textAlign: align,
+                margin: 0,
+                textShadow: '0 2px 4px rgba(0,0,0,0.35)',
+              }}
+            >
+              {script.ctaText}
+            </p>
+          </div>
         )}
       </AbsoluteFill>
     </AbsoluteFill>
