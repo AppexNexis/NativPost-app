@@ -18,19 +18,13 @@
  *     generateMediaForContentItem so posts still appear.
  */
 
-import { AnimatePresence, motion, useMotionValue, useTransform } from 'framer-motion';
+import { motion, useAnimationControls, useMotionValue, useTransform } from 'framer-motion';
 import {
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  Eye,
-  Heart,
   Link as LinkIcon,
   Loader2,
-  MessageCircle,
   Pencil,
   Settings2,
-  Sparkles,
   X,
   Zap,
 } from 'lucide-react';
@@ -51,51 +45,10 @@ type BlitzItem = ContentItem & {
   angleName?: string | null;
 };
 
-type TemplateSummary = {
-  id: string;
-  mediaUrl?: string | null;
-  thumbnailUrl?: string | null;
-  contentType?: string | null;
-  sourceCreator?: string | null;
-  sourcePlatform?: string | null;
-  viewCount?: number | null;
-  likeCount?: number | null;
-  commentCount?: number | null;
-  thumbnailUrls?: Record<string, string> | string[] | null;
-};
-
 type GenerateOutcome =
   | { kind: 'none' }
   | { kind: 'dailyLimit'; count: number; limit: number; nextResetAt: string }
   | { kind: 'noChannels' };
-
-function formatCount(n?: number | null): string {
-  if (!n || n < 1000) {
-    return String(n ?? 0);
-  }
-  if (n < 1_000_000) {
-    return `${(n / 1000).toFixed(1)}K`;
-  }
-  return `${(n / 1_000_000).toFixed(1)}M`;
-}
-
-function parseSlideStrings(input: any): string[] {
-  if (!input) {
-    return [];
-  }
-  if (Array.isArray(input)) {
-    return input.filter((u): u is string => typeof u === 'string' && u.length > 0);
-  }
-  if (typeof input === 'object') {
-    const keys = Object.keys(input);
-    const allNumeric = keys.length > 0 && keys.every(k => /^\d+$/.test(k));
-    const orderedKeys = allNumeric ? keys.sort((a, b) => Number(a) - Number(b)) : keys;
-    return orderedKeys
-      .map(k => (input as Record<string, string>)[k])
-      .filter((u): u is string => typeof u === 'string' && u.length > 0);
-  }
-  return [];
-}
 
 const PENDING_STATUSES = new Set(['pending_review', 'draft', 'generating']);
 
@@ -108,13 +61,11 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
   const router = useRouter();
 
   const [items, setItems] = useState<BlitzItem[]>(initialContentItems);
-  const [templateCache, setTemplateCache] = useState<Record<string, TemplateSummary>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [actionPending, setActionPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<GenerateOutcome>({ kind: 'none' });
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [slideIdx, setSlideIdx] = useState(0);
   const [editingItem, setEditingItem] = useState<BlitzItem | null>(null);
   const autoGenAttempted = useRef(false);
 
@@ -261,62 +212,6 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Hydrate template summaries for the next few cards.
-  useEffect(() => {
-    const upcoming = queue.slice(0, 3);
-    const missing = upcoming
-      .map(it => it.templateId)
-      .filter((tid): tid is string => Boolean(tid) && !templateCache[tid!]);
-
-    if (missing.length === 0) {
-      return;
-    }
-
-    let cancelled = false;
-    (async () => {
-      const results: Record<string, TemplateSummary> = {};
-      await Promise.all(
-        missing.map(async (tid) => {
-          try {
-            const res = await fetch(`/api/templates/${tid}`, { cache: 'force-cache' });
-            if (!res.ok) {
-              return;
-            }
-            const data = await res.json();
-            const t = data.item || data.template || data;
-            if (!t || !t.id) {
-              return;
-            }
-            results[tid] = {
-              id: t.id,
-              mediaUrl: t.mediaUrl ?? null,
-              thumbnailUrl: t.thumbnailUrl ?? null,
-              contentType: t.contentType ?? null,
-              sourceCreator: t.sourceCreator ?? null,
-              sourcePlatform: t.sourcePlatform ?? null,
-              viewCount: t.viewCount ?? null,
-              likeCount: t.likeCount ?? null,
-              commentCount: t.commentCount ?? null,
-              thumbnailUrls: t.thumbnailUrls ?? null,
-            };
-          } catch {
-            // Ignore; card falls back to enrichmentData.sourceMediaSlots.
-          }
-        }),
-      );
-      if (cancelled) {
-        return;
-      }
-      if (Object.keys(results).length > 0) {
-        setTemplateCache(prev => ({ ...prev, ...results }));
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [queue, templateCache]);
-
   const removeFromQueue = (itemId: string) => {
     setItems(prev => prev.filter(i => i.id !== itemId));
   };
@@ -390,12 +285,6 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
 
   const current = queue[0];
   const behind = queue.slice(1, 3);
-  const currentTemplate = current?.templateId ? templateCache[current.templateId] : undefined;
-
-  // Reset slide index when the current card changes.
-  useEffect(() => {
-    setSlideIdx(0);
-  }, [current?.id]);
 
   // While the top card is waiting on async media generation, poll refresh
   // every 5s. Skip polling while an action is in flight (swipe/skip in
@@ -518,12 +407,9 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
           <QueueDone total={totalToday} approved={approvedCount} />
         ) : current ? (
           <CardPair
-            item={current}
-            template={currentTemplate}
-            behindCount={behind.length}
+            current={current}
+            behind={behind.slice(0, 2)}
             actionPending={actionPending === current.id}
-            slideIdx={slideIdx}
-            onSlideIdxChange={setSlideIdx}
             onApprove={() => handleApprove(current)}
             onReject={() => handleReject(current)}
             onEdit={() => handleEdit(current)}
@@ -576,60 +462,29 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
 /* ─── Card pair (source + personalized + action bar) ───────────────── */
 
 function CardPair({
-  item,
-  template,
-  behindCount,
+  current,
+  behind,
   actionPending,
-  slideIdx,
-  onSlideIdxChange,
   onApprove,
   onReject,
   onEdit,
 }: {
-  item: BlitzItem;
-  template?: TemplateSummary;
-  behindCount: number;
+  current: BlitzItem;
+  behind: BlitzItem[];
   actionPending: boolean;
-  slideIdx: number;
-  onSlideIdxChange: (n: number) => void;
   onApprove: () => void;
   onReject: () => void;
   onEdit: () => void;
 }) {
   return (
-    <div className="flex w-full max-w-3xl flex-col items-center">
-      {/*
-        Overlap layout: the source phone frame (LEFT) and the generated
-        card (RIGHT) are pulled together with a negative left margin on
-        the RIGHT column so they read as one composed pair (matches the
-        usefastlane stacked look — screenshots 3-5). The RIGHT card sits
-        on top via z-10 so the drag stamps and drop shadow render cleanly.
-
-        The container uses items-start + tighter negative margin so the
-        two panels overlap significantly — the generated card is the
-        hero, the source panel sits behind it as context.
-      */}
-      <div className="flex w-full items-center justify-center gap-4">
-        {/* LEFT: source template phone frame — sits flush left */}
-        <div className="relative z-0">
-          <SourceTemplatePanel
-            template={template}
-            slideIdx={slideIdx}
-            onSlideIdxChange={onSlideIdxChange}
-          />
-        </div>
-        {/* RIGHT: generated swipe card — overlaps left panel subtly */}
-        <div className="relative z-10 -ml-6 md:-ml-8">
-          <SwipeCard
-            item={item}
-            template={template}
-            behindCount={behindCount}
-            slideIdx={slideIdx}
-            onSwipeApprove={onApprove}
-            onSwipeReject={onReject}
-          />
-        </div>
-      </div>
+    <div className="flex w-full flex-col items-center">
+      {/* Swipe stack: one generated card at the top, ghost cards behind */}
+      <CardDeck
+        current={current}
+        behind={behind}
+        onApprove={onApprove}
+        onReject={onReject}
+      />
 
       {/* Action bar */}
       <div className="mt-4 flex items-center justify-center gap-4">
@@ -676,24 +531,81 @@ function CardPair({
   );
 }
 
-/* ─── SwipeCard (personalized) ─────────────────────────────────────── */
+/* ─── CardDeck + SwipeCard (Tinder-style card stack) ────────────────── */
 
-function SwipeCard({
+function CardDeck({
+  current,
+  behind,
+  onApprove,
+  onReject,
+}: {
+  current: BlitzItem;
+  behind: BlitzItem[];
+  onApprove: (item: BlitzItem) => void;
+  onReject: (item: BlitzItem) => void;
+}) {
+  // Render top card + up to 2 behind cards as absolutely positioned layers.
+  // BlitzSwipeCard handles its own exit animation via useAnimationControls
+  // BEFORE calling the callback, so no AnimatePresence is needed here.
+  const stack = useMemo(
+    () => [current, ...behind.slice(0, 2)],
+    [current, behind],
+  );
+
+  return (
+    <div className="relative mx-auto aspect-[9/16] w-[min(40vw,300px)] max-h-[min(65vh,520px)]">
+      {stack.map((card, idx) => {
+        const isTop = idx === 0;
+        return (
+          <div
+            key={card.id}
+            className="absolute inset-0"
+            style={{
+              zIndex: stack.length - idx,
+              transform: isTop
+                ? undefined
+                : `translateY(${idx * 8}px) scale(${1 - idx * 0.03})`,
+            }}
+          >
+            <BlitzSwipeCard
+              item={card}
+              isTop={isTop}
+              onSwipeApprove={isTop ? () => onApprove(card) : undefined}
+              onSwipeReject={isTop ? () => onReject(card) : undefined}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── BlitzSwipeCard ────────────────────────────────────────────────── */
+
+function BlitzSwipeCard({
   item,
-  template,
-  behindCount,
-  slideIdx,
+  isTop,
   onSwipeApprove,
   onSwipeReject,
 }: {
   item: BlitzItem;
-  template?: TemplateSummary;
-  behindCount: number;
-  slideIdx: number;
-  onSwipeApprove: () => void;
-  onSwipeReject: () => void;
+  isTop: boolean;
+  onSwipeApprove?: () => void;
+  onSwipeReject?: () => void;
 }) {
-  const [whyOpen, setWhyOpen] = useState(false);
+  const controls = useAnimationControls();
+  const x = useMotionValue(0);
+  const rotate = useTransform(x, [-200, 0, 200], [-20, 0, 20]);
+  const approveOpacity = useTransform(x, [0, 120], [0, 1]);
+  const rejectOpacity = useTransform(x, [-120, 0], [1, 0]);
+
+  // Reset motion values when the card identity changes so stamps don't
+  // bleed through from the previous card's exit position.
+  useEffect(() => {
+    x.set(0);
+    controls.set({ x: 0, opacity: 1 });
+  }, [item.id, x, controls]);
+
   const previewProps = useBlitzPreviewProps({
     contentType: String(item.contentType),
     enrichmentData: item.enrichmentData,
@@ -705,360 +617,93 @@ function SwipeCard({
   const compiledUrl = (item.graphicUrls || [])[0] || null;
   const isCompiledVideo = compiledUrl?.match(/\.(mp4|webm|mov)(\?|$)/i);
 
-  // For slideshow cards, wire slideIdx into the input props so the swipe
-  // card and the source panel advance together.
-  const inputPropsWithSlide = useMemo(() => {
-    if (!previewProps) {
-      return null;
-    }
-    return {
-      ...previewProps.inputProps,
-      slideIndex: slideIdx,
-    };
-  }, [previewProps, slideIdx]);
+  // Tinder/Bumble pattern: animate the card off screen FIRST, then fire
+  // the callback. This avoids the race between the exit animation and the
+  // parent removing the card from the array.
+  const handleDragEnd = useCallback(
+    async (_: any, info: any) => {
+      const offset = info.offset.x;
+      const velocity = info.velocity.x;
 
-  // framer-motion drag physics.
-  const x = useMotionValue(0);
-  const rotate = useTransform(x, [-200, 0, 200], [-15, 0, 15]);
-  const approveOpacity = useTransform(x, [0, 100], [0, 1]);
-  const rejectOpacity = useTransform(x, [-100, 0], [1, 0]);
-
-  // Reset the drag position when the top card changes. Without this, the
-  // motion value `x` still carries the exit offset (-400 or +400) from
-  // the previous card, so the incoming card mounts with rejectOpacity=1
-  // or approveOpacity=1 — that's the SKIP/APPROVE stamp bleed-through
-  // the user saw during rapid swipes.
-  useEffect(() => {
-    x.set(0);
-  }, [item.id, x]);
-
-  const reasoningParts: string[] = [];
-  if (enrichment.reasoning) {
-    reasoningParts.push(String(enrichment.reasoning));
-  }
-  const snapshot = enrichment.sourceTemplateSnapshot || {};
-  const views = snapshot.viewCount ?? template?.viewCount ?? null;
-  const platform = snapshot.sourcePlatform || template?.sourcePlatform;
-  if (views && views > 1000) {
-    reasoningParts.push(
-      `Modeled on a ${platform || 'trending'} post with ${formatCount(views)} views.`,
-    );
-  }
-  if (item.angleName) {
-    reasoningParts.push(`Angle: ${item.angleName}.`);
-  }
-  if (reasoningParts.length === 0) {
-    reasoningParts.push('Selected from your active content mix and audience angles.');
-  }
-
-  return (
-    <div className="flex w-[min(32vw,260px)] shrink-0 flex-col">
-      {/* Chip row above card */}
-      <div className="mb-2 flex min-h-[28px] items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
-          {item.contentType && (
-            <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium capitalize text-foreground">
-              {String(item.contentType).replace(/_/g, ' ')}
-            </span>
-          )}
-          {item.angleName && (
-            <span className="rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-muted-foreground">
-              {item.angleName}
-            </span>
-          )}
-        </div>
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setWhyOpen(v => !v)}
-            className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <Sparkles className="size-3" />
-            Why?
-          </button>
-          {whyOpen && (
-            <div className="absolute right-0 top-full z-30 mt-2 w-64 rounded-xl border border-border bg-card p-3 text-xs text-foreground shadow-xl">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="font-semibold">Why we picked this</p>
-                <button
-                  type="button"
-                  onClick={() => setWhyOpen(false)}
-                  className="rounded p-0.5 text-muted-foreground hover:bg-muted"
-                  aria-label="Close"
-                >
-                  <X className="size-3" />
-                </button>
-              </div>
-              <ul className="space-y-1.5 text-muted-foreground">
-                {reasoningParts.map((r, i) => (
-                  <li key={i} className="leading-snug">{r}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Card body — stack with framer-motion swipe on the top card */}
-      <div className="relative w-full">
-        {behindCount >= 2 && (
-          <motion.div
-            aria-hidden
-            initial={{ scale: 0.94, opacity: 0 }}
-            animate={{ scale: 0.94, opacity: 0.4 }}
-            exit={{ scale: 0.9, opacity: 0 }}
-            className="pointer-events-none absolute inset-0 rounded-2xl border border-border bg-card shadow-sm"
-            style={{ transform: 'translateY(12px)' }}
-          />
-        )}
-        {behindCount >= 1 && (
-          <motion.div
-            aria-hidden
-            initial={{ scale: 0.97, opacity: 0 }}
-            animate={{ scale: 0.97, opacity: 0.7 }}
-            exit={{ scale: 0.94, opacity: 0 }}
-            className="pointer-events-none absolute inset-0 rounded-2xl border border-border bg-card shadow-sm"
-            style={{ transform: 'translateY(6px)' }}
-          />
-        )}
-
-        <AnimatePresence mode="popLayout">
-          <motion.div
-            key={item.id}
-            className="relative z-10 aspect-[9/16] max-h-[min(65vh,560px)] w-full overflow-hidden rounded-2xl border border-border bg-neutral-900 shadow-lg"
-            style={{ x, rotate }}
-            drag="x"
-            dragConstraints={{ left: 0, right: 0 }}
-            dragElastic={0.9}
-            onDragEnd={(_, info) => {
-              // Exit on distance (80px) OR high-velocity flick (> 500 px/s).
-              // Tinder uses ~40% of card width for distance threshold and
-              // velocity for flick detection — 80px + 500 velocity matches
-              // similar feel on our card sizes.
-              const velocity = info.velocity.x;
-              const offset = info.offset.x;
-              if (offset > 80 || velocity > 500) {
-                onSwipeApprove();
-              } else if (offset < -80 || velocity < -500) {
-                onSwipeReject();
-              }
-            }}
-            initial={{ scale: 0.94, opacity: 0, y: 12 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{
-              x: x.get() > 0 ? 400 : -400,
-              opacity: 0,
-              transition: { duration: 0.28 },
-            }}
-            transition={{ type: 'spring', stiffness: 300, damping: 26, mass: 0.9 }}
-            whileHover={{ scale: 1.005 }}
-          >
-            {/* Approve / Reject stamps that fade in during drag */}
-            <motion.div
-              className="pointer-events-none absolute left-4 top-4 z-30 rounded-lg border-2 border-red-500 bg-red-500/20 px-3 py-1 text-xs font-bold uppercase tracking-wider text-red-500"
-              style={{ opacity: rejectOpacity }}
-            >
-              Skip
-            </motion.div>
-            <motion.div
-              className="pointer-events-none absolute right-4 top-4 z-30 rounded-lg border-2 border-emerald-500 bg-emerald-500/20 px-3 py-1 text-xs font-bold uppercase tracking-wider text-emerald-500"
-              style={{ opacity: approveOpacity }}
-            >
-              Approve
-            </motion.div>
-
-            {isCompiled && compiledUrl ? (
-              isCompiledVideo ? (
-                <video
-                  src={compiledUrl}
-                  className="size-full object-cover"
-                  muted
-                  loop
-                  playsInline
-                  autoPlay
-                />
-              ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={compiledUrl}
-                  alt={item.caption?.slice(0, 60) || 'Blitz post'}
-                  className="size-full object-cover"
-                />
-              )
-            ) : previewProps && inputPropsWithSlide ? (
-              <div className="size-full">
-                <RemotionPreviewPlayer
-                  contentType={previewProps.contentType}
-                  inputProps={inputPropsWithSlide}
-                />
-              </div>
-            ) : compiledUrl ? (
-              // Raw media fallback — enrichmentData has no Remotion-valid
-              // sourceMediaSlots but graphicUrls has a URL from the template.
-              // Show the raw image/video while the polling loop (every 5s)
-              // waits for sourceMediaSlots to populate from a background job.
-              isCompiledVideo ? (
-                <video
-                  src={compiledUrl}
-                  className="size-full object-cover"
-                  muted
-                  loop
-                  playsInline
-                  autoPlay
-                />
-              ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={compiledUrl}
-                  alt={item.caption?.slice(0, 60) || 'Blitz post'}
-                  className="size-full object-cover"
-                />
-              )
-            ) : (
-              <div className="flex size-full items-center justify-center">
-                <Loader2 className="size-5 animate-spin text-white/60" />
-              </div>
-            )}
-          </motion.div>
-        </AnimatePresence>
-      </div>
-    </div>
+      if (offset > 80 || velocity > 500) {
+        await controls.start({
+          x: 500,
+          opacity: 0,
+          transition: { duration: 0.2, ease: 'easeOut' },
+        });
+        onSwipeApprove?.();
+      } else if (offset < -80 || velocity < -500) {
+        await controls.start({
+          x: -500,
+          opacity: 0,
+          transition: { duration: 0.2, ease: 'easeOut' },
+        });
+        onSwipeReject?.();
+      } else {
+        controls.start({
+          x: 0,
+          rotate: 0,
+          transition: { type: 'spring', stiffness: 300, damping: 20 },
+        });
+      }
+    },
+    [controls, onSwipeApprove, onSwipeReject],
   );
-}
 
-/* ─── SourceTemplatePanel (LEFT, TikTok phone frame) ───────────────── */
-
-function SourceTemplatePanel({
-  template,
-  slideIdx,
-  onSlideIdxChange,
-}: {
-  template?: TemplateSummary;
-  slideIdx: number;
-  onSlideIdxChange: (n: number) => void;
-}) {
-  const slides = useMemo(() => parseSlideStrings(template?.thumbnailUrls), [template?.thumbnailUrls]);
-  const isSlideshow = slides.length > 1;
-  const activeSlide = isSlideshow ? slides[Math.min(slideIdx, slides.length - 1)] : null;
-  const hero = activeSlide || template?.mediaUrl || template?.thumbnailUrl || null;
-  const isVideo = !activeSlide && hero?.match(/\.(mp4|webm|mov)(\?|$)/i);
-
-  const prevSlide = () => {
-    if (!isSlideshow) {
-      return;
-    }
-    const next = (slideIdx - 1 + slides.length) % slides.length;
-    onSlideIdxChange(next);
-  };
-  const nextSlide = () => {
-    if (!isSlideshow) {
-      return;
-    }
-    const next = (slideIdx + 1) % slides.length;
-    onSlideIdxChange(next);
-  };
-
-  // Render a skeleton frame while the template summary hydrates so the
-  // layout width stays stable — never render "No source template linked."
   return (
-    <div className="flex w-[min(32vw,260px)] shrink-0 flex-col">
-      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        Remixed From
-      </p>
+    <motion.div
+      className="absolute inset-0 w-full overflow-hidden rounded-2xl border border-border bg-neutral-900 shadow-xl"
+      style={{ x, rotate }}
+      animate={controls}
+      drag={isTop ? 'x' : undefined}
+      dragConstraints={isTop ? { left: 0, right: 0 } : undefined}
+      dragElastic={0.9}
+      onDragEnd={isTop ? handleDragEnd : undefined}
+    >
+      {isTop && (
+        <>
+          <motion.div
+            className="pointer-events-none absolute left-4 top-4 z-30 rounded-lg border-2 border-red-500 bg-red-500/20 px-3 py-1 text-xs font-bold uppercase tracking-wider text-red-500"
+            style={{ opacity: rejectOpacity }}
+          >
+            Skip
+          </motion.div>
+          <motion.div
+            className="pointer-events-none absolute right-4 top-4 z-30 rounded-lg border-2 border-emerald-500 bg-emerald-500/20 px-3 py-1 text-xs font-bold uppercase tracking-wider text-emerald-500"
+            style={{ opacity: approveOpacity }}
+          >
+            Approve
+          </motion.div>
+        </>
+      )}
 
-      <div className="relative w-full rounded-3xl border border-border bg-neutral-950 p-1.5 shadow-lg">
-        <div className="relative aspect-[9/16] max-h-[min(65vh,560px)] w-full overflow-hidden rounded-2xl bg-black">
-          {hero ? (
-            isVideo ? (
-              <video src={hero} className="size-full object-cover" muted loop playsInline autoPlay />
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={hero} alt="Source template" className="size-full object-cover" />
-            )
-          ) : (
-            <div className="flex size-full items-center justify-center">
-              <Loader2 className="size-5 animate-spin text-white/60" />
-            </div>
-          )}
-
-          {/* Engagement rail */}
-          {template && (
-            <div className="absolute bottom-6 right-2.5 z-20 flex flex-col items-center gap-3.5 text-white drop-shadow">
-              <div className="flex flex-col items-center">
-                <div className="flex size-8 items-center justify-center rounded-full bg-black/40 backdrop-blur">
-                  <Heart className="size-3.5 fill-white text-white" />
-                </div>
-                <span className="mt-0.5 text-[10px] font-semibold">
-                  {formatCount(template.likeCount)}
-                </span>
-              </div>
-              <div className="flex flex-col items-center">
-                <div className="flex size-8 items-center justify-center rounded-full bg-black/40 backdrop-blur">
-                  <MessageCircle className="size-3.5 text-white" />
-                </div>
-                <span className="mt-0.5 text-[10px] font-semibold">
-                  {formatCount(template.commentCount)}
-                </span>
-              </div>
-              <div className="flex flex-col items-center">
-                <div className="flex size-8 items-center justify-center rounded-full bg-black/40 backdrop-blur">
-                  <Eye className="size-3.5 text-white" />
-                </div>
-                <span className="mt-0.5 text-[10px] font-semibold">
-                  {formatCount(template.viewCount)}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {isSlideshow && (
-            <>
-              <button
-                type="button"
-                onClick={prevSlide}
-                className="absolute left-2 top-1/2 z-20 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
-                aria-label="Previous slide"
-              >
-                <ChevronLeft className="size-4" />
-              </button>
-              <button
-                type="button"
-                onClick={nextSlide}
-                className="absolute right-2 top-1/2 z-20 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
-                aria-label="Next slide"
-              >
-                <ChevronRight className="size-4" />
-              </button>
-              <div className="absolute inset-x-0 bottom-2 z-20 flex items-center justify-center gap-1.5">
-                {slides.map((_, i) => (
-                  <span
-                    key={i}
-                    className={`size-1.5 rounded-full ${i === slideIdx ? 'bg-white' : 'bg-white/40'}`}
-                  />
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-2 text-center text-[11px] text-muted-foreground">
-        {template?.sourceCreator ? (
-          <span className="font-medium text-foreground">
-            @
-            {template.sourceCreator}
-          </span>
+      {isCompiled && compiledUrl ? (
+        isCompiledVideo ? (
+          <video src={compiledUrl} className="size-full object-cover" muted loop playsInline autoPlay />
         ) : (
-          <span>Trending source</span>
-        )}
-        {template?.sourcePlatform && (
-          <>
-            {' \u00B7 '}
-            <span className="capitalize">{template.sourcePlatform}</span>
-          </>
-        )}
-      </div>
-    </div>
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={compiledUrl} alt={item.caption?.slice(0, 60) || ''} className="size-full object-cover" />
+        )
+      ) : previewProps ? (
+        <div className="size-full">
+          <RemotionPreviewPlayer
+            contentType={previewProps.contentType}
+            inputProps={{ ...previewProps.inputProps, slideIndex: 0 }}
+          />
+        </div>
+      ) : compiledUrl ? (
+        isCompiledVideo ? (
+          <video src={compiledUrl} className="size-full object-cover" muted loop playsInline autoPlay />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={compiledUrl} alt={item.caption?.slice(0, 60) || ''} className="size-full object-cover" />
+        )
+      ) : (
+        <div className="flex size-full items-center justify-center">
+          <Loader2 className="size-5 animate-spin text-white/60" />
+        </div>
+      )}
+    </motion.div>
   );
 }
 
