@@ -373,6 +373,29 @@ export type CampaignTemplateRow = {
   commentCount: number | null;
 };
 
+// Maps a CampaignTemplateRow (camelCase) to the engine's expected shape
+// (snake_case). The engine's Pydantic model requires `content_type`, not
+// `contentType` — without this mapping every template fails validation and
+// the engine returns 422 Unprocessable Entity.
+function mapTemplateToEngine(t: CampaignTemplateRow): Record<string, any> {
+  return {
+    id: t.id,
+    content_type: t.contentType,
+    source_url: t.sourceUrl,
+    structure: t.structure,
+    angles: t.angles,
+    media_url: t.mediaUrl,
+    thumbnail_url: t.thumbnailUrl,
+    thumbnail_urls: t.thumbnailUrls,
+    slide_captions: t.slideCaptions,
+    source_platform: t.sourcePlatform,
+    source_creator: t.sourceCreator,
+    view_count: t.viewCount,
+    like_count: t.likeCount,
+    comment_count: t.commentCount,
+  };
+}
+
 async function fetchCampaignTemplates(
   db: any,
   _orgId: string,                    // prefix with _ to suppress unused warning
@@ -501,7 +524,7 @@ export async function generateCampaignPosts(
   }
 
   // Resolve angles with names
-  let anglesWithNames: { angleId: string; angleName: string; weight: number }[] = [];
+  let anglesWithNames: { angle_id: string; angle_name: string; weight: number }[] = [];
   if (campaignAngles.length > 0) {
     const angleRows = await db
       .select()
@@ -512,8 +535,8 @@ export async function generateCampaignPosts(
     anglesWithNames = campaignAngles.map((a) => {
       const row = angleMap.get(a.angleId);
       return {
-        angleId: a.angleId,
-        angleName: row?.name || 'General',
+        angle_id: a.angleId,
+        angle_name: row?.name || 'General',
         weight: a.weight,
       };
     });
@@ -551,7 +574,7 @@ export async function generateCampaignPosts(
     quality_threshold: campaign.qualityThreshold ?? 0.7,
     target_platforms: targetPlatforms,
     content_mode: 'normal',
-    templates,
+    templates: templates.map(mapTemplateToEngine),
   };
 
   onProgress?.({
