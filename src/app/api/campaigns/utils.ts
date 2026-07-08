@@ -28,6 +28,32 @@ export const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:300
 export const ENGINE_URL = process.env.NATIVPOST_ENGINE_URL || 'http://localhost:8000';
 export const API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 
+// Content types the Remotion preview pipeline knows how to render.
+// Mirrors COMPOSITION_BY_TYPE in src/components/editor/RemotionPreviewPlayer.tsx.
+// Anything else can't be previewed on the Blitz swipe card and must be
+// skipped at insert time rather than persisting a dead row.
+const RENDERABLE_CONTENT_TYPES = new Set([
+  'slideshow',
+  'carousel',
+  'data_story',
+  'wall_of_text',
+  'talking_head',
+  'green_screen',
+  'video_hook',
+  'ugc',
+  'reel',
+  'single_image',
+]);
+
+function hasRenderableMedia(slots: Record<string, any>): boolean {
+  if (!slots) return false;
+  if (slots.background?.url) return true;
+  if (slots.hookVideo?.url) return true;
+  if (slots.demoVideo?.url) return true;
+  if (Array.isArray(slots.slides) && slots.slides.some((s: any) => s?.url)) return true;
+  return false;
+}
+
 // ── Content type mapping ─────────────────────────────────────────────────────
 
 const MIX_KEY_TO_CONTENT_TYPE: Record<string, string> = {
@@ -369,6 +395,17 @@ async function fetchCampaignTemplates(
 
   return (templates as any[])
     .filter((t) => uniqueTypes.includes(t.contentType))
+    .filter((t) => {
+      // A template with no renderable media can't produce a Blitz card.
+      // Keep it only if it has a mediaUrl OR a non-empty thumbnailUrls
+      // collection — mirrors the ingestion-must-gate-on-media invariant.
+      if (t.mediaUrl) return true;
+      if (t.thumbnailUrl) return true;
+      const tu = t.thumbnailUrls;
+      if (Array.isArray(tu) && tu.length > 0) return true;
+      if (tu && typeof tu === 'object' && Object.keys(tu).length > 0) return true;
+      return false;
+    })
     .map((t) => ({
       id: t.id,
       contentType: t.contentType,
@@ -575,7 +612,7 @@ export async function generateCampaignPosts(
       // Build sourceMediaSlots from the template row. Blitz + Campaigns
       // are media-remix, not from-scratch generation, so slots come from
       // the template's mediaUrl / thumbnailUrls / slideCaptions.
-      let sourceMediaSlots = template ? buildSourceMediaSlots(template) : {};
+      let sourceMediaSlots: Record<string, any> = template ? buildSourceMediaSlots(template) : {};
 
       // Attempt Media Set substitution for safe-swap content types
       // (slideshow / carousel / wall_of_text). Other types keep template
@@ -585,13 +622,36 @@ export async function generateCampaignPosts(
         try {
           const set = await pickDefaultSet(db, orgId, resolvedContentType);
           if (set) {
-            sourceMediaSlots = applySetToSlots(sourceMediaSlots, set, resolvedContentType);
+            sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, resolvedContentType);
           }
         } catch (setErr: any) {
           // Set resolution is best-effort — log and fall through to
           // template media so a broken Set doesn't fail the whole post.
           console.warn(`[Campaign] Set substitution failed for post ${i}:`, setErr?.message || setErr);
         }
+      }
+
+      // System-error boundary: a post that reaches the Blitz swipe card
+      // without renderable media results in a dead RIGHT card
+      // (useBlitzPreviewProps returns null). Skip these posts rather
+      // than persisting them. Only applies when a template is linked —
+      // the text-only path below has its own generator fallback.
+      if (template && !hasRenderableMedia(sourceMediaSlots)) {
+        const detail = `No renderable media for template ${template.id} (${resolvedContentType})`;
+        console.warn(`[Campaign] Post ${i} skipped:`, detail);
+        onPostError?.({ postIndex: i, detail });
+        failedPosts++;
+        continue;
+      }
+
+      // Content type must be one the Remotion preview pipeline supports,
+      // otherwise the Blitz swipe card can't render it.
+      if (!RENDERABLE_CONTENT_TYPES.has(resolvedContentType)) {
+        const detail = `Content type '${resolvedContentType}' has no Remotion composition`;
+        console.warn(`[Campaign] Post ${i} skipped:`, detail);
+        onPostError?.({ postIndex: i, detail });
+        failedPosts++;
+        continue;
       }
 
       const editorScript = template

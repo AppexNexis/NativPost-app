@@ -579,20 +579,29 @@ function CardPair({
 }) {
   return (
     <div className="flex w-full max-w-3xl flex-col items-center gap-4">
-      <div className="flex w-full items-center justify-center gap-3 md:gap-4">
+      {/*
+        Overlap layout: the source phone frame (LEFT) and the generated
+        card (RIGHT) are pulled together with a negative left margin on
+        the RIGHT column so they read as one composed pair (matches the
+        usefastlane stacked look — screenshots 3-5). The RIGHT card sits
+        on top via z-10 so the drag stamps and drop shadow render cleanly.
+      */}
+      <div className="flex w-full items-center justify-center">
         <SourceTemplatePanel
           template={template}
           slideIdx={slideIdx}
           onSlideIdxChange={onSlideIdxChange}
         />
-        <SwipeCard
-          item={item}
-          template={template}
-          behindCount={behindCount}
-          slideIdx={slideIdx}
-          onSwipeApprove={onApprove}
-          onSwipeReject={onReject}
-        />
+        <div className="relative z-10 -ml-6 md:-ml-8">
+          <SwipeCard
+            item={item}
+            template={template}
+            behindCount={behindCount}
+            slideIdx={slideIdx}
+            onSwipeApprove={onApprove}
+            onSwipeReject={onReject}
+          />
+        </div>
       </div>
 
       {/* Action bar */}
@@ -716,7 +725,7 @@ function SwipeCard({
   }
 
   return (
-    <div className="flex w-[min(38vw,300px)] shrink-0 flex-col">
+    <div className="flex w-[min(32vw,260px)] shrink-0 flex-col">
       {/* Chip row above card */}
       <div className="mb-2 flex min-h-[28px] items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
@@ -802,7 +811,7 @@ function SwipeCard({
               opacity: 0,
               transition: { duration: 0.28 },
             }}
-            transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 26, mass: 0.9 }}
           >
             {/* Approve / Reject stamps that fade in during drag */}
             <motion.div
@@ -844,54 +853,19 @@ function SwipeCard({
                 />
               </div>
             ) : (
-              // No media yet. Rather than lock the card behind a spinner
-              // (which was blocking users when engine falls back with no
-              // matching template), render the caption as a readable card
-              // so the user can still Approve / Skip / Edit — matches
-              // usefastlane behavior of always showing SOMETHING per post.
-              <CaptionFallbackCard item={item} />
+              // Upstream (campaigns/utils.ts) now gates on hasRenderableMedia
+              // before inserting a contentItem, so the swipe card is
+              // guaranteed a valid preview. Reaching this branch means the
+              // gate regressed — show a small spinner so the poll loop
+              // above (line ~388) can still refresh into a valid state
+              // rather than locking users on a text error.
+              <div className="flex size-full items-center justify-center">
+                <Loader2 className="size-5 animate-spin text-white/60" />
+              </div>
             )}
           </motion.div>
         </AnimatePresence>
       </div>
-    </div>
-  );
-}
-
-/* ─── CaptionFallbackCard — no-media graceful state ───────────────── */
-
-function CaptionFallbackCard({ item }: { item: BlitzItem }) {
-  const caption = item.caption || '';
-  const hashtags = Array.isArray((item as any).hashtags) ? (item as any).hashtags as string[] : [];
-  const contentTypeLabel = String(item.contentType || 'post').replace(/_/g, ' ');
-
-  return (
-    <div className="flex size-full flex-col items-stretch justify-between bg-gradient-to-br from-neutral-900 via-neutral-800 to-neutral-950 p-5 text-white">
-      <div className="flex items-center gap-2">
-        <div className="flex size-8 items-center justify-center rounded-full bg-white/10">
-          <Sparkles className="size-4" />
-        </div>
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-white/70">
-          {contentTypeLabel}
-        </span>
-      </div>
-
-      <div className="mt-4 flex-1 overflow-y-auto pr-1 text-sm leading-relaxed">
-        {caption ? (
-          <p className="whitespace-pre-wrap">{caption}</p>
-        ) : (
-          <p className="text-white/60">Caption will appear here once generation finishes.</p>
-        )}
-        {hashtags.length > 0 && (
-          <p className="mt-3 text-xs text-sky-300">
-            {hashtags.slice(0, 8).map(h => (h.startsWith('#') ? h : `#${h}`)).join(' ')}
-          </p>
-        )}
-      </div>
-
-      <p className="mt-3 text-[10px] uppercase tracking-wider text-white/40">
-        Preview media loading…
-      </p>
     </div>
   );
 }
@@ -931,23 +905,13 @@ function SourceTemplatePanel({
   // Render a skeleton frame while the template summary hydrates so the
   // layout width stays stable — never render "No source template linked."
   return (
-    <div className="flex w-[min(38vw,300px)] shrink-0 flex-col">
+    <div className="flex w-[min(32vw,260px)] shrink-0 flex-col">
       <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
         Remixed From
       </p>
 
       <div className="relative w-full rounded-3xl border border-border bg-neutral-950 p-1.5 shadow-lg">
         <div className="relative aspect-[9/16] max-h-[min(65vh,560px)] w-full overflow-hidden rounded-2xl bg-black">
-          {/* Red status bar */}
-          <div className="absolute inset-x-0 top-0 z-20 flex h-6 items-center justify-between bg-red-600 px-3 text-[10px] font-semibold text-white">
-            <span>9:41</span>
-            <div className="flex items-center gap-1">
-              <div className="h-1.5 w-3 rounded-sm bg-white/80" />
-              <div className="h-1.5 w-3 rounded-sm bg-white/60" />
-              <div className="h-2 w-4 rounded-sm border border-white/80" />
-            </div>
-          </div>
-
           {hero ? (
             isVideo ? (
               <video src={hero} className="size-full object-cover" muted loop playsInline autoPlay />
