@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
         ownMediaMix: body.ownMediaMix ?? 50,
         influencerFrequency: body.influencerFrequency ?? 0,
         targetAccounts: body.targetAccounts || [],
-        postsPerDay: body.postsPerDay ?? 3,
+        postsPerDay: body.postsPerDay ?? 10,
         campaignLengthDays: body.campaignLengthDays ?? 7,
         startDate: body.startDate ? new Date(body.startDate) : null,
         totalPosts: body.totalPosts || 0,

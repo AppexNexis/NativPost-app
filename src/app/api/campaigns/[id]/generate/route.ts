@@ -184,7 +184,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         ),
       );
     const todayCount = todaysRows[0]?.count ?? 0;
-    const dailyLimit = campaign.postsPerDay || 3;
+    const dailyLimit = campaign.postsPerDay || 10;
     if (todayCount >= dailyLimit) {
       return NextResponse.json(
         {

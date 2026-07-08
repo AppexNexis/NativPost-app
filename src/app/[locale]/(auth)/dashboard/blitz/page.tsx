@@ -26,7 +26,7 @@ const DEFAULT_BLITZ = {
   ownMediaMix: 50,
   influencerFrequency: 0,
   targetAccounts: [] as { accountId: string; platform: string }[],
-  postsPerDay: 3,
+  postsPerDay: 10,
   campaignLengthDays: 1,
   qualityThreshold: 0.7,
   reRollsRemaining: 4,

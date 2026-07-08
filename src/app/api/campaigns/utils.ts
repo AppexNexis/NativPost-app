@@ -477,7 +477,7 @@ export async function generateCampaignPosts(
   onPostComplete?: (event: PostCompleteEvent) => void | Promise<void>,
   onPostError?: (event: PostErrorEvent) => void | Promise<void>,
 ): Promise<GenerationResult> {
-  const postsPerDay = campaign.postsPerDay || 3;
+  const postsPerDay = campaign.postsPerDay || 10;
   const campaignLengthDays = campaign.campaignLengthDays || 7;
   const totalPosts = postsPerDay * campaignLengthDays;
 
@@ -641,6 +641,32 @@ export async function generateCampaignPosts(
   // template_id to multiple posts, producing identical-looking cards.
   const usedTemplateIds = new Set<string>();
 
+  // Pre-compute a content-type rotation schedule from the campaign mix
+  // so the Blitz queue always shows visually diverse cards. Even when the
+  // engine returns monotonous types, the client-side cycles through the
+  // available template content types in round-robin order.
+  const mixContentTypes = Object.entries(contentMix)
+    .filter(([, v]) => (v || 0) > 0)
+    .map(([key]) => MIX_KEY_TO_TEMPLATE_CONTENT_TYPE[key])
+    .filter(Boolean) as string[];
+  const uniqueMixTypes = Array.from(new Set(mixContentTypes));
+
+  // Build per-type template pools for fast lookup during dedup fallback.
+  const templatesByType = new Map<string, CampaignTemplateRow[]>();
+  for (const t of templates) {
+    const list = templatesByType.get(t.contentType) || [];
+    list.push(t);
+    templatesByType.set(t.contentType, list);
+  }
+
+  let contentTypeRoundRobin = 0;
+  function nextContentType(): string {
+    if (uniqueMixTypes.length === 0) return 'reel';
+    const ct = uniqueMixTypes[contentTypeRoundRobin % uniqueMixTypes.length]!;
+    contentTypeRoundRobin++;
+    return ct;
+  }
+
   for (const [i, post] of engineResult.posts.entries()) {
     if (inserted >= postsToCreate) {
       break;
@@ -657,41 +683,57 @@ export async function generateCampaignPosts(
       // random fallback from the fetched pool so every Blitz card has
       // renderable source media. Skip-by-no-template silently starves the
       // queue — user gets fewer cards than postsPerDay.
+      // ── Template selection with content-type cycling ──
+      // Round-robin through the mix's content types so the Blitz queue
+      // always shows visually diverse cards. Content type diversity
+      // matters more than matching the engine's suggested template.
+      const targetContentType = nextContentType();
+
       let template: CampaignTemplateRow | undefined = post.template_id
         ? templatesById.get(post.template_id)
         : undefined;
 
-      if (!template && templates.length > 0) {
-        // Prefer templates matching the post's content_type; fall back
-        // to any available template in the fetched set. Exclude templates
-        // already used in this batch so consecutive cards look different.
-        const sameType = templates.filter(
-          (t) => t.contentType === post.content_type && !usedTemplateIds.has(t.id),
-        );
-        const pool = sameType.length > 0 ? sameType : templates.filter(
-          (t) => !usedTemplateIds.has(t.id),
-        );
-        const finalPool = pool.length > 0 ? pool : templates;
-        template = finalPool[Math.floor(Math.random() * finalPool.length)]!;
-        if (template) {
+      // If the engine-suggested template was already used OR it doesn't
+      // match the round-robin target type, try to find a better one.
+      const needsSwap = !template
+        || usedTemplateIds.has(template.id)
+        || (uniqueMixTypes.length > 1 && template.contentType !== targetContentType);
+
+      if (needsSwap && templates.length > 0) {
+        // Try 1: unused template of the round-robin target type
+        const pool1 = (templatesByType.get(targetContentType) || [])
+          .filter((t) => !usedTemplateIds.has(t.id));
+        if (pool1.length > 0) {
+          template = pool1[Math.floor(Math.random() * pool1.length)]!;
+        } else {
+          // Try 2: any unused template of a different content type
+          // (cross-grade to maintain visual diversity across cards)
+          const otherTypes = templates.filter(
+            (t) => !usedTemplateIds.has(t.id) && t.contentType !== template?.contentType,
+          );
+          if (otherTypes.length > 0) {
+            template = otherTypes[Math.floor(Math.random() * otherTypes.length)]!;
+            console.warn(
+              `[Campaign] Post ${i}: type "${targetContentType}" pool exhausted, ` +
+              `cross-grading to "${template.contentType}"`,
+            );
+          } else {
+            // Try 3: any unused template (even same type — last resort)
+            const anyUnused = templates.filter((t) => !usedTemplateIds.has(t.id));
+            if (anyUnused.length > 0) {
+              template = anyUnused[Math.floor(Math.random() * anyUnused.length)]!;
+            }
+            // If all unused templates are exhausted, keep the
+            // engine-suggested template (even if it's a duplicate).
+            // Better to show a repeat card than produce a dead slot.
+          }
+        }
+        if (template && !post.template_id) {
           console.warn(
-            `[Campaign] Post ${i}: no matching template_id, using fallback ` +
-            `${template.id} (${template.contentType})`,
+            `[Campaign] Post ${i}: no engine-suggested template_id, ` +
+            `assigned ${template.id} (${template.contentType})`,
           );
         }
-      }
-
-      // If the engine-suggested template was already used in this batch,
-      // swap it for a different one of the same type.
-      if (template && usedTemplateIds.has(template.id)) {
-        const sameType = templates.filter(
-          (t) => t.contentType === template!.contentType && !usedTemplateIds.has(t.id),
-        );
-        if (sameType.length > 0) {
-          template = sameType[Math.floor(Math.random() * sameType.length)]!;
-        }
-        // If no unused same-type template, keep the current one (worse
-        // than dedup but better than zero cards).
       }
 
       if (template) {
@@ -845,6 +887,145 @@ export async function generateCampaignPosts(
       console.error(`[Campaign] Post ${i} failed:`, detail);
       onPostError?.({ postIndex: i, detail });
       failedPosts++;
+    }
+  }
+
+  // ── Template fallback: fill remaining quota from unused templates ──
+  // When the engine doesn't produce enough unique posts (e.g., same
+  // template_id assigned to multiple posts, or engine returns fewer
+  // posts than postsPerDay), take templates directly from the library.
+  // Each unused template becomes a Blitz card with basic caption text
+  // and the same source media — no engine call needed.
+  //
+  // Content types are cycled round-robin through the campaign mix so the
+  // Blitz queue always shows visually diverse cards. Without this, a
+  // library with mostly slideshow templates would fill every remaining
+  // slot with slideshow cards.
+  if (inserted < postsToCreate && templates.length > 0) {
+    const remaining = postsToCreate - inserted;
+
+    // Build per-type pools of unused templates for round-robin cycling.
+    const unusedByType = new Map<string, CampaignTemplateRow[]>();
+    for (const t of templates) {
+      if (usedTemplateIds.has(t.id)) continue;
+      if (!RENDERABLE_CONTENT_TYPES.has(t.contentType)) continue;
+      const list = unusedByType.get(t.contentType) || [];
+      list.push(t);
+      unusedByType.set(t.contentType, list);
+    }
+
+    // Cycle through content types, picking one unused template per type.
+    // Keep going until all slots are filled or no unused templates remain.
+    const fillTemplates: CampaignTemplateRow[] = [];
+    let safety = 0;
+    while (fillTemplates.length < remaining && safety < remaining * 3) {
+      safety++;
+      const targetType = nextContentType();
+      const pool = unusedByType.get(targetType);
+      if (pool && pool.length > 0) {
+        const picked = pool.shift()!;
+        fillTemplates.push(picked);
+        usedTemplateIds.add(picked.id);
+      } else {
+        // That type's pool is empty — grab any remaining unused template.
+        for (const [, typePool] of unusedByType) {
+          if (typePool.length > 0) {
+            const picked = typePool.shift()!;
+            fillTemplates.push(picked);
+            usedTemplateIds.add(picked.id);
+            break;
+          }
+        }
+      }
+    }
+
+    if (fillTemplates.length > 0) {
+      console.warn(
+        `[Campaign] Engine produced ${inserted} unique posts (${failedPosts} failed). ` +
+        `Filling ${fillTemplates.length} slots with content-type-cycled templates.`,
+      );
+    }
+
+    for (const template of fillTemplates) {
+      if (inserted >= postsToCreate) break;
+
+      try {
+        const resolvedContentType = template.contentType;
+        if (!RENDERABLE_CONTENT_TYPES.has(resolvedContentType)) continue;
+
+        let sourceMediaSlots = buildSourceMediaSlots(template);
+
+        // Apply media set substitution (same logic as engine posts)
+        try {
+          const set = await pickDefaultSet(db, orgId, resolvedContentType);
+          if (set) {
+            sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, resolvedContentType);
+          }
+        } catch { /* keep original slots */ }
+
+        const slideCaptions = template.slideCaptions;
+        const firstSlideCaption = Array.isArray(slideCaptions)
+          ? slideCaptions[0]
+          : slideCaptions && typeof slideCaptions === 'object'
+            ? Object.values(slideCaptions)[0]
+            : undefined;
+        const caption = firstSlideCaption
+          || `Hook text for ${resolvedContentType.replace(/_/g, ' ')}`;
+
+        const editorScript = buildEditorScript(
+          { caption, content_type: resolvedContentType, template_id: template.id },
+          { contentType: resolvedContentType, slideCaptions: template.slideCaptions, thumbnailUrls: template.thumbnailUrls },
+        );
+
+        const reasoning = buildReasoning(
+          {},
+          { contentType: resolvedContentType },
+        );
+
+        const rawSource = template.mediaUrl || template.thumbnailUrl || null;
+
+        const [contentItem] = await db
+          .insert(contentItemSchema)
+          .values({
+            orgId: campaign.orgId,
+            caption,
+            status: 'pending_review',
+            contentType: resolvedContentType,
+            enrichmentData: {
+              sourceMediaSlots,
+              sourceTemplateSnapshot: {
+                viewCount: template.viewCount,
+                likeCount: template.likeCount,
+                commentCount: template.commentCount,
+                thumbnailUrls: template.thumbnailUrls,
+              },
+              editorScript,
+              reasoning,
+            },
+            graphicUrls: rawSource ? [rawSource] : [],
+            templateId: template.id,
+            contentFormat: resolvedContentType === 'slideshow' ? 'carousel' : 'single',
+            aspectRatio: '9:16',
+            aiModelUsed: 'template-fallback',
+          })
+          .returning();
+
+        contentItemIds.push(contentItem.id);
+
+        await db.insert(campaignContentSchema).values({
+          campaignId: campaign.id,
+          contentItemId: contentItem.id,
+          sequenceIndex: contentItemIds.length - 1,
+          scheduledDate: calculateSchedule(campaign.startDate, postsPerDay, contentItemIds.length - 1).scheduledDate,
+          scheduledTime: calculateSchedule(campaign.startDate, postsPerDay, contentItemIds.length - 1).scheduledTime,
+        });
+
+        inserted++;
+        usedTemplateIds.add(template.id);
+      } catch (err: any) {
+        console.error(`[Campaign] Template fallback failed for ${template.id}:`, err?.message || err);
+        failedPosts++;
+      }
     }
   }
 

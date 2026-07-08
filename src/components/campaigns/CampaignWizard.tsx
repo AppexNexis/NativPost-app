@@ -67,7 +67,7 @@ export function CampaignWizard({
     ownMediaMix: 50,
     influencerFrequency: 0,
     targetAccounts: [],
-    postsPerDay: 3,
+    postsPerDay: 10,
     campaignLengthDays: 7,
     startDate: null,
     totalPosts: 0,

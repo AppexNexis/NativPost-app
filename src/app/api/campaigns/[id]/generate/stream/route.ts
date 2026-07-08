@@ -77,7 +77,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           .set({ status: 'generating', updatedAt: new Date() })
           .where(eq(campaignSchema.id, id));
 
-        send({ type: 'progress', postIndex: 0, total: (campaign.postsPerDay || 3) * (campaign.campaignLengthDays || 7), status: 'starting', percent: 0 });
+        send({ type: 'progress', postIndex: 0, total: (campaign.postsPerDay || 10) * (campaign.campaignLengthDays || 7), status: 'starting', percent: 0 });
 
         // 3. Generate with streaming callbacks
         const result = await generateCampaignPosts(

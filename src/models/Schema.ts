@@ -633,7 +633,7 @@ export const campaignSchema = pgTable('campaign', {
   ownMediaMix: integer('own_media_mix').default(50),
   influencerFrequency: integer('influencer_frequency').default(0),
   targetAccounts: jsonb('target_accounts').default([]),
-  postsPerDay: integer('posts_per_day').default(3),
+  postsPerDay: integer('posts_per_day').default(10),
   campaignLengthDays: integer('campaign_length_days').default(7),
   startDate: timestamp('start_date', { mode: 'date' }),
   totalPosts: integer('total_posts').default(0),

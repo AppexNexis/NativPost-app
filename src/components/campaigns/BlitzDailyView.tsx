@@ -54,6 +54,40 @@ type GenerateOutcome =
 
 const PENDING_STATUSES = new Set(['pending_review', 'draft', 'generating']);
 
+// Session-storage key so the daily-limit state survives a page refresh.
+// Without this, a user who exhausts their daily Blitz can refresh the
+// page and the auto-generate + auto-refill effects kick in before the
+// daily-limit useEffect, producing more posts past the limit.
+const SESSION_KEY_DAILY_LIMIT = 'blitz_daily_limit';
+
+function getTodayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function readSessionDailyLimit(campaignId: string): { count: number; limit: number; nextResetAt: string } | null {
+  try {
+    const raw = sessionStorage.getItem(`${SESSION_KEY_DAILY_LIMIT}_${campaignId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    // Only honor the stored limit if it's from today.
+    if (parsed.dateKey !== getTodayKey()) return null;
+    if (parsed.nextResetAt && new Date(parsed.nextResetAt) <= new Date()) return null;
+    return { count: parsed.count, limit: parsed.limit, nextResetAt: parsed.nextResetAt };
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionDailyLimit(campaignId: string, count: number, limit: number, nextResetAt: string) {
+  try {
+    sessionStorage.setItem(
+      `${SESSION_KEY_DAILY_LIMIT}_${campaignId}`,
+      JSON.stringify({ dateKey: getTodayKey(), count, limit, nextResetAt }),
+    );
+  } catch { /* quota exceeded or private browsing — non-critical */ }
+}
+
 function getNextResetTime(): string {
   const now = new Date();
   const next = new Date(now);
@@ -79,12 +113,28 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
   const [editingItem, setEditingItem] = useState<BlitzItem | null>(null);
   const autoGenAttempted = useRef(false);
 
+  const dailyLimit = campaign.postsPerDay || 3;
+
   const queue = useMemo(
     () => items.filter(i => PENDING_STATUSES.has(String(i.status || 'pending_review'))),
     [items],
   );
   const approvedCount = items.filter(i => i.status === 'approved').length;
   const totalToday = items.length;
+
+  // Derived (synchronous) daily-limit check so the auto-generate and
+  // auto-refill effects can read it BEFORE the async daily-limit
+  // useEffect fires. Uses sessionStorage as a safety net across refreshes.
+  const dailyLimitReached = useMemo(() => {
+    // Check sessionStorage first — survives page refreshes.
+    const stored = readSessionDailyLimit(campaign.id);
+    if (stored && stored.count >= stored.limit) return stored;
+    // Fall back to counting items in this session.
+    if (totalToday >= dailyLimit && queue.length === 0) {
+      return { count: totalToday, limit: dailyLimit, nextResetAt: getNextResetTime() };
+    }
+    return null;
+  }, [campaign.id, totalToday, dailyLimit, queue.length]);
 
   const refresh = useCallback(async () => {
     try {
@@ -128,6 +178,7 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
         return;
       }
       if (data.dailyLimitReached) {
+        writeSessionDailyLimit(campaign.id, data.count, data.limit, data.nextResetAt);
         setOutcome({
           kind: 'dailyLimit',
           count: data.count,
@@ -200,8 +251,22 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
   // Auto-generate today's queue once on mount if nothing is queued,
   // OR if all existing items have no enrichable media (stale items from
   // a previous failed generation before sourceMediaSlots were populated).
+  // NEVER auto-generate when the daily limit is already reached — this
+  // is the primary fix for the "refresh resets my limit" bug.
   useEffect(() => {
     if (autoGenAttempted.current) {
+      return;
+    }
+    // Daily limit already reached — do NOT auto-generate. This guard
+    // runs synchronously (derived from useMemo) so it beats the async
+    // daily-limit useEffect.
+    if (dailyLimitReached) {
+      setOutcome({
+        kind: 'dailyLimit',
+        count: dailyLimitReached.count,
+        limit: dailyLimitReached.limit,
+        nextResetAt: dailyLimitReached.nextResetAt,
+      });
       return;
     }
     if (items.length > 0) {
@@ -327,15 +392,17 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
 
   // On mount, detect whether the daily limit is already exhausted so a
   // refresh never bypasses the limit. The server counts pending + approved
-  // + skipped items against postsPerDay.
+  // + skipped items against postsPerDay. Persists to sessionStorage so
+  // the derived dailyLimitReached check survives a full page refresh.
   useEffect(() => {
-    const limit = campaign.postsPerDay || 3;
-    if (totalToday >= limit && queue.length === 0 && outcome.kind === 'none') {
+    if (totalToday >= dailyLimit && queue.length === 0 && outcome.kind === 'none') {
+      const nextResetAt = getNextResetTime();
+      writeSessionDailyLimit(campaign.id, totalToday, dailyLimit, nextResetAt);
       setOutcome({
         kind: 'dailyLimit',
         count: totalToday,
-        limit,
-        nextResetAt: getNextResetTime(),
+        limit: dailyLimit,
+        nextResetAt,
       });
     }
     // Only run on mount.
@@ -353,14 +420,15 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
     if (actionPending) return;
     if (error) return;
     if (outcome.kind !== 'none') return;
+    if (dailyLimitReached) return;
     if (queue.length >= 2) return;
-    if (totalToday >= (campaign.postsPerDay || 3)) return;
+    if (totalToday >= dailyLimit) return;
     refillRef.current = true;
     void runGenerate().finally(() => {
       refillRef.current = false;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queue.length, isGenerating, actionPending, outcome.kind, totalToday, error]);
+  }, [queue.length, isGenerating, actionPending, outcome.kind, totalToday, error, dailyLimitReached, dailyLimit]);
 
   // Keyboard shortcuts.
   useEffect(() => {
@@ -599,9 +667,23 @@ function CardDeck({
     [current, behind],
   );
 
+  // Format content type label: "video_hook" → "Video Hook"
+  const typeLabel = current
+    ? String(current.contentType)
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+    : null;
+
   return (
-    <div className="relative mx-auto aspect-[9/16] w-[min(40vw,300px)] max-h-[min(65vh,520px)]">
-      {stack.map((card, idx) => {
+    <div className="flex flex-col items-center gap-2">
+      {/* Content type label */}
+      {typeLabel && (
+        <span className="rounded-full bg-muted px-3 py-1 text-[11px] font-medium capitalize text-foreground/70">
+          {typeLabel}
+        </span>
+      )}
+      <div className="relative mx-auto aspect-[9/16] w-[min(40vw,300px)] max-h-[min(65vh,520px)]">
+        {stack.map((card, idx) => {
         const isTop = idx === 0;
         return (
           <div
@@ -623,6 +705,7 @@ function CardDeck({
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
@@ -743,58 +826,86 @@ function BlitzSwipeCard({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={compiledUrl} alt={item.caption?.slice(0, 60) || ''} className="size-full object-cover" />
         )
-      ) : isSlideshowType && slides.length > 0 ? (
-        // Static slideshow with prev/next arrows — matches editor preview.
+      ) : isSlideshowType ? (
+        // Static slideshow with prev/next arrows + text overlay.
+        // Slideshow, carousel, and data_story types ALWAYS render this way
+        // on the Blitz card — never as a Remotion video. The content type
+        // determines the correct preview representation.
         // Arrows use onPointerDown + stopPropagation so they don't trigger
         // the card drag gesture.
         <>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={slides[slideIdx]?.url || ''}
-            alt={`Slide ${slideIdx + 1}`}
-            className="size-full object-cover"
-          />
-
-          {/* Slide dots */}
-          <div className="absolute inset-x-0 bottom-3 z-20 flex items-center justify-center gap-1.5">
-            {slides.map((_, i) => (
-              <span
-                key={i}
-                className={`size-1.5 rounded-full transition-colors ${
-                  i === slideIdx ? 'bg-white' : 'bg-white/40'
-                }`}
-              />
-            ))}
-          </div>
-
-          {/* Prev/next arrows — only on the top card */}
-          {isTop && slides.length > 1 && (
+          {slides.length > 0 ? (
             <>
-              <button
-                type="button"
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  setSlideIdx((p) => (p - 1 + slides.length) % slides.length);
-                }}
-                className="absolute left-2 top-1/2 z-20 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
-                aria-label="Previous slide"
-              >
-                <ChevronLeft className="size-4" />
-              </button>
-              <button
-                type="button"
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  setSlideIdx((p) => (p + 1) % slides.length);
-                }}
-                className="absolute right-2 top-1/2 z-20 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
-                aria-label="Next slide"
-              >
-                <ChevronRight className="size-4" />
-              </button>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={slides[slideIdx]?.url || ''}
+                alt={`Slide ${slideIdx + 1}`}
+                className="size-full object-cover"
+              />
+
+              {/* Slide dots */}
+              <div className="absolute inset-x-0 bottom-3 z-20 flex items-center justify-center gap-1.5">
+                {slides.map((_, i) => (
+                  <span
+                    key={i}
+                    className={`size-1.5 rounded-full transition-colors ${
+                      i === slideIdx ? 'bg-white' : 'bg-white/40'
+                    }`}
+                  />
+                ))}
+              </div>
+
+              {/* Prev/next arrows — only on the top card */}
+              {isTop && slides.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setSlideIdx((p) => (p - 1 + slides.length) % slides.length);
+                    }}
+                    className="absolute left-2 top-1/2 z-20 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
+                    aria-label="Previous slide"
+                  >
+                    <ChevronLeft className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setSlideIdx((p) => (p + 1) % slides.length);
+                    }}
+                    className="absolute right-2 top-1/2 z-20 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
+                    aria-label="Next slide"
+                  >
+                    <ChevronRight className="size-4" />
+                  </button>
+                </>
+              )}
             </>
+          ) : (
+            // No slides available yet — show text overlay placeholder
+            // (slides are loading or the template has no thumbnailUrls).
+            <div className="flex size-full items-center justify-center bg-neutral-800">
+              {item.caption ? (
+                <p className="px-6 text-center text-sm leading-relaxed text-white/80">
+                  {item.caption}
+                </p>
+              ) : (
+                <Loader2 className="size-5 animate-spin text-white/60" />
+              )}
+            </div>
+          )}
+
+          {/* Text/caption overlay — positioned at the bottom of the card */}
+          {item.caption && slides.length > 0 && (
+            <div className="absolute inset-x-0 bottom-11 z-20 px-3">
+              <div className="rounded-lg bg-black/60 px-3 py-2 text-xs leading-snug text-white backdrop-blur-sm">
+                {item.caption}
+              </div>
+            </div>
           )}
         </>
       ) : previewProps ? (
