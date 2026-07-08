@@ -339,11 +339,16 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
     }
     setActionPending(item.id);
     setError(null);
-    removeFromQueue(item.id);
     try {
       await patchStatus(item.id, 'skipped');
+      // Only remove from local queue AFTER the server confirms the skip.
+      // Removing before causes a race: polling refresh() reloads the item
+      // from the server before patchStatus commits, so the card reappears.
+      removeFromQueue(item.id);
     } catch (err: any) {
       setError(err?.message || 'Reject failed');
+      // Refresh to re-sync with the server in case the item was modified
+      // by a concurrent operation.
       await refresh();
     } finally {
       setActionPending(null);
@@ -375,6 +380,7 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
     setError(null);
     try {
       await patchStatus(item.id, 'approved');
+      removeFromQueue(item.id);
       router.push(`/dashboard/content/${item.id}`);
     } catch (err: any) {
       setError(err?.message || 'Approve failed');
@@ -392,13 +398,14 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
   }, [current?.id]);
 
   // While the top card is waiting on async media generation, poll refresh
-  // every 5s. Root cause: `generateMediaForContentItem` in campaigns/utils.ts
-  // is fire-and-forget (`.catch(...)` without await), so the campaign job
-  // can flip to 'done' before sourceMediaSlots is populated. When that
-  // happens the row shows up here with an empty preview — poll until the
-  // media generator fills it in, or the user skips/approves.
+  // every 5s. Skip polling while an action is in flight (swipe/skip in
+  // progress) to avoid races between refresh() reloading the full queue
+  // and the local optimistic state transition.
   useEffect(() => {
     if (!current) {
+      return;
+    }
+    if (actionPending) {
       return;
     }
     const enrichment = (current.enrichmentData as any) || {};
@@ -417,7 +424,7 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
       void refresh();
     }, 5000);
     return () => clearInterval(id);
-  }, [current, refresh]);
+  }, [current, actionPending, refresh]);
 
   // Keyboard shortcuts.
   useEffect(() => {
@@ -824,9 +831,15 @@ function SwipeCard({
             dragConstraints={{ left: 0, right: 0 }}
             dragElastic={0.9}
             onDragEnd={(_, info) => {
-              if (info.offset.x > 120) {
+              // Exit on distance (80px) OR high-velocity flick (> 500 px/s).
+              // Tinder uses ~40% of card width for distance threshold and
+              // velocity for flick detection — 80px + 500 velocity matches
+              // similar feel on our card sizes.
+              const velocity = info.velocity.x;
+              const offset = info.offset.x;
+              if (offset > 80 || velocity > 500) {
                 onSwipeApprove();
-              } else if (info.offset.x < -120) {
+              } else if (offset < -80 || velocity < -500) {
                 onSwipeReject();
               }
             }}
@@ -879,13 +892,29 @@ function SwipeCard({
                   inputProps={inputPropsWithSlide}
                 />
               </div>
+            ) : compiledUrl ? (
+              // Raw media fallback — enrichmentData has no Remotion-valid
+              // sourceMediaSlots but graphicUrls has a URL from the template.
+              // Show the raw image/video while the polling loop (every 5s)
+              // waits for sourceMediaSlots to populate from a background job.
+              isCompiledVideo ? (
+                <video
+                  src={compiledUrl}
+                  className="size-full object-cover"
+                  muted
+                  loop
+                  playsInline
+                  autoPlay
+                />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={compiledUrl}
+                  alt={item.caption?.slice(0, 60) || 'Blitz post'}
+                  className="size-full object-cover"
+                />
+              )
             ) : (
-              // Upstream (campaigns/utils.ts) now gates on hasRenderableMedia
-              // before inserting a contentItem, so the swipe card is
-              // guaranteed a valid preview. Reaching this branch means the
-              // gate regressed — show a small spinner so the poll loop
-              // above (line ~388) can still refresh into a valid state
-              // rather than locking users on a text error.
               <div className="flex size-full items-center justify-center">
                 <Loader2 className="size-5 animate-spin text-white/60" />
               </div>

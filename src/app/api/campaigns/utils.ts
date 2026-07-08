@@ -654,12 +654,16 @@ export async function generateCampaignPosts(
       // saveVariant — the canonical clone-from-template pattern.
       const template = post.template_id ? templatesById.get(post.template_id) : undefined;
 
-      // Safeguard: the engine flagged this post as remixed from a template
-      // but we don't have that template in our fetched set (content-type
-      // mismatch, engine used a stale id, etc). Without source media the
-      // Blitz swipe card would render blank — skip instead.
-      if (post.is_remixed && post.template_id && !template) {
-        const detail = `Engine requested remix of template ${post.template_id} but it was not in the fetched template set.`;
+      // Skip ANY post without a template. The engine may return posts
+      // without template_id even at remixRatio=100 (fallback behavior).
+      // A post without a template produces an empty sourceMediaSlots →
+      // useBlitzPreviewProps returns null → Blitz shows a forever-spinner.
+      // Better to skip these and let the engine retry on the next run.
+      if (!template) {
+        const reason = post.template_id
+          ? `Template ${post.template_id} not in fetched set`
+          : 'No template_id from engine';
+        const detail = `Post ${i} has no resolvable template (${reason}).`;
         console.warn(`[Campaign] Post ${i} skipped:`, detail);
         onPostError?.({ postIndex: i, detail });
         failedPosts++;
