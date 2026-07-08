@@ -180,7 +180,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         and(
           eq(contentItemSchema.campaignId, id),
           gte(contentItemSchema.createdAt, startOfDay),
-          inArray(contentItemSchema.status, ['pending_review', 'approved']),
+          inArray(contentItemSchema.status, ['pending_review', 'approved', 'skipped']),
         ),
       );
     const todayCount = todaysRows[0]?.count ?? 0;

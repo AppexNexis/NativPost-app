@@ -21,6 +21,8 @@
 import { motion, useAnimationControls, useMotionValue, useTransform } from 'framer-motion';
 import {
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Link as LinkIcon,
   Loader2,
   Pencil,
@@ -51,6 +53,14 @@ type GenerateOutcome =
   | { kind: 'noChannels' };
 
 const PENDING_STATUSES = new Set(['pending_review', 'draft', 'generating']);
+
+function getNextResetTime(): string {
+  const now = new Date();
+  const next = new Date(now);
+  next.setDate(next.getDate() + 1);
+  next.setHours(0, 0, 0, 0); // midnight reset (matches server generate/route.ts)
+  return next.toISOString();
+}
 
 type BlitzDailyViewProps = {
   campaign: Campaign;
@@ -315,31 +325,40 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
     return () => clearInterval(id);
   }, [current, actionPending, refresh]);
 
-  // Auto-refill: when the swipe queue drops below 2 cards and generation
-  // isn't already running, kick a new batch so the user never hits an
-  // empty "You're done" state after a few skips. The server-side daily-
-  // limit gate excludes skipped items, so skipping doesn't exhaust the
-  // daily allowance.
+  // On mount, detect whether the daily limit is already exhausted so a
+  // refresh never bypasses the limit. The server counts pending + approved
+  // + skipped items against postsPerDay.
+  useEffect(() => {
+    const limit = campaign.postsPerDay || 3;
+    if (totalToday >= limit && queue.length === 0 && outcome.kind === 'none') {
+      setOutcome({
+        kind: 'dailyLimit',
+        count: totalToday,
+        limit,
+        nextResetAt: getNextResetTime(),
+      });
+    }
+    // Only run on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-refill: when the swipe queue drops below 2 cards, kick a new
+  // batch. Both the server-side daily-limit gate and the client-side
+  // totalToday guard prevent generating past postsPerDay — skipped items
+  // consume the daily allowance alongside pending and approved.
   const refillRef = useRef(false);
   useEffect(() => {
     if (refillRef.current) return;
     if (isGenerating) return;
     if (actionPending) return;
-    // Don't retry if the last generation attempt failed with an error
-    // or a terminal outcome — endless retries hammer downed APIs.
     if (error) return;
     if (outcome.kind !== 'none') return;
     if (queue.length >= 2) return;
-    // Let the server enforce the daily limit — the client doesn't know
-    // how many skipped vs pending items exist on the server side.
-    void (async () => {
-      refillRef.current = true;
-      try {
-        await runGenerate();
-      } finally {
-        refillRef.current = false;
-      }
-    })();
+    if (totalToday >= (campaign.postsPerDay || 3)) return;
+    refillRef.current = true;
+    void runGenerate().finally(() => {
+      refillRef.current = false;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queue.length, isGenerating, actionPending, outcome.kind, totalToday, error]);
 
@@ -521,7 +540,7 @@ function CardPair({
           onClick={onReject}
           disabled={actionPending}
           title="Reject"
-          className="flex size-14 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-colors hover:bg-red-600 disabled:opacity-50"
+          className="flex size-14 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-colors hover:bg-red-600 disabled:opacity-50 disabled:cursor-default"
         >
           <X className="size-6" />
         </button>
@@ -529,7 +548,7 @@ function CardPair({
           type="button"
           onClick={onEdit}
           disabled={actionPending}
-          className="inline-flex h-12 items-center gap-2 rounded-full border-2 border-border bg-background px-6 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60"
+          className="inline-flex h-12 items-center gap-2 rounded-full border-2 border-border bg-background px-6 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60 disabled:cursor-default"
         >
           <Pencil className="size-4" />
           Edit
@@ -539,7 +558,7 @@ function CardPair({
           onClick={onApprove}
           disabled={actionPending}
           title="Approve"
-          className="flex size-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg transition-colors hover:bg-emerald-600 disabled:opacity-60"
+          className="flex size-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg transition-colors hover:bg-emerald-600 disabled:opacity-60 disabled:cursor-default"
         >
           {actionPending ? (
             <Loader2 className="size-6 animate-spin" />
@@ -640,10 +659,22 @@ function BlitzSwipeCard({
     aspectRatio: item.aspectRatio || '9:16',
   });
 
+  const contentType = String(item.contentType);
   const enrichment = (item.enrichmentData as any) || {};
   const isCompiled = enrichment.isCompiled === true;
   const compiledUrl = (item.graphicUrls || [])[0] || null;
   const isCompiledVideo = compiledUrl?.match(/\.(mp4|webm|mov)(\?|$)/i);
+
+  // Slideshow/carousel: static slide rendering with prev/next arrows
+  // instead of Remotion Player (which animates transitions and looks
+  // like a video). The editor uses the same static slide pattern.
+  const isSlideshowType = contentType === 'slideshow' || contentType === 'carousel' || contentType === 'data_story';
+  const slides = (enrichment.sourceMediaSlots?.slides as { url: string }[]) || [];
+  const [slideIdx, setSlideIdx] = useState(0);
+
+  useEffect(() => {
+    setSlideIdx(0);
+  }, [item.id]);
 
   // Tinder/Bumble pattern: animate the card off screen FIRST, then fire
   // the callback. This avoids the race between the exit animation and the
@@ -712,6 +743,60 @@ function BlitzSwipeCard({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={compiledUrl} alt={item.caption?.slice(0, 60) || ''} className="size-full object-cover" />
         )
+      ) : isSlideshowType && slides.length > 0 ? (
+        // Static slideshow with prev/next arrows — matches editor preview.
+        // Arrows use onPointerDown + stopPropagation so they don't trigger
+        // the card drag gesture.
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={slides[slideIdx]?.url || ''}
+            alt={`Slide ${slideIdx + 1}`}
+            className="size-full object-cover"
+          />
+
+          {/* Slide dots */}
+          <div className="absolute inset-x-0 bottom-3 z-20 flex items-center justify-center gap-1.5">
+            {slides.map((_, i) => (
+              <span
+                key={i}
+                className={`size-1.5 rounded-full transition-colors ${
+                  i === slideIdx ? 'bg-white' : 'bg-white/40'
+                }`}
+              />
+            ))}
+          </div>
+
+          {/* Prev/next arrows — only on the top card */}
+          {isTop && slides.length > 1 && (
+            <>
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setSlideIdx((p) => (p - 1 + slides.length) % slides.length);
+                }}
+                className="absolute left-2 top-1/2 z-20 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
+                aria-label="Previous slide"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setSlideIdx((p) => (p + 1) % slides.length);
+                }}
+                className="absolute right-2 top-1/2 z-20 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
+                aria-label="Next slide"
+              >
+                <ChevronRight className="size-4" />
+              </button>
+            </>
+          )}
+        </>
       ) : previewProps ? (
         <div className="size-full">
           <RemotionPreviewPlayer
