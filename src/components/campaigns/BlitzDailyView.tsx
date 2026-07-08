@@ -602,7 +602,7 @@ function CardPair({
         two panels overlap significantly — the generated card is the
         hero, the source panel sits behind it as context.
       */}
-      <div className="relative flex w-full items-center justify-center">
+      <div className="flex w-full items-center justify-center gap-4">
         {/* LEFT: source template phone frame — sits flush left */}
         <div className="relative z-0">
           <SourceTemplatePanel

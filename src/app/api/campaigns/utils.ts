@@ -721,7 +721,10 @@ export async function generateCampaignPosts(
             { caption: post.caption, content_type: post.content_type, template_id: post.template_id },
             { contentType: resolvedContentType, slideCaptions: template.slideCaptions, thumbnailUrls: template.thumbnailUrls },
           )
-        : {};
+        : buildEditorScript(
+            { caption: post.caption, content_type: resolvedContentType },
+            { contentType: resolvedContentType, slideCaptions: null, thumbnailUrls: null },
+          );
 
       const reasoning = template
         ? buildReasoning(

@@ -19,7 +19,7 @@ const DEFAULT_BLITZ = {
     greenScreen: 33,
     videoHook: 33,
   },
-  remixRatio: 50,
+  remixRatio: 100,
   angles: [] as { angleId: string; weight: number }[],
   mentionFrequency: 'sometimes' as const,
   genderPreference: null as string | null,
