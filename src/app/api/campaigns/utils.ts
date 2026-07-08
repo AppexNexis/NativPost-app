@@ -2,7 +2,7 @@
 // Campaign Engine — Shared Utilities
 // ============================================================
 
-import { eq, and, gte, lt, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 
 import { applySetToSlots } from '@/lib/blitz/apply-set-to-slots';
 import { buildEditorScript, buildReasoning } from '@/lib/blitz/build-editor-script';
@@ -64,6 +64,25 @@ const MIX_KEY_TO_CONTENT_TYPE: Record<string, string> = {
   carousel: 'slideshow',
   ugc: 'ugc_ad',
   dataStory: 'data_story',
+  scene: 'scene',
+  textMotion: 'text_motion',
+  aiGraphic: 'ai_graphic',
+  thumbnail: 'thumbnail',
+};
+
+// Maps camelCase mix keys to their actual template content_type column values.
+// Template rows store snake_case content types (e.g. 'green_screen', 'video_hook')
+// distinct from the engine-level type 'reel'. fetchCampaignTemplates uses this so
+// the template-availability gate matches rows the DB actually has.
+const MIX_KEY_TO_TEMPLATE_CONTENT_TYPE: Record<string, string> = {
+  slideshow: 'slideshow',
+  greenScreen: 'green_screen',
+  videoHook: 'video_hook',
+  talkingHead: 'talking_head',
+  carousel: 'carousel',
+  ugc: 'ugc',
+  dataStory: 'data_story',
+  wallOfText: 'wall_of_text',
   scene: 'scene',
   textMotion: 'text_motion',
   aiGraphic: 'ai_graphic',
@@ -363,8 +382,13 @@ async function fetchCampaignTemplates(
     .filter(([, v]) => (v || 0) > 0)
     .map(([k]) => k);
 
-  const contentTypes = mixKeys.map((k) => mapMixKeyToContentType(k));
-  const uniqueTypes = Array.from(new Set(contentTypes));
+  // Map mix keys to the template content_type column values (snake_case).
+  // Using mapMixKeyToContentType here is WRONG — that converts to engine-level
+  // types like 'reel' which don't match DB content_type values.
+  const templateTypes = mixKeys
+    .map((k) => MIX_KEY_TO_TEMPLATE_CONTENT_TYPE[k])
+    .filter(Boolean) as string[];
+  const uniqueTypes = Array.from(new Set(templateTypes));
 
   if (uniqueTypes.length === 0) return [];
 
@@ -390,6 +414,9 @@ async function fetchCampaignTemplates(
       and(
         eq(contentTemplateSchema.curationStatus, 'approved'),
         eq(contentTemplateSchema.isActive, true),
+        // Filter at the DB level so large template tables don't ship rows
+        // that will be dropped by the JS filter anyway.
+        inArray(contentTemplateSchema.contentType, uniqueTypes),
       ),
     );
 
@@ -603,6 +630,18 @@ export async function generateCampaignPosts(
       // pipeline expects. Mirrors /api/templates/[id]/remix/route.ts
       // saveVariant — the canonical clone-from-template pattern.
       const template = post.template_id ? templatesById.get(post.template_id) : undefined;
+
+      // Safeguard: the engine flagged this post as remixed from a template
+      // but we don't have that template in our fetched set (content-type
+      // mismatch, engine used a stale id, etc). Without source media the
+      // Blitz swipe card would render blank — skip instead.
+      if (post.is_remixed && post.template_id && !template) {
+        const detail = `Engine requested remix of template ${post.template_id} but it was not in the fetched template set.`;
+        console.warn(`[Campaign] Post ${i} skipped:`, detail);
+        onPostError?.({ postIndex: i, detail });
+        failedPosts++;
+        continue;
+      }
 
       // Content type must mirror the source template, NOT the engine's
       // guess. Falls back to the engine value only when no template is

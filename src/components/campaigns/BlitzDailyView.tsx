@@ -578,21 +578,29 @@ function CardPair({
   onEdit: () => void;
 }) {
   return (
-    <div className="flex w-full max-w-3xl flex-col items-center gap-4">
+    <div className="flex w-full max-w-3xl flex-col items-center">
       {/*
         Overlap layout: the source phone frame (LEFT) and the generated
         card (RIGHT) are pulled together with a negative left margin on
         the RIGHT column so they read as one composed pair (matches the
         usefastlane stacked look — screenshots 3-5). The RIGHT card sits
         on top via z-10 so the drag stamps and drop shadow render cleanly.
+
+        The container uses items-start + tighter negative margin so the
+        two panels overlap significantly — the generated card is the
+        hero, the source panel sits behind it as context.
       */}
-      <div className="flex w-full items-center justify-center">
-        <SourceTemplatePanel
-          template={template}
-          slideIdx={slideIdx}
-          onSlideIdxChange={onSlideIdxChange}
-        />
-        <div className="relative z-10 -ml-6 md:-ml-8">
+      <div className="relative flex w-full items-center justify-center">
+        {/* LEFT: source template phone frame — sits flush left */}
+        <div className="relative z-0">
+          <SourceTemplatePanel
+            template={template}
+            slideIdx={slideIdx}
+            onSlideIdxChange={onSlideIdxChange}
+          />
+        </div>
+        {/* RIGHT: generated swipe card — overlaps left panel */}
+        <div className="relative z-10 -ml-12 md:-ml-16 lg:-ml-20">
           <SwipeCard
             item={item}
             template={template}
@@ -605,7 +613,7 @@ function CardPair({
       </div>
 
       {/* Action bar */}
-      <div className="flex items-center justify-center gap-4">
+      <div className="mt-4 flex items-center justify-center gap-4">
         <button
           type="button"
           onClick={onReject}
@@ -639,7 +647,7 @@ function CardPair({
         </button>
       </div>
 
-      <p className="text-[11px] text-muted-foreground">
+      <p className="mt-2 text-[11px] text-muted-foreground">
         <span className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono">{'\u2190'}</span>
         {' Reject   '}
         <span className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono">{'\u2192'}</span>
@@ -775,17 +783,23 @@ function SwipeCard({
       {/* Card body — stack with framer-motion swipe on the top card */}
       <div className="relative w-full">
         {behindCount >= 2 && (
-          <div
+          <motion.div
             aria-hidden
+            initial={{ scale: 0.94, opacity: 0 }}
+            animate={{ scale: 0.94, opacity: 0.4 }}
+            exit={{ scale: 0.9, opacity: 0 }}
             className="pointer-events-none absolute inset-0 rounded-2xl border border-border bg-card shadow-sm"
-            style={{ transform: 'translateY(12px) scale(0.94)', opacity: 0.4 }}
+            style={{ transform: 'translateY(12px)' }}
           />
         )}
         {behindCount >= 1 && (
-          <div
+          <motion.div
             aria-hidden
+            initial={{ scale: 0.97, opacity: 0 }}
+            animate={{ scale: 0.97, opacity: 0.7 }}
+            exit={{ scale: 0.94, opacity: 0 }}
             className="pointer-events-none absolute inset-0 rounded-2xl border border-border bg-card shadow-sm"
-            style={{ transform: 'translateY(6px) scale(0.97)', opacity: 0.7 }}
+            style={{ transform: 'translateY(6px)' }}
           />
         )}
 
@@ -812,6 +826,7 @@ function SwipeCard({
               transition: { duration: 0.28 },
             }}
             transition={{ type: 'spring', stiffness: 300, damping: 26, mass: 0.9 }}
+            whileHover={{ scale: 1.005 }}
           >
             {/* Approve / Reject stamps that fade in during drag */}
             <motion.div
