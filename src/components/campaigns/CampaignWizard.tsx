@@ -56,10 +56,9 @@ export function CampaignWizard({
     name: '',
     description: '',
     contentMix: {
-      slideshow: 25,
-      wallOfText: 25,
-      greenScreen: 25,
-      videoHook: 25,
+      slideshow: 34,
+      greenScreen: 33,
+      videoHook: 33,
     },
     remixRatio: 50,
     angles: [],
@@ -396,7 +395,6 @@ function StepBasics({ campaign, onUpdate }: StepProps) {
           {(
             [
               ['slideshow', 'Slideshow', 'bg-yellow-400'],
-              ['wallOfText', 'Wall of text', 'bg-blue-500'],
               ['greenScreen', 'Green screen', 'bg-green-500'],
               ['videoHook', 'Video hook', 'bg-purple-400'],
             ] as [keyof ContentMix, string, string][]

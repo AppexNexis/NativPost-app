@@ -78,9 +78,9 @@ interface BlitzSettingsProps {
 
 const CONTENT_TYPE_LABELS: Record<string, string> = {
   slideshow: "Slideshow",
-  wallOfText: "Wall of Text",
   greenScreen: "Green Screen",
   videoHook: "Video Hook",
+  talkingHead: "Talking Head",
 };
 
 const MENTION_OPTIONS = [

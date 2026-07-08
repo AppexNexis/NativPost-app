@@ -32,7 +32,6 @@ export const API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 
 const MIX_KEY_TO_CONTENT_TYPE: Record<string, string> = {
   slideshow: 'reel',
-  wallOfText: 'text_only',
   greenScreen: 'reel',
   videoHook: 'reel',
   talkingHead: 'reel',
@@ -274,7 +273,6 @@ export interface GenerationResult {
 function mapContentMixToEngine(mix: Record<string, number>) {
   return {
     slideshow: mix.slideshow ?? 0,
-    wall_of_text: mix.wallOfText ?? 0,
     green_screen: mix.greenScreen ?? 0,
     video_hook: mix.videoHook ?? 0,
     talking_head: mix.talkingHead ?? 0,

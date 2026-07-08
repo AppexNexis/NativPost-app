@@ -193,14 +193,28 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
           throw new Error(detail);
         }
         await new Promise(r => setTimeout(r, 2500));
-        const statusRes = await fetch(
-          `/api/campaigns/${campaign.id}/generate/status`,
-          { cache: 'no-store' },
-        );
+        // Guard the poll against transient network failures — a brief
+        // "Failed to fetch" mid-run shouldn't abort the whole generation.
+        // The outer catch still surfaces if the initial POST itself failed.
+        let statusRes: Response | null = null;
+        try {
+          statusRes = await fetch(
+            `/api/campaigns/${campaign.id}/generate/status`,
+            { cache: 'no-store' },
+          );
+        } catch (netErr) {
+          console.warn('[Blitz] poll fetch failed, retrying:', netErr);
+          continue;
+        }
         if (!statusRes.ok) {
           continue;
         }
-        const statusData = await statusRes.json();
+        let statusData: any = null;
+        try {
+          statusData = await statusRes.json();
+        } catch {
+          continue;
+        }
         const job = statusData?.job;
         if (!job) {
           continue;
@@ -673,6 +687,15 @@ function SwipeCard({
   const approveOpacity = useTransform(x, [0, 100], [0, 1]);
   const rejectOpacity = useTransform(x, [-100, 0], [1, 0]);
 
+  // Reset the drag position when the top card changes. Without this, the
+  // motion value `x` still carries the exit offset (-400 or +400) from
+  // the previous card, so the incoming card mounts with rejectOpacity=1
+  // or approveOpacity=1 — that's the SKIP/APPROVE stamp bleed-through
+  // the user saw during rapid swipes.
+  useEffect(() => {
+    x.set(0);
+  }, [item.id, x]);
+
   const reasoningParts: string[] = [];
   if (enrichment.reasoning) {
     reasoningParts.push(String(enrichment.reasoning));
@@ -821,18 +844,54 @@ function SwipeCard({
                 />
               </div>
             ) : (
-              // Preview media hasn't arrived yet — the campaign job flips
-              // to 'done' before the async `generateMediaForContentItem`
-              // fire-and-forget finishes for template-less items. The
-              // parent polls every 5s until sourceMediaSlots fills in.
-              <div className="flex size-full flex-col items-center justify-center px-4 text-center text-xs text-white/70">
-                <Loader2 className="mb-3 size-6 animate-spin" />
-                <span>Preparing preview…</span>
-              </div>
+              // No media yet. Rather than lock the card behind a spinner
+              // (which was blocking users when engine falls back with no
+              // matching template), render the caption as a readable card
+              // so the user can still Approve / Skip / Edit — matches
+              // usefastlane behavior of always showing SOMETHING per post.
+              <CaptionFallbackCard item={item} />
             )}
           </motion.div>
         </AnimatePresence>
       </div>
+    </div>
+  );
+}
+
+/* ─── CaptionFallbackCard — no-media graceful state ───────────────── */
+
+function CaptionFallbackCard({ item }: { item: BlitzItem }) {
+  const caption = item.caption || '';
+  const hashtags = Array.isArray((item as any).hashtags) ? (item as any).hashtags as string[] : [];
+  const contentTypeLabel = String(item.contentType || 'post').replace(/_/g, ' ');
+
+  return (
+    <div className="flex size-full flex-col items-stretch justify-between bg-gradient-to-br from-neutral-900 via-neutral-800 to-neutral-950 p-5 text-white">
+      <div className="flex items-center gap-2">
+        <div className="flex size-8 items-center justify-center rounded-full bg-white/10">
+          <Sparkles className="size-4" />
+        </div>
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-white/70">
+          {contentTypeLabel}
+        </span>
+      </div>
+
+      <div className="mt-4 flex-1 overflow-y-auto pr-1 text-sm leading-relaxed">
+        {caption ? (
+          <p className="whitespace-pre-wrap">{caption}</p>
+        ) : (
+          <p className="text-white/60">Caption will appear here once generation finishes.</p>
+        )}
+        {hashtags.length > 0 && (
+          <p className="mt-3 text-xs text-sky-300">
+            {hashtags.slice(0, 8).map(h => (h.startsWith('#') ? h : `#${h}`)).join(' ')}
+          </p>
+        )}
+      </div>
+
+      <p className="mt-3 text-[10px] uppercase tracking-wider text-white/40">
+        Preview media loading…
+      </p>
     </div>
   );
 }
