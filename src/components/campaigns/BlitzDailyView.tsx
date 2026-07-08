@@ -325,17 +325,23 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
     if (refillRef.current) return;
     if (isGenerating) return;
     if (actionPending) return;
-    if (outcome.kind === 'dailyLimit' || outcome.kind === 'noChannels') return;
+    // Don't retry if the last generation attempt failed with an error
+    // or a terminal outcome — endless retries hammer downed APIs.
+    if (error) return;
+    if (outcome.kind !== 'none') return;
     if (queue.length >= 2) return;
-    // Only refill if we have room (total items today < postsPerDay).
-    // Server will enforce this but we avoid unnecessary requests.
-    if (totalToday >= (campaign.postsPerDay || 3)) return;
-    refillRef.current = true;
-    void runGenerate().finally(() => {
-      refillRef.current = false;
-    });
+    // Let the server enforce the daily limit — the client doesn't know
+    // how many skipped vs pending items exist on the server side.
+    void (async () => {
+      refillRef.current = true;
+      try {
+        await runGenerate();
+      } finally {
+        refillRef.current = false;
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queue.length, isGenerating, actionPending, outcome.kind, totalToday]);
+  }, [queue.length, isGenerating, actionPending, outcome.kind, totalToday, error]);
 
   // Keyboard shortcuts.
   useEffect(() => {

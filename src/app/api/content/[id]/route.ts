@@ -159,7 +159,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       updates.hashtags = body.hashtags;
     }
     if (body.status !== undefined) {
-      const validStatuses = ['draft', 'pending_review', 'approved', 'scheduled', 'published', 'rejected', 'archived'];
+      const validStatuses = ['draft', 'pending_review', 'approved', 'skipped', 'scheduled', 'published', 'rejected', 'archived'];
       if (validStatuses.includes(body.status)) {
         updates.status = body.status;
       }
