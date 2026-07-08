@@ -120,10 +120,27 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
 // ---------------------------------------------------------------------------
 // Context
 // ---------------------------------------------------------------------------
+type SaveEditOpts = {
+  /**
+   * Await the fire-and-forget mirror PATCH to /api/content/[id] before
+   * resolving. Used by InlineEditorOverlay's Done handler so the fresh
+   * GET after save sees the mirrored enrichmentData instead of the
+   * pre-edit row.
+   */
+  awaitMirror?: boolean;
+};
+
 type EditorContextType = {
   state: EditorState;
   dispatch: React.Dispatch<EditorAction>;
-  saveEdit: () => Promise<void>;
+  saveEdit: (opts?: SaveEditOpts) => Promise<void>;
+  /**
+   * Clears the pending autosave timer and marks the session non-dirty so
+   * the debounce effect does not re-schedule. Used by the inline overlay
+   * on Cancel to prevent a debounced write from landing after unmount.
+   * In-flight fetches (already started) are NOT cancelled.
+   */
+  discardPending: () => void;
 };
 
 const EditorContext = createContext<EditorContextType | null>(null);
@@ -151,7 +168,14 @@ export function EditorProvider({
     error: null,
   });
 
-  const saveEdit = useCallback(async () => {
+  // Ref-gated saveEdit: when discardPending() is called (e.g. Cancel in the
+  // inline overlay) further saveEdit calls resolve immediately without
+  // touching the network.
+  const discardRef = useRef(false);
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const saveEdit = useCallback(async (opts?: SaveEditOpts) => {
+    if (discardRef.current) return;
     if (!state.edit || !state.isDirty) return;
     dispatch({ type: 'SET_SAVING', payload: true });
     try {
@@ -179,11 +203,13 @@ export function EditorProvider({
       // showing the pre-edit template. `sourceMediaSlots` carries the
       // authoritative slide array (including added / removed slides) — the
       // detail page's gallery falls back to it when the item's graphicUrls
-      // are stale (see content/[id]/page.tsx). Fire-and-forget: a mirror
-      // failure must not block Saved status.
+      // are stale (see content/[id]/page.tsx). Fire-and-forget by default;
+      // InlineEditorOverlay passes { awaitMirror: true } so the immediate
+      // GET after save sees the mirrored row (else the Blitz card refresh
+      // reads a stale enrichmentData).
       const linkedContentItemId = (state.edit as any)?.contentItemId;
       if (linkedContentItemId) {
-        void fetch(`/api/content/${linkedContentItemId}`, {
+        const mirrorPromise = fetch(`/api/content/${linkedContentItemId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -199,6 +225,11 @@ export function EditorProvider({
         }).catch(() => {
           // Silent — Save is still recorded on the edit row.
         });
+        if (opts?.awaitMirror) {
+          await mirrorPromise;
+        } else {
+          void mirrorPromise;
+        }
       }
 
       dispatch({ type: 'MARK_SAVED' });
@@ -208,13 +239,26 @@ export function EditorProvider({
     }
   }, [state.edit, state.isDirty, state.script, state.style, state.layout, state.timing, state.mediaSlots, state.audioTrack, state.aspectRatio, state.targetPlatforms, state.contentMode]);
 
+  const discardPending = useCallback(() => {
+    discardRef.current = true;
+    if (autosaveTimer.current) {
+      clearTimeout(autosaveTimer.current);
+      autosaveTimer.current = null;
+    }
+    // Reset isDirty so the debounce effect stops re-scheduling. The
+    // provider is about to unmount anyway on Cancel, but this belt-and-
+    // suspenders keeps a race-free surface if the caller keeps the
+    // overlay mounted after Cancel for any reason.
+    dispatch({ type: 'MARK_SAVED' });
+  }, []);
+
   // Autosave: debounce 1500ms whenever isDirty becomes true
-  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    if (discardRef.current) return;
     if (!state.isDirty || state.isSaving) return;
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     autosaveTimer.current = setTimeout(() => {
-      saveEdit();
+      void saveEdit();
     }, 1500);
     return () => {
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
@@ -222,7 +266,7 @@ export function EditorProvider({
   }, [state.isDirty, state.isSaving, saveEdit]);
 
   return (
-    <EditorContext.Provider value={{ state, dispatch, saveEdit }}>
+    <EditorContext.Provider value={{ state, dispatch, saveEdit, discardPending }}>
       {children}
     </EditorContext.Provider>
   );

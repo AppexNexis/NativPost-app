@@ -343,7 +343,7 @@ export function EditorLayout({
             <>
               {/* ── Save button ─────────────────────────────── */}
               <button
-                onClick={saveEdit}
+                onClick={() => saveEdit()}
                 disabled={!state.isDirty}
                 className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
               >

@@ -708,9 +708,17 @@ export async function generateCampaignPosts(
       });
 
       if (!template) {
-        generateMediaForContentItem(contentItem.id, resolvedContentType, orgId).catch((mediaErr: any) => {
+        // Awaited (was fire-and-forget) — otherwise the job marks 'done'
+        // and the client polls Blitz before sourceMediaSlots lands, which
+        // triggers useBlitzPreviewProps null-return and the "Missing
+        // preview data" fallback. Text-only + non-media types resolve
+        // to null generator inside generateMediaForContentItem and
+        // return immediately, so this is a no-op for them.
+        try {
+          await generateMediaForContentItem(contentItem.id, resolvedContentType, orgId);
+        } catch (mediaErr: any) {
           console.warn(`[Campaign] Media generation failed for post ${i}:`, mediaErr.message);
-        });
+        }
       }
 
       onPostComplete?.({

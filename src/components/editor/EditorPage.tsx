@@ -1,12 +1,10 @@
 import React from 'react';
-import { useState, useEffect } from 'react';
-
-import type { ContentEdit } from '@/types/v2';
 
 import { EditorProvider } from './EditorContext';
 import { EditorLayout } from './EditorLayout';
 import { EditorPreviewDispatcher } from './EditorPreviewDispatcher';
 import { EditorSidebar } from './EditorSidebar';
+import { useLoadEditSession } from './useLoadEditSession';
 
 // ---------------------------------------------------------------------------
 // Editor Page — loads edit session by query param or contentItemId
@@ -18,123 +16,7 @@ export default function EditorPage({
   editId?: string;
   contentItemId?: string;
 }) {
-  const [edit, setEdit] = useState<ContentEdit | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function loadEdit() {
-      try {
-        let url: string;
-        if (editId) {
-          url = `/api/content/edit/${editId}`;
-        } else if (contentItemId) {
-          // First fetch the content item to populate editor fields
-          const itemRes = await fetch(`/api/content/${contentItemId}`);
-          let contentType = 'text';
-          let contentMode = 'normal';
-          let targetPlatforms: string[] = [];
-          let aspectRatio = '9:16';
-          let script: Record<string, unknown> = {};
-          let mediaSlots: Record<string, unknown> = {};
-          let editorStyle: Record<string, unknown> | undefined;
-          let editorLayout: string | undefined;
-
-          if (!itemRes.ok) {
-            throw new Error('Failed to load content item for editing');
-          }
-
-          const itemData = await itemRes.json();
-          const item = itemData.item as {
-            contentType?: string;
-            contentMode?: string;
-            targetPlatforms?: string[];
-            aspectRatio?: string;
-            caption?: string;
-            graphicUrls?: string[];
-            enrichmentData?: {
-              editorScript?: { hookText?: string; bodyText?: string; ctaText?: string };
-              editorStyle?: Record<string, unknown>;
-              editorLayout?: string;
-              sourceMediaSlots?: Record<string, unknown>;
-              isCompiled?: boolean;
-            };
-          } | undefined;
-
-          if (item) {
-            contentType = item.contentType || 'text';
-            contentMode = item.contentMode || 'normal';
-            targetPlatforms = item.targetPlatforms || [];
-            aspectRatio = item.aspectRatio || '9:16';
-
-            // Load script from enrichmentData (preserves hook/body/cta structure)
-            // Fallback: parse caption as body text
-            if (item.enrichmentData?.editorScript) {
-              script = item.enrichmentData.editorScript as Record<string, unknown>;
-            } else if (item.caption) {
-              script = { bodyText: item.caption };
-            }
-
-            // Load style and layout from enrichmentData
-            editorStyle = item.enrichmentData?.editorStyle as Record<string, unknown> | undefined;
-            editorLayout = item.enrichmentData?.editorLayout;
-
-            // Restore the raw source background — critical when the item was
-            // already compiled once, because graphicUrls[0] now points at the
-            // baked MP4. Using that as the background would double-stack the
-            // overlays (baked-in text + fresh RemotionPreviewPlayer text).
-            const stashed = item.enrichmentData?.sourceMediaSlots as
-              | Record<string, any>
-              | undefined;
-            if (stashed && Object.keys(stashed).length > 0) {
-              mediaSlots = stashed;
-            } else if (item.graphicUrls && item.graphicUrls.length > 0 && !item.enrichmentData?.isCompiled) {
-              // Legacy path: item never went through the editor, so
-              // graphicUrls[0] is still the raw source.
-              mediaSlots = {
-                background: { url: item.graphicUrls[0]!, assetType: 'video' },
-              };
-            }
-          }
-
-          // Create a new edit session from content item
-          const res = await fetch('/api/content/edit', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              source: 'manual',
-              contentItemId,
-              contentType,
-              contentMode,
-              targetPlatforms,
-              aspectRatio,
-              script,
-              style: editorStyle || {},
-              layout: editorLayout || 'centered',
-              mediaSlots,
-            }),
-          });
-          if (!res.ok) throw new Error('Failed to create edit session');
-          const data = await res.json();
-          setEdit(data.edit);
-          setLoading(false);
-          return;
-        } else {
-          throw new Error('No edit ID or content item ID provided');
-        }
-
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('Failed to load edit session');
-        const data = await res.json();
-        setEdit(data.edit);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadEdit();
-  }, [editId, contentItemId]);
+  const { edit, loading, error } = useLoadEditSession({ editId, contentItemId });
 
   if (loading) {
     return (

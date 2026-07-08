@@ -38,6 +38,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { BlitzSettings } from '@/components/blitz/BlitzSettings';
+import { InlineEditorOverlay } from '@/components/editor/InlineEditorOverlay';
 import { RemotionPreviewPlayer } from '@/components/editor/RemotionPreviewPlayer';
 import { useBlitzPreviewProps } from '@/hooks/useBlitzPreviewProps';
 import type { Campaign, ContentItem } from '@/types/v2';
@@ -114,6 +115,7 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
   const [outcome, setOutcome] = useState<GenerateOutcome>({ kind: 'none' });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [slideIdx, setSlideIdx] = useState(0);
+  const [editingItem, setEditingItem] = useState<BlitzItem | null>(null);
   const autoGenAttempted = useRef(false);
 
   const queue = useMemo(
@@ -326,11 +328,18 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
     if (actionPending) {
       return;
     }
-    const returnTo = encodeURIComponent(`/dashboard/campaigns/${campaign.id}`);
-    router.push(
-      `/dashboard/editor?contentItemId=${item.id}&mode=blitz-edit&returnTo=${returnTo}`,
-    );
+    // Open the editor as an inline overlay on the Blitz page instead of
+    // routing away. On Done, the updated item is merged into the local
+    // queue in place so the swipe card refreshes without another fetch.
+    setEditingItem(item);
   };
+
+  // Swap an item in place in the local queue — used after inline edit Done
+  // so the current Blitz card immediately reflects the new enrichmentData
+  // without waiting for the next refresh tick.
+  const mergeItemInPlace = useCallback((updated: ContentItem) => {
+    setItems(prev => prev.map(it => (it.id === updated.id ? { ...it, ...(updated as BlitzItem) } : it)));
+  }, []);
 
   const handleApprove = async (item: BlitzItem) => {
     if (actionPending) {
@@ -355,6 +364,34 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
   useEffect(() => {
     setSlideIdx(0);
   }, [current?.id]);
+
+  // While the top card is waiting on async media generation, poll refresh
+  // every 5s. Root cause: `generateMediaForContentItem` in campaigns/utils.ts
+  // is fire-and-forget (`.catch(...)` without await), so the campaign job
+  // can flip to 'done' before sourceMediaSlots is populated. When that
+  // happens the row shows up here with an empty preview — poll until the
+  // media generator fills it in, or the user skips/approves.
+  useEffect(() => {
+    if (!current) {
+      return;
+    }
+    const enrichment = (current.enrichmentData as any) || {};
+    const slots = (enrichment.sourceMediaSlots as any) || {};
+    const compiledUrl = (current.graphicUrls || [])[0] || null;
+    const hasMedia
+      = Boolean(slots.background?.url)
+      || Boolean(slots.hookVideo?.url)
+      || Boolean(slots.demoVideo?.url)
+      || (Array.isArray(slots.slides) && slots.slides.length > 0)
+      || Boolean(compiledUrl);
+    if (hasMedia) {
+      return;
+    }
+    const id = setInterval(() => {
+      void refresh();
+    }, 5000);
+    return () => clearInterval(id);
+  }, [current, refresh]);
 
   // Keyboard shortcuts.
   useEffect(() => {
@@ -460,6 +497,21 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
           />
         ) : null}
       </div>
+
+      {editingItem && (
+        <InlineEditorOverlay
+          contentItemId={editingItem.id}
+          onCancel={() => setEditingItem(null)}
+          onDone={(updated) => {
+            setEditingItem(null);
+            if (updated) {
+              mergeItemInPlace(updated);
+            } else {
+              void refresh();
+            }
+          }}
+        />
+      )}
 
       <BlitzSettings
         campaignId={campaign.id}
@@ -769,11 +821,13 @@ function SwipeCard({
                 />
               </div>
             ) : (
-              // After Phase 1 this is unreachable — sourceMediaSlots always
-              // populated. Kept as a defensive error banner rather than a
-              // silent "No preview yet" placeholder.
-              <div className="flex size-full items-center justify-center px-4 text-center text-xs text-red-400">
-                Missing preview data. Contact support.
+              // Preview media hasn't arrived yet — the campaign job flips
+              // to 'done' before the async `generateMediaForContentItem`
+              // fire-and-forget finishes for template-less items. The
+              // parent polls every 5s until sourceMediaSlots fills in.
+              <div className="flex size-full flex-col items-center justify-center px-4 text-center text-xs text-white/70">
+                <Loader2 className="mb-3 size-6 animate-spin" />
+                <span>Preparing preview…</span>
               </div>
             )}
           </motion.div>
