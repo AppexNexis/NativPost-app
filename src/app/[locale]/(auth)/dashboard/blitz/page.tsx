@@ -135,5 +135,24 @@ export default async function Page() {
     isRolled: row.cc.isRolled,
   }));
 
-  return <BlitzDailyView campaign={campaign as any} initialContentItems={contentItems as any} />;
+  // ── Server-side daily limit check ──
+  // Count today's content items with statuses that consume the daily
+  // allowance. Calculated here (not just client-side) so the limit
+  // survives a full page refresh even if sessionStorage is cleared.
+  const DAILY_LIMIT_STATUSES = new Set(['pending_review', 'approved', 'skipped']);
+  const todayCount = contentItems.filter(
+    (i: any) => i.status && DAILY_LIMIT_STATUSES.has(String(i.status)),
+  ).length;
+  const postsPerDay = campaign.postsPerDay || 10;
+  const dailyLimitReached = todayCount >= postsPerDay;
+
+  return (
+    <BlitzDailyView
+      campaign={campaign as any}
+      initialContentItems={contentItems as any}
+      dailyLimitReached={dailyLimitReached}
+      dailyLimitCount={todayCount}
+      dailyLimit={postsPerDay}
+    />
+  );
 }

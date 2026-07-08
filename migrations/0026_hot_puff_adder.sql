@@ -1,0 +1,1 @@
+ALTER TABLE "campaign" ALTER COLUMN "posts_per_day" SET DEFAULT 10;

@@ -99,9 +99,22 @@ function getNextResetTime(): string {
 type BlitzDailyViewProps = {
   campaign: Campaign;
   initialContentItems: BlitzItem[];
+  /** Server-side daily-limit check so the client gets the truth
+   *  synchronously on mount. Without this the auto-gen effect fires
+   *  before the client-side count effect, causing a spurious generation
+   *  request. */
+  dailyLimitReached?: boolean;
+  dailyLimitCount?: number;
+  dailyLimit?: number;
 };
 
-export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyViewProps) {
+export function BlitzDailyView({
+  campaign,
+  initialContentItems,
+  dailyLimitReached: serverDailyLimitReached,
+  dailyLimitCount: serverDailyLimitCount,
+  dailyLimit: serverDailyLimit,
+}: BlitzDailyViewProps) {
   const router = useRouter();
 
   const [items, setItems] = useState<BlitzItem[]>(initialContentItems);
@@ -113,7 +126,7 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
   const [editingItem, setEditingItem] = useState<BlitzItem | null>(null);
   const autoGenAttempted = useRef(false);
 
-  const dailyLimit = campaign.postsPerDay || 3;
+  const dailyLimit = serverDailyLimit || campaign.postsPerDay || 3;
 
   const queue = useMemo(
     () => items.filter(i => PENDING_STATUSES.has(String(i.status || 'pending_review'))),
@@ -124,17 +137,30 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
 
   // Derived (synchronous) daily-limit check so the auto-generate and
   // auto-refill effects can read it BEFORE the async daily-limit
-  // useEffect fires. Uses sessionStorage as a safety net across refreshes.
+  // useEffect fires. Uses the server-provided value first (most
+  // reliable), then sessionStorage as a cross-refresh safety net,
+  // then falls back to counting in-session items.
   const dailyLimitReached = useMemo(() => {
-    // Check sessionStorage first — survives page refreshes.
+    // 1. Server-side authoritative check (passed as prop from page.tsx).
+    //    This is the most reliable — the server queries the DB fresh on
+    //    every page load, so it survives full refreshes, cleared cookies,
+    //    and private browsing where sessionStorage is unavailable.
+    if (serverDailyLimitReached && serverDailyLimitCount !== undefined && serverDailyLimit) {
+      return {
+        count: serverDailyLimitCount,
+        limit: serverDailyLimit,
+        nextResetAt: getNextResetTime(),
+      };
+    }
+    // 2. SessionStorage safety net — survives page refresh.
     const stored = readSessionDailyLimit(campaign.id);
     if (stored && stored.count >= stored.limit) return stored;
-    // Fall back to counting items in this session.
+    // 3. In-session fallback — count items in the current state.
     if (totalToday >= dailyLimit && queue.length === 0) {
       return { count: totalToday, limit: dailyLimit, nextResetAt: getNextResetTime() };
     }
     return null;
-  }, [campaign.id, totalToday, dailyLimit, queue.length]);
+  }, [campaign.id, totalToday, dailyLimit, queue.length, serverDailyLimitReached, serverDailyLimitCount, serverDailyLimit]);
 
   const refresh = useCallback(async () => {
     try {
@@ -315,6 +341,20 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
       // Removing before causes a race: polling refresh() reloads the item
       // from the server before patchStatus commits, so the card reappears.
       removeFromQueue(item.id);
+
+      // If the queue is now empty AND the daily limit is hit, show the
+      // daily-limit state immediately instead of triggering auto-refill
+      // (which would call runGenerate → POST /generate → engine call →
+      // 200s wait → possibly 504). This is the primary fix for the
+      // "reject shows same post" bug.
+      if (queue.length <= 1 && totalToday >= dailyLimit) {
+        setOutcome({
+          kind: 'dailyLimit',
+          count: totalToday,
+          limit: dailyLimit,
+          nextResetAt: getNextResetTime(),
+        });
+      }
     } catch (err: any) {
       setError(err?.message || 'Reject failed');
       // Refresh to re-sync with the server in case the item was modified
@@ -748,6 +788,14 @@ function BlitzSwipeCard({
   const compiledUrl = (item.graphicUrls || [])[0] || null;
   const isCompiledVideo = compiledUrl?.match(/\.(mp4|webm|mov)(\?|$)/i);
 
+  // Short brand message for the slideshow text overlay — NOT the full
+  // post caption. The editorScript stores hookText as the short tagline
+  // communicating media + brand; the full caption is for the social post.
+  const hookText = enrichment.editorScript?.hookText
+    || enrichment.script?.hookText
+    || item.caption?.slice(0, 80)
+    || '';
+
   // Slideshow/carousel: static slide rendering with prev/next arrows
   // instead of Remotion Player (which animates transitions and looks
   // like a video). The editor uses the same static slide pattern.
@@ -794,7 +842,7 @@ function BlitzSwipeCard({
 
   return (
     <motion.div
-      className="absolute inset-0 w-full overflow-hidden rounded-2xl border border-border bg-neutral-900 shadow-xl"
+      className="absolute inset-0 w-full overflow-hidden rounded-2xl border border-border bg-neutral-900 shadow-xl [cursor:grab] active:cursor-grabbing"
       style={{ x, rotate }}
       animate={controls}
       drag={isTop ? 'x' : undefined}
@@ -819,20 +867,25 @@ function BlitzSwipeCard({
         </>
       )}
 
-      {isCompiled && compiledUrl ? (
-        isCompiledVideo ? (
-          <video src={compiledUrl} className="size-full object-cover" muted loop playsInline autoPlay />
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={compiledUrl} alt={item.caption?.slice(0, 60) || ''} className="size-full object-cover" />
-        )
-      ) : isSlideshowType ? (
-        // Static slideshow with prev/next arrows + text overlay.
-        // Slideshow, carousel, and data_story types ALWAYS render this way
-        // on the Blitz card — never as a Remotion video. The content type
-        // determines the correct preview representation.
-        // Arrows use onPointerDown + stopPropagation so they don't trigger
-        // the card drag gesture.
+      {/* The RemotionPreviewPlayer captures pointer events inside its
+          canvas/controls, breaking the framer-motion drag on the motion.div.
+          pointer-events-none on its container prevents this while leaving
+          the motion.div's native drag handlers intact. Slideshow arrow
+          buttons use onPointerDown+stopPropagation which is safe. */}
+
+
+      {/* ── Content-type-aware card preview ──
+       * Priority:
+       * 1. Slideshow / carousel / data_story → ALWAYS static slides with
+       *    prev/next arrows, never as Remotion video. The content type
+       *    determines the correct preview representation, NOT the compiled
+       *    status. Even compiled slideshows render as static slides here.
+       * 2. Compiled media (video/image) → final rendered output.
+       * 3. RemotionPreviewPlayer → animated video previews (reel, vid_hook, etc.)
+       * 4. Raw media fallback → graphicUrls[0] as video or image.
+       * 5. Loading spinner → generation still in progress.
+       */}
+      {isSlideshowType ? (
         <>
           {slides.length > 0 ? (
             <>
@@ -886,12 +939,11 @@ function BlitzSwipeCard({
               )}
             </>
           ) : (
-            // No slides available yet — show text overlay placeholder
-            // (slides are loading or the template has no thumbnailUrls).
+            // No slides available yet — show brand message text
             <div className="flex size-full items-center justify-center bg-neutral-800">
-              {item.caption ? (
+              {hookText ? (
                 <p className="px-6 text-center text-sm leading-relaxed text-white/80">
-                  {item.caption}
+                  {hookText}
                 </p>
               ) : (
                 <Loader2 className="size-5 animate-spin text-white/60" />
@@ -899,22 +951,32 @@ function BlitzSwipeCard({
             </div>
           )}
 
-          {/* Text/caption overlay — positioned at the bottom of the card */}
-          {item.caption && slides.length > 0 && (
+          {/* Brand message overlay — short hook text, NOT the full caption */}
+          {hookText && slides.length > 0 && (
             <div className="absolute inset-x-0 bottom-11 z-20 px-3">
               <div className="rounded-lg bg-black/60 px-3 py-2 text-xs leading-snug text-white backdrop-blur-sm">
-                {item.caption}
+                {hookText}
               </div>
             </div>
           )}
         </>
+
+      ) : isCompiled && compiledUrl ? (
+        isCompiledVideo ? (
+          <video src={compiledUrl} className="size-full object-cover" muted loop playsInline autoPlay />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={compiledUrl} alt={item.caption?.slice(0, 60) || ''} className="size-full object-cover" />
+        )
+
       ) : previewProps ? (
-        <div className="size-full">
+        <div className="pointer-events-none size-full">
           <RemotionPreviewPlayer
             contentType={previewProps.contentType}
             inputProps={{ ...previewProps.inputProps, slideIndex: 0 }}
           />
         </div>
+
       ) : compiledUrl ? (
         isCompiledVideo ? (
           <video src={compiledUrl} className="size-full object-cover" muted loop playsInline autoPlay />
@@ -922,6 +984,7 @@ function BlitzSwipeCard({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={compiledUrl} alt={item.caption?.slice(0, 60) || ''} className="size-full object-cover" />
         )
+
       ) : (
         <div className="flex size-full items-center justify-center">
           <Loader2 className="size-5 animate-spin text-white/60" />

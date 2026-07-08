@@ -963,6 +963,22 @@ export async function generateCampaignPosts(
           }
         } catch { /* keep original slots */ }
 
+        // Randomised caption pool so fallback Blitz posts don't all
+        // show the same generic hook text on the card preview.
+        const FALLBACK_HOOKS: Record<string, string[]> = {
+          slideshow: ['Real results, real growth', 'See the full story', 'From concept to completion'],
+          carousel: ['Swipe to see the journey', 'Behind the numbers', 'A closer look inside'],
+          data_story: ['The numbers speak for themselves', 'Data you can act on', 'Insights that matter'],
+          green_screen: ['Breaking it down for you', 'Let me explain this', 'Quick breakdown incoming'],
+          video_hook: ['Watch this!', 'You need to see this', 'Game changer alert'],
+          talking_head: ['Here is the truth', 'Let me share something', 'From my experience'],
+          wall_of_text: ['Read this carefully', 'Important thoughts', 'Deep dive time'],
+          reel: ['Trending now', 'Your daily dose', 'Can not stop watching'],
+          ugc: ['Real review here', 'Honest thoughts', 'Tried it so you do not have to'],
+        };
+        const typeHooks = FALLBACK_HOOKS[resolvedContentType] || FALLBACK_HOOKS.reel!;
+        const randomHook = typeHooks[Math.floor(Math.random() * typeHooks.length)]!;
+
         const slideCaptions = template.slideCaptions;
         const firstSlideCaption = Array.isArray(slideCaptions)
           ? slideCaptions[0]
@@ -970,6 +986,7 @@ export async function generateCampaignPosts(
             ? Object.values(slideCaptions)[0]
             : undefined;
         const caption = firstSlideCaption
+          || randomHook
           || `Hook text for ${resolvedContentType.replace(/_/g, ' ')}`;
 
         const editorScript = buildEditorScript(
@@ -1028,6 +1045,11 @@ export async function generateCampaignPosts(
       }
     }
   }
+
+  console.log(
+    `[Campaign] Generation complete: requested=${postsToCreate} inserted=${inserted} failed=${failedPosts} ` +
+    `enginePosts=${engineResult.total_posts} itemIds=${contentItemIds.length}`,
+  );
 
   return {
     totalPosts: engineResult.total_posts,
