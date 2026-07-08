@@ -147,7 +147,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       throw chanErr;
     }
 
-    // 2b. Daily-limit check — the ONLY acceptable "empty state" for Blitz.
+    // 2b. Stale-item sweep — deactivate pending items that have no
+    // sourceMediaSlots (from failed generation runs before the template
+    // content-type mapping fix). Without this sweep, stale items:
+    //   (a) count toward the daily limit, preventing new generation
+    //   (b) sit at position 0 in the Blitz queue with a forever-spinner
+    //   (c) block auto-generation on the client (items.length > 0)
+    await db
+      .update(contentItemSchema)
+      .set({ status: 'failed' })
+      .where(
+        and(
+          eq(contentItemSchema.campaignId, id),
+          eq(contentItemSchema.status, 'pending_review'),
+          sql`(enrichment_data->'sourceMediaSlots' IS NULL OR enrichment_data->'sourceMediaSlots' = '{}'::jsonb)`,
+        ),
+      );
+
+    // 2c. Daily-limit check — the ONLY acceptable "empty state" for Blitz.
     // Count today's rows for this campaign in the reviewable states and
     // stop enqueueing once we hit postsPerDay. Client renders a
     // "You've reviewed today's Blitz" panel with the reset time.

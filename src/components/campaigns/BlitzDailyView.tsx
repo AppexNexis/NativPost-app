@@ -236,13 +236,25 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
     }
   }, [campaign.id, refresh]);
 
-  // Auto-generate today's queue once on mount if nothing is queued.
+  // Auto-generate today's queue once on mount if nothing is queued,
+  // OR if all existing items have no enrichable media (stale items from
+  // a previous failed generation before sourceMediaSlots were populated).
   useEffect(() => {
     if (autoGenAttempted.current) {
       return;
     }
     if (items.length > 0) {
-      return;
+      const anyHasMedia = items.some((i) => {
+        const ed = (i.enrichmentData as any) || {};
+        const slots = (ed.sourceMediaSlots as any) || {};
+        return Boolean(slots.background?.url)
+          || Boolean(slots.hookVideo?.url)
+          || Boolean(slots.demoVideo?.url)
+          || (Array.isArray(slots.slides) && slots.slides.length > 0);
+      });
+      if (anyHasMedia) {
+        return; // at least one item has a valid preview — don't re-gen
+      }
     }
     autoGenAttempted.current = true;
     void runGenerate();
@@ -599,8 +611,8 @@ function CardPair({
             onSlideIdxChange={onSlideIdxChange}
           />
         </div>
-        {/* RIGHT: generated swipe card — overlaps left panel */}
-        <div className="relative z-10 -ml-12 md:-ml-16 lg:-ml-20">
+        {/* RIGHT: generated swipe card — overlaps left panel subtly */}
+        <div className="relative z-10 -ml-6 md:-ml-8">
           <SwipeCard
             item={item}
             template={template}
@@ -818,8 +830,8 @@ function SwipeCard({
                 onSwipeReject();
               }
             }}
-            initial={{ scale: 0.96, opacity: 0.8 }}
-            animate={{ scale: 1, opacity: 1 }}
+            initial={{ scale: 0.94, opacity: 0, y: 12 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{
               x: x.get() > 0 ? 400 : -400,
               opacity: 0,
