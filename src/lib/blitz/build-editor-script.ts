@@ -95,16 +95,12 @@ export function buildEditorScript(
  */
 export function buildReasoning(
   post: { angle_name?: string; is_remixed?: boolean },
-  template: { contentType: string; sourcePlatform?: string | null; sourceCreator?: string | null },
+  _template: { contentType: string; sourcePlatform?: string | null; sourceCreator?: string | null },
 ): string {
+  // Blitz shows only the generated result — never the source template
+  // platform, creator, or "Remixed From" attribution. Keep reasoning
+  // to angle name only.
   const parts: string[] = [];
-  if (post.is_remixed) {
-    parts.push(
-      `Cloned from a ${template.sourcePlatform || 'trending'} ${template.contentType.replace(/_/g, ' ')}`
-      + (template.sourceCreator ? ` by @${template.sourceCreator}` : '')
-      + '.',
-    );
-  }
   if (post.angle_name) parts.push(`Angle: ${post.angle_name}.`);
   if (parts.length === 0) parts.push('Selected from your active content mix and audience angles.');
   return parts.join(' ');

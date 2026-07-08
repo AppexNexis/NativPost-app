@@ -315,6 +315,28 @@ export function BlitzDailyView({ campaign, initialContentItems }: BlitzDailyView
     return () => clearInterval(id);
   }, [current, actionPending, refresh]);
 
+  // Auto-refill: when the swipe queue drops below 2 cards and generation
+  // isn't already running, kick a new batch so the user never hits an
+  // empty "You're done" state after a few skips. The server-side daily-
+  // limit gate excludes skipped items, so skipping doesn't exhaust the
+  // daily allowance.
+  const refillRef = useRef(false);
+  useEffect(() => {
+    if (refillRef.current) return;
+    if (isGenerating) return;
+    if (actionPending) return;
+    if (outcome.kind === 'dailyLimit' || outcome.kind === 'noChannels') return;
+    if (queue.length >= 2) return;
+    // Only refill if we have room (total items today < postsPerDay).
+    // Server will enforce this but we avoid unnecessary requests.
+    if (totalToday >= (campaign.postsPerDay || 3)) return;
+    refillRef.current = true;
+    void runGenerate().finally(() => {
+      refillRef.current = false;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queue.length, isGenerating, actionPending, outcome.kind, totalToday]);
+
   // Keyboard shortcuts.
   useEffect(() => {
     if (!current) {

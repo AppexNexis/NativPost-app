@@ -636,6 +636,10 @@ export async function generateCampaignPosts(
   // postsPerDay cards.
   let inserted = 0;
   const postsToCreate = postsPerDay;
+  // Track template IDs used in this batch so consecutive cards never show
+  // the same preview. Without this, the engine may assign the same
+  // template_id to multiple posts, producing identical-looking cards.
+  const usedTemplateIds = new Set<string>();
 
   for (const [i, post] of engineResult.posts.entries()) {
     if (inserted >= postsToCreate) {
@@ -659,16 +663,39 @@ export async function generateCampaignPosts(
 
       if (!template && templates.length > 0) {
         // Prefer templates matching the post's content_type; fall back
-        // to any available template in the fetched set.
-        const sameType = templates.filter((t) => t.contentType === post.content_type);
-        const pool = sameType.length > 0 ? sameType : templates;
-        template = pool[Math.floor(Math.random() * pool.length)]!;
+        // to any available template in the fetched set. Exclude templates
+        // already used in this batch so consecutive cards look different.
+        const sameType = templates.filter(
+          (t) => t.contentType === post.content_type && !usedTemplateIds.has(t.id),
+        );
+        const pool = sameType.length > 0 ? sameType : templates.filter(
+          (t) => !usedTemplateIds.has(t.id),
+        );
+        const finalPool = pool.length > 0 ? pool : templates;
+        template = finalPool[Math.floor(Math.random() * finalPool.length)]!;
         if (template) {
           console.warn(
             `[Campaign] Post ${i}: no matching template_id, using fallback ` +
             `${template.id} (${template.contentType})`,
           );
         }
+      }
+
+      // If the engine-suggested template was already used in this batch,
+      // swap it for a different one of the same type.
+      if (template && usedTemplateIds.has(template.id)) {
+        const sameType = templates.filter(
+          (t) => t.contentType === template!.contentType && !usedTemplateIds.has(t.id),
+        );
+        if (sameType.length > 0) {
+          template = sameType[Math.floor(Math.random() * sameType.length)]!;
+        }
+        // If no unused same-type template, keep the current one (worse
+        // than dedup but better than zero cards).
+      }
+
+      if (template) {
+        usedTemplateIds.add(template.id);
       }
 
       if (!template) {
