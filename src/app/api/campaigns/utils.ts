@@ -45,15 +45,6 @@ const RENDERABLE_CONTENT_TYPES = new Set([
   'single_image',
 ]);
 
-function hasRenderableMedia(slots: Record<string, any>): boolean {
-  if (!slots) return false;
-  if (slots.background?.url) return true;
-  if (slots.hookVideo?.url) return true;
-  if (slots.demoVideo?.url) return true;
-  if (Array.isArray(slots.slides) && slots.slides.some((s: any) => s?.url)) return true;
-  return false;
-}
-
 // ── Content type mapping ─────────────────────────────────────────────────────
 
 const MIX_KEY_TO_CONTENT_TYPE: Record<string, string> = {
@@ -639,7 +630,17 @@ export async function generateCampaignPosts(
   let failedPosts = 0;
   const contentItemIds: string[] = [];
 
+  // Guarantee exactly postsPerDay cards reach the Blitz queue. The engine
+  // may return more posts than needed (buffer) or some posts may reference
+  // unresolvable template_ids. We stop once we've successfully inserted
+  // postsPerDay cards.
+  let inserted = 0;
+  const postsToCreate = postsPerDay;
+
   for (const [i, post] of engineResult.posts.entries()) {
+    if (inserted >= postsToCreate) {
+      break;
+    }
     try {
       onProgress?.({
         postIndex: i,
@@ -648,66 +649,51 @@ export async function generateCampaignPosts(
         percent: Math.round(((i + 1) / engineResult.total_posts) * 50) + 45,
       });
 
-      // Look up the full source-template row so we can clone media and
-      // stash the sourceMediaSlots + editorScript the editor + preview
-      // pipeline expects. Mirrors /api/templates/[id]/remix/route.ts
-      // saveVariant — the canonical clone-from-template pattern.
-      const template = post.template_id ? templatesById.get(post.template_id) : undefined;
+      // Look up the engine-suggested template. If not found, assign a
+      // random fallback from the fetched pool so every Blitz card has
+      // renderable source media. Skip-by-no-template silently starves the
+      // queue — user gets fewer cards than postsPerDay.
+      let template: CampaignTemplateRow | undefined = post.template_id
+        ? templatesById.get(post.template_id)
+        : undefined;
 
-      // Skip ANY post without a template. The engine may return posts
-      // without template_id even at remixRatio=100 (fallback behavior).
-      // A post without a template produces an empty sourceMediaSlots →
-      // useBlitzPreviewProps returns null → Blitz shows a forever-spinner.
-      // Better to skip these and let the engine retry on the next run.
-      if (!template) {
-        const reason = post.template_id
-          ? `Template ${post.template_id} not in fetched set`
-          : 'No template_id from engine';
-        const detail = `Post ${i} has no resolvable template (${reason}).`;
-        console.warn(`[Campaign] Post ${i} skipped:`, detail);
-        onPostError?.({ postIndex: i, detail });
-        failedPosts++;
-        continue;
-      }
-
-      // Content type must mirror the source template, NOT the engine's
-      // guess. Falls back to the engine value only when no template is
-      // linked (rare — text-only-with-no-template case).
-      const resolvedContentType = template?.contentType || post.content_type;
-
-      // Build sourceMediaSlots from the template row. Blitz + Campaigns
-      // are media-remix, not from-scratch generation, so slots come from
-      // the template's mediaUrl / thumbnailUrls / slideCaptions.
-      let sourceMediaSlots: Record<string, any> = template ? buildSourceMediaSlots(template) : {};
-
-      // Attempt Media Set substitution for safe-swap content types
-      // (slideshow / carousel / wall_of_text). Other types keep template
-      // media as-is per user decision — mixing user assets into video
-      // hooks / talking-heads produces incoherent output.
-      if (template) {
-        try {
-          const set = await pickDefaultSet(db, orgId, resolvedContentType);
-          if (set) {
-            sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, resolvedContentType);
-          }
-        } catch (setErr: any) {
-          // Set resolution is best-effort — log and fall through to
-          // template media so a broken Set doesn't fail the whole post.
-          console.warn(`[Campaign] Set substitution failed for post ${i}:`, setErr?.message || setErr);
+      if (!template && templates.length > 0) {
+        // Prefer templates matching the post's content_type; fall back
+        // to any available template in the fetched set.
+        const sameType = templates.filter((t) => t.contentType === post.content_type);
+        const pool = sameType.length > 0 ? sameType : templates;
+        template = pool[Math.floor(Math.random() * pool.length)]!;
+        if (template) {
+          console.warn(
+            `[Campaign] Post ${i}: no matching template_id, using fallback ` +
+            `${template.id} (${template.contentType})`,
+          );
         }
       }
 
-      // System-error boundary: a post that reaches the Blitz swipe card
-      // without renderable media results in a dead RIGHT card
-      // (useBlitzPreviewProps returns null). Skip these posts rather
-      // than persisting them. Only applies when a template is linked —
-      // the text-only path below has its own generator fallback.
-      if (template && !hasRenderableMedia(sourceMediaSlots)) {
-        const detail = `No renderable media for template ${template.id} (${resolvedContentType})`;
+      if (!template) {
+        // Zero templates in the fetched set — can't produce any card.
+        const detail = 'No templates available.';
         console.warn(`[Campaign] Post ${i} skipped:`, detail);
         onPostError?.({ postIndex: i, detail });
         failedPosts++;
         continue;
+      }
+
+      // Content type from the resolved template, not the engine.
+      const resolvedContentType = template.contentType;
+
+      // Build sourceMediaSlots from the template row.
+      let sourceMediaSlots: Record<string, any> = buildSourceMediaSlots(template);
+
+      // Attempt Media Set substitution for safe-swap content types.
+      try {
+        const set = await pickDefaultSet(db, orgId, resolvedContentType);
+        if (set) {
+          sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, resolvedContentType);
+        }
+      } catch (setErr: any) {
+        console.warn(`[Campaign] Set substitution failed for post ${i}:`, setErr?.message || setErr);
       }
 
       // Content type must be one the Remotion preview pipeline supports,
@@ -720,41 +706,28 @@ export async function generateCampaignPosts(
         continue;
       }
 
-      const editorScript = template
-        ? buildEditorScript(
-            { caption: post.caption, content_type: post.content_type, template_id: post.template_id },
-            { contentType: resolvedContentType, slideCaptions: template.slideCaptions, thumbnailUrls: template.thumbnailUrls },
-          )
-        : buildEditorScript(
-            { caption: post.caption, content_type: resolvedContentType },
-            { contentType: resolvedContentType, slideCaptions: null, thumbnailUrls: null },
-          );
+      const editorScript = buildEditorScript(
+        { caption: post.caption, content_type: post.content_type, template_id: post.template_id },
+        { contentType: resolvedContentType, slideCaptions: template.slideCaptions, thumbnailUrls: template.thumbnailUrls },
+      );
 
-      const reasoning = template
-        ? buildReasoning(
-            { angle_name: post.angle_name, is_remixed: post.is_remixed },
-            {
-              contentType: resolvedContentType,
-              sourcePlatform: template.sourcePlatform,
-              sourceCreator: template.sourceCreator,
-            },
-          )
-        : undefined;
+      // Reasoning: angle name only. Blitz users don't care about the
+      // source template platform/creator — just what angle was used.
+      const reasoning = buildReasoning(
+        { angle_name: post.angle_name },
+        { contentType: resolvedContentType },
+      );
 
-      const sourceTemplateSnapshot = template
-        ? {
-            sourceCreator: template.sourceCreator,
-            sourcePlatform: template.sourcePlatform,
-            viewCount: template.viewCount,
-            likeCount: template.likeCount,
-            commentCount: template.commentCount,
-            thumbnailUrls: template.thumbnailUrls,
-          }
-        : undefined;
+      const sourceTemplateSnapshot = {
+        viewCount: template.viewCount,
+        likeCount: template.likeCount,
+        commentCount: template.commentCount,
+        thumbnailUrls: template.thumbnailUrls,
+      };
 
       // Preserve raw source media in graphicUrls[0] so compile can find
       // the untouched original (team memory: preserve-raw-source-in-compile-pipeline).
-      const rawSource = template?.mediaUrl || template?.thumbnailUrl || null;
+      const rawSource = template.mediaUrl || template.thumbnailUrl || null;
 
       // Insert content item — populates templateId FK column AND full
       // enrichmentData so downstream previews (Blitz swipe, detail page,
@@ -823,10 +796,8 @@ export async function generateCampaignPosts(
         scheduledTime,
       });
 
-      // Media already populated from the cloned template — Blitz/Campaigns
-      // never generate media from scratch (per architectural rebuild).
-      // If no template was linked (text-only path), fall back to the
-      // media generator; otherwise leave the cloned source in place.
+      // Media already populated from the cloned template. Every Blitz
+      // post has a template at this point (fallback assigned if needed).
       onProgress?.({
         postIndex: i,
         total: engineResult.total_posts,
@@ -834,19 +805,7 @@ export async function generateCampaignPosts(
         percent: Math.round(((i + 1) / engineResult.total_posts) * 100),
       });
 
-      if (!template) {
-        // Awaited (was fire-and-forget) — otherwise the job marks 'done'
-        // and the client polls Blitz before sourceMediaSlots lands, which
-        // triggers useBlitzPreviewProps null-return and the "Missing
-        // preview data" fallback. Text-only + non-media types resolve
-        // to null generator inside generateMediaForContentItem and
-        // return immediately, so this is a no-op for them.
-        try {
-          await generateMediaForContentItem(contentItem.id, resolvedContentType, orgId);
-        } catch (mediaErr: any) {
-          console.warn(`[Campaign] Media generation failed for post ${i}:`, mediaErr.message);
-        }
-      }
+      inserted++;
 
       onPostComplete?.({
         postIndex: i,
