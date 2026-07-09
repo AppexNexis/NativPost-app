@@ -353,6 +353,7 @@ export type CampaignTemplateRow = {
   sourceUrl: string | null;
   structure: any;
   angles: string[];
+  niches: string[];
   mediaUrl: string | null;
   thumbnailUrl: string | null;
   thumbnailUrls: Record<string, string> | string[] | null;
@@ -362,6 +363,21 @@ export type CampaignTemplateRow = {
   viewCount: number | null;
   likeCount: number | null;
   commentCount: number | null;
+};
+
+// Randomised hook pool so Blitz cards never show the same text.
+// Defined at module level so both Phase 1 (template-first) and the
+// template fallback section can reference it.
+const FALLBACK_HOOKS: Record<string, string[]> = {
+  slideshow: ['Real results, real growth', 'See the full story', 'From concept to completion'],
+  carousel: ['Swipe to see the journey', 'Behind the numbers', 'A closer look inside'],
+  data_story: ['The numbers speak for themselves', 'Data you can act on', 'Insights that matter'],
+  green_screen: ['Breaking it down for you', 'Let me explain this', 'Quick breakdown incoming'],
+  video_hook: ['Watch this!', 'You need to see this', 'Game changer alert'],
+  talking_head: ['Here is the truth', 'Let me share something', 'From my experience'],
+  wall_of_text: ['Read this carefully', 'Important thoughts', 'Deep dive time'],
+  reel: ['Trending now', 'Your daily dose', 'Can not stop watching'],
+  ugc: ['Real review here', 'Honest thoughts', 'Tried it so you do not have to'],
 };
 
 // Maps a CampaignTemplateRow (camelCase) to the engine's expected shape
@@ -391,6 +407,7 @@ async function fetchCampaignTemplates(
   db: any,
   _orgId: string,                    // prefix with _ to suppress unused warning
   contentMix: Record<string, number>,
+  niche?: string | null,
 ): Promise<CampaignTemplateRow[]> {
   const mixKeys = Object.entries(contentMix)
     .filter(([, v]) => (v || 0) > 0)
@@ -406,6 +423,17 @@ async function fetchCampaignTemplates(
 
   if (uniqueTypes.length === 0) return [];
 
+  // Build WHERE clause — content type + active + approved + optional niche
+  const whereClauses: any[] = [
+    eq(contentTemplateSchema.curationStatus, 'approved'),
+    eq(contentTemplateSchema.isActive, true),
+    inArray(contentTemplateSchema.contentType, uniqueTypes),
+  ];
+  if (niche) {
+    // Postgres JSONB `?` operator: true if the array `niches` contains the string.
+    whereClauses.push(sql`${contentTemplateSchema.niches} ? ${niche}`);
+  }
+
   const templates = await db
     .select({
       id: contentTemplateSchema.id,
@@ -413,6 +441,7 @@ async function fetchCampaignTemplates(
       sourceUrl: contentTemplateSchema.sourceUrl,
       structure: contentTemplateSchema.structure,
       angles: contentTemplateSchema.angles,
+      niches: contentTemplateSchema.niches,
       mediaUrl: contentTemplateSchema.mediaUrl,
       thumbnailUrl: contentTemplateSchema.thumbnailUrl,
       thumbnailUrls: contentTemplateSchema.thumbnailUrls,
@@ -424,15 +453,7 @@ async function fetchCampaignTemplates(
       commentCount: contentTemplateSchema.commentCount,
     })
     .from(contentTemplateSchema)
-    .where(
-      and(
-        eq(contentTemplateSchema.curationStatus, 'approved'),
-        eq(contentTemplateSchema.isActive, true),
-        // Filter at the DB level so large template tables don't ship rows
-        // that will be dropped by the JS filter anyway.
-        inArray(contentTemplateSchema.contentType, uniqueTypes),
-      ),
-    );
+    .where(and(...whereClauses));
 
   return (templates as any[])
     .filter((t) => uniqueTypes.includes(t.contentType))
@@ -453,6 +474,7 @@ async function fetchCampaignTemplates(
       sourceUrl: t.sourceUrl ?? null,
       structure: t.structure || {},
       angles: (t.angles as string[]) || [],
+      niches: (t.niches as string[]) || [],
       mediaUrl: t.mediaUrl ?? null,
       thumbnailUrl: t.thumbnailUrl ?? null,
       thumbnailUrls: t.thumbnailUrls ?? null,
@@ -480,6 +502,7 @@ export async function generateCampaignPosts(
   const postsPerDay = campaign.postsPerDay || 10;
   const campaignLengthDays = campaign.campaignLengthDays || 7;
   const totalPosts = postsPerDay * campaignLengthDays;
+  const postsToCreate = postsPerDay;
 
   const contentMix = (campaign.contentMix as Record<string, number>) || {};
   const campaignAngles = (campaign.angles as { angleId: string; weight: number }[]) || [];
@@ -533,16 +556,191 @@ export async function generateCampaignPosts(
     });
   }
 
+  // Filter templates by brand profile niche so only templates relevant
+  // to the user's industry are used. Templates store their target niches
+  // in the `niches` JSONB array; brandProfile.industry is the source of
+  // truth (e.g. "b2b saas", "agency", "fitness", "personal brand").
+  const niche = profile?.industry || null;
+
   // Fetch templates for remix. Every Blitz/Campaign post is a shallow
   // clone of a Library template — text is regenerated, media is cloned
   // (or swapped for a matching Set on safe-swap content types).
   // If contentMix asks for types with no matching approved templates,
   // the engine will fall back to text-only generation for those posts.
-  const templates = await fetchCampaignTemplates(db, orgId, contentMix);
+  let templates = await fetchCampaignTemplates(db, orgId, contentMix, niche);
+  // Fallback: if niche filtering produced zero templates, retry without
+  // the filter. This prevents users whose brand profile niche has no
+  // matching content from getting empty Blitz cards.
+  if (templates.length === 0 && niche) {
+    console.log(`[Campaign] No templates matched niche "${niche}", retrying without filter.`);
+    templates = await fetchCampaignTemplates(db, orgId, contentMix, null);
+  }
   const templatesById = new Map<string, CampaignTemplateRow>();
   for (const t of templates) templatesById.set(t.id, t);
 
-  // Build engine payload
+  // ── Phase 1: Template-first allocation ──
+  // Content library templates are the PRIMARY source for Blitz cards.
+  // Each post gets a unique template with media-set substitution and
+  // randomized hook text. This guarantees visual AND textual diversity
+  // because every template looks different and captions don't share the
+  // engine's monotonous pattern.
+  //
+  // The engine is ONLY called if template allocation can't fill all slots,
+  // which is rare with a well-populated library.
+
+  // Group templates by content type for round-robin cycling
+  const byType = new Map<string, CampaignTemplateRow[]>();
+  for (const t of templates) {
+    const list = byType.get(t.contentType) || [];
+    list.push(t);
+    byType.set(t.contentType, list);
+  }
+
+  // Content-type rotation schedule from the campaign mix
+  const mixTypes = Object.entries(contentMix)
+    .filter(([, v]) => (v || 0) > 0)
+    .map(([k]) => MIX_KEY_TO_TEMPLATE_CONTENT_TYPE[k])
+    .filter(Boolean) as string[];
+  const uniqueMixTypes = Array.from(new Set(mixTypes));
+
+  let typeIdx = 0;
+  function nextType(): string {
+    if (uniqueMixTypes.length === 0) return 'reel';
+    const t = uniqueMixTypes[typeIdx % uniqueMixTypes.length]!;
+    typeIdx++;
+    return t;
+  }
+
+  // Track used templates and hooks so no two cards look the same
+  const usedTemplateIds = new Set<string>();
+  const usedHooks = new Set<string>();
+
+  function pickUniqueHook(contentType: string): string {
+    const pool = FALLBACK_HOOKS[contentType] || FALLBACK_HOOKS.reel || ['Check this out!'];
+    for (let attempt = 0; attempt < pool.length * 3; attempt++) {
+      const h = pool[Math.floor(Math.random() * pool.length)]!;
+      if (!usedHooks.has(h)) {
+        usedHooks.add(h);
+        return h;
+      }
+    }
+    // All hooks exhausted — use random but append counter for uniqueness
+    const h = pool[Math.floor(Math.random() * pool.length)]!;
+    return `${h} (${usedHooks.size + 1})`;
+  }
+
+  // Allocate template posts
+  const templatePosts: Array<{ template: CampaignTemplateRow; hookText: string }> = [];
+  for (let i = 0; i < postsToCreate; i++) {
+    const target = nextType();
+    const pool = byType.get(target) || [];
+    let picked = pool.filter(t => !usedTemplateIds.has(t.id));
+    if (picked.length === 0) {
+      // Try any unused template (cross-type)
+      const all = templates.filter(t => !usedTemplateIds.has(t.id));
+      picked = all.length > 0 ? [all[Math.floor(Math.random() * all.length)]!] : [];
+    }
+    if (picked.length === 0) break; // no templates left — engine will fill
+    const t = picked[Math.floor(Math.random() * picked.length)]!;
+    usedTemplateIds.add(t.id);
+    templatePosts.push({ template: t, hookText: pickUniqueHook(t.contentType) });
+  }
+
+  console.log(
+    `[Campaign] Phase 1: allocated ${templatePosts.length} template posts ` +
+    `(target=${postsToCreate}, available=${templates.length})`,
+  );
+
+  // Insert template posts with media set substitution
+  let inserted = 0;
+  const contentItemIds: string[] = [];
+  let failedPosts = 0;
+
+  for (const { template, hookText } of templatePosts) {
+    try {
+      let sourceMediaSlots = buildSourceMediaSlots(template);
+      try {
+        const set = await pickDefaultSet(db, orgId, template.contentType);
+        if (set) {
+          sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, template.contentType);
+        }
+      } catch { /* keep original slots — Set substitution is best-effort */ }
+
+      const resolvedContentType = template.contentType;
+      if (!RENDERABLE_CONTENT_TYPES.has(resolvedContentType)) continue;
+
+      const editorScript = buildEditorScript(
+        { caption: hookText, content_type: resolvedContentType, template_id: template.id },
+        { contentType: resolvedContentType, slideCaptions: template.slideCaptions, thumbnailUrls: template.thumbnailUrls },
+      );
+
+      const reasoning = buildReasoning(
+        {},
+        { contentType: resolvedContentType },
+      );
+
+      const rawSource = template.mediaUrl || template.thumbnailUrl || null;
+
+      const [contentItem] = await db
+        .insert(contentItemSchema)
+        .values({
+          orgId,
+          caption: hookText,
+          enrichmentData: {
+            sourceMediaSlots,
+            editorScript,
+            reasoning,
+            isCompiled: false,
+            templateId: template.id,
+            templateSnapshot: template,
+          },
+          rawSource,
+          contentType: resolvedContentType,
+          status: 'pending_review',
+          brandProfileId: profile?.id || null,
+          angleId: null,
+        })
+        .returning();
+
+      contentItemIds.push(contentItem.id);
+      inserted++;
+
+      await db.insert(campaignContentSchema).values({
+        campaignId: campaign.id,
+        contentItemId: contentItem.id,
+        sequenceIndex: contentItemIds.length - 1,
+        scheduledDate: calculateSchedule(campaign.startDate, postsPerDay, contentItemIds.length - 1).scheduledDate,
+        scheduledTime: calculateSchedule(campaign.startDate, postsPerDay, contentItemIds.length - 1).scheduledTime,
+      });
+
+      const { scheduledDate: sDate } = calculateSchedule(campaign.startDate, postsPerDay, contentItemIds.length - 1);
+      onPostComplete?.({
+        postIndex: contentItemIds.length - 1,
+        contentItemId: contentItem.id,
+        contentType: resolvedContentType,
+        scheduledDate: sDate.toISOString().slice(0, 10),
+      });
+    } catch (err: any) {
+      console.error(`[Campaign] Phase 1 insert failed for ${template.id}:`, err?.message || err);
+      failedPosts++;
+      onPostError?.({
+        postIndex: inserted,
+        detail: err?.message || String(err),
+      });
+    }
+  }
+
+  // ── Phase 2: Engine supplement (only if template slots are unfilled) ──
+  const remaining = postsToCreate - inserted;
+  let engineResult: any = null;
+  if (remaining <= 0) {
+    console.log(`[Campaign] Phase 1 filled all ${postsToCreate} slots. Skipping engine call.`);
+  } else {
+    // Wrap engine block so on error we break out gracefully
+    // instead of throwing and killing the entire campaign job.
+    // Phase 1 already inserted what it could — the template fallback
+    // section after this block fills remaining slots.
+    do {
   const payload = {
     brand_profile: buildEngineBrandProfile(profile),
     campaign_name: campaign.name || 'Campaign',
@@ -594,18 +792,21 @@ export async function generateCampaignPosts(
   } catch (fetchErr: any) {
     clearTimeout(engineTimeout);
     if (fetchErr?.name === 'AbortError') {
-      throw new Error(`Campaign engine timed out after 240s at ${ENGINE_URL}. The engine may be down or overloaded.`);
+      console.error(`[Campaign] Engine timed out after 240s at ${ENGINE_URL}.`);
+    } else {
+      console.error(`[Campaign] Engine unreachable at ${ENGINE_URL}: ${fetchErr?.message || fetchErr}`);
     }
-    throw new Error(`Campaign engine unreachable at ${ENGINE_URL}: ${fetchErr?.message || fetchErr}`);
+    break; // exit do-while → template fallback
   }
   clearTimeout(engineTimeout);
 
   if (!res.ok) {
     const text = await res.text().catch(() => 'Unknown error');
-    throw new Error(`Campaign engine failed: ${res.status} ${text}`);
+    console.error(`[Campaign] Engine failed: ${res.status} ${text}`);
+    break; // exit do-while → template fallback
   }
 
-  const engineResult = await res.json() as {
+  engineResult = await res.json() as {
     campaign_name: string;
     total_posts: number;
     posts: Array<{
@@ -635,38 +836,8 @@ export async function generateCampaignPosts(
   // unresolvable template_ids. We stop once we've successfully inserted
   // postsPerDay cards.
   let inserted = 0;
-  const postsToCreate = postsPerDay;
-  // Track template IDs used in this batch so consecutive cards never show
-  // the same preview. Without this, the engine may assign the same
-  // template_id to multiple posts, producing identical-looking cards.
-  const usedTemplateIds = new Set<string>();
-
-  // Pre-compute a content-type rotation schedule from the campaign mix
-  // so the Blitz queue always shows visually diverse cards. Even when the
-  // engine returns monotonous types, the client-side cycles through the
-  // available template content types in round-robin order.
-  const mixContentTypes = Object.entries(contentMix)
-    .filter(([, v]) => (v || 0) > 0)
-    .map(([key]) => MIX_KEY_TO_TEMPLATE_CONTENT_TYPE[key])
-    .filter(Boolean) as string[];
-  const uniqueMixTypes = Array.from(new Set(mixContentTypes));
-
-  // Build per-type template pools for fast lookup during dedup fallback.
-  const templatesByType = new Map<string, CampaignTemplateRow[]>();
-  for (const t of templates) {
-    const list = templatesByType.get(t.contentType) || [];
-    list.push(t);
-    templatesByType.set(t.contentType, list);
-  }
-
-  let contentTypeRoundRobin = 0;
-  function nextContentType(): string {
-    if (uniqueMixTypes.length === 0) return 'reel';
-    const ct = uniqueMixTypes[contentTypeRoundRobin % uniqueMixTypes.length]!;
-    contentTypeRoundRobin++;
-    return ct;
-  }
-
+  // Use the Phase 1 `usedTemplateIds` set. The engine-supplement loop
+  // must NOT re-insert templates already used in the template-first pass.
   for (const [i, post] of engineResult.posts.entries()) {
     if (inserted >= postsToCreate) {
       break;
@@ -687,7 +858,7 @@ export async function generateCampaignPosts(
       // Round-robin through the mix's content types so the Blitz queue
       // always shows visually diverse cards. Content type diversity
       // matters more than matching the engine's suggested template.
-      const targetContentType = nextContentType();
+      const targetContentType = nextType();
 
       let template: CampaignTemplateRow | undefined = post.template_id
         ? templatesById.get(post.template_id)
@@ -701,7 +872,7 @@ export async function generateCampaignPosts(
 
       if (needsSwap && templates.length > 0) {
         // Try 1: unused template of the round-robin target type
-        const pool1 = (templatesByType.get(targetContentType) || [])
+        const pool1 = (byType.get(targetContentType) || [])
           .filter((t) => !usedTemplateIds.has(t.id));
         if (pool1.length > 0) {
           template = pool1[Math.floor(Math.random() * pool1.length)]!;
@@ -889,6 +1060,9 @@ export async function generateCampaignPosts(
       failedPosts++;
     }
   }
+  } while (false);
+
+  } // end engine supplement else block
 
   // ── Template fallback: fill remaining quota from unused templates ──
   // When the engine doesn't produce enough unique posts (e.g., same
@@ -920,7 +1094,7 @@ export async function generateCampaignPosts(
     let safety = 0;
     while (fillTemplates.length < remaining && safety < remaining * 3) {
       safety++;
-      const targetType = nextContentType();
+      const targetType = nextType();
       const pool = unusedByType.get(targetType);
       if (pool && pool.length > 0) {
         const picked = pool.shift()!;
@@ -965,17 +1139,6 @@ export async function generateCampaignPosts(
 
         // Randomised caption pool so fallback Blitz posts don't all
         // show the same generic hook text on the card preview.
-        const FALLBACK_HOOKS: Record<string, string[]> = {
-          slideshow: ['Real results, real growth', 'See the full story', 'From concept to completion'],
-          carousel: ['Swipe to see the journey', 'Behind the numbers', 'A closer look inside'],
-          data_story: ['The numbers speak for themselves', 'Data you can act on', 'Insights that matter'],
-          green_screen: ['Breaking it down for you', 'Let me explain this', 'Quick breakdown incoming'],
-          video_hook: ['Watch this!', 'You need to see this', 'Game changer alert'],
-          talking_head: ['Here is the truth', 'Let me share something', 'From my experience'],
-          wall_of_text: ['Read this carefully', 'Important thoughts', 'Deep dive time'],
-          reel: ['Trending now', 'Your daily dose', 'Can not stop watching'],
-          ugc: ['Real review here', 'Honest thoughts', 'Tried it so you do not have to'],
-        };
         const typeHooks = FALLBACK_HOOKS[resolvedContentType] || FALLBACK_HOOKS.reel!;
         const randomHook = typeHooks[Math.floor(Math.random() * typeHooks.length)]!;
 
@@ -1046,14 +1209,16 @@ export async function generateCampaignPosts(
     }
   }
 
+  const totalEnginePosts = engineResult?.total_posts ?? inserted;
+
   console.log(
     `[Campaign] Generation complete: requested=${postsToCreate} inserted=${inserted} failed=${failedPosts} ` +
-    `enginePosts=${engineResult.total_posts} itemIds=${contentItemIds.length}`,
+    `enginePosts=${totalEnginePosts} itemIds=${contentItemIds.length}`,
   );
 
   return {
-    totalPosts: engineResult.total_posts,
-    completedPosts: engineResult.total_posts - failedPosts,
+    totalPosts: totalEnginePosts,
+    completedPosts: totalEnginePosts - failedPosts,
     failedPosts,
     contentItemIds,
   };
