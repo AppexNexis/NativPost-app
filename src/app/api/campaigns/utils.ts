@@ -373,16 +373,76 @@ export type CampaignTemplateRow = {
 // Defined at module level so both Phase 1 (template-first) and the
 // template fallback section can reference it.
 const FALLBACK_HOOKS: Record<string, string[]> = {
-  slideshow: ['Real results, real growth', 'See the full story', 'From concept to completion'],
-  carousel: ['Swipe to see the journey', 'Behind the numbers', 'A closer look inside'],
-  data_story: ['The numbers speak for themselves', 'Data you can act on', 'Insights that matter'],
-  green_screen: ['Breaking it down for you', 'Let me explain this', 'Quick breakdown incoming'],
-  video_hook: ['Watch this!', 'You need to see this', 'Game changer alert'],
-  video_hook_demo: ['Quick demo incoming', 'See it in action', 'Watch how it works'],
-  talking_head: ['Here is the truth', 'Let me share something', 'From my experience'],
-  wall_of_text: ['Read this carefully', 'Important thoughts', 'Deep dive time'],
-  reel: ['Trending now', 'Your daily dose', 'Can not stop watching'],
-  ugc: ['Real review here', 'Honest thoughts', 'Tried it so you do not have to'],
+  slideshow: [
+    'See the full breakdown of how this works from start to finish with real examples and results',
+    'From concept to completion, here is the complete step-by-step process you need to follow',
+    'Real results worth sharing today with a detailed walkthrough of the entire approach',
+    'A complete visual guide breaking down every step of the process with clear explanations',
+    'Quick visual guide covering everything you need to know about this topic in one place',
+  ],
+  carousel: [
+    'Swipe through the key insights and data points that matter most for your strategy this week',
+    'Everything you need to know in just a few slides covering the most important takeaways',
+    'Breaking down all the important details and giving you the full picture in an easy format',
+    'Swipe through to see what changed this week and how it affects your overall approach going forward',
+    'The numbers and data tell an interesting story that you need to understand for better results',
+  ],
+  data_story: [
+    'The data behind the strategy shows what is actually working and what needs to change this quarter',
+    'Numbers that actually mean something with real context and actionable insights you can use today',
+    'What the key metrics and performance data reveal about your current approach and next steps',
+    'Real insights from real performance data that show exactly where you should focus your efforts',
+    'A closer look at what moved the needle this month and how to replicate that success going forward',
+  ],
+  green_screen: [
+    'Breaking this down in plain terms so you can understand exactly what is happening and why it matters',
+    'Here is a quick explanation that covers all the important points without any of the unnecessary fluff',
+    'Let me walk you through all the important details and show you exactly how this all works together',
+    'The simple version of a complex topic so you can understand and apply it without getting overwhelmed',
+    'A quick but thorough breakdown of everything you need to know about this topic right now',
+  ],
+  video_hook: [
+    'Watch this quick overview to see exactly what you need to know about this topic right now',
+    'You will definitely want to see this one because it covers something really important for your growth',
+    'A game changer worth your attention that could completely transform how you approach this strategy',
+    'Quick update covering all the important changes and developments you should know about this week',
+    'Something new and worth sharing today that could make a real difference in how you do things',
+  ],
+  video_hook_demo: [
+    'Quick demo showing exactly how this works so you can see it in action and understand the process',
+    'Watch it in action right here with a full walkthrough of every step from start to finish',
+    'See exactly how this works today with a practical demonstration that shows real results',
+    'Quick product demo that walks you through the most important features and how to use them effectively',
+    'A practical look at what makes this different from everything else on the market right now',
+  ],
+  talking_head: [
+    'Let me share some real thoughts and perspectives on this topic based on actual experience and research',
+    'Here is what I have been noticing lately and why it matters for your approach going forward',
+    'A quick perspective on this topic that covers all the important angles and what you should consider',
+    'Something I have been thinking about a lot and wanted to share with you because it could be helpful',
+    'Here is my honest take on this topic with practical advice you can actually use starting today',
+  ],
+  wall_of_text: [
+    'Important thoughts and insights worth reading carefully because they could change your perspective',
+    'A deep dive into what really matters with thorough analysis and practical takeaways you can apply',
+    'Key insights and considerations you should thoroughly review before making your next strategic move',
+    'Here is the complete and detailed breakdown covering every important aspect of this topic in depth',
+    'Everything you need to think about and consider carefully before moving forward with your approach',
+  ],
+  reel: [
+    'Trending content that you will really enjoy watching with fresh perspectives and engaging topics',
+    'Your daily dose of fresh and curated content designed to keep you informed and inspired every day',
+    'Something worth watching right now that will give you new ideas and perspectives on this topic',
+    'Quick hit of great content that delivers real value and insights in a format you can easily consume',
+    'Fresh content curated and selected just for you covering the topics that matter most right now',
+  ],
+  ugc: [
+    'An honest and authentic review from a real user who actually tried this product or service themselves',
+    'Real thoughts and genuine feedback from someone who tested it thoroughly and wants to share their experience',
+    'Tried it myself so you do not have to wonder whether it is worth your time and money investment',
+    'An honest and trustworthy take that gives you the real story without any marketing fluff or exaggeration',
+    'Real user experience and authentic feedback worth considering before making your own decision about this',
+  ],
 };
 
 // Maps a CampaignTemplateRow (camelCase) to the engine's expected shape
@@ -727,10 +787,23 @@ export async function generateCampaignPosts(
       const resolvedContentType = template.contentType;
       if (!RENDERABLE_CONTENT_TYPES.has(resolvedContentType)) continue;
 
-      const editorScript = buildEditorScript(
-        { caption: hookText, content_type: resolvedContentType, template_id: template.id },
+      // Build a proper editor script from the template's caption data so the
+      // Blitz card shows per-slide text (slideshows), bodyText (video hooks),
+      // etc. Only fall back to pickUniqueHook when no caption is available.
+      // Content-template rows store the original caption as structure.caption
+      // or slideCaptions — neither is guaranteed, so fall back gracefully.
+      const templateCaption = template.structure?.caption
+        || (Array.isArray(template.slideCaptions) ? template.slideCaptions.join('\n') : '')
+        || (typeof template.slideCaptions === 'object' && template.slideCaptions !== null
+          ? Object.values(template.slideCaptions).join('\n') : '')
+        || '';
+      let editorScript = buildEditorScript(
+        { caption: templateCaption, content_type: resolvedContentType, template_id: template.id },
         { contentType: resolvedContentType, slideCaptions: template.slideCaptions, thumbnailUrls: template.thumbnailUrls },
       );
+      if (!editorScript.hookText) {
+        editorScript = { hookText };
+      }
 
       const reasoning = buildReasoning(
         {},

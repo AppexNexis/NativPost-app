@@ -789,6 +789,16 @@ function BlitzSwipeCard({
   const isCompiled = enrichment.isCompiled === true;
   const compiledUrl = (item.graphicUrls || [])[0] || null;
   const isCompiledVideo = compiledUrl?.match(/\.(mp4|webm|mov)(\?|$)/i);
+  // Fallback media for slideshow "no slides" case — show media from
+  // templateSnapshot, graphicUrls, or enrichment source media, so hook
+  // text never renders on a blank dark box.
+  const fallbackMediaUrl = compiledUrl
+    || (enrichment.templateSnapshot?.mediaUrl as string | undefined)
+    || (enrichment.sourceMediaSlots?.background?.url as string | undefined)
+    || null;
+  // Check if fallbackMediaUrl is a video — separate from isCompiledVideo
+  // because fallbackMediaUrl may differ from compiledUrl.
+  const fallbackIsVideo = fallbackMediaUrl?.match(/\.(mp4|webm|mov)(\?|$)/i);
 
   // Short brand message for the slideshow text overlay — NOT the full
   // post caption. The editorScript stores hookText as the short tagline
@@ -954,14 +964,27 @@ function BlitzSwipeCard({
               )}
             </>
           ) : (
-            // No slides available yet — show brand message text
-            <div className="flex size-full items-center justify-center bg-neutral-800">
-              {hookText ? (
-                <p className="px-6 text-center text-sm leading-relaxed text-white/80">
-                  {hookText}
-                </p>
-              ) : (
-                <Loader2 className="size-5 animate-spin text-white/60" />
+            // No slides available — show hook text over a fallback
+            // background (rawSource, graphicUrls[0] or compiled), never a
+            // blank dark box. When the user clicks Edit they see the media
+            // because the editor session loads the full template.
+            <div className="relative size-full bg-neutral-800">
+              {fallbackMediaUrl && (
+                fallbackIsVideo
+                  ? <video src={fallbackMediaUrl} className="absolute inset-0 size-full object-cover" muted loop playsInline autoPlay />
+                  : <img src={fallbackMediaUrl} alt="" className="absolute inset-0 size-full object-cover" />
+              )}
+              {hookText && (
+                <div className="pointer-events-none absolute inset-x-0 top-1/2 z-20 -translate-y-1/2 px-3">
+                  <div className="mx-auto w-fit max-w-[90%] rounded-lg bg-black/60 px-4 py-2.5 text-sm leading-snug text-white backdrop-blur-sm">
+                    {hookText}
+                  </div>
+                </div>
+              )}
+              {!fallbackMediaUrl && !hookText && (
+                <div className="flex size-full items-center justify-center">
+                  <Loader2 className="size-5 animate-spin text-white/60" />
+                </div>
               )}
             </div>
           )}
@@ -970,7 +993,7 @@ function BlitzSwipeCard({
               editorScript.slideCopy, matching the Image Editor behavior.
               Falls back to hookText (brand message) when slideCopy is empty. */}
           {slides.length > 0 && (slideCopy[slideIdx] || hookText) && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-8 z-20 px-3">
+            <div className="pointer-events-none absolute inset-x-0 top-1/2 z-20 -translate-y-1/2 px-3">
               <div className="mx-auto w-fit max-w-[90%] rounded-lg bg-black/60 px-4 py-2.5 text-sm leading-snug text-white backdrop-blur-sm">
                 {slideCopy[slideIdx] || hookText}
               </div>
@@ -991,15 +1014,18 @@ function BlitzSwipeCard({
       ) : previewProps ? (
         <div className="pointer-events-none size-full">
           {(() => {
-            // For video content types use bodyText (longer caption with more
-            // detail) as the primary text on the composition, replacing the
-            // short hookText headline.
-            const videoInputProps = isVideoType && previewProps.inputProps?.script?.bodyText
+            // For video content types use bodyText as the primary text
+            // (composition shows the longer caption instead of short hookText).
+            // Clip bodyText to 90 chars (user wants 80-100 on all cards).
+            const script = previewProps.inputProps?.script;
+            const bodyText = script?.bodyText;
+            const clippedBody = bodyText && bodyText.length > 90 ? bodyText.slice(0, 90).trimEnd() + '...' : bodyText;
+            const videoInputProps = isVideoType && clippedBody
               ? {
                   ...previewProps.inputProps,
                   script: {
-                    ...previewProps.inputProps.script,
-                    hookText: previewProps.inputProps.script.bodyText,
+                    ...script,
+                    hookText: clippedBody,
                     bodyText: undefined,
                   },
                 }
@@ -1014,12 +1040,22 @@ function BlitzSwipeCard({
         </div>
 
       ) : compiledUrl ? (
-        <div className="pointer-events-none size-full">
+        <div className="pointer-events-none relative size-full">
           {isCompiledVideo ? (
             <video src={compiledUrl} className="size-full object-cover" muted loop playsInline autoPlay />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={compiledUrl} alt={item.caption?.slice(0, 60) || ''} className="size-full object-cover" />
+          )}
+          {/* Text overlay for compiled videos — shows hook/body text on
+              the video so UGC and other compiled videos aren't textless.
+              Clips to 90 chars for consistent card density. */}
+          {hookText && (
+            <div className="pointer-events-none absolute inset-x-0 top-1/2 z-20 -translate-y-1/2 px-3">
+              <div className="mx-auto w-fit max-w-[90%] rounded-lg bg-black/60 px-4 py-2.5 text-sm leading-snug text-white backdrop-blur-sm">
+                {hookText.slice(0, 90)}
+              </div>
+            </div>
           )}
         </div>
 

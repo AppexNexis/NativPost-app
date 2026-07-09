@@ -18,7 +18,7 @@
 
 const SLIDE_CHAR_CAP = 80;
 const WALL_CHAR_CAP = 220;
-const HOOK_CHAR_CAP = 60;
+const HOOK_CHAR_CAP = 90;
 const BODY_CHAR_CAP = 140;
 const CTA_CHAR_CAP = 40;
 

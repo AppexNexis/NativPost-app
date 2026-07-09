@@ -59,6 +59,7 @@ export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }
           src={mediaSlots.background.url}
           style={{ width, height, objectFit: 'cover', position: 'absolute' }}
           muted
+          loop
         />
       )}
 

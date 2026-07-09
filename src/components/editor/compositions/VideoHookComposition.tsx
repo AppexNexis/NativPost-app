@@ -182,6 +182,7 @@ export function VideoHookComposition({ script, style, mediaSlots, audioTrack }: 
               src={mediaSlots.hookVideo.url}
               style={{ width, height, objectFit: 'cover', position: 'absolute' }}
               muted
+              loop
             />
           ) : (
             <div style={{ width, height, backgroundColor: '#1a1a2e' }} />

@@ -65,6 +65,7 @@ export function UGCAdComposition({ script, style, mediaSlots, audioTrack }: Prop
           src={mediaSlots.background.url}
           style={{ width, height, objectFit: 'cover', position: 'absolute' }}
           muted
+          loop
         />
       )}
 
