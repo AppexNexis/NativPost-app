@@ -13,7 +13,7 @@
  *
  * Content-type behavior:
  *   - slideshow / carousel / data_story → slides[] from thumbnailUrls
- *   - wall_of_text / talking_head / green_screen / video_hook / ugc / reel
+ *   - wall_of_text / talking_head / green_screen / video_hook / video_hook_demo / ugc / reel
  *     → background = mediaUrl (video) OR thumbnailUrl (image)
  *   - unknown → background = mediaUrl || thumbnailUrl
  */
@@ -69,7 +69,7 @@ export function buildSourceMediaSlots(template: TemplateRow): SourceMediaSlots {
 
   // Composition-specific aliases so per-type compositions can find the media.
   if (slots.background?.assetType === 'video') {
-    if (template.contentType === 'video_hook') {
+    if (template.contentType === 'video_hook' || template.contentType === 'video_hook_demo') {
       slots.hookVideo = { url: slots.background.url, assetType: 'video' };
     }
     if (template.contentType === 'ugc' || template.contentType === 'talking_head') {

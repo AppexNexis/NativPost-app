@@ -26,6 +26,7 @@ const COMPOSITION_BY_TYPE: Record<string, React.ComponentType<any>> = {
   talking_head: TalkingHeadComposition,
   green_screen: GreenScreenComposition,
   video_hook: VideoHookComposition,
+  video_hook_demo: VideoHookComposition,
   ugc: UGCAdComposition,
   // reel + single_image fall through to the universal EditorComposition,
   // which handles a plain background + text overlays.

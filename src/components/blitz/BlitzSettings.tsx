@@ -81,6 +81,8 @@ const CONTENT_TYPE_LABELS: Record<string, string> = {
   greenScreen: "Green Screen",
   videoHook: "Video Hook",
   talkingHead: "Talking Head",
+  videoHookDemo: "Video Hook Demo",
+  ugc: "UGC",
 };
 
 const MENTION_OPTIONS = [

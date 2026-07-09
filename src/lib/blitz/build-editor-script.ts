@@ -78,7 +78,7 @@ export function buildEditorScript(
     };
   }
 
-  // Talking head / green screen / video hook / ugc / reel → 3-part
+  // Talking head / green screen / video hook / video_hook_demo / ugc / reel → 3-part
   return {
     hookText: clip(lines[0], HOOK_CHAR_CAP),
     bodyText: lines.length > 2

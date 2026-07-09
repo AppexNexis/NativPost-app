@@ -24,6 +24,7 @@ export const EDITOR_KIND: Record<string, EditorKind> = {
   // Video kind — driven by the video engine + Remotion compositions
   reel: 'video',
   video_hook: 'video',
+  video_hook_demo: 'video',
   ugc: 'video',
   talking_head: 'video',
   green_screen: 'video',
@@ -56,6 +57,7 @@ export const EDITOR_TABS_BY_TYPE: Record<string, string[]> = {
   // Video kind
   reel: ['text', 'layout', 'media', 'audio'],
   video_hook: ['text', 'layout', 'media', 'audio'],
+  video_hook_demo: ['text', 'layout', 'media', 'audio'],
   ugc: ['text', 'layout', 'media', 'audio'],
   talking_head: ['text', 'layout', 'media', 'audio'],
   green_screen: ['text', 'layout', 'media', 'audio'],
@@ -80,6 +82,7 @@ export const EDITOR_MEDIA_SLOTS_BY_TYPE: Record<string, string[]> = {
   data_story: ['slides'],
   reel: ['background', 'hookVideo'],
   video_hook: ['background', 'hookVideo'],
+  video_hook_demo: ['background', 'hookVideo'],
   ugc: ['demoVideo'],
   talking_head: ['background', 'faceVideo'],
   green_screen: ['background', 'subjectVideo'],
@@ -100,6 +103,7 @@ export const EDITOR_CT_LABELS: Record<string, string> = {
   data_story: 'Data Story',
   reel: 'Video',
   video_hook: 'Video Hook',
+  video_hook_demo: 'Video Hook Demo',
   ugc: 'UGC',
   talking_head: 'Talking Head',
   green_screen: 'Green Screen',
