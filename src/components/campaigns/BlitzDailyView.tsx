@@ -34,7 +34,6 @@ import {
   Volume2,
   VolumeX,
   X,
-  Zap,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -80,7 +79,7 @@ function formatCompactNumber(n: number | null | undefined): string {
 }
 
 // Structured reasoning payload written by lib/blitz/build-editor-script.ts.
-// Legacy rows may still have a plain string here; the WhyPopover handles both.
+// Legacy rows may still have a plain string here; the WhyTooltip handles both.
 type BlitzReasoning = {
   whyThisContent: string;
   angleName: string | null;
@@ -542,20 +541,18 @@ export function BlitzDailyView({
 
   return (
     <div className="flex h-[calc(100dvh-var(--header-h,64px))] flex-col overflow-hidden bg-background">
-      {/* Header: compact, title only */}
-      <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3 sm:px-6">
-        <div className="flex items-center gap-2.5">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10">
-            <Zap className="size-4 text-primary" />
-          </div>
-          <h1 className="text-lg font-semibold tracking-tight text-foreground">Blitz</h1>
-          {totalToday > 0 && (
-            <span className="ml-2 inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground">
+      {/* Header: minimal — approved pill (left) + Settings (right) */}
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2 sm:px-6">
+        <div className="flex items-center">
+          {totalToday > 0 ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground">
               <CheckCircle2 className="size-3 text-emerald-500" />
               {approvedCount}
               {' '}
               approved
             </span>
+          ) : (
+            <span aria-hidden className="h-6" />
           )}
         </div>
         <button
@@ -670,30 +667,20 @@ function CardPair({
   const enrichment = (current.enrichmentData as any) || {};
   const snapshot = readSnapshot(enrichment);
   const hasSourceMedia = Boolean(snapshot?.mediaUrl || snapshot?.thumbnailUrl);
-  const [whyOpen, setWhyOpen] = useState(false);
 
   return (
-    <div className="flex w-full flex-col items-center">
-      {/* Card header — two pills row + Why This Content button */}
+    <div className="flex size-full flex-col items-center justify-between gap-2 py-1">
+      {/* Card header — two pills row + Why This Content hover tooltip */}
       <CardHeader
         item={current}
         enrichment={enrichment}
-        whyOpen={whyOpen}
-        onToggleWhy={() => setWhyOpen((v) => !v)}
+        snapshot={snapshot}
       />
 
-      {/* Why popover — sits under the header row */}
-      {whyOpen && (
-        <WhyPopover
-          enrichment={enrichment}
-          snapshot={snapshot}
-          onClose={() => setWhyOpen(false)}
-        />
-      )}
-
       {/* Main card row: Remixed From panel (LEFT) + swipe deck (RIGHT).
-          Panel is hidden when the snapshot has no media so the deck centers. */}
-      <div className="mt-4 flex w-full flex-col items-center justify-center gap-6 md:flex-row md:items-start">
+          Panel hides when snapshot has no media so the deck centers.
+          flex-1 min-h-0 makes the row take remaining viewport height. */}
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-4 md:flex-row md:items-center md:gap-6">
         {hasSourceMedia && (
           <RemixedFromPanel snapshot={snapshot} />
         )}
@@ -705,63 +692,69 @@ function CardPair({
         />
       </div>
 
-      {/* Action bar */}
-      <div className="mt-6 flex items-center justify-center gap-4">
-        <button
-          type="button"
-          onClick={onReject}
-          disabled={actionPending}
-          title="Reject"
-          className="flex size-16 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-colors hover:bg-red-600 disabled:opacity-50 disabled:cursor-default"
-        >
-          <X className="size-7" />
-        </button>
-        <button
-          type="button"
-          onClick={onEdit}
-          disabled={actionPending}
-          className="inline-flex h-14 items-center gap-2 rounded-full border-2 border-border bg-background px-8 text-sm font-medium text-foreground shadow-md transition-colors hover:bg-muted disabled:opacity-60 disabled:cursor-default"
-        >
-          <Pencil className="size-4" />
-          Edit
-        </button>
-        <button
-          type="button"
-          onClick={onApprove}
-          disabled={actionPending}
-          title="Approve"
-          className="flex size-16 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg transition-colors hover:bg-emerald-600 disabled:opacity-60 disabled:cursor-default"
-        >
-          {actionPending ? (
-            <Loader2 className="size-7 animate-spin" />
-          ) : (
-            <CheckCircle2 className="size-7" />
-          )}
-        </button>
+      {/* Action bar — arrows under each swipe button (usefastlane parity) */}
+      <div className="flex items-start justify-center gap-4 pt-1">
+        <div className="flex flex-col items-center gap-1">
+          <button
+            type="button"
+            onClick={onReject}
+            disabled={actionPending}
+            title="Reject"
+            aria-label="Reject"
+            className="flex size-14 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-colors hover:bg-red-600 disabled:opacity-50 disabled:cursor-default"
+          >
+            <X className="size-6" />
+          </button>
+          <kbd className="flex size-5 items-center justify-center rounded border border-border bg-muted font-mono text-[10px] text-muted-foreground">
+            {'\u2190'}
+          </kbd>
+        </div>
+        <div className="flex flex-col items-center gap-1 pt-1">
+          <button
+            type="button"
+            onClick={onEdit}
+            disabled={actionPending}
+            className="inline-flex h-12 items-center gap-2 rounded-full border-2 border-border bg-background px-6 text-sm font-medium text-foreground shadow-md transition-colors hover:bg-muted disabled:opacity-60 disabled:cursor-default"
+          >
+            <Pencil className="size-4" />
+            Edit
+          </button>
+          <span className="h-5" aria-hidden />
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <button
+            type="button"
+            onClick={onApprove}
+            disabled={actionPending}
+            title="Approve"
+            aria-label="Approve"
+            className="flex size-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg transition-colors hover:bg-emerald-600 disabled:opacity-60 disabled:cursor-default"
+          >
+            {actionPending ? (
+              <Loader2 className="size-6 animate-spin" />
+            ) : (
+              <CheckCircle2 className="size-6" />
+            )}
+          </button>
+          <kbd className="flex size-5 items-center justify-center rounded border border-border bg-muted font-mono text-[10px] text-muted-foreground">
+            {'\u2192'}
+          </kbd>
+        </div>
       </div>
-
-      <p className="mt-3 text-[11px] text-muted-foreground">
-        <span className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono">{'\u2190'}</span>
-        {' Reject   '}
-        <span className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono">{'\u2192'}</span>
-        {' Approve'}
-      </p>
     </div>
   );
 }
 
-/* ─── CardHeader (two pills + Why This Content button) ──────────────── */
+/* ─── CardHeader (two pills + Why This Content hover tooltip) ───────── */
 
 function CardHeader({
   item,
   enrichment,
-  whyOpen,
-  onToggleWhy,
+  snapshot,
 }: {
   item: BlitzItem;
   enrichment: any;
-  whyOpen: boolean;
-  onToggleWhy: () => void;
+  snapshot: any;
 }) {
   const typeLabel = item.contentType
     ? String(item.contentType).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -771,100 +764,116 @@ function CardHeader({
   const topicLabel: string | null = enrichment.topicLabel || item.angleName || null;
 
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="flex shrink-0 flex-col items-center gap-1.5">
       <div className="flex flex-wrap items-center justify-center gap-2">
         {typeLabel && (
-          <span className="rounded-full bg-muted px-3 py-1 text-[11px] font-medium capitalize text-foreground/70">
+          <span className="rounded-full bg-muted px-3 py-0.5 text-[11px] font-medium capitalize text-foreground/70">
             {typeLabel}
           </span>
         )}
         {topicLabel && (
-          <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-[11px] font-medium text-sky-700 dark:text-sky-300">
+          <span
+            title={topicLabel}
+            className="max-w-[240px] truncate rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-0.5 text-[11px] font-medium text-sky-700 dark:text-sky-300"
+          >
             {topicLabel}
           </span>
         )}
       </div>
-      <button
-        type="button"
-        onClick={onToggleWhy}
-        className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-background px-3 py-1 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-muted"
-        aria-expanded={whyOpen}
-      >
-        <HelpCircle className="size-3" />
-        Why This Content?
-      </button>
+      <WhyTooltip enrichment={enrichment} snapshot={snapshot} />
     </div>
   );
 }
 
-/* ─── WhyPopover ────────────────────────────────────────────────────── */
+/* ─── WhyTooltip — hover-triggered floating card, no layout push ─────── */
 
-function WhyPopover({
-  enrichment,
-  snapshot,
-  onClose,
-}: {
-  enrichment: any;
-  snapshot: any;
-  onClose: () => void;
-}) {
+function WhyTooltip({ enrichment, snapshot }: { enrichment: any; snapshot: any }) {
+  const [open, setOpen] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Delay-close so cursor can travel between the trigger and the panel
+  // without the panel disappearing.
+  const scheduleClose = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setOpen(false), 120);
+  };
+  const cancelClose = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+
+  useEffect(() => () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+  }, []);
+
   // Reasoning can be either the new structured object or a legacy string.
   const raw = enrichment.reasoning;
   const reasoning: Partial<BlitzReasoning> = typeof raw === 'object' && raw !== null
     ? raw
     : { whyThisContent: typeof raw === 'string' ? raw : 'Selected from your active content mix and audience angles.' };
 
-  // Metrics can live on either reasoning.sourceMetrics OR directly on
-  // the snapshot (Phase 1 stores them on the whole template row).
   const views = reasoning.sourceMetrics?.views ?? snapshot?.viewCount ?? null;
   const likes = reasoning.sourceMetrics?.likes ?? snapshot?.likeCount ?? null;
   const comments = reasoning.sourceMetrics?.comments ?? snapshot?.commentCount ?? null;
   const hasMetrics = [views, likes, comments].some((n) => typeof n === 'number' && n > 0);
 
-  const sourceCreator = reasoning.sourceCreator ?? snapshot?.sourceCreator ?? null;
-  const sourcePlatform = reasoning.sourcePlatform ?? snapshot?.sourcePlatform ?? null;
-
   return (
-    <div className="mt-3 w-full max-w-md rounded-2xl border border-border bg-background p-4 shadow-lg">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-sm leading-relaxed text-foreground">
-          {reasoning.whyThisContent || 'Selected from your active content mix and audience angles.'}
-        </p>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted"
+    <div className="relative">
+      <button
+        type="button"
+        onMouseEnter={() => { cancelClose(); setOpen(true); }}
+        onMouseLeave={scheduleClose}
+        onFocus={() => { cancelClose(); setOpen(true); }}
+        onBlur={scheduleClose}
+        onClick={() => setOpen((v) => !v)}
+        aria-describedby="why-this-content-tooltip"
+        aria-expanded={open}
+        className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-background px-3 py-0.5 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-muted"
+      >
+        <HelpCircle className="size-3" />
+        Why This Content?
+      </button>
+      {open && (
+        <div
+          id="why-this-content-tooltip"
+          role="tooltip"
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+          className="absolute left-1/2 top-full z-40 mt-2 w-72 -translate-x-1/2 rounded-2xl border border-border bg-background p-3 shadow-xl"
         >
-          <X className="size-4" />
-        </button>
-      </div>
-      {hasMetrics && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {typeof views === 'number' && views > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-foreground/80">
-              <Eye className="size-3" />
-              {formatCompactNumber(views)}
-            </span>
-          )}
-          {typeof likes === 'number' && likes > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-foreground/80">
-              <Heart className="size-3" />
-              {formatCompactNumber(likes)}
-            </span>
-          )}
-          {typeof comments === 'number' && comments > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-foreground/80">
-              <MessageCircle className="size-3" />
-              {formatCompactNumber(comments)}
-            </span>
+          {/* Arrow */}
+          <span
+            aria-hidden
+            className="absolute -top-1.5 left-1/2 size-3 -translate-x-1/2 rotate-45 border-l border-t border-border bg-background"
+          />
+          <p className="text-xs leading-relaxed text-foreground">
+            {reasoning.whyThisContent || 'Selected from your active content mix and audience angles.'}
+          </p>
+          {hasMetrics && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {typeof views === 'number' && views > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-foreground/80">
+                  <Eye className="size-3" />
+                  {formatCompactNumber(views)}
+                </span>
+              )}
+              {typeof likes === 'number' && likes > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-foreground/80">
+                  <Heart className="size-3" />
+                  {formatCompactNumber(likes)}
+                </span>
+              )}
+              {typeof comments === 'number' && comments > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-foreground/80">
+                  <MessageCircle className="size-3" />
+                  {formatCompactNumber(comments)}
+                </span>
+              )}
+            </div>
           )}
         </div>
-      )}
-      {sourceCreator && sourcePlatform && (
-        <p className="mt-3 text-[11px] text-muted-foreground">
-          {`Remixed from @${sourceCreator} on ${sourcePlatform.charAt(0).toUpperCase()}${sourcePlatform.slice(1).toLowerCase()}`}
-        </p>
       )}
     </div>
   );
@@ -894,7 +903,7 @@ function RemixedFromPanel({ snapshot }: { snapshot: any }) {
   const likes = typeof snapshot?.likeCount === 'number' ? snapshot.likeCount : null;
 
   return (
-    <div className="flex w-[140px] flex-col items-start gap-1.5">
+    <div className="hidden w-[120px] shrink-0 flex-col items-start gap-1.5 md:flex md:w-[140px]">
       <span className="text-[11px] font-medium text-foreground/70">Remixed From</span>
       <div className="relative aspect-[9/16] w-full overflow-hidden rounded-2xl border border-border/60 bg-neutral-900 shadow-lg">
         {isVideo ? (
@@ -959,7 +968,7 @@ function CardDeck({
   );
 
   return (
-    <div className="relative mx-auto aspect-[9/16] w-[min(40vw,300px)] max-h-[min(65vh,520px)]">
+    <div className="relative mx-auto aspect-[9/16] w-[min(70vw,260px)] max-h-[min(58vh,460px)] md:w-[min(38vw,300px)] md:max-h-[min(62vh,500px)]">
       {stack.map((card, idx) => {
         const isTop = idx === 0;
         // Alternating tilt for the ghost cards so the stack looks like a
@@ -1023,11 +1032,20 @@ function BlitzSwipeCard({
     setMuted(true);
   }, [item.id, x, controls]);
 
-  const previewProps = useBlitzPreviewProps({
-    contentType: String(item.contentType),
-    enrichmentData: item.enrichmentData,
-    aspectRatio: item.aspectRatio || '9:16',
-  });
+  // Memoize the argument so useBlitzPreviewProps's inner useMemo doesn't
+  // recompute on every render. Without this the caller was passing a fresh
+  // object literal each render, defeating the hook's memoization and
+  // causing RemotionPreviewPlayer to re-mount briefly on every parent
+  // re-render — visible as a "media loads then blank" flicker.
+  const previewItem = useMemo(
+    () => ({
+      contentType: String(item.contentType),
+      enrichmentData: item.enrichmentData,
+      aspectRatio: item.aspectRatio || '9:16',
+    }),
+    [item.contentType, item.enrichmentData, item.aspectRatio],
+  );
+  const previewProps = useBlitzPreviewProps(previewItem);
 
   const contentType = String(item.contentType);
   const enrichment = (item.enrichmentData as any) || {};
@@ -1274,32 +1292,10 @@ function BlitzSwipeCard({
         </div>
 
       ) : previewProps ? (
-        <div className="pointer-events-none size-full">
-          {(() => {
-            // For video content types use bodyText as the primary text
-            // (composition shows the longer caption instead of short hookText).
-            // Clip bodyText to 90 chars (user wants 80-100 on all cards).
-            const script = previewProps.inputProps?.script;
-            const bodyText = script?.bodyText;
-            const clippedBody = bodyText && bodyText.length > 90 ? bodyText.slice(0, 90).trimEnd() + '...' : bodyText;
-            const videoInputProps = isVideoType && clippedBody
-              ? {
-                  ...previewProps.inputProps,
-                  script: {
-                    ...script,
-                    hookText: clippedBody,
-                    bodyText: undefined,
-                  },
-                }
-              : previewProps.inputProps;
-            return (
-              <RemotionPreviewPlayer
-                contentType={previewProps.contentType}
-                inputProps={{ ...videoInputProps, slideIndex: 0 }}
-              />
-            );
-          })()}
-        </div>
+        <RemotionPreviewSlot
+          previewProps={previewProps}
+          isVideoType={isVideoType}
+        />
 
       ) : compiledUrl ? (
         <div className="pointer-events-none relative size-full">
@@ -1327,6 +1323,50 @@ function BlitzSwipeCard({
         </div>
       )}
     </motion.div>
+  );
+}
+
+/* ─── RemotionPreviewSlot — stabilises inputProps for RemotionPreviewPlayer.
+ * The player mounts once per contentType change; script rewrite for video
+ * types is derived + memoized inside instead of computed inline in JSX
+ * (which was recreating the whole object every render and forcing a
+ * remount — visible as the "media loads then blank" flicker).
+ */
+function RemotionPreviewSlot({
+  previewProps,
+  isVideoType,
+}: {
+  previewProps: NonNullable<ReturnType<typeof useBlitzPreviewProps>>;
+  isVideoType: boolean;
+}) {
+  const finalInputProps = useMemo(() => {
+    const base = previewProps.inputProps;
+    const script = base?.script as any;
+    const bodyText: string | undefined = script?.bodyText;
+    const clippedBody = bodyText && bodyText.length > 90
+      ? `${bodyText.slice(0, 90).trimEnd()}...`
+      : bodyText;
+    if (isVideoType && clippedBody) {
+      return {
+        ...base,
+        script: {
+          ...script,
+          hookText: clippedBody,
+          bodyText: undefined,
+        },
+        slideIndex: 0,
+      };
+    }
+    return { ...base, slideIndex: 0 };
+  }, [previewProps.inputProps, isVideoType]);
+
+  return (
+    <div className="pointer-events-none size-full">
+      <RemotionPreviewPlayer
+        contentType={previewProps.contentType}
+        inputProps={finalInputProps}
+      />
+    </div>
   );
 }
 
