@@ -135,6 +135,12 @@ type EditorContextType = {
   dispatch: React.Dispatch<EditorAction>;
   saveEdit: (opts?: SaveEditOpts) => Promise<void>;
   /**
+   * Mirror the current editor state into the linked content_item's
+   * enrichmentData. Unlike saveEdit this does NOT guard on isDirty,
+   * so it always pushes the latest script/style/layout/mediaSlots.
+   */
+  mirrorEdit: () => Promise<void>;
+  /**
    * Clears the pending autosave timer and marks the session non-dirty so
    * the debounce effect does not re-schedule. Used by the inline overlay
    * on Cancel to prevent a debounced write from landing after unmount.
@@ -252,6 +258,37 @@ export function EditorProvider({
     dispatch({ type: 'MARK_SAVED' });
   }, []);
 
+  /**
+   * Mirror the editor's current state into the linked content_item's
+   * enrichmentData so the Blitz swipe card (or detail page) reflects
+   * edits immediately.
+   *
+   * Unlike saveEdit -> which guards on isDirty and skips when the
+   * autosave already persisted -> mirrorEdit ALWAYS pushes the latest
+   * editor state. This fixes the Blitz "Done Editing" bug where the
+   * autosave's fire-and-forget mirror hadn't completed before the
+   * handleDone fetch raced past stale enrichmentData.
+   */
+  const mirrorEdit = useCallback(async () => {
+    if (!state.edit) return;
+    const linkedContentItemId = (state.edit as any)?.contentItemId;
+    if (!linkedContentItemId) return;
+    await fetch(`/api/content/${linkedContentItemId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        enrichmentData: {
+          editorScript: state.script,
+          editorStyle: state.style,
+          editorLayout: state.layout,
+          aspectRatio: state.aspectRatio,
+          sourceMediaSlots: state.mediaSlots,
+        },
+        aspectRatio: state.aspectRatio,
+      }),
+    });
+  }, [state.edit, state.script, state.style, state.layout, state.mediaSlots, state.aspectRatio]);
+
   // Autosave: debounce 1500ms whenever isDirty becomes true
   useEffect(() => {
     if (discardRef.current) return;
@@ -266,7 +303,7 @@ export function EditorProvider({
   }, [state.isDirty, state.isSaving, saveEdit]);
 
   return (
-    <EditorContext.Provider value={{ state, dispatch, saveEdit, discardPending }}>
+    <EditorContext.Provider value={{ state, dispatch, saveEdit, mirrorEdit, discardPending }}>
       {children}
     </EditorContext.Provider>
   );

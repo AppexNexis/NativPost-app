@@ -798,11 +798,16 @@ function BlitzSwipeCard({
     || item.caption?.slice(0, 80)
     || '';
 
+  // Video content types where bodyText (longer caption) should display
+  // as the primary text instead of the short hookText headline.
+  const isVideoType = ['reel', 'video_hook', 'video_hook_demo', 'talking_head', 'green_screen', 'ugc'].includes(contentType);
+
   // Slideshow/carousel: static slide rendering with prev/next arrows
   // instead of Remotion Player (which animates transitions and looks
   // like a video). The editor uses the same static slide pattern.
   const isSlideshowType = contentType === 'slideshow' || contentType === 'carousel' || contentType === 'data_story';
   const slides = (enrichment.sourceMediaSlots?.slides as { url: string }[]) || [];
+  const slideCopy: string[] = enrichment.editorScript?.slideCopy || [];
   const [slideIdx, setSlideIdx] = useState(0);
 
   useEffect(() => {
@@ -961,11 +966,13 @@ function BlitzSwipeCard({
             </div>
           )}
 
-          {/* Brand message overlay — short hook text, NOT the full caption */}
-          {hookText && slides.length > 0 && (
-            <div className="pointer-events-none absolute inset-x-0 top-1/2 z-20 -translate-y-1/2 px-3">
-              <div className="mx-auto w-fit rounded-lg bg-black/60 px-4 py-2.5 text-sm leading-snug text-white backdrop-blur-sm">
-                {hookText}
+          {/* Per-slide caption text — each slide gets its own caption from
+              editorScript.slideCopy, matching the Image Editor behavior.
+              Falls back to hookText (brand message) when slideCopy is empty. */}
+          {slides.length > 0 && (slideCopy[slideIdx] || hookText) && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-8 z-20 px-3">
+              <div className="mx-auto w-fit max-w-[90%] rounded-lg bg-black/60 px-4 py-2.5 text-sm leading-snug text-white backdrop-blur-sm">
+                {slideCopy[slideIdx] || hookText}
               </div>
             </div>
           )}
@@ -983,10 +990,27 @@ function BlitzSwipeCard({
 
       ) : previewProps ? (
         <div className="pointer-events-none size-full">
-          <RemotionPreviewPlayer
-            contentType={previewProps.contentType}
-            inputProps={{ ...previewProps.inputProps, slideIndex: 0 }}
-          />
+          {(() => {
+            // For video content types use bodyText (longer caption with more
+            // detail) as the primary text on the composition, replacing the
+            // short hookText headline.
+            const videoInputProps = isVideoType && previewProps.inputProps?.script?.bodyText
+              ? {
+                  ...previewProps.inputProps,
+                  script: {
+                    ...previewProps.inputProps.script,
+                    hookText: previewProps.inputProps.script.bodyText,
+                    bodyText: undefined,
+                  },
+                }
+              : previewProps.inputProps;
+            return (
+              <RemotionPreviewPlayer
+                contentType={previewProps.contentType}
+                inputProps={{ ...videoInputProps, slideIndex: 0 }}
+              />
+            );
+          })()}
         </div>
 
       ) : compiledUrl ? (

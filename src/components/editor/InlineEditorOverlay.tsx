@@ -112,7 +112,7 @@ function InlineEditorBody({
   onDone: (updatedItem?: ContentItem) => void;
   requestCloseRef: React.MutableRefObject<(() => void) | null>;
 }) {
-  const { state, saveEdit, discardPending } = useEditor();
+  const { state, saveEdit, mirrorEdit, discardPending } = useEditor();
   const [saving, setSaving] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
 
@@ -120,10 +120,13 @@ function InlineEditorBody({
     if (saving) return;
     setSaving(true);
     try {
-      // Await the mirror PATCH so the fresh GET below sees the mirrored
-      // enrichmentData. Without awaitMirror the mirror is fire-and-forget
-      // and the Blitz card refresh races the write.
-      await saveEdit({ awaitMirror: true });
+      // Save the edit row (no-op if autosave already saved since isDirty is false).
+      await saveEdit({ awaitMirror: false }).catch(() => {});
+      // ALWAYS mirror so the content_item enrichmentData reflects edits.
+      // saveEdit guards on isDirty and returns early when autosave already
+      // persisted — skipping the mirror step. mirrorEdit bypasses the guard
+      // so the Blitz card refresh below reads the edited state, not stale data.
+      await mirrorEdit();
 
       // Fetch the fresh content item and hand it to the host so it can
       // update its local queue in place without an extra roundtrip.
@@ -143,7 +146,7 @@ function InlineEditorBody({
       console.error('[InlineEditor] Save failed:', err);
       setSaving(false);
     }
-  }, [saving, saveEdit, contentItemId, onDone]);
+  }, [saving, saveEdit, mirrorEdit, contentItemId, onDone]);
 
   const handleCancelClick = useCallback(() => {
     if (saving) return;
