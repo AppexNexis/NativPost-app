@@ -279,20 +279,12 @@ export function BlitzDailyView({
   // a previous failed generation before sourceMediaSlots were populated).
   // NEVER auto-generate when the daily limit is already reached — this
   // is the primary fix for the "refresh resets my limit" bug.
+  // IMPORTANT: the items-exist check MUST come before the daily-limit
+  // check. Otherwise refreshing the page with a full queue of generated
+  // items shows "Daily limit reached" instead of the swipeable cards
+  // (the user still needs to review/approve/reject them).
   useEffect(() => {
     if (autoGenAttempted.current) {
-      return;
-    }
-    // Daily limit already reached — do NOT auto-generate. This guard
-    // runs synchronously (derived from useMemo) so it beats the async
-    // daily-limit useEffect.
-    if (dailyLimitReached) {
-      setOutcome({
-        kind: 'dailyLimit',
-        count: dailyLimitReached.count,
-        limit: dailyLimitReached.limit,
-        nextResetAt: dailyLimitReached.nextResetAt,
-      });
       return;
     }
     if (items.length > 0) {
@@ -307,6 +299,16 @@ export function BlitzDailyView({
       if (anyHasMedia) {
         return; // at least one item has a valid preview — don't re-gen
       }
+    }
+    // Daily limit already reached AND no items to review — show limit
+    if (dailyLimitReached) {
+      setOutcome({
+        kind: 'dailyLimit',
+        count: dailyLimitReached.count,
+        limit: dailyLimitReached.limit,
+        nextResetAt: dailyLimitReached.nextResetAt,
+      });
+      return;
     }
     autoGenAttempted.current = true;
     void runGenerate();
@@ -846,7 +848,7 @@ function BlitzSwipeCard({
       style={{ x, rotate }}
       animate={controls}
       drag={isTop ? 'x' : undefined}
-      dragConstraints={isTop ? { left: 0, right: 0 } : undefined}
+      dragConstraints={isTop ? { left: -400, right: 400 } : undefined}
       dragElastic={0.9}
       onDragEnd={isTop ? handleDragEnd : undefined}
     >
@@ -871,7 +873,8 @@ function BlitzSwipeCard({
           canvas/controls, breaking the framer-motion drag on the motion.div.
           pointer-events-none on its container prevents this while leaving
           the motion.div's native drag handlers intact. Slideshow arrow
-          buttons use onPointerDown+stopPropagation which is safe. */}
+          buttons use pointer-events-auto + onPointerDown+stopPropagation
+          which is safe. */}
 
 
       {/* ── Content-type-aware card preview ──
@@ -884,9 +887,13 @@ function BlitzSwipeCard({
        * 3. RemotionPreviewPlayer → animated video previews (reel, vid_hook, etc.)
        * 4. Raw media fallback → graphicUrls[0] as video or image.
        * 5. Loading spinner → generation still in progress.
+       *
+       * ALL media branches must be wrapped in pointer-events-none so the
+       * framer-motion drag on the parent motion.div works. Only the slide
+       * nav arrows explicitly opt back in with pointer-events-auto.
        */}
       {isSlideshowType ? (
-        <>
+        <div className="pointer-events-none size-full">
           {slides.length > 0 ? (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -908,29 +915,32 @@ function BlitzSwipeCard({
                 ))}
               </div>
 
-              {/* Prev/next arrows — only on the top card */}
+              {/* Prev/next arrows — only on the top card.
+                  pointer-events-auto overrides the parent's pointer-events-none
+                  so slide navigation still works while the card itself can be
+                  dragged by framer-motion. */}
               {isTop && slides.length > 1 && (
                 <>
                   <button
                     type="button"
+                    className="pointer-events-auto absolute left-2 top-1/2 z-20 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
                     onPointerDown={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
                       setSlideIdx((p) => (p - 1 + slides.length) % slides.length);
                     }}
-                    className="absolute left-2 top-1/2 z-20 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
                     aria-label="Previous slide"
                   >
                     <ChevronLeft className="size-4" />
                   </button>
                   <button
                     type="button"
+                    className="pointer-events-auto absolute right-2 top-1/2 z-20 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
                     onPointerDown={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
                       setSlideIdx((p) => (p + 1) % slides.length);
                     }}
-                    className="absolute right-2 top-1/2 z-20 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
                     aria-label="Next slide"
                   >
                     <ChevronRight className="size-4" />
@@ -953,21 +963,23 @@ function BlitzSwipeCard({
 
           {/* Brand message overlay — short hook text, NOT the full caption */}
           {hookText && slides.length > 0 && (
-            <div className="absolute inset-x-0 top-1/2 z-20 -translate-y-1/2 px-3">
+            <div className="pointer-events-none absolute inset-x-0 top-1/2 z-20 -translate-y-1/2 px-3">
               <div className="mx-auto w-fit rounded-lg bg-black/60 px-4 py-2.5 text-sm leading-snug text-white backdrop-blur-sm">
                 {hookText}
               </div>
             </div>
           )}
-        </>
+        </div>
 
       ) : isCompiled && compiledUrl ? (
-        isCompiledVideo ? (
-          <video src={compiledUrl} className="size-full object-cover" muted loop playsInline autoPlay />
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={compiledUrl} alt={item.caption?.slice(0, 60) || ''} className="size-full object-cover" />
-        )
+        <div className="pointer-events-none size-full">
+          {isCompiledVideo ? (
+            <video src={compiledUrl} className="size-full object-cover" muted loop playsInline autoPlay />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={compiledUrl} alt={item.caption?.slice(0, 60) || ''} className="size-full object-cover" />
+          )}
+        </div>
 
       ) : previewProps ? (
         <div className="pointer-events-none size-full">
@@ -978,12 +990,14 @@ function BlitzSwipeCard({
         </div>
 
       ) : compiledUrl ? (
-        isCompiledVideo ? (
-          <video src={compiledUrl} className="size-full object-cover" muted loop playsInline autoPlay />
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={compiledUrl} alt={item.caption?.slice(0, 60) || ''} className="size-full object-cover" />
-        )
+        <div className="pointer-events-none size-full">
+          {isCompiledVideo ? (
+            <video src={compiledUrl} className="size-full object-cover" muted loop playsInline autoPlay />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={compiledUrl} alt={item.caption?.slice(0, 60) || ''} className="size-full object-cover" />
+          )}
+        </div>
 
       ) : (
         <div className="flex size-full items-center justify-center">

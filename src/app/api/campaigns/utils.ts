@@ -611,9 +611,35 @@ export async function generateCampaignPosts(
     return t;
   }
 
-  // Track used templates and hooks so no two cards look the same
+  // Track used templates and hooks so no two cards look the same,
+  // even across multiple generation batches (auto-refill, page refresh).
+  // Without this DB seed, each runGenerate() starts with an empty set and
+  // reuses the same templates — the root cause of the "reject shows same
+  // post" and "always slideshow, always the same" bugs.
+  const existingItemsForCampaign = await db
+    .select({
+      templateId: contentItemSchema.templateId,
+      enrichmentData: contentItemSchema.enrichmentData,
+    })
+    .from(contentItemSchema)
+    .where(
+      and(
+        eq(contentItemSchema.campaignId, campaign.id),
+        eq(contentItemSchema.orgId, orgId),
+      ),
+    );
+
   const usedTemplateIds = new Set<string>();
   const usedHooks = new Set<string>();
+  for (const row of existingItemsForCampaign) {
+    if (row.templateId) usedTemplateIds.add(row.templateId);
+    // Also seed usedHooks from existing items' editorScript.hookText so
+    // the re-gen doesn't produce cards with the same hook text.
+    const ed = row.enrichmentData as Record<string, any> | undefined;
+    if (ed?.editorScript?.hookText) {
+      usedHooks.add(String(ed.editorScript.hookText));
+    }
+  }
 
   function pickUniqueHook(contentType: string): string {
     const pool = FALLBACK_HOOKS[contentType] || FALLBACK_HOOKS.reel || ['Check this out!'];
@@ -630,18 +656,34 @@ export async function generateCampaignPosts(
   }
 
   // Allocate template posts
+  // Content type cycling: when a type has no unused templates, try the
+  // next type in the rotation instead of falling through to "any type".
+  // The old fallthrough biased toward the most-abundant content type
+  // (typically slideshow), which produced monotype Blitz queues even
+  // when the campaign mix asked for diverse types.
   const templatePosts: Array<{ template: CampaignTemplateRow; hookText: string }> = [];
   for (let i = 0; i < postsToCreate; i++) {
-    const target = nextType();
-    const pool = byType.get(target) || [];
-    let picked = pool.filter(t => !usedTemplateIds.has(t.id));
-    if (picked.length === 0) {
-      // Try any unused template (cross-type)
-      const all = templates.filter(t => !usedTemplateIds.has(t.id));
-      picked = all.length > 0 ? [all[Math.floor(Math.random() * all.length)]!] : [];
+    // Try up to uniqueMixTypes.length attempts to find a type with available
+    // templates. If all types are exhausted, fall through to "any unused".
+    let found = false;
+    for (let attempt = 0; attempt < uniqueMixTypes.length; attempt++) {
+      const target = nextType();
+      const pool = byType.get(target) || [];
+      const picked = pool.filter(t => !usedTemplateIds.has(t.id));
+      if (picked.length > 0) {
+        const t = picked[Math.floor(Math.random() * picked.length)]!;
+        usedTemplateIds.add(t.id);
+        templatePosts.push({ template: t, hookText: pickUniqueHook(t.contentType) });
+        found = true;
+        break;
+      }
     }
-    if (picked.length === 0) break; // no templates left — engine will fill
-    const t = picked[Math.floor(Math.random() * picked.length)]!;
+    if (found) continue;
+
+    // All content-type pools exhausted — try any unused template (cross-grade).
+    const all = templates.filter(t => !usedTemplateIds.has(t.id));
+    if (all.length === 0) break; // no templates left — engine will fill
+    const t = all[Math.floor(Math.random() * all.length)]!;
     usedTemplateIds.add(t.id);
     templatePosts.push({ template: t, hookText: pickUniqueHook(t.contentType) });
   }
@@ -699,6 +741,11 @@ export async function generateCampaignPosts(
           status: 'pending_review',
           brandProfileId: profile?.id || null,
           angleId: null,
+          graphicUrls: rawSource
+            ? [rawSource]
+            : Array.isArray(sourceMediaSlots?.slides) && sourceMediaSlots.slides.length > 0
+              ? [sourceMediaSlots.slides[0]?.url || '']
+              : [],
         })
         .returning();
 
@@ -981,7 +1028,11 @@ export async function generateCampaignPosts(
           hashtags: post.hashtags || [],
           contentType: resolvedContentType,
           topic: post.angle_name || campaign.name || null,
-          graphicUrls: rawSource ? [rawSource] : [],
+          graphicUrls: rawSource
+            ? [rawSource]
+            : Array.isArray(sourceMediaSlots?.slides) && sourceMediaSlots.slides.length > 0
+              ? [sourceMediaSlots.slides[0]?.url || '']
+              : [],
           variantGroupId: null,
           variantNumber: 1,
           isSelectedVariant: true,
@@ -1182,7 +1233,11 @@ export async function generateCampaignPosts(
               editorScript,
               reasoning,
             },
-            graphicUrls: rawSource ? [rawSource] : [],
+            graphicUrls: rawSource
+              ? [rawSource]
+              : Array.isArray(sourceMediaSlots?.slides) && sourceMediaSlots.slides.length > 0
+                ? [sourceMediaSlots.slides[0]?.url || '']
+                : [],
             templateId: template.id,
             contentFormat: resolvedContentType === 'slideshow' ? 'carousel' : 'single',
             aspectRatio: '9:16',
