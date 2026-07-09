@@ -23,10 +23,16 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Eye,
+  Heart,
+  HelpCircle,
   Link as LinkIcon,
   Loader2,
+  MessageCircle,
   Pencil,
   Settings2,
+  Volume2,
+  VolumeX,
   X,
   Zap,
 } from 'lucide-react';
@@ -63,6 +69,34 @@ const SESSION_KEY_DAILY_LIMIT = 'blitz_daily_limit';
 function getTodayKey(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Compact number formatting (101K, 8.4M) for engagement metric chips.
+function formatCompactNumber(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return '0';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+  return String(n);
+}
+
+// Structured reasoning payload written by lib/blitz/build-editor-script.ts.
+// Legacy rows may still have a plain string here; the WhyPopover handles both.
+type BlitzReasoning = {
+  whyThisContent: string;
+  angleName: string | null;
+  topicLabel: string | null;
+  sourceMetrics: { views: number | null; likes: number | null; comments: number | null } | null;
+  sourceCreator: string | null;
+  sourcePlatform: string | null;
+};
+
+// Read the source template snapshot regardless of which key path wrote it.
+// Phase 1 (template-first insert) writes `templateSnapshot` with the full row.
+// Phase 2/3 (engine + fallback) write `sourceTemplateSnapshot` with an expanded
+// projection. Consumers must union both keys or Phase 2/3 rows silently miss
+// the Remixed From panel.
+function readSnapshot(enrichment: any): any {
+  return enrichment?.templateSnapshot ?? enrichment?.sourceTemplateSnapshot ?? null;
 }
 
 function readSessionDailyLimit(campaignId: string): { count: number; limit: number; nextResetAt: string } | null {
@@ -633,32 +667,60 @@ function CardPair({
   onReject: () => void;
   onEdit: () => void;
 }) {
+  const enrichment = (current.enrichmentData as any) || {};
+  const snapshot = readSnapshot(enrichment);
+  const hasSourceMedia = Boolean(snapshot?.mediaUrl || snapshot?.thumbnailUrl);
+  const [whyOpen, setWhyOpen] = useState(false);
+
   return (
     <div className="flex w-full flex-col items-center">
-      {/* Swipe stack: one generated card at the top, ghost cards behind */}
-      <CardDeck
-        current={current}
-        behind={behind}
-        onApprove={onApprove}
-        onReject={onReject}
+      {/* Card header — two pills row + Why This Content button */}
+      <CardHeader
+        item={current}
+        enrichment={enrichment}
+        whyOpen={whyOpen}
+        onToggleWhy={() => setWhyOpen((v) => !v)}
       />
 
+      {/* Why popover — sits under the header row */}
+      {whyOpen && (
+        <WhyPopover
+          enrichment={enrichment}
+          snapshot={snapshot}
+          onClose={() => setWhyOpen(false)}
+        />
+      )}
+
+      {/* Main card row: Remixed From panel (LEFT) + swipe deck (RIGHT).
+          Panel is hidden when the snapshot has no media so the deck centers. */}
+      <div className="mt-4 flex w-full flex-col items-center justify-center gap-6 md:flex-row md:items-start">
+        {hasSourceMedia && (
+          <RemixedFromPanel snapshot={snapshot} />
+        )}
+        <CardDeck
+          current={current}
+          behind={behind}
+          onApprove={onApprove}
+          onReject={onReject}
+        />
+      </div>
+
       {/* Action bar */}
-      <div className="mt-4 flex items-center justify-center gap-4">
+      <div className="mt-6 flex items-center justify-center gap-4">
         <button
           type="button"
           onClick={onReject}
           disabled={actionPending}
           title="Reject"
-          className="flex size-14 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-colors hover:bg-red-600 disabled:opacity-50 disabled:cursor-default"
+          className="flex size-16 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-colors hover:bg-red-600 disabled:opacity-50 disabled:cursor-default"
         >
-          <X className="size-6" />
+          <X className="size-7" />
         </button>
         <button
           type="button"
           onClick={onEdit}
           disabled={actionPending}
-          className="inline-flex h-12 items-center gap-2 rounded-full border-2 border-border bg-background px-6 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60 disabled:cursor-default"
+          className="inline-flex h-14 items-center gap-2 rounded-full border-2 border-border bg-background px-8 text-sm font-medium text-foreground shadow-md transition-colors hover:bg-muted disabled:opacity-60 disabled:cursor-default"
         >
           <Pencil className="size-4" />
           Edit
@@ -668,22 +730,209 @@ function CardPair({
           onClick={onApprove}
           disabled={actionPending}
           title="Approve"
-          className="flex size-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg transition-colors hover:bg-emerald-600 disabled:opacity-60 disabled:cursor-default"
+          className="flex size-16 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg transition-colors hover:bg-emerald-600 disabled:opacity-60 disabled:cursor-default"
         >
           {actionPending ? (
-            <Loader2 className="size-6 animate-spin" />
+            <Loader2 className="size-7 animate-spin" />
           ) : (
-            <CheckCircle2 className="size-6" />
+            <CheckCircle2 className="size-7" />
           )}
         </button>
       </div>
 
-      <p className="mt-2 text-[11px] text-muted-foreground">
+      <p className="mt-3 text-[11px] text-muted-foreground">
         <span className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono">{'\u2190'}</span>
         {' Reject   '}
         <span className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono">{'\u2192'}</span>
         {' Approve'}
       </p>
+    </div>
+  );
+}
+
+/* ─── CardHeader (two pills + Why This Content button) ──────────────── */
+
+function CardHeader({
+  item,
+  enrichment,
+  whyOpen,
+  onToggleWhy,
+}: {
+  item: BlitzItem;
+  enrichment: any;
+  whyOpen: boolean;
+  onToggleWhy: () => void;
+}) {
+  const typeLabel = item.contentType
+    ? String(item.contentType).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+    : null;
+  // Prefer the per-post topic label written at insert. Fall back to angleName
+  // for legacy rows so older items still get a second pill when one exists.
+  const topicLabel: string | null = enrichment.topicLabel || item.angleName || null;
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        {typeLabel && (
+          <span className="rounded-full bg-muted px-3 py-1 text-[11px] font-medium capitalize text-foreground/70">
+            {typeLabel}
+          </span>
+        )}
+        {topicLabel && (
+          <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-[11px] font-medium text-sky-700 dark:text-sky-300">
+            {topicLabel}
+          </span>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onToggleWhy}
+        className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-background px-3 py-1 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-muted"
+        aria-expanded={whyOpen}
+      >
+        <HelpCircle className="size-3" />
+        Why This Content?
+      </button>
+    </div>
+  );
+}
+
+/* ─── WhyPopover ────────────────────────────────────────────────────── */
+
+function WhyPopover({
+  enrichment,
+  snapshot,
+  onClose,
+}: {
+  enrichment: any;
+  snapshot: any;
+  onClose: () => void;
+}) {
+  // Reasoning can be either the new structured object or a legacy string.
+  const raw = enrichment.reasoning;
+  const reasoning: Partial<BlitzReasoning> = typeof raw === 'object' && raw !== null
+    ? raw
+    : { whyThisContent: typeof raw === 'string' ? raw : 'Selected from your active content mix and audience angles.' };
+
+  // Metrics can live on either reasoning.sourceMetrics OR directly on
+  // the snapshot (Phase 1 stores them on the whole template row).
+  const views = reasoning.sourceMetrics?.views ?? snapshot?.viewCount ?? null;
+  const likes = reasoning.sourceMetrics?.likes ?? snapshot?.likeCount ?? null;
+  const comments = reasoning.sourceMetrics?.comments ?? snapshot?.commentCount ?? null;
+  const hasMetrics = [views, likes, comments].some((n) => typeof n === 'number' && n > 0);
+
+  const sourceCreator = reasoning.sourceCreator ?? snapshot?.sourceCreator ?? null;
+  const sourcePlatform = reasoning.sourcePlatform ?? snapshot?.sourcePlatform ?? null;
+
+  return (
+    <div className="mt-3 w-full max-w-md rounded-2xl border border-border bg-background p-4 shadow-lg">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm leading-relaxed text-foreground">
+          {reasoning.whyThisContent || 'Selected from your active content mix and audience angles.'}
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+      {hasMetrics && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {typeof views === 'number' && views > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-foreground/80">
+              <Eye className="size-3" />
+              {formatCompactNumber(views)}
+            </span>
+          )}
+          {typeof likes === 'number' && likes > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-foreground/80">
+              <Heart className="size-3" />
+              {formatCompactNumber(likes)}
+            </span>
+          )}
+          {typeof comments === 'number' && comments > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-foreground/80">
+              <MessageCircle className="size-3" />
+              {formatCompactNumber(comments)}
+            </span>
+          )}
+        </div>
+      )}
+      {sourceCreator && sourcePlatform && (
+        <p className="mt-3 text-[11px] text-muted-foreground">
+          {`Remixed from @${sourceCreator} on ${sourcePlatform.charAt(0).toUpperCase()}${sourcePlatform.slice(1).toLowerCase()}`}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ─── RemixedFromPanel ──────────────────────────────────────────────── */
+
+function RemixedFromPanel({ snapshot }: { snapshot: any }) {
+  const mediaUrl: string | null = snapshot?.mediaUrl || snapshot?.thumbnailUrl || null;
+  if (!mediaUrl) return null;
+
+  const isVideo = /\.(mp4|webm|mov)(\?|$)/i.test(mediaUrl);
+
+  // Original hook text — first slide caption for slideshows, otherwise
+  // the raw first slide entry. When the snapshot only has thumbnailUrls
+  // we still show the mini preview but no overlay text.
+  let originalHook: string | null = null;
+  const slideCaptions = snapshot?.slideCaptions;
+  if (Array.isArray(slideCaptions) && slideCaptions[0]) {
+    originalHook = String(slideCaptions[0]).slice(0, 80);
+  } else if (slideCaptions && typeof slideCaptions === 'object') {
+    const first = Object.values(slideCaptions)[0];
+    if (typeof first === 'string') originalHook = first.slice(0, 80);
+  }
+
+  const views = typeof snapshot?.viewCount === 'number' ? snapshot.viewCount : null;
+  const likes = typeof snapshot?.likeCount === 'number' ? snapshot.likeCount : null;
+
+  return (
+    <div className="flex w-[140px] flex-col items-start gap-1.5">
+      <span className="text-[11px] font-medium text-foreground/70">Remixed From</span>
+      <div className="relative aspect-[9/16] w-full overflow-hidden rounded-2xl border border-border/60 bg-neutral-900 shadow-lg">
+        {isVideo ? (
+          <video
+            src={mediaUrl}
+            className="absolute inset-0 size-full object-cover"
+            muted
+            loop
+            playsInline
+            autoPlay
+          />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={mediaUrl} alt="Source template" className="absolute inset-0 size-full object-cover" />
+        )}
+        {originalHook && (
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 -translate-y-1/2 px-1.5">
+            <div className="mx-auto w-fit max-w-[95%] rounded-md bg-black/60 px-1.5 py-1 text-[9px] leading-tight text-white backdrop-blur-sm">
+              {originalHook}
+            </div>
+          </div>
+        )}
+        {/* Engagement chips overlaid bottom-right */}
+        <div className="absolute inset-y-0 right-1 z-10 flex flex-col items-end justify-end gap-1 pb-2">
+          {typeof likes === 'number' && likes > 0 && (
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-medium text-white backdrop-blur-sm">
+              <Heart className="size-2.5" />
+              {formatCompactNumber(likes)}
+            </span>
+          )}
+          {typeof views === 'number' && views > 0 && (
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-medium text-white backdrop-blur-sm">
+              <Eye className="size-2.5" />
+              {formatCompactNumber(views)}
+            </span>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -709,24 +958,14 @@ function CardDeck({
     [current, behind],
   );
 
-  // Format content type label: "video_hook" → "Video Hook"
-  const typeLabel = current
-    ? String(current.contentType)
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase())
-    : null;
-
   return (
-    <div className="flex flex-col items-center gap-2">
-      {/* Content type label */}
-      {typeLabel && (
-        <span className="rounded-full bg-muted px-3 py-1 text-[11px] font-medium capitalize text-foreground/70">
-          {typeLabel}
-        </span>
-      )}
-      <div className="relative mx-auto aspect-[9/16] w-[min(40vw,300px)] max-h-[min(65vh,520px)]">
-        {stack.map((card, idx) => {
+    <div className="relative mx-auto aspect-[9/16] w-[min(40vw,300px)] max-h-[min(65vh,520px)]">
+      {stack.map((card, idx) => {
         const isTop = idx === 0;
+        // Alternating tilt for the ghost cards so the stack looks like a
+        // shuffled deck rather than a stack of identical rectangles. Each
+        // ghost also shifts down + slightly right and scales down.
+        const tiltDeg = isTop ? 0 : (idx % 2 === 0 ? 3 : -3);
         return (
           <div
             key={card.id}
@@ -735,7 +974,8 @@ function CardDeck({
               zIndex: stack.length - idx,
               transform: isTop
                 ? undefined
-                : `translateY(${idx * 8}px) scale(${1 - idx * 0.03})`,
+                : `translateY(${idx * 6}px) translateX(${idx * 4}px) rotate(${tiltDeg}deg) scale(${1 - idx * 0.03})`,
+              filter: isTop ? undefined : 'brightness(0.85)',
             }}
           >
             <BlitzSwipeCard
@@ -747,7 +987,6 @@ function CardDeck({
           </div>
         );
       })}
-      </div>
     </div>
   );
 }
@@ -771,11 +1010,17 @@ function BlitzSwipeCard({
   const approveOpacity = useTransform(x, [0, 120], [0, 1]);
   const rejectOpacity = useTransform(x, [-120, 0], [1, 0]);
 
+  // Audio state — defaults to muted so browsers allow autoplay. User
+  // clicks the top-left toggle to unmute; state resets per-card so
+  // stale audio from a previous swipe doesn't blast on the next card.
+  const [muted, setMuted] = useState(true);
+
   // Reset motion values when the card identity changes so stamps don't
   // bleed through from the previous card's exit position.
   useEffect(() => {
     x.set(0);
     controls.set({ x: 0, opacity: 1 });
+    setMuted(true);
   }, [item.id, x, controls]);
 
   const previewProps = useBlitzPreviewProps({
@@ -881,6 +1126,23 @@ function BlitzSwipeCard({
           >
             Approve
           </motion.div>
+          {/* Audio mute toggle — top-left of the card. Only on the top
+              card so ghost cards behind stay silent. pointer-events-auto
+              wins over the pointer-events-none media wrapper below. */}
+          <button
+            type="button"
+            onPointerDown={(e) => {
+              e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMuted((v) => !v);
+            }}
+            aria-label={muted ? 'Unmute' : 'Mute'}
+            className="pointer-events-auto absolute left-3 top-3 z-30 flex size-8 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80"
+          >
+            {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+          </button>
         </>
       )}
 
@@ -971,7 +1233,7 @@ function BlitzSwipeCard({
             <div className="relative size-full bg-neutral-800">
               {fallbackMediaUrl && (
                 fallbackIsVideo
-                  ? <video src={fallbackMediaUrl} className="absolute inset-0 size-full object-cover" muted loop playsInline autoPlay />
+                  ? <video src={fallbackMediaUrl} className="absolute inset-0 size-full object-cover" muted={muted} loop playsInline autoPlay />
                   : <img src={fallbackMediaUrl} alt="" className="absolute inset-0 size-full object-cover" />
               )}
               {hookText && (
@@ -1004,7 +1266,7 @@ function BlitzSwipeCard({
       ) : isCompiled && compiledUrl ? (
         <div className="pointer-events-none size-full">
           {isCompiledVideo ? (
-            <video src={compiledUrl} className="size-full object-cover" muted loop playsInline autoPlay />
+            <video src={compiledUrl} className="size-full object-cover" muted={muted} loop playsInline autoPlay />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={compiledUrl} alt={item.caption?.slice(0, 60) || ''} className="size-full object-cover" />
@@ -1042,7 +1304,7 @@ function BlitzSwipeCard({
       ) : compiledUrl ? (
         <div className="pointer-events-none relative size-full">
           {isCompiledVideo ? (
-            <video src={compiledUrl} className="size-full object-cover" muted loop playsInline autoPlay />
+            <video src={compiledUrl} className="size-full object-cover" muted={muted} loop playsInline autoPlay />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={compiledUrl} alt={item.caption?.slice(0, 60) || ''} className="size-full object-cover" />

@@ -89,21 +89,126 @@ export function buildEditorScript(
 }
 
 /**
- * Human-readable "Why this was picked" text stored under
- * `enrichmentData.reasoning`. Kept short — the SwipeCard popover appends
- * engagement counts pulled from the template snapshot.
+ * Structured "Why This Content?" payload stored under
+ * `enrichmentData.reasoning`. Consumed by the Blitz WhyPopover which
+ * renders each field as its own section (title text, angle chip,
+ * source-metric chips).
  */
+export type BlitzReasoning = {
+  whyThisContent: string;
+  angleName: string | null;
+  topicLabel: string | null;
+  sourceMetrics: { views: number | null; likes: number | null; comments: number | null } | null;
+  sourceCreator: string | null;
+  sourcePlatform: string | null;
+};
+
 export function buildReasoning(
-  post: { angle_name?: string; is_remixed?: boolean },
-  _template: { contentType: string; sourcePlatform?: string | null; sourceCreator?: string | null },
-): string {
-  // Blitz shows only the generated result — never the source template
-  // platform, creator, or "Remixed From" attribution. Keep reasoning
-  // to angle name only.
+  post: { angle_name?: string; topic_label?: string; is_remixed?: boolean },
+  template: {
+    contentType: string;
+    sourcePlatform?: string | null;
+    sourceCreator?: string | null;
+    viewCount?: number | null;
+    likeCount?: number | null;
+    commentCount?: number | null;
+  },
+): BlitzReasoning {
+  const angleName = post.angle_name?.trim() || null;
+  const topicLabel = post.topic_label?.trim() || null;
   const parts: string[] = [];
-  if (post.angle_name) parts.push(`Angle: ${post.angle_name}.`);
-  if (parts.length === 0) parts.push('Selected from your active content mix and audience angles.');
-  return parts.join(' ');
+  if (topicLabel) parts.push(topicLabel + '.');
+  else if (angleName) parts.push(`Angle: ${angleName}.`);
+  else parts.push('Selected from your active content mix and audience angles.');
+  if (template.sourcePlatform && template.sourceCreator) {
+    parts.push(`Remixed from @${template.sourceCreator} on ${capitalize(template.sourcePlatform)}.`);
+  }
+  const hasMetrics = [template.viewCount, template.likeCount, template.commentCount].some((n) => typeof n === 'number' && n > 0);
+  return {
+    whyThisContent: parts.join(' '),
+    angleName,
+    topicLabel,
+    sourceMetrics: hasMetrics
+      ? {
+          views: template.viewCount ?? null,
+          likes: template.likeCount ?? null,
+          comments: template.commentCount ?? null,
+        }
+      : null,
+    sourceCreator: template.sourceCreator ?? null,
+    sourcePlatform: template.sourcePlatform ?? null,
+  };
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+
+/**
+ * Derive a short 3-5 word topic label for the Blitz "topic pill" from the
+ * template's caption/hook/slideCaptions. Prefers strong, punchy phrases.
+ * Returns null when nothing usable is available.
+ */
+export function deriveTopicLabel(template: {
+  structure?: any;
+  slideCaptions?: Record<string, string> | string[] | null;
+  niches?: string[] | null;
+  contentType?: string;
+}): string | null {
+  const candidates: string[] = [];
+  // 1. structure.hooks (array of short phrases)
+  const hooks = template.structure?.hooks;
+  if (Array.isArray(hooks)) candidates.push(...hooks.filter((h): h is string => typeof h === 'string'));
+  // 2. structure.caption first line
+  const capLine = typeof template.structure?.caption === 'string' ? template.structure.caption.split(/\r?\n/)[0] : '';
+  if (capLine) candidates.push(capLine);
+  // 3. First slide caption
+  const slides = parseSlideStrings(template.slideCaptions);
+  if (slides[0]) candidates.push(slides[0]);
+  // Pick the first candidate that yields a compact, cased phrase.
+  for (const raw of candidates) {
+    const label = toTopicLabel(raw);
+    if (label) return label;
+  }
+  // 4. Fallback: titlecased first niche
+  const niche = template.niches?.[0];
+  if (niche) return toTitleCase(niche);
+  return null;
+}
+
+function toTopicLabel(raw: string): string | null {
+  if (!raw) return null;
+  // Strip hashtags, mentions, urls, emojis.
+  let s = raw
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/[#@]\w+/g, '')
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!s) return null;
+  // First sentence.
+  s = (s.split(/[.!?]/)[0] || '').trim();
+  if (!s) return null;
+  const words = s.split(' ').filter(Boolean);
+  if (words.length < 2) return null;
+  // Cap at 5 words / 40 chars for a punchy pill.
+  const trimmed = words.slice(0, 5).join(' ');
+  const capped = trimmed.length > 40 ? trimmed.slice(0, 40).replace(/\s+\S*$/, '') : trimmed;
+  return toTitleCase(capped);
+}
+
+function toTitleCase(s: string): string {
+  return s
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w, i) => {
+      if (!w) return w;
+      // Preserve small words in the middle in lowercase for readability.
+      const small = new Set(['and', 'or', 'the', 'a', 'an', 'of', 'to', 'in', 'on', 'for', 'with']);
+      if (i > 0 && small.has(w)) return w;
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    })
+    .join(' ');
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@
 import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 
 import { applySetToSlots } from '@/lib/blitz/apply-set-to-slots';
-import { buildEditorScript, buildReasoning } from '@/lib/blitz/build-editor-script';
+import { buildEditorScript, buildReasoning, deriveTopicLabel } from '@/lib/blitz/build-editor-script';
 import { buildSourceMediaSlots } from '@/lib/blitz/build-source-media-slots';
 import { pickDefaultSet } from '@/lib/blitz/pick-default-set';
 import {
@@ -805,9 +805,20 @@ export async function generateCampaignPosts(
         editorScript = { hookText };
       }
 
+      // Derive a specific topic label for the Blitz topic pill from the
+      // template's caption/hooks — e.g. "Real Results, Real Growth". Falls
+      // back to null when nothing usable is available; UI hides the pill.
+      const topicLabel = deriveTopicLabel(template);
       const reasoning = buildReasoning(
-        {},
-        { contentType: resolvedContentType },
+        { topic_label: topicLabel || undefined },
+        {
+          contentType: resolvedContentType,
+          sourcePlatform: template.sourcePlatform,
+          sourceCreator: template.sourceCreator,
+          viewCount: template.viewCount,
+          likeCount: template.likeCount,
+          commentCount: template.commentCount,
+        },
       );
 
       const rawSource = template.mediaUrl || template.thumbnailUrl || null;
@@ -824,6 +835,7 @@ export async function generateCampaignPosts(
             isCompiled: false,
             templateId: template.id,
             templateSnapshot: template,
+            topicLabel,
           },
           rawSource,
           contentType: resolvedContentType,
@@ -1087,18 +1099,33 @@ export async function generateCampaignPosts(
         { contentType: resolvedContentType, slideCaptions: template.slideCaptions, thumbnailUrls: template.thumbnailUrls },
       );
 
-      // Reasoning: angle name only. Blitz users don't care about the
-      // source template platform/creator — just what angle was used.
+      // Blitz "Remixed From" panel + Why popover need full source
+      // attribution (mediaUrl for the mini preview, creator/platform for
+      // the popover, engagement metrics for chips).
+      const topicLabel = deriveTopicLabel(template);
       const reasoning = buildReasoning(
-        { angle_name: post.angle_name },
-        { contentType: resolvedContentType },
+        { angle_name: post.angle_name, topic_label: topicLabel || undefined },
+        {
+          contentType: resolvedContentType,
+          sourcePlatform: template.sourcePlatform,
+          sourceCreator: template.sourceCreator,
+          viewCount: template.viewCount,
+          likeCount: template.likeCount,
+          commentCount: template.commentCount,
+        },
       );
 
       const sourceTemplateSnapshot = {
+        mediaUrl: template.mediaUrl,
+        thumbnailUrl: template.thumbnailUrl,
+        thumbnailUrls: template.thumbnailUrls,
+        sourceUrl: template.sourceUrl,
+        sourcePlatform: template.sourcePlatform,
+        sourceCreator: template.sourceCreator,
+        slideCaptions: template.slideCaptions,
         viewCount: template.viewCount,
         likeCount: template.likeCount,
         commentCount: template.commentCount,
-        thumbnailUrls: template.thumbnailUrls,
       };
 
       // Preserve raw source media in graphicUrls[0] so compile can find
@@ -1140,6 +1167,7 @@ export async function generateCampaignPosts(
             isCompiled: false,
             ...(sourceTemplateSnapshot ? { sourceTemplateSnapshot } : {}),
             ...(reasoning ? { reasoning } : {}),
+            ...(topicLabel ? { topicLabel } : {}),
           },
           enrichmentApplied: [],
           campaignId: campaign.id,
@@ -1297,9 +1325,17 @@ export async function generateCampaignPosts(
           { contentType: resolvedContentType, slideCaptions: template.slideCaptions, thumbnailUrls: template.thumbnailUrls },
         );
 
+        const topicLabel = deriveTopicLabel(template);
         const reasoning = buildReasoning(
-          {},
-          { contentType: resolvedContentType },
+          { topic_label: topicLabel || undefined },
+          {
+            contentType: resolvedContentType,
+            sourcePlatform: template.sourcePlatform,
+            sourceCreator: template.sourceCreator,
+            viewCount: template.viewCount,
+            likeCount: template.likeCount,
+            commentCount: template.commentCount,
+          },
         );
 
         const rawSource = template.mediaUrl || template.thumbnailUrl || null;
@@ -1314,13 +1350,20 @@ export async function generateCampaignPosts(
             enrichmentData: {
               sourceMediaSlots,
               sourceTemplateSnapshot: {
+                mediaUrl: template.mediaUrl,
+                thumbnailUrl: template.thumbnailUrl,
+                thumbnailUrls: template.thumbnailUrls,
+                sourceUrl: template.sourceUrl,
+                sourcePlatform: template.sourcePlatform,
+                sourceCreator: template.sourceCreator,
+                slideCaptions: template.slideCaptions,
                 viewCount: template.viewCount,
                 likeCount: template.likeCount,
                 commentCount: template.commentCount,
-                thumbnailUrls: template.thumbnailUrls,
               },
               editorScript,
               reasoning,
+              ...(topicLabel ? { topicLabel } : {}),
             },
             graphicUrls: rawSource
               ? [rawSource]
