@@ -613,26 +613,37 @@ export async function generateCampaignPosts(
 
   // Track used templates and hooks so no two cards look the same,
   // even across multiple generation batches (auto-refill, page refresh).
-  // Without this DB seed, each runGenerate() starts with an empty set and
-  // reuses the same templates — the root cause of the "reject shows same
-  // post" and "always slideshow, always the same" bugs.
-  const existingItemsForCampaign = await db
+  // IMPORTANT: `campaignId` is NOT stored on `contentItemSchema` as a column
+  // — it lives on the `campaignContentSchema` join table. And Phase 1 items
+  // store `templateId` INSIDE `enrichmentData`, not as the FK column. Both
+  // must be handled to build the correct exclusion set.
+  const joinRows = await db
     .select({
       templateId: contentItemSchema.templateId,
       enrichmentData: contentItemSchema.enrichmentData,
     })
-    .from(contentItemSchema)
+    .from(campaignContentSchema)
+    .innerJoin(
+      contentItemSchema,
+      eq(campaignContentSchema.contentItemId, contentItemSchema.id),
+    )
     .where(
       and(
-        eq(contentItemSchema.campaignId, campaign.id),
+        eq(campaignContentSchema.campaignId, campaign.id),
         eq(contentItemSchema.orgId, orgId),
       ),
     );
 
   const usedTemplateIds = new Set<string>();
   const usedHooks = new Set<string>();
-  for (const row of existingItemsForCampaign) {
-    if (row.templateId) usedTemplateIds.add(row.templateId);
+  for (const row of joinRows) {
+    // Phase 1 items store templateId inside enrichmentData, NOT as the FK
+    // column. Engine-supplement and template-fallback items set the FK
+    // column. Check both.
+    const tid = row.templateId
+      || ((row.enrichmentData as Record<string, any>)?.templateId as string | undefined)
+      || null;
+    if (tid) usedTemplateIds.add(tid);
     // Also seed usedHooks from existing items' editorScript.hookText so
     // the re-gen doesn't produce cards with the same hook text.
     const ed = row.enrichmentData as Record<string, any> | undefined;
