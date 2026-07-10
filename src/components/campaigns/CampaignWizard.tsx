@@ -65,7 +65,7 @@ export function CampaignWizard({
     ownMediaMix: 50,
     influencerFrequency: 0,
     targetAccounts: [],
-    postsPerDay: 10,
+    postsPerDay: 1,
     campaignLengthDays: 7,
     startDate: null,
     totalPosts: 0,
@@ -146,7 +146,20 @@ export function CampaignWizard({
     setIsGenerating(true);
     setReviewError(null);
     try {
-      const created = await onCreate(campaign);
+      // Belt-and-braces clamp before submit. The UI stepper enforces 1-3
+      // but stale state (e.g. old defaults, re-entered wizard) could
+      // otherwise slip an out-of-range value past. Also pre-compute
+      // totalPosts so the row lands with a correct denominator even
+      // if the server ever regresses to trusting body.totalPosts.
+      const perDay = Math.max(1, Math.min(3, campaign.postsPerDay ?? 1));
+      const days = campaign.campaignLengthDays ?? 7;
+      const accountsCount = Math.max(1, validTargets.length);
+      const submitCampaign = {
+        ...campaign,
+        postsPerDay: perDay,
+        totalPosts: accountsCount * perDay * days,
+      };
+      const created = await onCreate(submitCampaign);
       if (created?.id) {
         setGeneratedCampaignId(created.id);
         await onGenerate(created.id);

@@ -566,10 +566,20 @@ export async function generateCampaignPosts(
   onPostComplete?: (event: PostCompleteEvent) => void | Promise<void>,
   onPostError?: (event: PostErrorEvent) => void | Promise<void>,
 ): Promise<GenerationResult> {
-  const postsPerDay = campaign.postsPerDay || 10;
+  const postsPerDay = campaign.postsPerDay || 1;
   const campaignLengthDays = campaign.campaignLengthDays || 7;
-  const totalPosts = postsPerDay * campaignLengthDays;
-  const postsToCreate = postsPerDay;
+  const accountsCount = Math.max(1, ((campaign.targetAccounts as any[]) || []).length);
+  // Prefer the row-stored totalPosts when present — the POST route
+  // computes accounts × postsPerDay × days there. Fall back to computing
+  // locally so older campaign rows still generate correctly.
+  const totalPosts = campaign.totalPosts && campaign.totalPosts > 0
+    ? campaign.totalPosts
+    : accountsCount * postsPerDay * campaignLengthDays;
+  // Phase 1 must fill the ENTIRE campaign window, not just one day.
+  // Blitz's per-day generation model (which this code was cloned from)
+  // relies on subsequent auto-refill calls, but Campaigns need the whole
+  // schedule up-front so the Review grid and Calendar can show every slot.
+  const postsToCreate = totalPosts;
 
   const contentMix = (campaign.contentMix as Record<string, number>) || {};
   const campaignAngles = (campaign.angles as { angleId: string; weight: number }[]) || [];

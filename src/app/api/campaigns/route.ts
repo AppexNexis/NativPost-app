@@ -56,6 +56,17 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
+    // Clamp postsPerDay to the product's [1,3] range and compute
+    // totalPosts server-side so the row's denominator is always correct
+    // regardless of what the wizard sent. Phase 1 generation reads
+    // totalPosts as its loop bound — a wrong value here caps the whole
+    // campaign to one day or produces zero-post reviews.
+    const targetAccountsBody = Array.isArray(body.targetAccounts) ? body.targetAccounts : [];
+    const perDay = Math.max(1, Math.min(3, Number(body.postsPerDay ?? 1)));
+    const days = Math.max(1, Number(body.campaignLengthDays ?? 7));
+    const accountsCount = Math.max(1, targetAccountsBody.length);
+    const computedTotalPosts = accountsCount * perDay * days;
+
     const [created] = await db
       .insert(campaignSchema)
       .values({
@@ -70,11 +81,11 @@ export async function POST(request: NextRequest) {
         genderPreference: body.genderPreference || null,
         ownMediaMix: body.ownMediaMix ?? 50,
         influencerFrequency: body.influencerFrequency ?? 0,
-        targetAccounts: body.targetAccounts || [],
-        postsPerDay: body.postsPerDay ?? 10,
-        campaignLengthDays: body.campaignLengthDays ?? 7,
+        targetAccounts: targetAccountsBody,
+        postsPerDay: perDay,
+        campaignLengthDays: days,
         startDate: body.startDate ? new Date(body.startDate) : null,
-        totalPosts: body.totalPosts || 0,
+        totalPosts: computedTotalPosts,
         generatedPosts: 0,
         reRollsRemaining: body.reRollsRemaining ?? 4,
         qualityThreshold: body.qualityThreshold ?? 0.7,
