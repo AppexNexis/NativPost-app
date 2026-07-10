@@ -121,11 +121,20 @@ function InlineEditorBody({
     setSaving(true);
     try {
       // Save the edit row (no-op if autosave already saved since isDirty is false).
-      await saveEdit({ awaitMirror: false }).catch(() => {});
-      // ALWAYS mirror so the content_item enrichmentData reflects edits.
-      // saveEdit guards on isDirty and returns early when autosave already
-      // persisted — skipping the mirror step. mirrorEdit bypasses the guard
-      // so the Blitz card refresh below reads the edited state, not stale data.
+      // saveEdit returns false on server error so we can skip mirroring a
+      // half-saved state onto the linked content_item.
+      const saveOk = await saveEdit({ awaitMirror: false });
+      if (!saveOk) {
+        // Error banner is already shown by SET_ERROR from saveEdit; bail
+        // out so the user can retry without stale-state corruption.
+        setSaving(false);
+        return;
+      }
+      // ALWAYS mirror on success so the content_item enrichmentData
+      // reflects edits. saveEdit guards on isDirty and returns early when
+      // autosave already persisted — skipping the mirror step. mirrorEdit
+      // bypasses the guard so the Blitz card refresh below reads the
+      // edited state, not stale data.
       await mirrorEdit();
 
       // Fetch the fresh content item and hand it to the host so it can

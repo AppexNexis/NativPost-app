@@ -202,7 +202,35 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
     }
     if (body.enrichmentData !== undefined) {
-      updates.enrichmentData = body.enrichmentData;
+      // MERGE, don't overwrite. The Editor's mirror payload sends only
+      // { editorScript, editorStyle, editorLayout, aspectRatio, sourceMediaSlots }
+      // — a wholesale overwrite would wipe templateSnapshot / reasoning /
+      // topicLabel / templateId / isCompiled and clobber any
+      // async-generated fields (per-slide slideCopy from
+      // generateBlitzSlideCaptions).
+      //
+      // Two-level shallow merge: top-level enrichmentData spread PLUS
+      // nested merges on editorScript / editorStyle / sourceMediaSlots so
+      // a caller updating `editorScript.hookText` doesn't blow away a
+      // concurrently written `editorScript.slideCopy`.
+      const existing = (current?.enrichmentData as Record<string, any>) || {};
+      const patch = (body.enrichmentData || {}) as Record<string, any>;
+      const merged: Record<string, any> = { ...existing, ...patch };
+      for (const key of ['editorScript', 'editorStyle', 'sourceMediaSlots'] as const) {
+        const existingChild = existing[key];
+        const patchChild = patch[key];
+        if (
+          existingChild
+          && patchChild
+          && typeof existingChild === 'object'
+          && typeof patchChild === 'object'
+          && !Array.isArray(existingChild)
+          && !Array.isArray(patchChild)
+        ) {
+          merged[key] = { ...existingChild, ...patchChild };
+        }
+      }
+      updates.enrichmentData = merged;
     }
     if (body.enrichmentApplied !== undefined) {
       updates.enrichmentApplied = body.enrichmentApplied;

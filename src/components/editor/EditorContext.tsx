@@ -111,7 +111,9 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
     case 'SET_ERROR':
       return { ...state, error: action.payload };
     case 'MARK_SAVED':
-      return { ...state, isDirty: false, isSaving: false };
+      // Clear any lingering error banner so a subsequent successful save
+      // doesn't leave a stale error message on screen.
+      return { ...state, isDirty: false, isSaving: false, error: null };
     default:
       return state;
   }
@@ -133,7 +135,7 @@ type SaveEditOpts = {
 type EditorContextType = {
   state: EditorState;
   dispatch: React.Dispatch<EditorAction>;
-  saveEdit: (opts?: SaveEditOpts) => Promise<void>;
+  saveEdit: (opts?: SaveEditOpts) => Promise<boolean>;
   /**
    * Mirror the current editor state into the linked content_item's
    * enrichmentData. Unlike saveEdit this does NOT guard on isDirty,
@@ -180,9 +182,14 @@ export function EditorProvider({
   const discardRef = useRef(false);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const saveEdit = useCallback(async (opts?: SaveEditOpts) => {
-    if (discardRef.current) return;
-    if (!state.edit || !state.isDirty) return;
+  const saveEdit = useCallback(async (opts?: SaveEditOpts): Promise<boolean> => {
+    // Return values:
+    //   true  → save succeeded OR was a no-op (autosave already persisted /
+    //           discardPending was called). Caller can safely mirror.
+    //   false → server error persisted through SET_ERROR; caller MUST NOT
+    //           mirror because the edit row is out of sync.
+    if (discardRef.current) return true;
+    if (!state.edit || !state.isDirty) return true;
     dispatch({ type: 'SET_SAVING', payload: true });
     try {
       const res = await fetch(`/api/content/edit/${state.edit.id}`, {
@@ -225,8 +232,10 @@ export function EditorProvider({
               editorLayout: state.layout,
               aspectRatio: state.aspectRatio,
               sourceMediaSlots: state.mediaSlots,
+              audioTrack: state.audioTrack,
             },
             aspectRatio: state.aspectRatio,
+            contentMode: state.contentMode,
           }),
         }).catch(() => {
           // Silent — Save is still recorded on the edit row.
@@ -239,9 +248,11 @@ export function EditorProvider({
       }
 
       dispatch({ type: 'MARK_SAVED' });
+      return true;
     } catch (err) {
       dispatch({ type: 'SET_ERROR', payload: err instanceof Error ? err.message : 'Save failed' });
       dispatch({ type: 'SET_SAVING', payload: false });
+      return false;
     }
   }, [state.edit, state.isDirty, state.script, state.style, state.layout, state.timing, state.mediaSlots, state.audioTrack, state.aspectRatio, state.targetPlatforms, state.contentMode]);
 
@@ -283,11 +294,13 @@ export function EditorProvider({
           editorLayout: state.layout,
           aspectRatio: state.aspectRatio,
           sourceMediaSlots: state.mediaSlots,
+          audioTrack: state.audioTrack,
         },
         aspectRatio: state.aspectRatio,
+        contentMode: state.contentMode,
       }),
     });
-  }, [state.edit, state.script, state.style, state.layout, state.mediaSlots, state.aspectRatio]);
+  }, [state.edit, state.script, state.style, state.layout, state.mediaSlots, state.audioTrack, state.aspectRatio, state.contentMode]);
 
   // Autosave: debounce 1500ms whenever isDirty becomes true
   useEffect(() => {

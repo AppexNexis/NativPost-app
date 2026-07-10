@@ -36,7 +36,13 @@ export function TextTab() {
   const kind = getEditorKind(contentType);
   const slideMediaCount = state.mediaSlots?.slides?.length ?? 0;
   const slideCopyCount = state.script?.slideCopy?.length ?? 0;
-  const slideCount = Math.max(slideMediaCount, slideCopyCount, 1);
+  // When media slides exist, they are the source of truth — a stale
+  // slideCopy from a deleted slide must not resurrect an orphan input.
+  // Only fall back to slideCopy length when there are no media slides at
+  // all (initial state before Media tab is populated).
+  const slideCount = slideMediaCount > 0
+    ? slideMediaCount
+    : Math.max(slideCopyCount, 1);
   const isPerSlide = kind === 'image' && slideCount > 1;
 
   const getSlideText = (i: number): string => {

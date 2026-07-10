@@ -73,10 +73,15 @@ export function useLoadEditSession({
           caption?: string;
           graphicUrls?: string[];
           enrichmentData?: {
-            editorScript?: { hookText?: string; bodyText?: string; ctaText?: string };
+            // Editor consumers read hookText / bodyText / ctaText / wallText
+            // / slideCopy (per-slide captions from generateBlitzSlideCaptions).
+            // Widen to Record<string, unknown> so future fields carry through
+            // without narrowing the type here.
+            editorScript?: Record<string, unknown>;
             editorStyle?: Record<string, unknown>;
             editorLayout?: string;
             sourceMediaSlots?: Record<string, unknown>;
+            audioTrack?: unknown;
             isCompiled?: boolean;
           };
         } | undefined;
@@ -117,6 +122,10 @@ export function useLoadEditSession({
           }
         }
 
+        // Hydrate audioTrack from any previously mirrored edit so the
+        // re-opened editor sees the user's last audio pick instead of null.
+        const audioTrack = item?.enrichmentData?.audioTrack ?? null;
+
         const res = await fetch('/api/content/edit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -131,6 +140,7 @@ export function useLoadEditSession({
             style: editorStyle || {},
             layout: editorLayout || 'centered',
             mediaSlots,
+            audioTrack,
           }),
         });
         if (!res.ok) throw new Error('Failed to create edit session');
