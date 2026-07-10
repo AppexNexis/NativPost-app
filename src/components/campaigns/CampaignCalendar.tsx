@@ -22,7 +22,7 @@
  *     blocking modal.
  */
 
-import { AlertTriangle, ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Clock, Pencil, RefreshCcw } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Clock, Loader2, Pencil, RefreshCcw, RefreshCw, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -461,11 +461,13 @@ export function CampaignCalendar({ campaign, locale }: Props) {
       {/* Day sidebar drawer */}
       {selectedDay && (
         <DaySidebar
+          campaignId={campaign.id}
           dateKey={selectedDay}
           rows={selectedRows}
           locale={locale}
           onClose={() => setSelectedDay(null)}
           editHref={editHref}
+          onRefresh={() => fetchMonth(currentMonth)}
         />
       )}
     </div>
@@ -513,17 +515,21 @@ function PostChip({ row, dimmed }: { row: CampaignContentRow; dimmed: boolean })
 // ── Day sidebar drawer ─────────────────────────────────────────────────────
 
 function DaySidebar({
+  campaignId,
   dateKey,
   rows,
   locale,
   onClose,
   editHref,
+  onRefresh,
 }: {
+  campaignId: string;
   dateKey: string;
   rows: CampaignContentRow[];
   locale: string;
   onClose: () => void;
   editHref: (contentItemId: string) => string;
+  onRefresh: () => void;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -574,7 +580,13 @@ function DaySidebar({
           ) : (
             <ul className="space-y-3">
               {rows.map((row) => (
-                <DayPostRow key={row.id} row={row} editHref={editHref} />
+                <DayPostRow
+                  key={row.id}
+                  campaignId={campaignId}
+                  row={row}
+                  editHref={editHref}
+                  onRefresh={onRefresh}
+                />
               ))}
             </ul>
           )}
@@ -585,16 +597,64 @@ function DaySidebar({
 }
 
 function DayPostRow({
+  campaignId,
   row,
   editHref,
+  onRefresh,
 }: {
+  campaignId: string;
   row: CampaignContentRow;
   editHref: (contentItemId: string) => string;
+  onRefresh: () => void;
 }) {
   const item = row.contentItem;
   const thumb = item?.graphicUrls?.[0] || null;
   const caption = item?.caption?.trim() || item?.topic || 'Untitled post';
   const platforms = item?.targetPlatforms ?? [];
+
+  const [isRerolling, setIsRerolling] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const handleReroll = async () => {
+    if (!item || isRerolling) return;
+    setIsRerolling(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}/re-roll`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contentItemId: item.id, keepText: false }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      onRefresh();
+    } catch (err: any) {
+      setActionError(err.message || 'Re-roll failed');
+    } finally {
+      setIsRerolling(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!item || isDeleting) return;
+    if (!window.confirm('Delete this post from the campaign?')) return;
+    setIsDeleting(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/content/${item.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      onRefresh();
+    } catch (err: any) {
+      setActionError(err.message || 'Delete failed');
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <li className="rounded-xl border bg-card p-3">
@@ -636,8 +696,12 @@ function DayPostRow({
         </div>
       </div>
 
+      {actionError && (
+        <p className="mt-2 text-xs text-destructive">{actionError}</p>
+      )}
+
       {item && (
-        <div className="mt-3 flex items-center justify-end gap-2 border-t pt-2">
+        <div className="mt-3 flex items-center justify-end gap-1.5 border-t pt-2">
           <Link
             href={editHref(item.id)}
             className="inline-flex items-center gap-1.5 rounded-lg border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
@@ -645,6 +709,26 @@ function DayPostRow({
             <Pencil className="h-3 w-3" />
             Edit
           </Link>
+          <button
+            type="button"
+            onClick={handleReroll}
+            disabled={isRerolling || isDeleting}
+            className="inline-flex items-center gap-1.5 rounded-lg border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+            title="Re-roll"
+          >
+            {isRerolling ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            Re-roll
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={isRerolling || isDeleting}
+            className="inline-flex items-center gap-1.5 rounded-lg border bg-background px-3 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+            title="Delete"
+          >
+            {isDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+            Delete
+          </button>
         </div>
       )}
     </li>

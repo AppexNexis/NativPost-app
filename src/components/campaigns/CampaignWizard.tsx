@@ -1,22 +1,20 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight, Sparkles, Check, Link as LinkIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check } from 'lucide-react';
 import type { Campaign, ContentAngle, CampaignAngle, ContentMix, TargetAccount, ContentItem } from '@/types/v2';
 import type { SocialAccount } from '@/types/v2';
 import { CampaignReviewGrid } from './CampaignReviewGrid';
 
-// Blitz + Campaigns are hard-gated to these three platforms per the
-// 2026-07-07 product decision. Mirrors BLITZ_ALLOWED_PLATFORMS in
-// src/lib/social/connected-platforms.ts — kept as a client-side constant
-// so the wizard doesn't need a server fetch just to render toggle rows.
-const CAMPAIGN_ALLOWED_PLATFORMS = ['facebook', 'instagram', 'tiktok'] as const;
+// Allowed publishing platforms for campaigns. YouTube added 2026-07-10.
+const CAMPAIGN_ALLOWED_PLATFORMS = ['facebook', 'instagram', 'tiktok', 'youtube'] as const;
 
 const PLATFORM_LABELS: Record<string, string> = {
   facebook: 'Facebook',
   instagram: 'Instagram',
   tiktok: 'TikTok',
+  youtube: 'YouTube',
 };
 
 interface CampaignWizardProps {
@@ -78,6 +76,28 @@ export function CampaignWizard({
   const [generatedCampaignId, setGeneratedCampaignId] = useState<string | null>(null);
   const [contentItems, setContentItems] = useState<(ContentItem & { sequenceIndex?: number; scheduledDate?: string; scheduledTime?: string; isRolled?: boolean })[]>([]);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [jobProgress, setJobProgress] = useState({ postsCompleted: 0, postsTotal: 0 });
+
+  // Poll generation progress while generating
+  useEffect(() => {
+    if (!isGenerating || !generatedCampaignId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/campaigns/${generatedCampaignId}/generate/status`, { cache: 'no-store' });
+        if (res.ok) {
+          const data = (await res.json()) as { job?: { postsCompleted?: number; postsTotal?: number } };
+          if (!cancelled && data.job) {
+            setJobProgress({ postsCompleted: data.job.postsCompleted ?? 0, postsTotal: data.job.postsTotal ?? 0 });
+          }
+        }
+      } catch { /* silent */ }
+      if (!cancelled) timer = setTimeout(poll, 2500);
+    };
+    timer = setTimeout(poll, 1000);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [isGenerating, generatedCampaignId]);
 
   const totalSteps = STEPS.length;
   const progress = ((currentStep + 1) / totalSteps) * 100;
@@ -240,6 +260,15 @@ export function CampaignWizard({
     };
 
     switch (currentStep) {
+      case 6:
+        return (
+          <StepGenerate
+            {...props}
+            isGenerating={isGenerating}
+            jobPostsCompleted={jobProgress.postsCompleted}
+            jobPostsTotal={jobProgress.postsTotal}
+          />
+        );
       case 7:
         return (
           <StepReview
@@ -262,36 +291,34 @@ export function CampaignWizard({
 
   return (
     <div className="mx-auto max-w-3xl">
-      {/* Progress Bar */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-gray-900">{STEPS[currentStep]?.label ?? ''}</span>
-          <span className="text-sm text-gray-500">
-            {currentStep + 1} / {totalSteps}
-          </span>
-        </div>
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+      {/* Step Content */}
+      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+        {/* Progress bar — full width, no padding, h-0.5 */}
+        <div className="h-0.5 w-full bg-muted">
           <div
-            className="h-full rounded-full bg-primary transition-all duration-300"
+            className="h-full bg-primary transition-all duration-300"
             style={{ width: `${progress}%` }}
           />
         </div>
-      </div>
 
-      {/* Step Content */}
-      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+        {/* Step header row */}
+        <div className="flex items-center justify-between border-b border-border px-8 py-4">
+          <span className="text-sm font-semibold text-foreground">{STEPS[currentStep]?.label ?? ''}</span>
+          <span className="text-xs text-muted-foreground">{currentStep + 1} / {totalSteps}</span>
+        </div>
+
         <div className="p-8">
           {renderStep()}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-gray-100 px-8 py-4">
+        <div className="flex items-center justify-between border-t border-border px-8 py-4">
           <button
             onClick={handleBack}
             disabled={currentStep === 0 || isGenerating || isLoading}
-            className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronLeft className="size-4" />
             Back
           </button>
 
@@ -299,26 +326,21 @@ export function CampaignWizard({
             <button
               onClick={handleLaunch}
               disabled={isLoading}
-              className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
               Continue to launch
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="size-4" />
             </button>
           ) : currentStep === 6 ? (
             <button
               onClick={handleNext}
               disabled={isGenerating || isLoading}
-              className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
-              {isGenerating ? (
-                <>
-                  <Sparkles className="h-4 w-4 animate-spin" />
-                  Generating...
-                </>
-              ) : (
+              {isGenerating ? 'Generating...' : (
                 <>
                   Generate {calculateTotalPosts(campaign)} posts
-                  <ChevronRight className="h-4 w-4" />
+                  <ChevronRight className="size-4" />
                 </>
               )}
             </button>
@@ -326,10 +348,10 @@ export function CampaignWizard({
             <button
               onClick={handleNext}
               disabled={isLoading}
-              className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
               Continue
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="size-4" />
             </button>
           )}
         </div>
@@ -538,29 +560,35 @@ function StepVoice({ campaign, onUpdate }: StepProps) {
     { value: 'always', label: 'Always' },
   ];
 
+  const genderOptions: { value: Campaign['genderPreference']; label: string }[] = [
+    { value: 'men', label: 'Men' },
+    { value: 'women', label: 'Women' },
+  ];
+
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold text-gray-900">Set the voice of your campaign</h3>
-        <p className="text-sm text-gray-500">
+        <h3 className="text-lg font-semibold text-foreground">Set the voice of your campaign</h3>
+        <p className="text-sm text-muted-foreground">
           Choose how often we mention your business, and optionally narrow the platform videos we draw from.
         </p>
       </div>
 
       <div>
-        <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Mention My Business
         </label>
-        <p className="mb-3 text-sm text-gray-400">How often to weave your product into the generated posts.</p>
+        <p className="mb-3 text-sm text-muted-foreground">How often to weave your product into the generated posts.</p>
         <div className="flex gap-2">
           {frequencies.map((freq) => (
             <button
               key={freq.value}
               onClick={() => onUpdate({ mentionFrequency: freq.value as Campaign['mentionFrequency'] })}
-              className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${campaign.mentionFrequency === freq.value
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'
-                }`}
+              className={`flex-1 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+                campaign.mentionFrequency === freq.value
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-background text-foreground hover:bg-muted'
+              }`}
             >
               {freq.label}
             </button>
@@ -569,29 +597,27 @@ function StepVoice({ campaign, onUpdate }: StepProps) {
       </div>
 
       <div>
-        <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Gender Preference
         </label>
-        <p className="mb-3 text-sm text-gray-400">Filter platform videos by gender. No selection shows all.</p>
+        <p className="mb-3 text-sm text-muted-foreground">Filter platform videos by gender. Tap a selected option to clear it.</p>
         <div className="flex gap-2">
-          {(
-            [
-              { value: null, label: 'All' },
-              { value: 'men', label: 'Only Men' },
-              { value: 'women', label: 'Only Women' },
-            ] as { value: Campaign['genderPreference']; label: string }[]
-          ).map((option) => (
-            <button
-              key={option.value ?? 'all'}
-              onClick={() => onUpdate({ genderPreference: option.value })}
-              className={`rounded-lg border px-6 py-2.5 text-sm font-medium transition-colors ${campaign.genderPreference === option.value
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'
+          {genderOptions.map((option) => {
+            const isActive = campaign.genderPreference === option.value;
+            return (
+              <button
+                key={option.value}
+                onClick={() => onUpdate({ genderPreference: isActive ? null : option.value })}
+                className={`rounded-xl border px-6 py-2.5 text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-background text-foreground hover:bg-muted'
                 }`}
-            >
-              {option.label}
-            </button>
-          ))}
+              >
+                {option.label}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -664,7 +690,6 @@ function StepSources({ campaign, influencers, isLoading, onUpdate }: StepProps) 
 // STEP 5: ACCOUNTS
 // ============================================================
 function StepAccounts({ campaign, accounts, onUpdate }: StepProps) {
-  const router = useRouter();
   const selectedIds = (campaign.targetAccounts ?? []).map((a) => a.accountId);
 
   const toggleAccount = (account: SocialAccount) => {
@@ -679,11 +704,7 @@ function StepAccounts({ campaign, accounts, onUpdate }: StepProps) {
     }
   };
 
-  // Restrict to the three allowed platforms. Grouping is deterministic
-  // (always FB / IG / TikTok in that order) so the wizard shows a
-  // consistent set of toggle rows regardless of which platforms the org
-  // actually has connected. Missing platforms render a "Not connected"
-  // row with a link to /dashboard/social-accounts.
+  // Only show platforms that have at least one connected account
   const allowedAccounts = accounts.filter((a) =>
     (CAMPAIGN_ALLOWED_PLATFORMS as readonly string[]).includes(a.platform),
   );
@@ -692,75 +713,76 @@ function StepAccounts({ campaign, accounts, onUpdate }: StepProps) {
     return { ...acc, [account.platform]: [...list, account] };
   }, {});
 
+  const connectedPlatforms = (CAMPAIGN_ALLOWED_PLATFORMS as readonly string[]).filter(
+    (p) => (grouped[p] ?? []).length > 0,
+  );
+
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold text-gray-900">Where should we post?</h3>
-        <p className="text-sm text-gray-500">
-          Campaigns publish to Facebook, Instagram, or TikTok. Connect one to enable it below.
+        <h3 className="text-lg font-semibold text-foreground">Where should we post?</h3>
+        <p className="text-sm text-muted-foreground">
+          Select the accounts you want this campaign to publish to.
         </p>
       </div>
 
-      {CAMPAIGN_ALLOWED_PLATFORMS.map((platform) => {
-        const platformAccounts = grouped[platform] ?? [];
-        const isConnected = platformAccounts.length > 0;
-        return (
-          <div key={platform}>
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-500">
-              {PLATFORM_LABELS[platform] ?? platform}
-            </label>
-
-            {isConnected ? (
-              <div className="space-y-2">
-                {platformAccounts.map((account) => {
-                  const isSelected = selectedIds.includes(account.id);
-                  return (
-                    <button
-                      key={account.id}
-                      type="button"
-                      onClick={() => toggleAccount(account)}
-                      className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors ${isSelected ? 'border-primary bg-primary/10' : 'border-gray-200 bg-white hover:bg-gray-50'
+      {connectedPlatforms.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border p-8 text-center">
+          <p className="text-sm text-muted-foreground">No accounts connected yet.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Connect Facebook, Instagram, TikTok, or YouTube in Social Accounts.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {connectedPlatforms.map((platform) => {
+            const platformAccounts = grouped[platform] ?? [];
+            return (
+              <div key={platform}>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {PLATFORM_LABELS[platform] ?? platform}
+                </label>
+                <div className="space-y-2">
+                  {platformAccounts.map((account) => {
+                    const isSelected = selectedIds.includes(account.id);
+                    return (
+                      <button
+                        key={account.id}
+                        type="button"
+                        onClick={() => toggleAccount(account)}
+                        className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors ${
+                          isSelected
+                            ? 'border-primary bg-primary/10'
+                            : 'border-border bg-card hover:bg-muted'
                         }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${isSelected ? 'border-primary bg-primary' : 'border-gray-300'
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
+                              isSelected ? 'border-primary bg-primary' : 'border-muted-foreground/40'
                             }`}
-                        >
-                          {isSelected && <Check className="h-3 w-3 text-white" />}
+                          >
+                            {isSelected && <Check className="h-3 w-3 text-white" />}
+                          </div>
+                          <span className="text-sm font-medium text-foreground">
+                            @{account.platformUsername ?? account.platformUserId}
+                          </span>
                         </div>
-                        <span className="text-sm font-medium text-gray-900">
-                          @{account.platformUsername ?? account.platformUserId}
+                        <span className={`text-xs font-medium ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
+                          {isSelected ? 'Selected' : 'Connected'}
                         </span>
-                      </div>
-                      <span className={`text-xs ${isSelected ? 'text-primary' : 'text-gray-400'}`}>
-                        {isSelected ? 'Selected' : 'Connected'}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => router.push('/dashboard/social-accounts')}
-                className="flex w-full items-center justify-between rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-left transition-colors hover:bg-gray-100"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-gray-300">
-                    <LinkIcon className="h-3 w-3 text-gray-400" />
-                  </div>
-                  <span className="text-sm font-medium text-gray-500">Not connected</span>
+                      </button>
+                    );
+                  })}
                 </div>
-                <span className="text-xs font-medium text-primary">Connect</span>
-              </button>
-            )}
-          </div>
-        );
-      })}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-      {selectedIds.length === 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+      {connectedPlatforms.length > 0 && selectedIds.length === 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
           Select at least one connected account before generating your campaign.
         </div>
       )}
@@ -783,43 +805,44 @@ function StepCadence({ campaign, onUpdate }: StepProps) {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold text-gray-900">How often, and for how long?</h3>
-        <p className="text-sm text-gray-500">We'll spread the posts evenly across the campaign window.</p>
+        <h3 className="text-lg font-semibold text-foreground">How often, and for how long?</h3>
+        <p className="text-sm text-muted-foreground">We'll spread the posts evenly across the campaign window.</p>
       </div>
 
       <div>
         <div className="flex items-center justify-between">
-          <label className="text-sm font-medium text-gray-900">Posts per account per day</label>
+          <label className="text-sm font-medium text-foreground">Posts per account per day</label>
           <div className="flex items-center gap-3">
             <button
               onClick={() => onUpdate({ postsPerDay: Math.max(1, (campaign.postsPerDay ?? 3) - 1) })}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50"
+              className="flex h-8 w-8 items-center justify-center rounded-xl border border-border text-foreground hover:bg-muted"
             >
               -
             </button>
-            <span className="text-lg font-semibold text-gray-900">{campaign.postsPerDay ?? 3}</span>
+            <span className="text-lg font-semibold text-foreground">{campaign.postsPerDay ?? 3}</span>
             <button
-              onClick={() => onUpdate({ postsPerDay: Math.min(10, (campaign.postsPerDay ?? 3) + 1) })}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50"
+              onClick={() => onUpdate({ postsPerDay: Math.min(3, (campaign.postsPerDay ?? 3) + 1) })}
+              className="flex h-8 w-8 items-center justify-center rounded-xl border border-border text-foreground hover:bg-muted"
             >
               +
             </button>
           </div>
         </div>
-        <p className="mt-1 text-xs text-gray-400">Max 3 per account per day.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Max 3 per account per day.</p>
       </div>
 
       <div>
-        <label className="mb-3 block text-sm font-medium text-gray-900">Campaign length</label>
+        <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Campaign length</label>
         <div className="flex gap-2">
           {lengthOptions.map((opt) => (
             <button
               key={opt.value}
               onClick={() => onUpdate({ campaignLengthDays: opt.value })}
-              className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${campaign.campaignLengthDays === opt.value
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                }`}
+              className={`flex-1 rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors ${
+                campaign.campaignLengthDays === opt.value
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-background text-foreground hover:bg-muted'
+              }`}
             >
               {opt.label}
             </button>
@@ -828,27 +851,24 @@ function StepCadence({ campaign, onUpdate }: StepProps) {
       </div>
 
       <div>
-        <label className="mb-2 block text-sm font-medium text-gray-900">Start date</label>
+        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Start date</label>
         <input
           type="date"
           value={campaign.startDate ?? ''}
           onChange={(e) => onUpdate({ startDate: e.target.value || null })}
-          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
-        <p className="mt-1 text-xs text-gray-400">
-          This campaign can start tomorrow at the earliest. Earliest: {new Date().toISOString().split('T')[0]}.
-        </p>
       </div>
 
-      <div className="rounded-xl bg-gray-50 p-4">
+      <div className="rounded-xl border border-border bg-card p-4">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">This campaign will create</div>
-            <div className="text-2xl font-bold text-gray-900">{totalPosts} posts</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total posts</div>
+            <div className="mt-0.5 text-2xl font-bold text-foreground">{totalPosts}</div>
           </div>
-          <div className="text-right text-xs text-gray-500">
-            {(campaign.targetAccounts ?? []).length} account{(campaign.targetAccounts ?? []).length !== 1 ? 's' : ''} ×{' '}
-            {campaign.postsPerDay ?? 3}/day × {campaign.campaignLengthDays ?? 7} days
+          <div className="text-right text-xs text-muted-foreground">
+            {(campaign.targetAccounts ?? []).length || 1} account{(campaign.targetAccounts ?? []).length !== 1 ? 's' : ''} &times;{' '}
+            {campaign.postsPerDay ?? 3}/day &times; {campaign.campaignLengthDays ?? 7} days
           </div>
         </div>
       </div>
@@ -859,38 +879,58 @@ function StepCadence({ campaign, onUpdate }: StepProps) {
 // ============================================================
 // STEP 7: GENERATE
 // ============================================================
-function StepGenerate({ campaign }: StepProps) {
+function StepGenerate({
+  campaign,
+  isGenerating,
+  jobPostsCompleted,
+  jobPostsTotal,
+}: StepProps & {
+  isGenerating?: boolean;
+  jobPostsCompleted?: number;
+  jobPostsTotal?: number;
+}) {
   const totalPosts = calculateTotalPosts(campaign);
+  const completed = jobPostsCompleted ?? 0;
+  const total = jobPostsTotal ?? totalPosts;
+  const genProgress = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   return (
-    <div className="space-y-6 text-center">
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900">Generate your campaign</h3>
-        <p className="text-sm text-gray-500">
-          We'll write content for every post in your campaign. You can re-roll, edit, or remove individual ones before launch.
+    <div className="space-y-6">
+      <div className="text-center">
+        <h3 className="text-lg font-semibold text-foreground">Ready to generate</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          We'll write content for every post. Re-roll, edit, or remove individual posts before launch.
         </p>
       </div>
 
-      <div className="mx-auto grid max-w-md grid-cols-4 gap-4 rounded-xl border border-gray-200 p-4">
-        <div className="text-center">
-          <div className="text-xl font-bold text-gray-900">{totalPosts}</div>
-          <div className="text-xs uppercase text-gray-500">Posts</div>
-        </div>
-        <div className="text-center">
-          <div className="text-xl font-bold text-gray-900">{(campaign.targetAccounts ?? []).length}</div>
-          <div className="text-xs uppercase text-gray-500">Accounts</div>
-        </div>
-        <div className="text-center">
-          <div className="text-xl font-bold text-gray-900">{campaign.postsPerDay ?? 3}/day</div>
-          <div className="text-xs uppercase text-gray-500">Per account</div>
-        </div>
-        <div className="text-center">
-          <div className="text-xl font-bold text-gray-900">{campaign.campaignLengthDays ?? 7} days</div>
-          <div className="text-xs uppercase text-gray-500">Length</div>
-        </div>
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          { value: totalPosts, label: 'Posts' },
+          { value: (campaign.targetAccounts ?? []).length || 1, label: 'Accounts' },
+          { value: `${campaign.postsPerDay ?? 3}/day`, label: 'Frequency' },
+          { value: `${campaign.campaignLengthDays ?? 7}d`, label: 'Length' },
+        ].map(({ value, label }) => (
+          <div key={label} className="rounded-xl border border-border bg-card p-3 text-center">
+            <div className="text-xl font-bold text-foreground">{value}</div>
+            <div className="mt-0.5 text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
+          </div>
+        ))}
       </div>
 
-      <div className="text-sm text-gray-500">Your plan includes 25 content pieces per campaign.</div>
+      {isGenerating && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Generating posts...</span>
+            <span>{completed} of {total} ready</span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-500"
+              style={{ width: `${genProgress}%` }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -942,12 +982,12 @@ function StepReview({
 function StepLaunch({ campaign }: StepProps) {
   return (
     <div className="space-y-6 text-center">
-      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
-        <Check className="h-10 w-10 text-green-600" />
+      <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-green-100">
+        <Check className="size-8 text-green-600" />
       </div>
       <div>
-        <h3 className="text-lg font-semibold text-gray-900">Campaign scheduled!</h3>
-        <p className="text-sm text-gray-500">
+        <h3 className="text-center text-lg font-semibold text-foreground">Campaign scheduled!</h3>
+        <p className="mt-1 text-center text-sm text-muted-foreground">
           {campaign.name || 'Your campaign'} is now {campaign.status ?? 'scheduled'}. We'll start posting on{' '}
           {campaign.startDate
             ? new Date(campaign.startDate).toLocaleDateString()

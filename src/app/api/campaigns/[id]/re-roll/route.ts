@@ -25,6 +25,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const contentItemId = body.contentItemId as string;
     const keepText = Boolean(body.keepText);
+    const topicOverride = typeof body.topicOverride === 'string' && body.topicOverride.trim() ? body.topicOverride.trim() : null;
 
     if (!contentItemId) {
       return NextResponse.json(
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // 3. Re-roll the post
-    const updatedItem = await reRollPost(db, orgId!, id, contentItemId, keepText);
+    const updatedItem = await reRollPost(db, orgId!, id, contentItemId, keepText, topicOverride);
 
     return NextResponse.json({
       success: true,

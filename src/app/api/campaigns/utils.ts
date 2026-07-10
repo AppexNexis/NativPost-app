@@ -1473,6 +1473,7 @@ export async function reRollPost(
   campaignId: string,
   contentItemId: string,
   keepText: boolean,
+  topicOverride: string | null = null,
 ): Promise<any> {
   // Find campaignContent link
   const [cc] = await db
@@ -1504,7 +1505,7 @@ export async function reRollPost(
   // Regenerate text if requested
   if (!keepText) {
     const textResult = await generateTextContent({
-      topic: item.topic || 'General',
+      topic: topicOverride || item.topic || 'General',
       contentType: item.contentType,
       targetPlatforms: (item.targetPlatforms as string[]) || ['instagram', 'linkedin'],
       contentMode: item.contentMode || 'normal',
