@@ -28,6 +28,26 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { Campaign, ContentItem } from '@/types/v2';
 
+import { CampaignPostEditModal } from './CampaignPostEditModal';
+
+// Resolve the best available preview thumbnail for a content item. Slideshow
+// items typically populate graphicUrls[0]; video / talking-head / ugc types
+// leave that blank and stash their video source in
+// enrichmentData.sourceMediaSlots.background.{thumbnailUrl, url} instead.
+function resolveThumb(item: ContentItem | null): string | null {
+  if (!item) return null;
+  const graphic = Array.isArray(item.graphicUrls) ? item.graphicUrls[0] : null;
+  if (graphic) return graphic;
+  const enrichment = (item.enrichmentData ?? {}) as Record<string, unknown>;
+  const slots = (enrichment.sourceMediaSlots ?? {}) as Record<string, unknown>;
+  const bg = (slots.background ?? {}) as Record<string, unknown>;
+  return (
+    (typeof bg.thumbnailUrl === 'string' && bg.thumbnailUrl) ||
+    (typeof bg.url === 'string' && bg.url) ||
+    null
+  );
+}
+
 type CampaignContentRow = {
   id: string;
   campaignId: string;
@@ -169,6 +189,9 @@ export function CampaignCalendar({ campaign, locale }: Props) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
   const [reschedulingIds, setReschedulingIds] = useState<Set<string>>(new Set());
+  // Post being edited via the lightweight modal. Lifted here so the sidebar
+  // can close without unmounting the modal.
+  const [editingItem, setEditingItem] = useState<ContentItem | null>(null);
 
   const fetchMonth = useCallback(async (month: string) => {
     setLoading(true);
@@ -466,8 +489,29 @@ export function CampaignCalendar({ campaign, locale }: Props) {
           rows={selectedRows}
           locale={locale}
           onClose={() => setSelectedDay(null)}
-          editHref={editHref}
+          onEdit={setEditingItem}
           onRefresh={() => fetchMonth(currentMonth)}
+        />
+      )}
+
+      {/* Lightweight post editor modal, shared with the Review grid */}
+      {editingItem && (
+        <CampaignPostEditModal
+          campaignId={campaign.id}
+          contentItem={editingItem}
+          reRollsRemaining={campaign.reRollsRemaining ?? 0}
+          onCancel={() => setEditingItem(null)}
+          onSaved={() => {
+            setEditingItem(null);
+            fetchMonth(currentMonth);
+          }}
+          onSwapVideo={() => {
+            // Fallback: open the full editor for asset-level swap since the
+            // calendar does not host InlineEditorOverlay yet.
+            if (editingItem) {
+              window.location.href = editHref(editingItem.id);
+            }
+          }}
         />
       )}
     </div>
@@ -478,7 +522,7 @@ export function CampaignCalendar({ campaign, locale }: Props) {
 
 function PostChip({ row, dimmed }: { row: CampaignContentRow; dimmed: boolean }) {
   const item = row.contentItem;
-  const thumb = item?.graphicUrls?.[0] || null;
+  const thumb = resolveThumb(item);
   const label = item?.caption?.trim() || item?.topic || item?.contentType || 'Post';
   const platforms = item?.targetPlatforms ?? [];
 
@@ -520,7 +564,7 @@ function DaySidebar({
   rows,
   locale,
   onClose,
-  editHref,
+  onEdit,
   onRefresh,
 }: {
   campaignId: string;
@@ -528,7 +572,7 @@ function DaySidebar({
   rows: CampaignContentRow[];
   locale: string;
   onClose: () => void;
-  editHref: (contentItemId: string) => string;
+  onEdit: (item: ContentItem) => void;
   onRefresh: () => void;
 }) {
   useEffect(() => {
@@ -584,7 +628,7 @@ function DaySidebar({
                   key={row.id}
                   campaignId={campaignId}
                   row={row}
-                  editHref={editHref}
+                  onEdit={onEdit}
                   onRefresh={onRefresh}
                 />
               ))}
@@ -599,16 +643,16 @@ function DaySidebar({
 function DayPostRow({
   campaignId,
   row,
-  editHref,
+  onEdit,
   onRefresh,
 }: {
   campaignId: string;
   row: CampaignContentRow;
-  editHref: (contentItemId: string) => string;
+  onEdit: (item: ContentItem) => void;
   onRefresh: () => void;
 }) {
   const item = row.contentItem;
-  const thumb = item?.graphicUrls?.[0] || null;
+  const thumb = resolveThumb(item);
   const caption = item?.caption?.trim() || item?.topic || 'Untitled post';
   const platforms = item?.targetPlatforms ?? [];
 
@@ -702,13 +746,14 @@ function DayPostRow({
 
       {item && (
         <div className="mt-3 flex items-center justify-end gap-1.5 border-t pt-2">
-          <Link
-            href={editHref(item.id)}
+          <button
+            type="button"
+            onClick={() => onEdit(item)}
             className="inline-flex items-center gap-1.5 rounded-lg border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
           >
             <Pencil className="h-3 w-3" />
             Edit
-          </Link>
+          </button>
           <button
             type="button"
             onClick={handleReroll}

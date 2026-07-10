@@ -6,11 +6,15 @@ import {
   Check,
   Eye,
   Globe,
+  Layers,
   Loader2,
   MessageSquare,
   Palette,
+  Pencil,
+  Plus,
   RefreshCw,
   Sparkles,
+  Trash2,
   Upload,
   User,
   X,
@@ -18,7 +22,9 @@ import {
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { parseAsInteger, useQueryState } from 'nuqs';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+
+import type { ContentAngle } from '@/types/v2';
 
 import {
   type BrandProfileData,
@@ -33,6 +39,7 @@ const STEPS = [
   { id: 'voice_personality', label: 'Voice & tone', shortLabel: 'Voice', icon: MessageSquare },
   { id: 'visual_identity', label: 'Visual identity', shortLabel: 'Visual', icon: Palette },
   { id: 'content_preferences', label: 'Content preferences', shortLabel: 'Content', icon: Sparkles },
+  { id: 'content_angles', label: 'Content angles', shortLabel: 'Angles', icon: Layers },
   { id: 'platform_voices', label: 'Platform voices', shortLabel: 'Platforms', icon: Globe },
   { id: 'review', label: 'Review', shortLabel: 'Review', icon: Eye },
 ] as const;
@@ -255,6 +262,7 @@ export default function OnboardingPage() {
         {step.id === 'voice_personality' && <StepVoicePersonality data={data} onChange={updateData} errors={validationErrors} />}
         {step.id === 'visual_identity' && <StepVisualIdentity data={data} onChange={updateData} errors={validationErrors} />}
         {step.id === 'content_preferences' && <StepContentPreferences data={data} onChange={updateData} errors={validationErrors} />}
+        {step.id === 'content_angles' && <StepContentAngles />}
         {step.id === 'platform_voices' && <StepPlatformVoices data={data} onChange={updateData} errors={validationErrors} />}
         {step.id === 'review' && <StepReview data={data} />}
       </div>
@@ -611,7 +619,271 @@ function StepPlatformVoices({ data, onChange }: StepProps) {
   );
 }
 
-// ── Step 6: Review ───────────────────────────────────────────
+// ── Step 5: Content Angles ───────────────────────────────────
+// Angles live in their own per-org table (content_angle). This step lets the
+// user set them up during onboarding without any brand_profile schema change.
+const ANGLE_COLORS = ['#f97316', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#eab308'];
+
+function parseAngleDesc(raw: string | null): { description: string; targetAudience: string } {
+  if (!raw) return { description: '', targetAudience: '' };
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (parsed && typeof parsed === 'object') {
+      return {
+        description: String(parsed.description ?? ''),
+        targetAudience: String(parsed.targetAudience ?? ''),
+      };
+    }
+  } catch { /* legacy plain string */ }
+  return { description: raw, targetAudience: '' };
+}
+
+type AngleFormState = {
+  name: string;
+  description: string;
+  targetAudience: string;
+  color: string;
+};
+
+function StepContentAngles() {
+  const [angles, setAngles] = useState<ContentAngle[]>([]);
+  const [isFetching, setIsFetching] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [formTarget, setFormTarget] = useState<'new' | string | null>(null);
+  const [form, setForm] = useState<AngleFormState>({ name: '', description: '', targetAudience: '', color: ANGLE_COLORS[0]! });
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const fetchAngles = useCallback(async () => {
+    try {
+      const res = await fetch('/api/content-angles', { cache: 'no-store' });
+      if (!res.ok) throw new Error('Failed to load angles');
+      const data = (await res.json()) as { angles: ContentAngle[] };
+      setAngles(data.angles ?? []);
+    } catch (err: unknown) {
+      setLoadError(err instanceof Error ? err.message : 'Failed to load angles');
+    } finally {
+      setIsFetching(false);
+    }
+  }, []);
+
+  useEffect(() => { void fetchAngles(); }, [fetchAngles]);
+
+  const openAdd = () => {
+    setForm({ name: '', description: '', targetAudience: '', color: ANGLE_COLORS[0]! });
+    setSaveError(null);
+    setFormTarget('new');
+  };
+
+  const openEdit = (angle: ContentAngle) => {
+    const parsed = parseAngleDesc(angle.description);
+    setForm({ name: angle.name, description: parsed.description, targetAudience: parsed.targetAudience, color: angle.color ?? ANGLE_COLORS[0]! });
+    setSaveError(null);
+    setFormTarget(angle.id);
+  };
+
+  const closeForm = () => { setFormTarget(null); setSaveError(null); };
+
+  const handleSave = async () => {
+    if (!form.name.trim() || isSaving) return;
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      const isNew = formTarget === 'new';
+      const url = isNew ? '/api/content-angles' : `/api/content-angles/${formTarget}`;
+      const res = await fetch(url, {
+        method: isNew ? 'POST' : 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: form.name, description: form.description, targetAudience: form.targetAudience, color: form.color }),
+      });
+      const data = (await res.json()) as { angle?: ContentAngle; error?: string };
+      if (!res.ok) throw new Error(data.error ?? 'Save failed');
+      if (data.angle) {
+        if (isNew) setAngles(prev => [...prev, data.angle!]);
+        else setAngles(prev => prev.map(a => (a.id === formTarget ? data.angle! : a)));
+      }
+      closeForm();
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await fetch(`/api/content-angles/${id}`, { method: 'DELETE' });
+      if (!res.ok) return;
+      setAngles(prev => prev.filter(a => a.id !== id));
+    } catch { /* silent */ }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <p className="text-sm text-muted-foreground">
+          Angles define the recurring perspectives and topics we use across campaign posts. You can add or edit these any time from your Brand Profile.
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {angles.length} angle{angles.length === 1 ? '' : 's'}
+        </span>
+        {formTarget === null && (
+          <button
+            type="button"
+            onClick={openAdd}
+            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+          >
+            <Plus className="size-3.5" />
+            Add angle
+          </button>
+        )}
+      </div>
+
+      {formTarget !== null && (
+        <div className="rounded-xl border border-primary/30 bg-muted/20 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {formTarget === 'new' ? 'New angle' : 'Edit angle'}
+            </span>
+            <button type="button" onClick={closeForm} className="rounded-md p-1 text-muted-foreground hover:bg-muted">
+              <X className="size-4" />
+            </button>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Name</label>
+              <input
+                type="text"
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="e.g. Educational tips"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Description</label>
+              <textarea
+                value={form.description}
+                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                placeholder="What kind of content goes under this angle?"
+                rows={2}
+                className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Target audience</label>
+              <input
+                type="text"
+                value={form.targetAudience}
+                onChange={e => setForm(f => ({ ...f, targetAudience: e.target.value }))}
+                placeholder="e.g. New business owners, 25-40"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-xs font-medium text-muted-foreground">Color</label>
+              <div className="flex gap-2">
+                {ANGLE_COLORS.map(c => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, color: c }))}
+                    className={`size-6 rounded-full border-2 transition-transform hover:scale-110 ${form.color === c ? 'border-foreground scale-110' : 'border-transparent'}`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+            </div>
+            {saveError && <p className="text-xs text-destructive">{saveError}</p>}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeForm}
+                className="rounded-lg border px-4 py-1.5 text-xs font-medium hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving || !form.name.trim()}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-xs font-medium text-white hover:bg-primary/90 disabled:opacity-60"
+              >
+                {isSaving && <Loader2 className="size-3 animate-spin" />}
+                {isSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isFetching ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="size-4 animate-spin text-muted-foreground" />
+        </div>
+      ) : loadError ? (
+        <p className="text-xs text-destructive">{loadError}</p>
+      ) : angles.length === 0 ? (
+        <p className="rounded-lg border border-dashed py-6 text-center text-sm text-muted-foreground">
+          No angles yet. This step is optional. You can add angles now or later.
+        </p>
+      ) : (
+        <ul className="divide-y divide-border rounded-xl border">
+          {angles.map((angle) => {
+            const parsed = parseAngleDesc(angle.description);
+            return (
+              <li key={angle.id} className="flex items-start gap-3 px-4 py-3">
+                <div className="mt-0.5 size-3 shrink-0 rounded-full" style={{ backgroundColor: angle.color ?? '#ccc' }} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-foreground">{angle.name}</span>
+                    {angle.isSystem && (
+                      <span className="rounded-full border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        Default
+                      </span>
+                    )}
+                  </div>
+                  {parsed.description && (
+                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{parsed.description}</p>
+                  )}
+                  {parsed.targetAudience && (
+                    <p className="mt-0.5 text-[11px] text-muted-foreground/70">For: {parsed.targetAudience}</p>
+                  )}
+                </div>
+                {!angle.isSystem && (
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(angle)}
+                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      title="Edit"
+                    >
+                      <Pencil className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDelete(angle.id)}
+                      className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      title="Delete"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ── Step 7: Review ───────────────────────────────────────────
 function StepReview({ data }: { data: BrandProfileData }) {
   const stageLabel = GROWTH_STAGES.find(s => s.value === data.growthStage)?.label || data.growthStage;
 

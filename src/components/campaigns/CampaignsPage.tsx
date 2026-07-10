@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Plus, Calendar, BarChart3, AlertTriangle, CalendarDays } from "lucide-react";
+import { Plus, Calendar, BarChart3, AlertTriangle, CalendarDays, Loader2, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CampaignWizard } from "@/components/campaigns/CampaignWizard";
@@ -218,12 +218,13 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
           </button>
         </div>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {filteredCampaigns.map((campaign) => (
-            <CampaignListItem
+            <CampaignCard
               key={campaign.id}
               campaign={campaign}
-              onClick={() => setSelectedCampaign(campaign)}
+              onOpen={() => setSelectedCampaign(campaign)}
+              onDeleted={() => router.refresh()}
             />
           ))}
         </div>
@@ -306,7 +307,20 @@ function useCampaignJobProgress(campaign: Campaign) {
   return job;
 }
 
-function CampaignListItem({ campaign, onClick }: { campaign: Campaign; onClick: () => void }) {
+// Campaigns with these statuses have finished the wizard/review flow and
+// can safely have their calendar opened. Draft/generating/review are still
+// in-progress so the calendar button is hidden for them.
+const LAUNCHED_STATUSES = new Set(['active', 'scheduled', 'paused', 'completed']);
+
+function CampaignCard({
+  campaign,
+  onOpen,
+  onDeleted,
+}: {
+  campaign: Campaign;
+  onOpen: () => void;
+  onDeleted: () => void;
+}) {
   const statusColors: Record<string, string> = {
     draft: "bg-muted text-muted-foreground",
     generating: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
@@ -319,10 +333,12 @@ function CampaignListItem({ campaign, onClick }: { campaign: Campaign; onClick: 
   };
 
   const job = useCampaignJobProgress(campaign);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Live progress overrides the persisted generatedPosts/totalPosts while a
   // job is running so the bar animates in real time instead of jumping from
-  // 0 → 100 on completion.
+  // 0 -> 100 on completion.
   const progress = job
     ? job.progress
     : campaign.totalPosts > 0
@@ -333,60 +349,118 @@ function CampaignListItem({ campaign, onClick }: { campaign: Campaign; onClick: 
     ? formatStep(job.step)
     : null;
 
+  const canOpenCalendar = LAUNCHED_STATUSES.has(campaign.status);
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isDeleting) return;
+    if (!window.confirm(`Delete campaign "${campaign.name}"? This cannot be undone.`)) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      onDeleted();
+    } catch (err: any) {
+      setDeleteError(err.message || 'Delete failed');
+      setIsDeleting(false);
+    }
+  };
+
   return (
-    <div className="group flex w-full items-center gap-4 rounded-xl border bg-card p-4 transition-all hover:shadow-sm hover:border-border/80">
+    <div className="group flex flex-col rounded-xl border bg-card p-4 transition-all hover:shadow-sm hover:border-border/80">
+      {/* Header: title + status */}
+      <div className="flex items-start justify-between gap-2">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="min-w-0 flex-1 text-left"
+        >
+          <h3 className="truncate text-sm font-semibold text-foreground">{campaign.name}</h3>
+          <span className={`mt-1.5 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusColors[campaign.status] || "bg-muted text-muted-foreground"}`}>
+            {campaign.status}
+          </span>
+        </button>
+        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <button
+            type="button"
+            onClick={onOpen}
+            title="Edit"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <Pencil className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={isDeleting}
+            title="Delete"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+          >
+            {isDeleting ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+          </button>
+        </div>
+      </div>
+
+      {/* Body: progress + metadata */}
       <button
         type="button"
-        onClick={onClick}
-        className="flex flex-1 min-w-0 items-center gap-4 text-left"
+        onClick={onOpen}
+        className="mt-3 flex flex-1 flex-col text-left"
       >
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3">
-            <h3 className="text-sm font-semibold text-foreground">{campaign.name}</h3>
-            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusColors[campaign.status] || "bg-muted text-muted-foreground"}`}>
-              {campaign.status}
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {job && campaign.status === 'generating' ? (
-              <>
-                {stepLabel} {Math.round(progress)}%
-                {job.postsTotal > 0 && ` · ${job.postsCompleted} of ${job.postsTotal} posts`}
-              </>
-            ) : (
-              <>
-                {campaign.generatedPosts} of {campaign.totalPosts} posts generated
-                {campaign.startDate && ` · Starts ${new Date(campaign.startDate).toLocaleDateString()}`}
-              </>
-            )}
-          </p>
-          <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className={`h-full rounded-full transition-all ${
-                job?.status === 'failed' ? 'bg-destructive' : 'bg-primary'
-              }`}
-              style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-            />
-          </div>
-          {job?.status === 'failed' && job.errorMessage && (
-            <p className="mt-1.5 line-clamp-1 text-xs text-destructive" title={job.errorMessage}>
-              {job.errorMessage}
-            </p>
+        <p className="text-xs text-muted-foreground">
+          {job && campaign.status === 'generating' ? (
+            <>
+              {stepLabel} {Math.round(progress)}%
+              {job.postsTotal > 0 && ` · ${job.postsCompleted} of ${job.postsTotal} posts`}
+            </>
+          ) : (
+            <>
+              {campaign.generatedPosts} of {campaign.totalPosts} posts
+              {campaign.startDate && ` · ${new Date(campaign.startDate).toLocaleDateString()}`}
+            </>
           )}
+        </p>
+        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className={`h-full rounded-full transition-all ${
+              job?.status === 'failed' ? 'bg-destructive' : 'bg-primary'
+            }`}
+            style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+          />
         </div>
-        <div className="text-right text-xs text-muted-foreground">
-          <div>{campaign.postsPerDay} posts/day</div>
-          <div>{campaign.campaignLengthDays} days</div>
+        {job?.status === 'failed' && job.errorMessage && (
+          <p className="mt-1.5 line-clamp-1 text-xs text-destructive" title={job.errorMessage}>
+            {job.errorMessage}
+          </p>
+        )}
+        <div className="mt-3 flex items-center gap-3 text-[11px] text-muted-foreground">
+          <span>{campaign.postsPerDay} posts/day</span>
+          <span aria-hidden>·</span>
+          <span>{campaign.campaignLengthDays} days</span>
         </div>
       </button>
-      <Link
-        href={`/dashboard/campaigns/${campaign.id}/calendar`}
-        className="flex flex-shrink-0 items-center gap-1.5 rounded-lg border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        title="Open calendar"
-      >
-        <CalendarDays className="h-3.5 w-3.5" />
-        Calendar
-      </Link>
+
+      {deleteError && (
+        <p className="mt-2 text-xs text-destructive">{deleteError}</p>
+      )}
+
+      {/* Footer: calendar action (only when launched) */}
+      {canOpenCalendar && (
+        <div className="mt-3 flex justify-end border-t pt-3">
+          <Link
+            href={`/dashboard/campaigns/${campaign.id}/calendar`}
+            className="inline-flex items-center gap-1.5 rounded-lg border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title="Open calendar"
+          >
+            <CalendarDays className="h-3.5 w-3.5" />
+            Calendar
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

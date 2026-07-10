@@ -376,9 +376,31 @@ interface StepProps {
 // ============================================================
 // STEP 1: BASICS
 // ============================================================
+function buildDefaultCampaignName(): string {
+  const now = new Date();
+  const day = now.getDate();
+  const suffix = day % 10 === 1 && day !== 11
+    ? 'st'
+    : day % 10 === 2 && day !== 12
+      ? 'nd'
+      : day % 10 === 3 && day !== 13
+        ? 'rd'
+        : 'th';
+  const month = now.toLocaleString('en-US', { month: 'long' });
+  return `${day}${suffix} ${month} ${now.getFullYear()} Campaign`;
+}
+
 function StepBasics({ campaign, onUpdate }: StepProps) {
   const mix = campaign.contentMix ?? {};
   const totalMix = Object.values(mix).reduce<number>((a, b) => a + (b ?? 0), 0);
+
+  // Auto-fill name on first render if empty so the user can just tab past it.
+  useEffect(() => {
+    if (!campaign.name || !campaign.name.trim()) {
+      onUpdate({ name: buildDefaultCampaignName() });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleMixChange = (key: keyof ContentMix, delta: number) => {
     const current = (mix[key] ?? 0) + delta;
@@ -401,7 +423,6 @@ function StepBasics({ campaign, onUpdate }: StepProps) {
         </label>
         <input
           type="text"
-          placeholder="23rd June 2026 Campaign"
           value={campaign.name ?? ''}
           onChange={(e) => onUpdate({ name: e.target.value })}
           className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
