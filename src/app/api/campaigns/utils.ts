@@ -2,11 +2,13 @@
 // Campaign Engine — Shared Utilities
 // ============================================================
 
+import { waitUntil } from '@vercel/functions';
 import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 
 import { applySetToSlots } from '@/lib/blitz/apply-set-to-slots';
 import { buildEditorScript, buildReasoning, deriveTopicLabel } from '@/lib/blitz/build-editor-script';
 import { buildSourceMediaSlots } from '@/lib/blitz/build-source-media-slots';
+import { generateBlitzSlideCaptions } from '@/lib/blitz/generate-slide-captions';
 import { pickDefaultSet } from '@/lib/blitz/pick-default-set';
 import {
   BLITZ_ALLOWED_PLATFORMS,
@@ -726,9 +728,10 @@ export async function generateCampaignPosts(
         return h;
       }
     }
-    // All hooks exhausted — use random but append counter for uniqueness
-    const h = pool[Math.floor(Math.random() * pool.length)]!;
-    return `${h} (${usedHooks.size + 1})`;
+    // All hooks exhausted — accept a duplicate silently. Do NOT append a
+    // counter suffix like " (N)" — that leaks the collision-avoidance
+    // counter into the visible caption text on the Blitz card.
+    return pool[Math.floor(Math.random() * pool.length)]!;
   }
 
   // Allocate template posts
@@ -852,6 +855,57 @@ export async function generateCampaignPosts(
 
       contentItemIds.push(contentItem.id);
       inserted++;
+
+      // Fire-and-forget per-slide caption generation for slideshow-type
+      // Blitz cards so each slide gets its OWN unique caption instead of
+      // all rendering the same hookText. Runs via waitUntil so the
+      // request returns immediately; the Blitz card polls the row and
+      // re-renders when enrichmentData.editorScript.slideCopy fills in.
+      const isSlideshowType
+        = resolvedContentType === 'slideshow'
+        || resolvedContentType === 'carousel'
+        || resolvedContentType === 'data_story';
+      const slideUrls: string[] = Array.isArray((sourceMediaSlots as any)?.slides)
+        ? ((sourceMediaSlots as any).slides as { url: string }[])
+            .map(s => s?.url)
+            .filter((u): u is string => typeof u === 'string' && u.length > 0)
+        : [];
+      const hasUniquePerSlide
+        = Array.isArray(editorScript.slideCopy)
+        && editorScript.slideCopy.length === slideUrls.length
+        && new Set(editorScript.slideCopy.filter(Boolean)).size === slideUrls.length;
+      if (isSlideshowType && slideUrls.length > 1 && !hasUniquePerSlide) {
+        try {
+          waitUntil(
+            generateBlitzSlideCaptions({
+              db,
+              orgId,
+              contentItemId: contentItem.id,
+              contentType: resolvedContentType,
+              slideUrls,
+              hookText: editorScript.hookText,
+              contextCaption: templateCaption,
+            }).catch((err: any) => {
+              console.error('[Campaign] slide caption gen failed:', err?.message || err);
+            }),
+          );
+        } catch (err) {
+          // waitUntil throws outside Vercel runtime (e.g. local dev without
+          // the shim). Fire the promise anyway so local dev still gets
+          // the captions.
+          void generateBlitzSlideCaptions({
+            db,
+            orgId,
+            contentItemId: contentItem.id,
+            contentType: resolvedContentType,
+            slideUrls,
+            hookText: editorScript.hookText,
+            contextCaption: templateCaption,
+          }).catch((e: any) => {
+            console.error('[Campaign] slide caption gen (local) failed:', e?.message || e);
+          });
+        }
+      }
 
       await db.insert(campaignContentSchema).values({
         campaignId: campaign.id,

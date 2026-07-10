@@ -78,6 +78,16 @@ function formatCompactNumber(n: number | null | undefined): string {
   return String(n);
 }
 
+// Historical Blitz rows may have a trailing " (N)" collision-avoidance
+// counter baked into their editorScript text. The pickUniqueHook fix
+// stops future rows from producing this, but pre-existing DB rows still
+// carry the suffix — strip it at render time so users never see "(20)".
+// Matches optional trailing space + parenthesized integer at end of string.
+function stripCollisionSuffix(s: string | null | undefined): string {
+  if (!s) return '';
+  return String(s).replace(/\s*\(\d+\)\s*$/, '').trim();
+}
+
 // Structured reasoning payload written by lib/blitz/build-editor-script.ts.
 // Legacy rows may still have a plain string here; the WhyTooltip handles both.
 type BlitzReasoning = {
@@ -456,7 +466,23 @@ export function BlitzDailyView({
       || Boolean(slots.demoVideo?.url)
       || (Array.isArray(slots.slides) && slots.slides.length > 0)
       || Boolean(compiledUrl);
-    if (hasMedia) {
+
+    // Slideshows also need to keep polling while per-slide captions are
+    // still generating in the background. Detect the "not yet filled"
+    // state as: fewer slideCopy entries than slides, OR all slideCopy
+    // entries are identical (means captions haven't diverged from the
+    // hookText fallback yet).
+    const ct = String(current.contentType);
+    const isSlideshow = ct === 'slideshow' || ct === 'carousel' || ct === 'data_story';
+    const slideCount = Array.isArray(slots.slides) ? slots.slides.length : 0;
+    const slideCopy: string[] = enrichment.editorScript?.slideCopy || [];
+    const nonEmptyCopy = slideCopy.filter(Boolean);
+    const slideCopyStillFilling
+      = isSlideshow
+      && slideCount > 1
+      && (nonEmptyCopy.length < slideCount || new Set(nonEmptyCopy).size < slideCount);
+
+    if (hasMedia && !slideCopyStillFilling) {
       return;
     }
     const id = setInterval(() => {
@@ -680,7 +706,7 @@ function CardPair({
       {/* Main card row: Remixed From panel (LEFT) + swipe deck (RIGHT).
           Panel hides when snapshot has no media so the deck centers.
           flex-1 min-h-0 makes the row take remaining viewport height. */}
-      <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-4 md:flex-row md:items-center md:gap-6">
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-4 md:flex-row md:items-center md:gap-3">
         {hasSourceMedia && (
           <RemixedFromPanel snapshot={snapshot} />
         )}
@@ -903,9 +929,9 @@ function RemixedFromPanel({ snapshot }: { snapshot: any }) {
   const likes = typeof snapshot?.likeCount === 'number' ? snapshot.likeCount : null;
 
   return (
-    <div className="hidden w-[120px] shrink-0 flex-col items-start gap-1.5 md:flex md:w-[140px]">
-      <span className="text-[11px] font-medium text-foreground/70">Remixed From</span>
-      <div className="relative aspect-[9/16] w-full overflow-hidden rounded-2xl border border-border/60 bg-neutral-900 shadow-lg">
+    <div className="hidden w-[170px] shrink-0 flex-col items-start gap-2 md:flex md:w-[190px]">
+      <span className="text-xs font-medium uppercase tracking-wide text-foreground/70">Remixed From</span>
+      <div className="relative aspect-[9/16] w-full overflow-hidden rounded-2xl border border-border/60 bg-neutral-900 shadow-xl">
         {isVideo ? (
           <video
             src={mediaUrl}
@@ -920,23 +946,23 @@ function RemixedFromPanel({ snapshot }: { snapshot: any }) {
           <img src={mediaUrl} alt="Source template" className="absolute inset-0 size-full object-cover" />
         )}
         {originalHook && (
-          <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 -translate-y-1/2 px-1.5">
-            <div className="mx-auto w-fit max-w-[95%] rounded-md bg-black/60 px-1.5 py-1 text-[9px] leading-tight text-white backdrop-blur-sm">
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 -translate-y-1/2 px-2">
+            <div className="mx-auto w-fit max-w-[95%] rounded-md bg-black/65 px-2 py-1 text-[11px] leading-tight text-white backdrop-blur-sm">
               {originalHook}
             </div>
           </div>
         )}
         {/* Engagement chips overlaid bottom-right */}
-        <div className="absolute inset-y-0 right-1 z-10 flex flex-col items-end justify-end gap-1 pb-2">
+        <div className="absolute inset-y-0 right-1.5 z-10 flex flex-col items-end justify-end gap-1 pb-2">
           {typeof likes === 'number' && likes > 0 && (
-            <span className="inline-flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-medium text-white backdrop-blur-sm">
-              <Heart className="size-2.5" />
+            <span className="inline-flex items-center gap-1 rounded-full bg-black/65 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm">
+              <Heart className="size-3" />
               {formatCompactNumber(likes)}
             </span>
           )}
           {typeof views === 'number' && views > 0 && (
-            <span className="inline-flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-medium text-white backdrop-blur-sm">
-              <Eye className="size-2.5" />
+            <span className="inline-flex items-center gap-1 rounded-full bg-black/65 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm">
+              <Eye className="size-3" />
               {formatCompactNumber(views)}
             </span>
           )}
@@ -1066,10 +1092,13 @@ function BlitzSwipeCard({
   // Short brand message for the slideshow text overlay — NOT the full
   // post caption. The editorScript stores hookText as the short tagline
   // communicating media + brand; the full caption is for the social post.
-  const hookText = enrichment.editorScript?.hookText
+  // Strip any legacy " (N)" collision-avoidance suffix from historic rows.
+  const hookText = stripCollisionSuffix(
+    enrichment.editorScript?.hookText
     || enrichment.script?.hookText
     || item.caption?.slice(0, 80)
-    || '';
+    || '',
+  );
 
   // Video content types where bodyText (longer caption) should display
   // as the primary text instead of the short hookText headline.
@@ -1080,7 +1109,7 @@ function BlitzSwipeCard({
   // like a video). The editor uses the same static slide pattern.
   const isSlideshowType = contentType === 'slideshow' || contentType === 'carousel' || contentType === 'data_story';
   const slides = (enrichment.sourceMediaSlots?.slides as { url: string }[]) || [];
-  const slideCopy: string[] = enrichment.editorScript?.slideCopy || [];
+  const slideCopy: string[] = (enrichment.editorScript?.slideCopy || []).map((s: any) => stripCollisionSuffix(String(s || '')));
   const [slideIdx, setSlideIdx] = useState(0);
 
   useEffect(() => {
@@ -1218,7 +1247,7 @@ function BlitzSwipeCard({
                 <>
                   <button
                     type="button"
-                    className="pointer-events-auto absolute left-2 top-1/2 z-20 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
+                    className="pointer-events-auto absolute left-2 top-1/2 z-40 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/50 text-white shadow-md backdrop-blur transition-colors hover:bg-black/70"
                     onPointerDown={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
@@ -1230,7 +1259,7 @@ function BlitzSwipeCard({
                   </button>
                   <button
                     type="button"
-                    className="pointer-events-auto absolute right-2 top-1/2 z-20 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/40 text-white backdrop-blur transition-colors hover:bg-black/60"
+                    className="pointer-events-auto absolute right-2 top-1/2 z-40 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/50 text-white shadow-md backdrop-blur transition-colors hover:bg-black/70"
                     onPointerDown={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
@@ -1271,10 +1300,12 @@ function BlitzSwipeCard({
 
           {/* Per-slide caption text — each slide gets its own caption from
               editorScript.slideCopy, matching the Image Editor behavior.
-              Falls back to hookText (brand message) when slideCopy is empty. */}
+              Falls back to hookText (brand message) when slideCopy is empty.
+              Anchored to the bottom (above slide dots at bottom-3) so the
+              caption never covers the vertically-centered nav arrows. */}
           {slides.length > 0 && (slideCopy[slideIdx] || hookText) && (
-            <div className="pointer-events-none absolute inset-x-0 top-1/2 z-20 -translate-y-1/2 px-3">
-              <div className="mx-auto w-fit max-w-[90%] rounded-lg bg-black/60 px-4 py-2.5 text-sm leading-snug text-white backdrop-blur-sm">
+            <div className="pointer-events-none absolute inset-x-0 bottom-9 z-20 px-10">
+              <div className="mx-auto w-fit max-w-full rounded-lg bg-black/65 px-3 py-2 text-center text-sm leading-snug text-white backdrop-blur-sm">
                 {slideCopy[slideIdx] || hookText}
               </div>
             </div>
@@ -1342,10 +1373,19 @@ function RemotionPreviewSlot({
   const finalInputProps = useMemo(() => {
     const base = previewProps.inputProps;
     const script = base?.script as any;
-    const bodyText: string | undefined = script?.bodyText;
-    const clippedBody = bodyText && bodyText.length > 90
-      ? `${bodyText.slice(0, 90).trimEnd()}...`
-      : bodyText;
+    // Strip legacy " (N)" collision counter from every text field so the
+    // Remotion preview never renders "(20)" style suffixes baked into
+    // older DB rows.
+    const cleanedHook = stripCollisionSuffix(script?.hookText);
+    const cleanedBody = stripCollisionSuffix(script?.bodyText);
+    const cleanedCta = stripCollisionSuffix(script?.ctaText);
+    const cleanedWall = stripCollisionSuffix(script?.wallText);
+    const cleanedSlideCopy = Array.isArray(script?.slideCopy)
+      ? script.slideCopy.map((s: any) => stripCollisionSuffix(String(s || '')))
+      : script?.slideCopy;
+    const clippedBody = cleanedBody && cleanedBody.length > 90
+      ? `${cleanedBody.slice(0, 90).trimEnd()}...`
+      : cleanedBody;
     if (isVideoType && clippedBody) {
       return {
         ...base,
@@ -1353,11 +1393,25 @@ function RemotionPreviewSlot({
           ...script,
           hookText: clippedBody,
           bodyText: undefined,
+          ctaText: cleanedCta || undefined,
+          wallText: cleanedWall || undefined,
+          slideCopy: cleanedSlideCopy,
         },
         slideIndex: 0,
       };
     }
-    return { ...base, slideIndex: 0 };
+    return {
+      ...base,
+      script: {
+        ...script,
+        hookText: cleanedHook || script?.hookText,
+        bodyText: cleanedBody || undefined,
+        ctaText: cleanedCta || undefined,
+        wallText: cleanedWall || undefined,
+        slideCopy: cleanedSlideCopy,
+      },
+      slideIndex: 0,
+    };
   }, [previewProps.inputProps, isVideoType]);
 
   return (
