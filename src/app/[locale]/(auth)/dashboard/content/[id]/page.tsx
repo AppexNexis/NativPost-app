@@ -1,10 +1,12 @@
 'use client';
 
-import { use } from 'react';
+import { useParams } from 'next/navigation';
 
 import { ContentDetailClient } from '@/components/content/detail/ContentDetailClient';
 
-export default function ContentIdPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function ContentIdPage() {
+  const params = useParams<{ id: string }>();
+  const id = params?.id;
+  if (!id) return null;
   return <ContentDetailClient id={id} />;
 }
