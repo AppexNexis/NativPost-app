@@ -489,6 +489,25 @@ async function fetchCampaignTemplates(
 
   if (uniqueTypes.length === 0) return [];
 
+  // Shared column selector to avoid repetition
+  const templateColumns = {
+    id: contentTemplateSchema.id,
+    contentType: contentTemplateSchema.contentType,
+    sourceUrl: contentTemplateSchema.sourceUrl,
+    structure: contentTemplateSchema.structure,
+    angles: contentTemplateSchema.angles,
+    niches: contentTemplateSchema.niches,
+    mediaUrl: contentTemplateSchema.mediaUrl,
+    thumbnailUrl: contentTemplateSchema.thumbnailUrl,
+    thumbnailUrls: contentTemplateSchema.thumbnailUrls,
+    slideCaptions: contentTemplateSchema.slideCaptions,
+    sourcePlatform: contentTemplateSchema.sourcePlatform,
+    sourceCreator: contentTemplateSchema.sourceCreator,
+    viewCount: contentTemplateSchema.viewCount,
+    likeCount: contentTemplateSchema.likeCount,
+    commentCount: contentTemplateSchema.commentCount,
+  };
+
   // Build WHERE clause — content type + active + approved + optional niche
   const whereClauses: any[] = [
     eq(contentTemplateSchema.curationStatus, 'approved'),
@@ -500,30 +519,38 @@ async function fetchCampaignTemplates(
     whereClauses.push(sql`${contentTemplateSchema.niches} ? ${niche}`);
   }
 
-  const templates = await db
-    .select({
-      id: contentTemplateSchema.id,
-      contentType: contentTemplateSchema.contentType,
-      sourceUrl: contentTemplateSchema.sourceUrl,
-      structure: contentTemplateSchema.structure,
-      angles: contentTemplateSchema.angles,
-      niches: contentTemplateSchema.niches,
-      mediaUrl: contentTemplateSchema.mediaUrl,
-      thumbnailUrl: contentTemplateSchema.thumbnailUrl,
-      thumbnailUrls: contentTemplateSchema.thumbnailUrls,
-      slideCaptions: contentTemplateSchema.slideCaptions,
-      sourcePlatform: contentTemplateSchema.sourcePlatform,
-      sourceCreator: contentTemplateSchema.sourceCreator,
-      viewCount: contentTemplateSchema.viewCount,
-      likeCount: contentTemplateSchema.likeCount,
-      commentCount: contentTemplateSchema.commentCount,
-    })
+  let templates = await db
+    .select(templateColumns)
     .from(contentTemplateSchema)
     .where(and(...whereClauses));
 
+  // ── Per-type niche fallback ─────────────────────────────────────────────
+  // If niche filtering left some content types with zero templates, fetch
+  // templates for those specific missing types WITHOUT the niche filter.
+  // This ensures the campaign content mix is respected even when non-slideshow
+  // templates (green_screen, video_hook, etc.) haven't been niche-tagged yet.
+  if (niche) {
+    const foundTypes = new Set((templates as any[]).map((t: any) => t.contentType));
+    const missingTypes = uniqueTypes.filter((t) => !foundTypes.has(t));
+    if (missingTypes.length > 0) {
+      console.log(
+        `[Campaign] Niche "${niche}" missing templates for [${missingTypes.join(', ')}] — fetching without niche filter`,
+      );
+      const fallback = await db
+        .select(templateColumns)
+        .from(contentTemplateSchema)
+        .where(and(
+          eq(contentTemplateSchema.curationStatus, 'approved'),
+          eq(contentTemplateSchema.isActive, true),
+          inArray(contentTemplateSchema.contentType, missingTypes),
+        ));
+      templates = [...(templates as any[]), ...(fallback as any[])];
+    }
+  }
+
   return (templates as any[])
-    .filter((t) => uniqueTypes.includes(t.contentType))
-    .filter((t) => {
+    .filter((t: any) => uniqueTypes.includes(t.contentType))
+    .filter((t: any) => {
       // A template with no renderable media can't produce a Blitz card.
       // Keep it if it has a mediaUrl, thumbnailUrl, thumbnailUrls collection,
       // OR a sourceUrl (video-type templates — video_hook, green_screen,
@@ -537,7 +564,7 @@ async function fetchCampaignTemplates(
       if (tu && typeof tu === 'object' && Object.keys(tu).length > 0) return true;
       return false;
     })
-    .map((t) => ({
+    .map((t: any) => ({
       id: t.id,
       contentType: t.contentType,
       sourceUrl: t.sourceUrl ?? null,

@@ -61,11 +61,19 @@ type SlideEntry = { url: string; caption?: string };
 
 function resolveSlides(enrichment: Record<string, unknown>): SlideEntry[] {
   const mediaSlots = (enrichment.sourceMediaSlots ?? {}) as Record<string, unknown>;
+  const script = (enrichment.editorScript ?? {}) as Record<string, unknown>;
+  // Per-slide text lives in editorScript.slideCopy (built by buildEditorScript)
+  const slideCopy = Array.isArray(script.slideCopy) ? (script.slideCopy as string[]) : [];
+
   const rawSlides = mediaSlots.slides;
   if (Array.isArray(rawSlides) && rawSlides.length > 0) {
     return rawSlides
       .filter((s): s is Record<string, unknown> => s && typeof s === 'object')
-      .map((s) => ({ url: String(s.url ?? ''), caption: s.caption ? String(s.caption) : undefined }))
+      .map((s, i) => ({
+        url: String(s.url ?? ''),
+        // Prefer slideCopy text over any caption stored on the media slot object
+        caption: slideCopy[i] ?? (s.caption ? String(s.caption) : ''),
+      }))
       .filter((s) => !!s.url);
   }
   return [];
@@ -133,7 +141,15 @@ export function CampaignPostEditModal({
   const [isSaving, setIsSaving] = useState(false);
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  const overlayText = String(script.hookText ?? script.bodyText ?? item.caption ?? '');
+  // For slideshows: show the current slide's own caption as overlay text.
+  // For video types: show hookText or bodyText from the editor script.
+  const overlayText = isSlideshow
+    ? (slides[slideIndex]?.caption ?? String(script.hookText ?? item.caption ?? ''))
+    : String(script.hookText ?? script.bodyText ?? item.caption ?? '');
+
+  // True while any media picker is open — used to block the outer Dialog from
+  // closing when the picker Dialog dismisses (Radix UI nested-Dialog issue).
+  const anyPickerOpen = showSlideSwap !== null || showAddSlide || showVideoSwap || showAudioSwap;
   const STROKE_DIRS: [number, number][] = [[1, 0], [0, 1], [-1, 0], [0, -1]];
   const tShadow =
     strokeWidth > 0
@@ -184,18 +200,28 @@ export function CampaignPostEditModal({
       const updatedSlots = isSlideshow
         ? {
             ...(enrichment.sourceMediaSlots as Record<string, unknown> ?? {}),
-            slides: slides.map((s) => ({ url: s.url, caption: s.caption })),
+            slides: slides.map((s) => ({ url: s.url })),
           }
         : enrichment.sourceMediaSlots;
+
+      const updatedScript = isSlideshow
+        ? {
+            ...(script as Record<string, unknown>),
+            // Persist per-slide captions so they survive reload
+            slideCopy: slides.map((s) => s.caption ?? ''),
+            hookText: slides[0]?.caption ?? script.hookText,
+            textStyle: { fontFamily, fontWeight, fontSize, color: textColor, strokeWidth, strokeColor, background },
+          }
+        : {
+            ...(script as Record<string, unknown>),
+            textStyle: { fontFamily, fontWeight, fontSize, color: textColor, strokeWidth, strokeColor, background },
+          };
 
       const updatedEnrichment = {
         ...enrichment,
         mentionFrequency: mentionBusiness ? 'often' : 'never',
         sourceMediaSlots: updatedSlots,
-        editorScript: {
-          ...(script as Record<string, unknown>),
-          textStyle: { fontFamily, fontWeight, fontSize, color: textColor, strokeWidth, strokeColor, background },
-        },
+        editorScript: updatedScript,
       };
       const res = await fetch(`/api/content/${item.id}`, {
         method: 'PATCH',
@@ -223,7 +249,11 @@ export function CampaignPostEditModal({
   return (
     <>
       <Dialog open onOpenChange={(o) => { if (!o) onCancel(); }}>
-        <DialogContent className="flex h-screen max-h-screen w-screen max-w-screen flex-col gap-0 rounded-none p-0 [&>button]:hidden">
+        <DialogContent
+          className="flex h-screen max-h-screen w-screen max-w-screen flex-col gap-0 rounded-none p-0 [&>button]:hidden"
+          onPointerDownOutside={(e) => { if (anyPickerOpen) e.preventDefault(); }}
+          onInteractOutside={(e) => { if (anyPickerOpen) e.preventDefault(); }}
+        >
           <DialogTitle className="sr-only">Edit content</DialogTitle>
 
           {/* ── Top bar ── */}
@@ -510,30 +540,45 @@ export function CampaignPostEditModal({
                 </div>
 
                 <div className="space-y-4 pt-1">
-                  {/* Editable caption */}
-                  <div className="space-y-1.5">
-                    <Label className="text-[10px] text-muted-foreground">Caption</Label>
-                    <Textarea
-                      value={item.caption ?? ''}
-                      onChange={(e) => setItem((p) => ({ ...p, caption: e.target.value }))}
-                      rows={3}
-                      className="resize-none text-xs"
-                    />
-                  </div>
-
-                  {/* Slide caption (slideshow only) */}
-                  {isSlideshow && slides[slideIndex] !== undefined && (
+                  {isSlideshow ? (
+                    /* Slideshow: per-slide caption is primary. Post caption is secondary. */
+                    <>
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] text-muted-foreground">
+                          Slide {slideIndex + 1} text
+                        </Label>
+                        <Textarea
+                          value={slides[slideIndex]?.caption ?? ''}
+                          onChange={(e) => {
+                            const updated = slides.map((s, i) =>
+                              i === slideIndex ? { ...s, caption: e.target.value } : s,
+                            );
+                            setSlides(updated);
+                          }}
+                          rows={3}
+                          className="resize-none text-xs"
+                          placeholder="Text shown on this slide…"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] text-muted-foreground">Post caption (social media)</Label>
+                        <Textarea
+                          value={item.caption ?? ''}
+                          onChange={(e) => setItem((p) => ({ ...p, caption: e.target.value }))}
+                          rows={2}
+                          className="resize-none text-xs"
+                          placeholder="Caption shown on the platform post…"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    /* Video types: single overall caption */
                     <div className="space-y-1.5">
-                      <Label className="text-[10px] text-muted-foreground">Slide {slideIndex + 1} text</Label>
+                      <Label className="text-[10px] text-muted-foreground">Caption</Label>
                       <Textarea
-                        value={slides[slideIndex]?.caption ?? ''}
-                        onChange={(e) => {
-                          const updated = slides.map((s, i) =>
-                            i === slideIndex ? { ...s, caption: e.target.value } : s,
-                          );
-                          setSlides(updated);
-                        }}
-                        rows={2}
+                        value={item.caption ?? ''}
+                        onChange={(e) => setItem((p) => ({ ...p, caption: e.target.value }))}
+                        rows={3}
                         className="resize-none text-xs"
                       />
                     </div>
