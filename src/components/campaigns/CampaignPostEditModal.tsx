@@ -1,7 +1,15 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { Music, Pause, Play, RefreshCw, VolumeX, X } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  ImageIcon,
+  Plus,
+  RefreshCw,
+  VolumeX,
+  X,
+} from 'lucide-react';
 
 import type { ContentItem } from '@/types/v2';
 import { Button } from '@/components/ui/button';
@@ -49,6 +57,32 @@ const WEIGHTS: { label: string; value: number }[] = [
   { label: 'Bold', value: 700 },
 ];
 
+type SlideEntry = { url: string; caption?: string };
+
+function resolveSlides(enrichment: Record<string, unknown>): SlideEntry[] {
+  const mediaSlots = (enrichment.sourceMediaSlots ?? {}) as Record<string, unknown>;
+  const rawSlides = mediaSlots.slides;
+  if (Array.isArray(rawSlides) && rawSlides.length > 0) {
+    return rawSlides
+      .filter((s): s is Record<string, unknown> => s && typeof s === 'object')
+      .map((s) => ({ url: String(s.url ?? ''), caption: s.caption ? String(s.caption) : undefined }))
+      .filter((s) => !!s.url);
+  }
+  return [];
+}
+
+function resolveVideoThumb(enrichment: Record<string, unknown>, graphicUrls?: string[]): string {
+  const mediaSlots = (enrichment.sourceMediaSlots ?? {}) as Record<string, unknown>;
+  const bg = (mediaSlots.background ?? {}) as Record<string, unknown>;
+  const snapshot = (enrichment.templateSnapshot ?? {}) as Record<string, unknown>;
+  // Prefer thumbnail over raw video url for preview
+  const thumb =
+    String(bg.thumbnailUrl ?? '') ||
+    String(snapshot.thumbnailUrl ?? '') ||
+    (Array.isArray(graphicUrls) ? String(graphicUrls[0] ?? '') : '');
+  return thumb;
+}
+
 export function CampaignPostEditModal({
   campaignId,
   contentItem,
@@ -61,6 +95,20 @@ export function CampaignPostEditModal({
   const script = (enrichment.editorScript ?? {}) as Record<string, unknown>;
   const textStyle = (script.textStyle ?? {}) as Record<string, unknown>;
 
+  const isSlideshow = item.contentType === 'slideshow';
+
+  // ── Slides state (slideshow mode) ─────────────────────────────────────────
+  const [slides, setSlides] = useState<SlideEntry[]>(() => resolveSlides(enrichment));
+  const [slideIndex, setSlideIndex] = useState(0);
+  const [showSlideSwap, setShowSlideSwap] = useState<number | null>(null);
+  const [showAddSlide, setShowAddSlide] = useState(false);
+
+  // ── Video asset state ──────────────────────────────────────────────────────
+  const [videoThumb, setVideoThumb] = useState(() => resolveVideoThumb(enrichment, item.graphicUrls as string[]));
+  const [audioLabel, setAudioLabel] = useState<string>('Audio track');
+  const [showVideoSwap, setShowVideoSwap] = useState(false);
+  const [showAudioSwap, setShowAudioSwap] = useState(false);
+
   // ── Left panel ────────────────────────────────────────────────────────────
   const [mentionBusiness, setMentionBusiness] = useState(() => {
     const mf = String(enrichment.mentionFrequency ?? '');
@@ -69,20 +117,6 @@ export function CampaignPostEditModal({
   const [prompt, setPrompt] = useState('');
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [regenError, setRegenError] = useState<string | null>(null);
-
-  // ── Asset swap ────────────────────────────────────────────────────────────
-  const [showVideoSwap, setShowVideoSwap] = useState(false);
-  const [showAudioSwap, setShowAudioSwap] = useState(false);
-
-  const mediaSlots = (enrichment.sourceMediaSlots ?? {}) as Record<string, unknown>;
-  const bgSlot = (mediaSlots.background ?? {}) as Record<string, unknown>;
-  const [previewUrl, setPreviewUrl] = useState(
-    String(bgSlot.thumbnailUrl ?? bgSlot.url ?? '') ||
-    (Array.isArray(item.graphicUrls) ? String(item.graphicUrls[0] ?? '') : ''),
-  );
-  const [audioLabel, setAudioLabel] = useState<string>(
-    String((bgSlot as any).audioLabel ?? '') || 'Audio track',
-  );
 
   // ── Right panel — text style ──────────────────────────────────────────────
   const [fontFamily, setFontFamily] = useState(String(textStyle.fontFamily ?? FONTS[0]!.value));
@@ -98,15 +132,13 @@ export function CampaignPostEditModal({
   // ── Saving ────────────────────────────────────────────────────────────────
   const [isSaving, setIsSaving] = useState(false);
 
+  // ── Derived ───────────────────────────────────────────────────────────────
   const overlayText = String(script.hookText ?? script.bodyText ?? item.caption ?? '');
-
-  // text-shadow stroke (4 directions)
   const STROKE_DIRS: [number, number][] = [[1, 0], [0, 1], [-1, 0], [0, -1]];
   const tShadow =
     strokeWidth > 0
       ? STROKE_DIRS.map(([dx, dy]) => `${strokeColor} ${dx * strokeWidth}px ${dy * strokeWidth}px 0`).join(', ')
       : 'none';
-
   const bgStyle: React.CSSProperties =
     background === 'white'
       ? { backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: 4, padding: '4px 8px' }
@@ -131,7 +163,13 @@ export function CampaignPostEditModal({
       });
       const data = (await res.json()) as { contentItem?: ContentItem; error?: string };
       if (!res.ok) throw new Error(data.error ?? 'Regeneration failed');
-      if (data.contentItem) { setItem(data.contentItem); setPrompt(''); }
+      if (data.contentItem) {
+        setItem(data.contentItem);
+        const newEnrichment = (data.contentItem.enrichmentData ?? {}) as Record<string, unknown>;
+        setSlides(resolveSlides(newEnrichment));
+        setSlideIndex(0);
+        setPrompt('');
+      }
     } catch (err: unknown) {
       setRegenError(err instanceof Error ? err.message : 'Regeneration failed');
     } finally {
@@ -143,9 +181,17 @@ export function CampaignPostEditModal({
     if (isSaving) return;
     setIsSaving(true);
     try {
+      const updatedSlots = isSlideshow
+        ? {
+            ...(enrichment.sourceMediaSlots as Record<string, unknown> ?? {}),
+            slides: slides.map((s) => ({ url: s.url, caption: s.caption })),
+          }
+        : enrichment.sourceMediaSlots;
+
       const updatedEnrichment = {
         ...enrichment,
         mentionFrequency: mentionBusiness ? 'often' : 'never',
+        sourceMediaSlots: updatedSlots,
         editorScript: {
           ...(script as Record<string, unknown>),
           textStyle: { fontFamily, fontWeight, fontSize, color: textColor, strokeWidth, strokeColor, background },
@@ -164,9 +210,15 @@ export function CampaignPostEditModal({
       setIsSaving(false);
     }
   }, [
-    isSaving, item, onSaved, enrichment, script,
+    isSaving, item, onSaved, enrichment, script, isSlideshow, slides,
     mentionBusiness, fontFamily, fontWeight, fontSize, textColor, strokeWidth, strokeColor, background,
   ]);
+
+  // ── Slide nav helpers ─────────────────────────────────────────────────────
+  const goPrev = () => setSlideIndex((i) => Math.max(0, i - 1));
+  const goNext = () => setSlideIndex((i) => Math.min(slides.length - 1, i + 1));
+
+  const currentSlideUrl = slides[slideIndex]?.url ?? '';
 
   return (
     <>
@@ -180,7 +232,14 @@ export function CampaignPostEditModal({
               <X className="size-4" />
               Cancel
             </Button>
-            <span className="text-sm font-semibold">Edit content</span>
+            <span className="text-sm font-semibold">
+              Edit content
+              {item.contentType && (
+                <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px] font-normal text-muted-foreground capitalize">
+                  {item.contentType.replace(/_/g, ' ')}
+                </span>
+              )}
+            </span>
             <Button size="sm" onClick={handleSave} disabled={isSaving} className="gap-1.5">
               {isSaving ? <RefreshCw className="size-3.5 animate-spin" /> : null}
               {isSaving ? 'Saving…' : 'Save'}
@@ -194,53 +253,110 @@ export function CampaignPostEditModal({
             <ScrollArea className="w-72 shrink-0 border-r bg-card">
               <div className="space-y-6 p-5">
 
-                {/* ASSETS */}
-                <section>
-                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Assets
-                  </p>
-                  <div className="space-y-2">
-                    {/* Video */}
-                    <div className="flex items-center gap-3 rounded-xl border bg-background p-2.5">
-                      {previewUrl ? (
-                        <img src={previewUrl} alt="" className="size-10 shrink-0 rounded-lg object-cover" />
-                      ) : (
-                        <div className="size-10 shrink-0 rounded-lg bg-muted" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-medium">Video</p>
-                        <p className="truncate text-[11px] text-muted-foreground">Background video</p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0 h-7 text-xs"
-                        onClick={() => setShowVideoSwap(true)}
-                      >
-                        Swap
-                      </Button>
-                    </div>
+                {/* ASSETS — slideshow mode shows slide thumbnails */}
+                {isSlideshow ? (
+                  <section>
+                    <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Slides ({slides.length})
+                    </p>
+                    <div className="space-y-2">
+                      {slides.map((slide, idx) => (
+                        <div
+                          key={idx}
+                          className={`flex items-center gap-3 rounded-xl border p-2.5 cursor-pointer transition-colors ${
+                            idx === slideIndex ? 'border-primary bg-primary/5' : 'bg-background hover:bg-muted/50'
+                          }`}
+                          onClick={() => setSlideIndex(idx)}
+                        >
+                          <div className="relative size-10 shrink-0 overflow-hidden rounded-lg bg-muted">
+                            {slide.url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={slide.url} alt={`Slide ${idx + 1}`} className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="flex h-full items-center justify-center">
+                                <ImageIcon className="size-4 text-muted-foreground" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium">Slide {idx + 1}</p>
+                            {slide.caption && (
+                              <p className="truncate text-[11px] text-muted-foreground">{slide.caption}</p>
+                            )}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="shrink-0 h-7 text-xs"
+                            onClick={(e) => { e.stopPropagation(); setShowSlideSwap(idx); }}
+                          >
+                            Swap
+                          </Button>
+                        </div>
+                      ))}
 
-                    {/* Audio */}
-                    <div className="flex items-center gap-3 rounded-xl border bg-background p-2.5">
-                      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-                        <Music className="size-4 text-muted-foreground" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-medium">Audio</p>
-                        <p className="truncate text-[11px] text-muted-foreground">{audioLabel}</p>
-                      </div>
+                      {/* Add slide */}
                       <Button
                         variant="outline"
                         size="sm"
-                        className="shrink-0 h-7 text-xs"
-                        onClick={() => setShowAudioSwap(true)}
+                        className="w-full gap-2 text-xs"
+                        onClick={() => setShowAddSlide(true)}
                       >
-                        Swap
+                        <Plus className="size-3.5" />
+                        Add slide
                       </Button>
                     </div>
-                  </div>
-                </section>
+                  </section>
+                ) : (
+                  /* VIDEO mode: show video + audio swap */
+                  <section>
+                    <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Assets
+                    </p>
+                    <div className="space-y-2">
+                      {/* Video */}
+                      <div className="flex items-center gap-3 rounded-xl border bg-background p-2.5">
+                        {videoThumb ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={videoThumb} alt="" className="size-10 shrink-0 rounded-lg object-cover" />
+                        ) : (
+                          <div className="size-10 shrink-0 rounded-lg bg-muted" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium">Video</p>
+                          <p className="truncate text-[11px] text-muted-foreground">Background video</p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0 h-7 text-xs"
+                          onClick={() => setShowVideoSwap(true)}
+                        >
+                          Swap
+                        </Button>
+                      </div>
+
+                      {/* Audio */}
+                      <div className="flex items-center gap-3 rounded-xl border bg-background p-2.5">
+                        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
+                          <VolumeX className="size-4 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium">Audio</p>
+                          <p className="truncate text-[11px] text-muted-foreground">{audioLabel}</p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0 h-7 text-xs"
+                          onClick={() => setShowAudioSwap(true)}
+                        >
+                          Swap
+                        </Button>
+                      </div>
+                    </div>
+                  </section>
+                )}
 
                 <Separator />
 
@@ -289,30 +405,38 @@ export function CampaignPostEditModal({
             </ScrollArea>
 
             {/* ─ CENTER — preview ─────────────────────────────────────────── */}
-            <main className="flex flex-1 items-center justify-center overflow-hidden bg-muted/30 p-6">
+            <main className="flex flex-1 flex-col items-center justify-center overflow-hidden bg-muted/30 p-6 gap-4">
+              {/* Phone mockup */}
               <div
                 className="relative overflow-hidden rounded-2xl shadow-2xl"
-                style={{ aspectRatio: '9/16', maxHeight: '80vh', width: 'auto' }}
+                style={{ aspectRatio: '9/16', maxHeight: '78vh', width: 'auto' }}
               >
-                {previewUrl ? (
-                  <img src={previewUrl} alt="Preview" className="h-full w-full object-cover" />
+                {isSlideshow ? (
+                  /* Slideshow carousel */
+                  currentSlideUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={currentSlideUrl} alt={`Slide ${slideIndex + 1}`} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-neutral-900">
+                      <ImageIcon className="size-10 text-neutral-600" />
+                      <p className="text-xs text-neutral-400">No image</p>
+                    </div>
+                  )
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-neutral-900">
-                    <p className="text-xs text-neutral-400">No preview</p>
-                  </div>
+                  /* Video preview */
+                  videoThumb ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={videoThumb} alt="Preview" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-neutral-900">
+                      <p className="text-xs text-neutral-400">No preview</p>
+                    </div>
+                  )
                 )}
-
-                {/* Pause button */}
-                <button
-                  type="button"
-                  className="absolute right-3 top-3 flex size-8 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm hover:bg-black/60"
-                >
-                  <Pause className="size-4" />
-                </button>
 
                 {/* Centered overlay text */}
                 {overlayText && (
-                  <div className="absolute inset-0 flex items-center justify-center px-4">
+                  <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
                     <p
                       className="text-center font-semibold leading-snug"
                       style={{
@@ -329,24 +453,55 @@ export function CampaignPostEditModal({
                     </p>
                   </div>
                 )}
+
+                {/* Slide counter badge */}
+                {isSlideshow && slides.length > 0 && (
+                  <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 pointer-events-none">
+                    {slides.map((_, i) => (
+                      <div
+                        key={i}
+                        className={`h-1.5 rounded-full transition-all ${
+                          i === slideIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/50'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {/* Carousel arrows (slideshow only) */}
+              {isSlideshow && slides.length > 1 && (
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={goPrev}
+                    disabled={slideIndex === 0}
+                  >
+                    <ChevronLeft className="size-4" />
+                    Prev
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {slideIndex + 1} / {slides.length}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={goNext}
+                    disabled={slideIndex === slides.length - 1}
+                  >
+                    Next
+                    <ChevronRight className="size-4" />
+                  </Button>
+                </div>
+              )}
             </main>
 
             {/* ─ RIGHT — text controls ────────────────────────────────────── */}
             <ScrollArea className="w-64 shrink-0 border-l bg-card">
               <div className="space-y-1 p-4">
-
-                {/* Quick actions */}
-                <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-xs">
-                  <Play className="size-3.5 text-muted-foreground" />
-                  Play from Start
-                </Button>
-                <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-xs">
-                  <VolumeX className="size-3.5 text-muted-foreground" />
-                  Unmute Audio
-                </Button>
-
-                <Separator className="my-2" />
 
                 {/* TEXT accordion header */}
                 <div className="flex items-center gap-2 px-1 py-1">
@@ -357,7 +512,7 @@ export function CampaignPostEditModal({
                 <div className="space-y-4 pt-1">
                   {/* Editable caption */}
                   <div className="space-y-1.5">
-                    <Label className="text-[10px] text-muted-foreground">Overlay text</Label>
+                    <Label className="text-[10px] text-muted-foreground">Caption</Label>
                     <Textarea
                       value={item.caption ?? ''}
                       onChange={(e) => setItem((p) => ({ ...p, caption: e.target.value }))}
@@ -365,6 +520,24 @@ export function CampaignPostEditModal({
                       className="resize-none text-xs"
                     />
                   </div>
+
+                  {/* Slide caption (slideshow only) */}
+                  {isSlideshow && slides[slideIndex] !== undefined && (
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">Slide {slideIndex + 1} text</Label>
+                      <Textarea
+                        value={slides[slideIndex]?.caption ?? ''}
+                        onChange={(e) => {
+                          const updated = slides.map((s, i) =>
+                            i === slideIndex ? { ...s, caption: e.target.value } : s,
+                          );
+                          setSlides(updated);
+                        }}
+                        rows={2}
+                        className="resize-none text-xs"
+                      />
+                    </div>
+                  )}
 
                   {/* Font */}
                   <div className="space-y-1.5">
@@ -496,13 +669,6 @@ export function CampaignPostEditModal({
                       ))}
                     </div>
                   </div>
-
-                  <Separator />
-
-                  <Button variant="outline" size="sm" className="w-full justify-start gap-2 text-xs">
-                    <span className="text-muted-foreground">⊕</span>
-                    Add Overlay
-                  </Button>
                 </div>
               </div>
             </ScrollArea>
@@ -510,14 +676,48 @@ export function CampaignPostEditModal({
         </DialogContent>
       </Dialog>
 
-      {/* Swap pickers */}
+      {/* Slide swap picker (image only) */}
+      {showSlideSwap !== null && (
+        <MediaPickerModal
+          open
+          onClose={() => setShowSlideSwap(null)}
+          onSelect={(url) => {
+            const idx = showSlideSwap;
+            setSlides((prev) => prev.map((s, i) => (i === idx ? { ...s, url } : s)));
+            if (slideIndex !== idx) setSlideIndex(idx);
+            setShowSlideSwap(null);
+          }}
+          title={`Replace Slide ${showSlideSwap + 1}`}
+          mediaType="image"
+        />
+      )}
+
+      {/* Add slide picker (image only) */}
+      <MediaPickerModal
+        open={showAddSlide}
+        onClose={() => setShowAddSlide(false)}
+        onSelect={(url) => {
+          setSlides((prev) => {
+            const next = [...prev, { url }];
+            setSlideIndex(next.length - 1);
+            return next;
+          });
+          setShowAddSlide(false);
+        }}
+        title="Add Slide"
+        mediaType="image"
+      />
+
+      {/* Video swap picker */}
       <MediaPickerModal
         open={showVideoSwap}
         onClose={() => setShowVideoSwap(false)}
-        onSelect={(url) => { setPreviewUrl(url); setShowVideoSwap(false); }}
+        onSelect={(url) => { setVideoThumb(url); setShowVideoSwap(false); }}
         title="Select Video"
-        mediaType="all"
+        mediaType="video"
       />
+
+      {/* Audio swap picker */}
       <MediaPickerModal
         open={showAudioSwap}
         onClose={() => setShowAudioSwap(false)}

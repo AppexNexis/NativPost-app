@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import Image from 'next/image';
 import { format, isSameDay, isToday, parseISO, addDays } from 'date-fns';
 import {
   CalendarDays,
@@ -68,6 +67,51 @@ function PlatformIcon({ platform }: { platform: string }) {
   );
 }
 
+// ── Thumbnail resolver ────────────────────────────────────────────────────────
+// Tries multiple data sources to find the best image URL for a card preview.
+// Avoids returning video URLs (mp4/webm/mov) since those can't display in <img>.
+const VIDEO_RE = /\.(mp4|webm|mov|m4v)(\?|$)/i;
+
+function getThumb(item: ReviewItem): string | null {
+  const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
+  const mediaSlots = (enrichment.sourceMediaSlots ?? {}) as Record<string, any>;
+  const snapshot = (enrichment.templateSnapshot ?? {}) as Record<string, any>;
+
+  // 1. For image-kind (slideshow/carousel): first slide image
+  const slides = mediaSlots.slides;
+  if (Array.isArray(slides) && slides.length > 0) {
+    const url = slides[0]?.url;
+    if (url && typeof url === 'string' && !VIDEO_RE.test(url)) return url;
+  }
+
+  // 2. Template snapshot thumbnailUrl (usually a CDN image)
+  if (snapshot.thumbnailUrl && !VIDEO_RE.test(snapshot.thumbnailUrl)) return snapshot.thumbnailUrl;
+
+  // 3. Template snapshot thumbnailUrls array
+  const tus = snapshot.thumbnailUrls;
+  if (Array.isArray(tus) && tus.length > 0 && typeof tus[0] === 'string') return tus[0];
+  if (tus && typeof tus === 'object' && !Array.isArray(tus)) {
+    const first = Object.values(tus)[0];
+    if (typeof first === 'string' && !VIDEO_RE.test(first)) return first;
+  }
+
+  // 4. Background slot if it's an image
+  const bg = (mediaSlots.background ?? {}) as Record<string, any>;
+  if (bg.url && bg.assetType !== 'video' && !VIDEO_RE.test(bg.url)) return bg.url;
+
+  // 5. graphicUrls — skip video URLs
+  const gUrl = item.graphicUrls?.[0];
+  if (gUrl && typeof gUrl === 'string' && !VIDEO_RE.test(gUrl)) return gUrl;
+
+  return null;
+}
+
+// ── Content type label ────────────────────────────────────────────────────────
+function ctLabel(contentType: string | null | undefined): string {
+  if (!contentType) return '—';
+  return contentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 export type ReviewItem = ContentItem & {
   sequenceIndex?: number;
@@ -105,6 +149,15 @@ export function CampaignReviewGrid({
   const [editingItem, setEditingItem] = useState<ReviewItem | null>(null);
   const reRolls = campaign.reRollsRemaining ?? 0;
 
+  // Derive platforms from the campaign's target accounts
+  const campaignPlatforms = Array.from(
+    new Set(
+      ((campaign.targetAccounts ?? []) as { accountId: string; platform: string }[])
+        .map((a) => a.platform)
+        .filter(Boolean),
+    ),
+  );
+
   return (
     <TooltipProvider delayDuration={300}>
       <div className="space-y-4">
@@ -141,11 +194,12 @@ export function CampaignReviewGrid({
 
         {/* ── View ── */}
         {view === 'grid' ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
             {contentItems.map((item) => (
               <PostCard
                 key={item.id}
                 item={item}
+                campaignPlatforms={campaignPlatforms}
                 canReRoll={reRolls > 0}
                 onEdit={() => setEditingItem(item)}
                 onReRoll={() => reRolls > 0 && onReRoll(item.id)}
@@ -160,6 +214,7 @@ export function CampaignReviewGrid({
           <CalendarView
             contentItems={contentItems}
             campaign={campaign}
+            campaignPlatforms={campaignPlatforms}
             onEdit={(id) => {
               const it = contentItems.find((i) => i.id === id);
               if (it) setEditingItem(it);
@@ -256,13 +311,18 @@ function SchedulePicker({
 }
 
 // ── Info popover ──────────────────────────────────────────────────────────────
-function InfoPopover({ item }: { item: ReviewItem }) {
+function InfoPopover({ item, campaignPlatforms }: { item: ReviewItem; campaignPlatforms: string[] }) {
   const enrichment = (item.enrichmentData ?? {}) as Record<string, unknown>;
-  const contentType = String((enrichment.contentType as string) ?? item.contentType ?? '—');
+  const contentType = ctLabel(item.contentType ?? (enrichment.contentType as string));
   const angle = item.angleName ?? String((enrichment.angleName as string) ?? '—');
-  const platform = Array.isArray(item.targetPlatforms)
-    ? String(item.targetPlatforms[0] ?? '—')
-    : '—';
+
+  // Show ALL campaign platforms (from targetAccounts), not just item-level field
+  const platforms = campaignPlatforms.length > 0
+    ? campaignPlatforms.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ')
+    : Array.isArray(item.targetPlatforms) && item.targetPlatforms.length > 0
+      ? item.targetPlatforms.map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(', ')
+      : '—';
+
   const scheduledLabel = item.scheduledDate
     ? `${format(parseISO(item.scheduledDate), 'EEE, MMM d')}${item.scheduledTime ? `, ${item.scheduledTime}` : ''}`
     : 'Unscheduled';
@@ -278,11 +338,11 @@ function InfoPopover({ item }: { item: ReviewItem }) {
           <Info className="size-3.5 text-foreground" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-56 p-3 text-xs" align="end" side="bottom">
+      <PopoverContent className="w-60 p-3 text-xs" align="end" side="bottom">
         <div className="space-y-1.5">
-          <InfoRow label="Content type" value={contentType} />
+          <InfoRow label="Type" value={contentType} />
           <InfoRow label="Angle" value={angle} />
-          <InfoRow label="Platform" value={platform} />
+          <InfoRow label="Platforms" value={platforms} />
           <InfoRow label="Status" value={item.status ?? '—'} />
           <InfoRow label="Scheduled" value={scheduledLabel} />
         </div>
@@ -295,7 +355,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-2">
       <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="truncate text-right font-medium capitalize">{value}</span>
+      <span className="text-right font-medium">{value}</span>
     </div>
   );
 }
@@ -303,6 +363,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 // ── Post card ─────────────────────────────────────────────────────────────────
 function PostCard({
   item,
+  campaignPlatforms,
   canReRoll,
   onEdit,
   onReRoll,
@@ -312,6 +373,7 @@ function PostCard({
   onScheduleChange,
 }: {
   item: ReviewItem;
+  campaignPlatforms: string[];
   canReRoll: boolean;
   onEdit: () => void;
   onReRoll: () => void;
@@ -320,37 +382,44 @@ function PostCard({
   onSkip?: () => void;
   onScheduleChange: (date: string, time: string) => void;
 }) {
-  const thumb = item.graphicUrls?.[0];
+  const thumb = getThumb(item);
   const approved = item.status === 'approved';
-  const platform = Array.isArray(item.targetPlatforms) ? String(item.targetPlatforms[0] ?? '') : '';
+  // Show first campaign platform icon (most relevant)
+  const primaryPlatform = campaignPlatforms[0] ?? (Array.isArray(item.targetPlatforms) ? String(item.targetPlatforms[0] ?? '') : '');
   const angleColor = item.angleColor ?? '#f97316';
+  const typeLabel = item.contentType ? ctLabel(item.contentType) : null;
 
   return (
-    <div className={`overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md ${approved ? 'ring-1 ring-emerald-400' : ''}`}>
+    <div className={`overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md ${approved ? 'ring-2 ring-emerald-400' : ''}`}>
       {/* Thumbnail */}
       <div className="relative aspect-[9/16] cursor-pointer overflow-hidden bg-muted" onClick={onEdit}>
         {thumb ? (
-          <Image
+          // Use plain <img> to avoid Next.js domain restrictions with template CDN URLs
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
             src={thumb}
             alt={item.caption?.slice(0, 40) ?? 'Post'}
-            fill
-            className="object-cover"
-            sizes="(max-width: 640px) 50vw, 20vw"
+            className="h-full w-full object-cover"
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-muted-foreground/25">
-            <svg className="size-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground/30">
+            <svg className="size-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
+            {typeLabel && <span className="text-[9px]">{typeLabel}</span>}
           </div>
         )}
 
         {/* Platform badge */}
-        {platform && <div className="absolute left-2 top-2 z-10"><PlatformIcon platform={platform} /></div>}
+        {primaryPlatform && (
+          <div className="absolute left-2 top-2 z-10">
+            <PlatformIcon platform={primaryPlatform} />
+          </div>
+        )}
 
         {/* Info popover */}
         <div className="absolute right-2 top-2 z-10">
-          <InfoPopover item={item} />
+          <InfoPopover item={item} campaignPlatforms={campaignPlatforms} />
         </div>
 
         {/* Approved chip */}
@@ -360,10 +429,17 @@ function PostCard({
           </div>
         )}
 
+        {/* Content type pill */}
+        {typeLabel && !approved && (
+          <div className="absolute bottom-8 left-2 z-10 rounded-full bg-black/60 px-2 py-0.5 text-[8px] font-semibold text-white">
+            {typeLabel}
+          </div>
+        )}
+
         {/* Angle pill */}
         {item.angleName && (
           <div
-            className="absolute bottom-2 left-2 z-10 rounded-full px-2 py-0.5 text-[9px] font-semibold text-white"
+            className="absolute bottom-2 left-2 right-2 z-10 truncate rounded-full px-2 py-0.5 text-center text-[8px] font-semibold text-white"
             style={{ backgroundColor: angleColor }}
           >
             {item.angleName}
@@ -450,6 +526,7 @@ function PostCard({
 function CalendarView({
   contentItems,
   campaign,
+  campaignPlatforms,
   onEdit,
   onReRoll,
   onDelete,
@@ -457,6 +534,7 @@ function CalendarView({
 }: {
   contentItems: ReviewItem[];
   campaign: Campaign;
+  campaignPlatforms: string[];
   onEdit: (id: string) => void;
   onReRoll: (id: string) => void;
   onDelete: (id: string) => void;
@@ -485,7 +563,7 @@ function CalendarView({
       </p>
 
       <ScrollArea className="w-full">
-        <div className="space-y-3 pb-2 min-w-[560px]">
+        <div className="space-y-3 pb-2 min-w-[600px]">
           {weeks.map((week, wi) => (
             <div key={wi}>
               {/* Day name headers — only first week */}
@@ -512,7 +590,7 @@ function CalendarView({
                   return (
                     <div
                       key={di}
-                      className={`min-h-[120px] rounded-xl border p-2 ${
+                      className={`min-h-[140px] rounded-xl border p-2 ${
                         today
                           ? 'border-primary/50 bg-primary/5'
                           : 'border-border bg-muted/20'
@@ -536,6 +614,7 @@ function CalendarView({
                           <CalendarCard
                             key={item.id}
                             item={item}
+                            campaignPlatforms={campaignPlatforms}
                             onEdit={() => onEdit(item.id)}
                             onReRoll={() => onReRoll(item.id)}
                             onDelete={() => onDelete(item.id)}
@@ -563,19 +642,21 @@ function CalendarView({
 // ── Calendar card (post inside a calendar day) ────────────────────────────────
 function CalendarCard({
   item,
+  campaignPlatforms,
   onEdit,
   onReRoll,
   onDelete,
   onScheduleChange,
 }: {
   item: ReviewItem;
+  campaignPlatforms: string[];
   onEdit: () => void;
   onReRoll: () => void;
   onDelete: () => void;
   onScheduleChange: (date: string, time: string) => void;
 }) {
-  const thumb = item.graphicUrls?.[0];
-  const platform = Array.isArray(item.targetPlatforms) ? String(item.targetPlatforms[0] ?? '') : '';
+  const thumb = getThumb(item);
+  const primaryPlatform = campaignPlatforms[0] ?? (Array.isArray(item.targetPlatforms) ? String(item.targetPlatforms[0] ?? '') : '');
   const angleColor = item.angleColor ?? '#f97316';
 
   return (
@@ -586,15 +667,16 @@ function CalendarCard({
           className="relative aspect-[9/16] cursor-pointer overflow-hidden"
           onClick={onEdit}
         >
-          <Image src={thumb} alt="" fill className="object-cover" sizes="120px" />
-          {platform && (
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={thumb} alt="" className="h-full w-full object-cover" />
+          {primaryPlatform && (
             <div className="absolute left-1 top-1 scale-75 origin-top-left">
-              <PlatformIcon platform={platform} />
+              <PlatformIcon platform={primaryPlatform} />
             </div>
           )}
           {item.angleName && (
             <div
-              className="absolute bottom-1 left-1 rounded-full px-1.5 py-0.5 text-[8px] font-semibold text-white"
+              className="absolute bottom-1 left-1 right-1 truncate rounded-full px-1.5 py-0.5 text-center text-[8px] font-semibold text-white"
               style={{ backgroundColor: angleColor }}
             >
               {item.angleName}

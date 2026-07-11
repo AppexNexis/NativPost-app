@@ -426,7 +426,7 @@ export function CampaignWizard({
   };
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className={`mx-auto ${currentStep === 7 ? 'max-w-6xl' : 'max-w-3xl'}`}>
       {/* Step Content */}
       <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
         {/* Progress bar — full width, no padding, h-0.5 */}
