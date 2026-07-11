@@ -23,28 +23,39 @@ export function applySetToSlots(
   slots: SourceMediaSlots,
   set: ResolvedSet,
   contentType: string,
+  /** Rotate into the asset pool by this many positions so consecutive posts
+   *  start on a different image. Defaults to 0 (original behaviour). */
+  slideOffset: number = 0,
 ): SourceMediaSlots {
   if (!SAFE_SWAP_TYPES.has(contentType)) return slots;
   if (!set.assets || set.assets.length === 0) return slots;
 
   if (contentType === 'wall_of_text') {
-    const firstImage = set.assets.find((a) => a.assetType === 'image') || set.assets[0];
-    if (!firstImage) return slots;
+    const images = set.assets.filter((a) => a.assetType === 'image');
+    const pool = images.length > 0 ? images : set.assets;
+    const picked = pool[slideOffset % pool.length] || pool[0]!;
     return {
       ...slots,
-      background: { url: firstImage.url, assetType: firstImage.assetType },
+      background: { url: picked.url, assetType: picked.assetType },
     };
   }
 
-  // slideshow / carousel
+  // slideshow / carousel — rotate through asset pool so each post leads with
+  // a different image. Wraps around so the offset is always in bounds.
+  const assets = set.assets;
+  const n = assets.length;
+
   const templateSlides = slots.slides || [];
   const nextSlides = templateSlides.length > 0
     ? templateSlides.map((slide, i) => {
-      const swap = set.assets[i];
+      const swap = assets[(i + slideOffset) % n];
       if (!swap) return slide;
       return { url: swap.url, assetType: 'image' as const };
     })
-    : set.assets.map((a) => ({ url: a.url, assetType: 'image' as const }));
+    : assets.map((_, i) => {
+      const asset = assets[(i + slideOffset) % n]!;
+      return { url: asset.url, assetType: 'image' as const };
+    });
 
   return {
     ...slots,

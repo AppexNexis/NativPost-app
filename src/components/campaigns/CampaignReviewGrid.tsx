@@ -71,6 +71,7 @@ function PlatformIcon({ platform }: { platform: string }) {
 // Tries multiple data sources to find the best image URL for a card preview.
 // Avoids returning video URLs (mp4/webm/mov) since those can't display in <img>.
 const VIDEO_RE = /\.(mp4|webm|mov|m4v)(\?|$)/i;
+const VIDEO_CONTENT_TYPES = new Set(['ugc', 'talking_head', 'video_hook_demo', 'video_hook', 'green_screen', 'green_screen_meme']);
 
 function getThumb(item: ReviewItem): string | null {
   const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
@@ -85,9 +86,10 @@ function getThumb(item: ReviewItem): string | null {
   }
 
   // 2. Template snapshot thumbnailUrl (usually a CDN image)
-  if (snapshot.thumbnailUrl && !VIDEO_RE.test(snapshot.thumbnailUrl)) return snapshot.thumbnailUrl;
+  if (snapshot.thumbnailUrl && typeof snapshot.thumbnailUrl === 'string' && !VIDEO_RE.test(snapshot.thumbnailUrl))
+    return snapshot.thumbnailUrl;
 
-  // 3. Template snapshot thumbnailUrls array
+  // 3. Template snapshot thumbnailUrls array/object
   const tus = snapshot.thumbnailUrls;
   if (Array.isArray(tus) && tus.length > 0 && typeof tus[0] === 'string') return tus[0];
   if (tus && typeof tus === 'object' && !Array.isArray(tus)) {
@@ -95,14 +97,38 @@ function getThumb(item: ReviewItem): string | null {
     if (typeof first === 'string' && !VIDEO_RE.test(first)) return first;
   }
 
-  // 4. Background slot if it's an image
+  // 4. Background slot: check explicit thumbnailUrl, then image-only url
   const bg = (mediaSlots.background ?? {}) as Record<string, any>;
+  if (bg.thumbnailUrl && typeof bg.thumbnailUrl === 'string' && !VIDEO_RE.test(bg.thumbnailUrl))
+    return bg.thumbnailUrl;
   if (bg.url && bg.assetType !== 'video' && !VIDEO_RE.test(bg.url)) return bg.url;
 
-  // 5. graphicUrls — skip video URLs
+  // 5. hookVideo / demoVideo thumbnail images
+  const hookVid = (mediaSlots.hookVideo ?? {}) as Record<string, any>;
+  if (hookVid.thumbnailUrl && typeof hookVid.thumbnailUrl === 'string' && !VIDEO_RE.test(hookVid.thumbnailUrl))
+    return hookVid.thumbnailUrl;
+  const demoVid = (mediaSlots.demoVideo ?? {}) as Record<string, any>;
+  if (demoVid.thumbnailUrl && typeof demoVid.thumbnailUrl === 'string' && !VIDEO_RE.test(demoVid.thumbnailUrl))
+    return demoVid.thumbnailUrl;
+
+  // 6. graphicUrls — skip video URLs
   const gUrl = item.graphicUrls?.[0];
   if (gUrl && typeof gUrl === 'string' && !VIDEO_RE.test(gUrl)) return gUrl;
 
+  return null;
+}
+
+// Returns the raw video URL for video-type content (used for hover autoplay).
+function getVideoUrl(item: ReviewItem): string | null {
+  const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
+  const mediaSlots = (enrichment.sourceMediaSlots ?? {}) as Record<string, any>;
+  const bg = (mediaSlots.background ?? {}) as Record<string, any>;
+  if (bg.url && (bg.assetType === 'video' || VIDEO_RE.test(String(bg.url)))) return String(bg.url);
+  const hookVid = (mediaSlots.hookVideo ?? {}) as Record<string, any>;
+  if (hookVid.url && VIDEO_RE.test(String(hookVid.url))) return String(hookVid.url);
+  const snapshot = (enrichment.templateSnapshot ?? {}) as Record<string, any>;
+  const srcUrl = snapshot.sourceUrl || snapshot.mediaUrl;
+  if (srcUrl && typeof srcUrl === 'string' && VIDEO_RE.test(srcUrl)) return srcUrl;
   return null;
 }
 
@@ -383,6 +409,8 @@ function PostCard({
   onScheduleChange: (date: string, time: string) => void;
 }) {
   const thumb = getThumb(item);
+  const videoUrl = getVideoUrl(item);
+  const isVideoType = VIDEO_CONTENT_TYPES.has(item.contentType ?? '');
   const approved = item.status === 'approved';
   // Show first campaign platform icon (most relevant)
   const primaryPlatform = campaignPlatforms[0] ?? (Array.isArray(item.targetPlatforms) ? String(item.targetPlatforms[0] ?? '') : '');
@@ -393,7 +421,25 @@ function PostCard({
     <div className={`overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md ${approved ? 'ring-2 ring-emerald-400' : ''}`}>
       {/* Thumbnail */}
       <div className="relative aspect-[9/16] cursor-pointer overflow-hidden bg-muted" onClick={onEdit}>
-        {thumb ? (
+        {isVideoType && videoUrl ? (
+          /* Video type: show video with hover-to-play, thumbnail as poster */
+          // eslint-disable-next-line jsx-a11y/media-has-caption
+          <video
+            src={videoUrl}
+            poster={thumb ?? undefined}
+            className="h-full w-full object-cover"
+            muted
+            loop
+            playsInline
+            preload="none"
+            onMouseEnter={(e) => (e.currentTarget as HTMLVideoElement).play().catch(() => {})}
+            onMouseLeave={(e) => {
+              const v = e.currentTarget as HTMLVideoElement;
+              v.pause();
+              v.currentTime = 0;
+            }}
+          />
+        ) : thumb ? (
           // Use plain <img> to avoid Next.js domain restrictions with template CDN URLs
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -540,8 +586,25 @@ function CalendarView({
   onDelete: (id: string) => void;
   onScheduleChange: (itemId: string, date: string, time: string) => void;
 }) {
-  const start = campaign.startDate ? parseISO(campaign.startDate) : new Date();
-  const totalDays = campaign.campaignLengthDays ?? 7;
+  // Derive the actual date range from the scheduled posts — not from
+  // campaignLengthDays which may be stale or capped to 7.
+  const scheduledDates = contentItems
+    .filter((it) => it.scheduledDate)
+    .map((it) => parseISO(it.scheduledDate!));
+
+  const campaignStart = campaign.startDate ? parseISO(campaign.startDate) : null;
+
+  const earliestDate = scheduledDates.length > 0
+    ? scheduledDates.reduce((a, b) => (a < b ? a : b))
+    : (campaignStart ?? new Date());
+
+  const latestDate = scheduledDates.length > 0
+    ? scheduledDates.reduce((a, b) => (a > b ? a : b))
+    : addDays(earliestDate, (campaign.campaignLengthDays ?? 7) - 1);
+
+  // Use campaign start date if it precedes the first scheduled post
+  const start = campaignStart && campaignStart < earliestDate ? campaignStart : earliestDate;
+  const totalDays = Math.ceil((latestDate.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
   const days = Array.from({ length: totalDays }, (_, i) => addDays(start, i));
 
@@ -559,7 +622,7 @@ function CalendarView({
   return (
     <div className="space-y-4">
       <p className="text-sm font-medium text-muted-foreground">
-        {format(start, 'MMM d')} – {format(addDays(start, totalDays - 1), 'MMM d, yyyy')}
+        {format(start, 'MMM d')} – {format(latestDate, 'MMM d, yyyy')} · {contentItems.length} posts
       </p>
 
       <ScrollArea className="w-full">
@@ -656,19 +719,41 @@ function CalendarCard({
   onScheduleChange: (date: string, time: string) => void;
 }) {
   const thumb = getThumb(item);
+  const videoUrl = getVideoUrl(item);
+  const isVideoType = VIDEO_CONTENT_TYPES.has(item.contentType ?? '');
   const primaryPlatform = campaignPlatforms[0] ?? (Array.isArray(item.targetPlatforms) ? String(item.targetPlatforms[0] ?? '') : '');
   const angleColor = item.angleColor ?? '#f97316';
+  const hasMedia = isVideoType ? !!videoUrl : !!thumb;
 
   return (
     <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
       {/* Thumbnail */}
-      {thumb && (
+      {hasMedia && (
         <div
           className="relative aspect-[9/16] cursor-pointer overflow-hidden"
           onClick={onEdit}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={thumb} alt="" className="h-full w-full object-cover" />
+          {isVideoType && videoUrl ? (
+            // eslint-disable-next-line jsx-a11y/media-has-caption
+            <video
+              src={videoUrl}
+              poster={thumb ?? undefined}
+              className="h-full w-full object-cover"
+              muted
+              loop
+              playsInline
+              preload="none"
+              onMouseEnter={(e) => (e.currentTarget as HTMLVideoElement).play().catch(() => {})}
+              onMouseLeave={(e) => {
+                const v = e.currentTarget as HTMLVideoElement;
+                v.pause();
+                v.currentTime = 0;
+              }}
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={thumb!} alt="" className="h-full w-full object-cover" />
+          )}
           {primaryPlatform && (
             <div className="absolute left-1 top-1 scale-75 origin-top-left">
               <PlatformIcon platform={primaryPlatform} />

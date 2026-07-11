@@ -835,7 +835,9 @@ export async function generateCampaignPosts(
       try {
         const set = await pickDefaultSet(db, orgId, template.contentType);
         if (set) {
-          sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, template.contentType);
+          // Rotate the starting asset index so consecutive posts show different
+          // leading images even when the same media set applies to every post.
+          sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, template.contentType, inserted);
         }
       } catch { /* keep original slots — Set substitution is best-effort */ }
 
@@ -1198,7 +1200,7 @@ export async function generateCampaignPosts(
       try {
         const set = await pickDefaultSet(db, orgId, resolvedContentType);
         if (set) {
-          sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, resolvedContentType);
+          sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, resolvedContentType, inserted);
         }
       } catch (setErr: any) {
         console.warn(`[Campaign] Set substitution failed for post ${i}:`, setErr?.message || setErr);
@@ -1421,7 +1423,7 @@ export async function generateCampaignPosts(
         try {
           const set = await pickDefaultSet(db, orgId, resolvedContentType);
           if (set) {
-            sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, resolvedContentType);
+            sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, resolvedContentType, inserted);
           }
         } catch { /* keep original slots */ }
 

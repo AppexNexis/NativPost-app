@@ -79,16 +79,39 @@ function resolveSlides(enrichment: Record<string, unknown>): SlideEntry[] {
   return [];
 }
 
+const EDITOR_VIDEO_RE = /\.(mp4|webm|mov|m4v)(\?|$)/i;
+
+// Returns the best static image thumbnail for a video-type post (may be empty).
 function resolveVideoThumb(enrichment: Record<string, unknown>, graphicUrls?: string[]): string {
   const mediaSlots = (enrichment.sourceMediaSlots ?? {}) as Record<string, unknown>;
   const bg = (mediaSlots.background ?? {}) as Record<string, unknown>;
   const snapshot = (enrichment.templateSnapshot ?? {}) as Record<string, unknown>;
-  // Prefer thumbnail over raw video url for preview
-  const thumb =
-    String(bg.thumbnailUrl ?? '') ||
-    String(snapshot.thumbnailUrl ?? '') ||
-    (Array.isArray(graphicUrls) ? String(graphicUrls[0] ?? '') : '');
-  return thumb;
+  if (bg.thumbnailUrl && !EDITOR_VIDEO_RE.test(String(bg.thumbnailUrl))) return String(bg.thumbnailUrl);
+  if (snapshot.thumbnailUrl && !EDITOR_VIDEO_RE.test(String(snapshot.thumbnailUrl))) return String(snapshot.thumbnailUrl);
+  const tus = snapshot.thumbnailUrls;
+  if (Array.isArray(tus) && tus.length > 0 && typeof tus[0] === 'string') return tus[0];
+  if (tus && typeof tus === 'object' && !Array.isArray(tus)) {
+    const first = Object.values(tus as Record<string, unknown>)[0];
+    if (typeof first === 'string' && !EDITOR_VIDEO_RE.test(first)) return first;
+  }
+  const gUrl = Array.isArray(graphicUrls) ? (graphicUrls[0] ?? '') : '';
+  if (gUrl && !EDITOR_VIDEO_RE.test(gUrl)) return gUrl;
+  return '';
+}
+
+// Returns the actual video file URL so we can render <video> in the preview.
+function resolveVideoUrl(enrichment: Record<string, unknown>, graphicUrls?: string[]): string {
+  const mediaSlots = (enrichment.sourceMediaSlots ?? {}) as Record<string, unknown>;
+  const bg = (mediaSlots.background ?? {}) as Record<string, unknown>;
+  if (bg.url && (bg.assetType === 'video' || EDITOR_VIDEO_RE.test(String(bg.url)))) return String(bg.url);
+  const hookVid = (mediaSlots.hookVideo ?? {}) as Record<string, unknown>;
+  if (hookVid.url) return String(hookVid.url);
+  const snapshot = (enrichment.templateSnapshot ?? {}) as Record<string, unknown>;
+  if (snapshot.sourceUrl) return String(snapshot.sourceUrl);
+  if (snapshot.mediaUrl && EDITOR_VIDEO_RE.test(String(snapshot.mediaUrl))) return String(snapshot.mediaUrl);
+  const gUrl = Array.isArray(graphicUrls) ? (graphicUrls[0] ?? '') : '';
+  if (gUrl && EDITOR_VIDEO_RE.test(gUrl)) return gUrl;
+  return '';
 }
 
 export function CampaignPostEditModal({
@@ -113,6 +136,7 @@ export function CampaignPostEditModal({
 
   // ── Video asset state ──────────────────────────────────────────────────────
   const [videoThumb, setVideoThumb] = useState(() => resolveVideoThumb(enrichment, item.graphicUrls as string[]));
+  const [videoUrl, setVideoUrl] = useState(() => resolveVideoUrl(enrichment, item.graphicUrls as string[]));
   const [audioLabel, setAudioLabel] = useState<string>('Audio track');
   const [showVideoSwap, setShowVideoSwap] = useState(false);
   const [showAudioSwap, setShowAudioSwap] = useState(false);
@@ -467,8 +491,19 @@ export function CampaignPostEditModal({
                     </div>
                   )
                 ) : (
-                  /* Video preview */
-                  videoThumb ? (
+                  /* Video preview — use <video> if we have a video URL, otherwise fall back to thumbnail image */
+                  videoUrl ? (
+                    // eslint-disable-next-line jsx-a11y/media-has-caption
+                    <video
+                      src={videoUrl}
+                      poster={videoThumb || undefined}
+                      className="h-full w-full object-cover"
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                    />
+                  ) : videoThumb ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={videoThumb} alt="Preview" className="h-full w-full object-cover" />
                   ) : (
@@ -773,7 +808,16 @@ export function CampaignPostEditModal({
       <MediaPickerModal
         open={showVideoSwap}
         onClose={() => { markPickerClosed(); setShowVideoSwap(false); }}
-        onSelect={(url) => { setVideoThumb(url); markPickerClosed(); setShowVideoSwap(false); }}
+        onSelect={(url) => {
+          // If selected URL is a video file, use as videoUrl; otherwise use as thumb
+          if (EDITOR_VIDEO_RE.test(url)) {
+            setVideoUrl(url);
+          } else {
+            setVideoThumb(url);
+          }
+          markPickerClosed();
+          setShowVideoSwap(false);
+        }}
         title="Select Video"
         mediaType="video"
       />
