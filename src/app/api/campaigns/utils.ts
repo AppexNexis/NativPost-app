@@ -1047,6 +1047,7 @@ export async function generateCampaignPosts(
           status: 'pending_review',
           brandProfileId: profile?.id || null,
           angleId: null,
+          targetPlatforms,
           graphicUrls: rawSource
             ? [rawSource]
             : Array.isArray(sourceMediaSlots?.slides) && sourceMediaSlots.slides.length > 0
@@ -1644,6 +1645,7 @@ export async function generateCampaignPosts(
             contentFormat: resolvedContentType === 'slideshow' ? 'carousel' : 'single',
             aspectRatio: '9:16',
             aiModelUsed: 'template-fallback',
+            targetPlatforms,
           })
           .returning();
 
