@@ -25,6 +25,20 @@ interface CampaignWizardProps {
   onGenerate: (campaignId: string) => Promise<void>;
   onLaunch: (campaignId: string) => Promise<void>;
   isLoading?: boolean;
+  /** When provided the wizard resumes from the correct step instead of starting fresh. */
+  initialCampaign?: Campaign | null;
+}
+
+function initialStepForCampaign(campaign: Campaign): number {
+  switch (campaign.status) {
+    case 'generating': return 6;
+    case 'review':
+    case 'active':
+    case 'scheduled':
+    case 'paused':
+    case 'completed': return 7;
+    default: return 0;
+  }
 }
 
 const STEPS = [
@@ -47,17 +61,14 @@ export function CampaignWizard({
   onGenerate,
   onLaunch,
   isLoading,
+  initialCampaign,
 }: CampaignWizardProps) {
   const router = useRouter();
-  const [currentStep, setCurrentStep] = useState(0);
-  const [campaign, setCampaign] = useState<Partial<Campaign>>({
+
+  const DEFAULT_CAMPAIGN: Partial<Campaign> = {
     name: '',
     description: '',
-    contentMix: {
-      slideshow: 34,
-      greenScreen: 33,
-      videoHook: 33,
-    },
+    contentMix: { slideshow: 34, greenScreen: 33, videoHook: 33 },
     remixRatio: 50,
     angles: [],
     mentionFrequency: 'sometimes',
@@ -71,25 +82,121 @@ export function CampaignWizard({
     totalPosts: 0,
     qualityThreshold: 0.7,
     reRollsRemaining: 4,
-  });
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedCampaignId, setGeneratedCampaignId] = useState<string | null>(null);
+  };
+
+  const [currentStep, setCurrentStep] = useState(
+    initialCampaign ? initialStepForCampaign(initialCampaign) : 0,
+  );
+  const [campaign, setCampaign] = useState<Partial<Campaign>>(
+    initialCampaign ? { ...DEFAULT_CAMPAIGN, ...initialCampaign } : DEFAULT_CAMPAIGN,
+  );
+
+  // For resuming an existing draft/generating campaign without re-creating it.
+  const [preCreatedId] = useState<string | null>(
+    initialCampaign && initialCampaign.status !== 'draft' ? initialCampaign.id : null,
+  );
+
+  const [isGenerating, setIsGenerating] = useState(
+    initialCampaign?.status === 'generating',
+  );
+  const [generatedCampaignId, setGeneratedCampaignId] = useState<string | null>(
+    initialCampaign && ['generating', 'review', 'active', 'scheduled', 'paused', 'completed'].includes(initialCampaign.status)
+      ? initialCampaign.id
+      : null,
+  );
   const [contentItems, setContentItems] = useState<(ContentItem & { sequenceIndex?: number; scheduledDate?: string; scheduledTime?: string; isRolled?: boolean })[]>([]);
   const [reviewError, setReviewError] = useState<string | null>(null);
-  const [jobProgress, setJobProgress] = useState({ postsCompleted: 0, postsTotal: 0 });
+  const [jobProgress, setJobProgress] = useState({
+    postsCompleted: 0,
+    postsTotal: initialCampaign?.totalPosts ?? 0,
+  });
 
-  // Poll generation progress while generating
+  // On mount, load content items if resuming a campaign that already has them.
+  useEffect(() => {
+    if (
+      initialCampaign?.id &&
+      ['review', 'active', 'scheduled', 'paused', 'completed'].includes(initialCampaign.status)
+    ) {
+      fetchCampaignItems(initialCampaign.id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Poll generation progress while generating. The generate route
+  // returns 202 immediately (drain runs via waitUntil), so this poll
+  // is the ONLY signal that the async drain has actually inserted the
+  // rows. When the job reports done we fetch the items and advance to
+  // Review; a naive "await onGenerate → setCurrentStep(7)" races the
+  // background drain and lands the user on an empty Review grid.
   useEffect(() => {
     if (!isGenerating || !generatedCampaignId) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
+    let nullJobPolls = 0; // count consecutive polls where data.job is missing
+    const MAX_NULL_POLLS = 20; // ~50s of no-job → surface error
     const poll = async () => {
       try {
         const res = await fetch(`/api/campaigns/${generatedCampaignId}/generate/status`, { cache: 'no-store' });
         if (res.ok) {
-          const data = (await res.json()) as { job?: { postsCompleted?: number; postsTotal?: number } };
+          const data = (await res.json()) as {
+            job?: {
+              status?: string;
+              postsCompleted?: number;
+              postsTotal?: number;
+              errorMessage?: string | null;
+            };
+          };
+          if (!cancelled && !data.job) {
+            nullJobPolls++;
+            if (nullJobPolls >= MAX_NULL_POLLS) {
+              setReviewError('Generation job not found. Please try again.');
+              setIsGenerating(false);
+              return;
+            }
+          }
           if (!cancelled && data.job) {
-            setJobProgress({ postsCompleted: data.job.postsCompleted ?? 0, postsTotal: data.job.postsTotal ?? 0 });
+            nullJobPolls = 0;
+            const completed = data.job.postsCompleted ?? 0;
+            const polledTotal = data.job.postsTotal ?? 0;
+            // Never regress the total to 0. The wizard seeds
+            // `postsTotal` on submit; a stale/DB-default 0 from the
+            // first status poll must not clobber the target count.
+            setJobProgress((prev) => ({
+              postsCompleted: completed,
+              postsTotal: Math.max(prev.postsTotal, polledTotal),
+            }));
+
+            if (data.job.status === 'done') {
+              // Drain finished — pull items, advance to Review, stop
+              // polling. Defensive refetch: replication lag or an
+              // eventual-consistency read can return 0 items on the
+              // first hit even after status flips to done. Retry up
+              // to 5 times at 1.5s intervals before giving up.
+              await fetchCampaignItems(generatedCampaignId);
+              let attempts = 0;
+              while (!cancelled && attempts < 5) {
+                const check = await fetch(`/api/campaigns/${generatedCampaignId}`, { cache: 'no-store' });
+                if (check.ok) {
+                  const j = await check.json();
+                  if ((j.contentItems || []).length > 0) {
+                    await fetchCampaignItems(generatedCampaignId);
+                    break;
+                  }
+                }
+                attempts++;
+                await new Promise((r) => setTimeout(r, 1500));
+              }
+              if (!cancelled) {
+                setIsGenerating(false);
+                setCurrentStep(7);
+              }
+              return;
+            }
+            if (data.job.status === 'failed') {
+              setReviewError(data.job.errorMessage || 'Generation failed');
+              setIsGenerating(false);
+              return;
+            }
           }
         }
       } catch { /* silent */ }
@@ -129,6 +236,13 @@ export function CampaignWizard({
   };
 
   const handleGenerate = async () => {
+    // Re-entry guard — a second click while the drain is running would
+    // create a duplicate campaign (observed in prod logs 2026-07-10:
+    // two campaigns generated within 20s of one another).
+    if (isGenerating || generatedCampaignId) {
+      return;
+    }
+
     // Hard-block: no target accounts among the three allowed platforms
     // means the campaign can't publish anywhere. Match the server-side
     // NoConnectedChannelsError gate so users don't get a confusing
@@ -143,14 +257,10 @@ export function CampaignWizard({
       return;
     }
 
-    setIsGenerating(true);
     setReviewError(null);
+    setJobProgress({ postsCompleted: 0, postsTotal: 0 });
+    setIsGenerating(true);
     try {
-      // Belt-and-braces clamp before submit. The UI stepper enforces 1-3
-      // but stale state (e.g. old defaults, re-entered wizard) could
-      // otherwise slip an out-of-range value past. Also pre-compute
-      // totalPosts so the row lands with a correct denominator even
-      // if the server ever regresses to trusting body.totalPosts.
       const perDay = Math.max(1, Math.min(3, campaign.postsPerDay ?? 1));
       const days = campaign.campaignLengthDays ?? 7;
       const accountsCount = Math.max(1, validTargets.length);
@@ -159,17 +269,30 @@ export function CampaignWizard({
         postsPerDay: perDay,
         totalPosts: accountsCount * perDay * days,
       };
-      const created = await onCreate(submitCampaign);
-      if (created?.id) {
-        setGeneratedCampaignId(created.id);
-        await onGenerate(created.id);
-        await fetchCampaignItems(created.id);
-        setCurrentStep(7);
+
+      let campaignId: string;
+      if (preCreatedId) {
+        // Resuming an existing campaign — skip re-create.
+        campaignId = preCreatedId;
+      } else {
+        const created = await onCreate(submitCampaign);
+        if (!created?.id) throw new Error('Campaign create failed');
+        campaignId = created.id;
       }
+
+      // Seed the total up-front so the progress UI shows the target
+      // even before the first status poll returns.
+      setJobProgress({ postsCompleted: 0, postsTotal: submitCampaign.totalPosts });
+      setGeneratedCampaignId(campaignId);
+      // Fire-and-await the 202 enqueue. The actual drain runs in the
+      // background via `waitUntil(drainOneJob)` on the server. DO NOT
+      // advance to Step 7 here — the poll effect watches job.status and
+      // advances on 'done' once rows actually exist.
+      await onGenerate(campaignId);
     } catch (err: any) {
       setReviewError(err.message || 'Generation failed');
-    } finally {
       setIsGenerating(false);
+      setGeneratedCampaignId(null);
     }
   };
 

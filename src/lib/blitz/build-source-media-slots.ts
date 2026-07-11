@@ -30,6 +30,7 @@ export type SourceMediaSlots = {
 type TemplateRow = {
   contentType: string;
   mediaUrl?: string | null;
+  sourceUrl?: string | null;
   thumbnailUrl?: string | null;
   thumbnailUrls?: Record<string, string> | string[] | null;
 };
@@ -48,18 +49,22 @@ export function buildSourceMediaSlots(template: TemplateRow): SourceMediaSlots {
 
   if (multiSlide && slideUrls.length > 0) {
     slots.slides = slideUrls.map((url) => ({ url, assetType: 'image' as const }));
-    // A slideshow template can still ship a background if mediaUrl is set —
-    // some compositions layer text over a bg. Keep it optional.
-    if (template.mediaUrl) {
+    // A slideshow template can still ship a background if mediaUrl/sourceUrl is
+    // set — some compositions layer text over a bg. Keep it optional.
+    const bgUrl = template.mediaUrl || template.sourceUrl || null;
+    if (bgUrl) {
       slots.background = {
-        url: template.mediaUrl,
-        assetType: isVideoUrl(template.mediaUrl) ? 'video' : 'image',
+        url: bgUrl,
+        assetType: isVideoUrl(bgUrl) ? 'video' : 'image',
       };
     }
     return slots;
   }
 
-  const primary = template.mediaUrl || template.thumbnailUrl || null;
+  // sourceUrl is the original imported video URL for video-type templates
+  // (video_hook, green_screen, talking_head, video_hook_demo). These may not
+  // have a processed mediaUrl/thumbnailUrl yet, so fall back to sourceUrl.
+  const primary = template.mediaUrl || template.thumbnailUrl || template.sourceUrl || null;
   if (primary) {
     slots.background = {
       url: primary,

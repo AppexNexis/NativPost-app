@@ -289,15 +289,6 @@ export function CampaignCalendar({ campaign, locale }: Props) {
     }
   }, [campaign.id, currentMonth, fetchMonth, groups]);
 
-  const editHref = useCallback((contentItemId: string) => {
-    const returnTo = `/${locale}/dashboard/campaigns/${campaign.id}/calendar`;
-    const params = new URLSearchParams({
-      contentItemId,
-      returnTo,
-    });
-    return `/${locale}/dashboard/editor?${params.toString()}`;
-  }, [campaign.id, locale]);
-
   const totalScheduled = useMemo(
     () => groups.reduce((sum, g) => sum + g.contentItems.length, 0),
     [groups],
@@ -504,13 +495,6 @@ export function CampaignCalendar({ campaign, locale }: Props) {
           onSaved={() => {
             setEditingItem(null);
             fetchMonth(currentMonth);
-          }}
-          onSwapVideo={() => {
-            // Fallback: open the full editor for asset-level swap since the
-            // calendar does not host InlineEditorOverlay yet.
-            if (editingItem) {
-              window.location.href = editHref(editingItem.id);
-            }
           }}
         />
       )}

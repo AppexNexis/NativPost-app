@@ -11,7 +11,6 @@ import { buildSourceMediaSlots } from '@/lib/blitz/build-source-media-slots';
 import { generateBlitzSlideCaptions } from '@/lib/blitz/generate-slide-captions';
 import { pickDefaultSet } from '@/lib/blitz/pick-default-set';
 import {
-  BLITZ_ALLOWED_PLATFORMS,
   getConnectedPlatforms,
   NoConnectedChannelsError,
 } from '@/lib/social/connected-platforms';
@@ -526,9 +525,12 @@ async function fetchCampaignTemplates(
     .filter((t) => uniqueTypes.includes(t.contentType))
     .filter((t) => {
       // A template with no renderable media can't produce a Blitz card.
-      // Keep it only if it has a mediaUrl OR a non-empty thumbnailUrls
-      // collection — mirrors the ingestion-must-gate-on-media invariant.
+      // Keep it if it has a mediaUrl, thumbnailUrl, thumbnailUrls collection,
+      // OR a sourceUrl (video-type templates — video_hook, green_screen,
+      // talking_head, video_hook_demo — are imported with sourceUrl as the
+      // backing video but may not have a separate processed mediaUrl/thumbnailUrl).
       if (t.mediaUrl) return true;
+      if (t.sourceUrl) return true;
       if (t.thumbnailUrl) return true;
       const tu = t.thumbnailUrls;
       if (Array.isArray(tu) && tu.length > 0) return true;
@@ -595,12 +597,12 @@ export async function generateCampaignPosts(
     throw new Error('No Brand Profile found. Complete your Brand Profile first.');
   }
 
-  // Resolve target platforms — hard-gated to connected FB / IG / TikTok.
-  // Empty result throws NoConnectedChannelsError so the caller can render
-  // a "Connect a channel" CTA instead of silently generating posts for
-  // platforms the org can't publish to (per 2026-07-07 product decision).
-  const allowedPlatforms = BLITZ_ALLOWED_PLATFORMS as unknown as string[];
-  const connected = await getConnectedPlatforms(db, orgId, { restrictTo: allowedPlatforms });
+  // Resolve target platforms — hard-gated to connected FB / IG / TikTok / YouTube.
+  // YouTube was added to campaign support on 2026-07-10. BLITZ_ALLOWED_PLATFORMS
+  // still restricts to the first three for the Blitz feed, but campaigns can
+  // publish to YouTube so we use a broader list here.
+  const CAMPAIGN_PUBLISH_PLATFORMS = ['facebook', 'instagram', 'tiktok', 'youtube'];
+  const connected = await getConnectedPlatforms(db, orgId, { restrictTo: CAMPAIGN_PUBLISH_PLATFORMS });
   let targetPlatforms: string[];
   if (targetPlatformsOverride && targetPlatformsOverride.length > 0) {
     // Intersect override with connected so callers can't publish to
@@ -787,6 +789,19 @@ export async function generateCampaignPosts(
   const contentItemIds: string[] = [];
   let failedPosts = 0;
 
+  // Seed the progress record with the total up-front so the client sees
+  // "0 of 14" the moment the drain claims the job, not "0 of 0". The
+  // drain-job throttler will accept this first write because lastPercent
+  // starts at -1 (any value passes).
+  try {
+    await onProgress?.({
+      postIndex: 0,
+      total: postsToCreate,
+      status: 'phase1_starting',
+      percent: 1,
+    });
+  } catch { /* best-effort */ }
+
   for (const { template, hookText } of templatePosts) {
     try {
       let sourceMediaSlots = buildSourceMediaSlots(template);
@@ -834,7 +849,7 @@ export async function generateCampaignPosts(
         },
       );
 
-      const rawSource = template.mediaUrl || template.thumbnailUrl || null;
+      const rawSource = template.mediaUrl || template.thumbnailUrl || template.sourceUrl || null;
 
       const [contentItem] = await db
         .insert(contentItemSchema)
@@ -865,6 +880,20 @@ export async function generateCampaignPosts(
 
       contentItemIds.push(contentItem.id);
       inserted++;
+
+      // Emit progress after each Phase 1 insert so the client status poll
+      // has a live denominator + counter. Without this, Phase 1 fills every
+      // slot silently (Phase 2/engine is the only place that historically
+      // called onProgress), and the client's progress bar sits at 0/0 the
+      // entire time until the final status='done' flip.
+      try {
+        await onProgress?.({
+          postIndex: inserted,
+          total: postsToCreate,
+          status: 'phase1_inserting',
+          percent: Math.min(95, Math.max(5, Math.round((inserted / postsToCreate) * 100))),
+        });
+      } catch { /* progress writes are best-effort */ }
 
       // Fire-and-forget per-slide caption generation for slideshow-type
       // Blitz cards so each slide gets its OWN unique caption instead of
@@ -1194,7 +1223,7 @@ export async function generateCampaignPosts(
 
       // Preserve raw source media in graphicUrls[0] so compile can find
       // the untouched original (team memory: preserve-raw-source-in-compile-pipeline).
-      const rawSource = template.mediaUrl || template.thumbnailUrl || null;
+      const rawSource = template.mediaUrl || template.thumbnailUrl || template.sourceUrl || null;
 
       // Insert content item — populates templateId FK column AND full
       // enrichmentData so downstream previews (Blitz swipe, detail page,
@@ -1402,7 +1431,7 @@ export async function generateCampaignPosts(
           },
         );
 
-        const rawSource = template.mediaUrl || template.thumbnailUrl || null;
+        const rawSource = template.mediaUrl || template.thumbnailUrl || template.sourceUrl || null;
 
         const [contentItem] = await db
           .insert(contentItemSchema)

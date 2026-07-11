@@ -72,9 +72,9 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
         headers: { "Content-Type": "application/json" },
       });
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: "Failed to start campaign generation" }));
-        throw new Error(data.error || `HTTP ${res.status}`);
+      const data = await res.json().catch(() => ({} as Record<string, unknown>));
+      if (!res.ok || (data as any).errorCode) {
+        throw new Error((data as any).error || `HTTP ${res.status}`);
       }
 
       // Refresh the server-rendered list so the campaign flips to
@@ -147,6 +147,7 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
           onGenerate={handleGenerate}
           onLaunch={handleLaunch}
           isLoading={isLoading}
+          initialCampaign={selectedCampaign}
         />
       </div>
     );

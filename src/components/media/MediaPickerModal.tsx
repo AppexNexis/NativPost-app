@@ -26,6 +26,10 @@ interface MediaPickerModalProps {
   onClose: () => void;
   onSelect: (url: string) => void;
   title?: string;
+  // Type of asset to pick. Defaults to "image" to preserve the historical
+  // behaviour. Set to "video" for background-video pickers (Campaign
+  // Edit modal, etc.) or "all" to allow both.
+  mediaType?: "image" | "video" | "all";
 }
 
 export function MediaPickerModal({
@@ -33,6 +37,7 @@ export function MediaPickerModal({
   onClose,
   onSelect,
   title = "Select from Media Library",
+  mediaType = "image",
 }: MediaPickerModalProps) {
   const [assets, setAssets] = useState<MediaAsset[]>([]);
   const [loading, setLoading] = useState(false);
@@ -43,7 +48,8 @@ export function MediaPickerModal({
   const fetchMedia = useCallback(async (query?: string) => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ type: "image", limit: "60" });
+      const apiType = mediaType === 'all' ? 'all' : mediaType === 'video' ? 'video' : 'image';
+      const params = new URLSearchParams({ type: apiType, limit: "60" });
       if (query?.trim()) params.set("search", query.trim());
       const res = await fetch(`/api/media-library?${params}`);
       if (res.ok) {
@@ -55,7 +61,7 @@ export function MediaPickerModal({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [mediaType]);
 
   useEffect(() => {
     if (open && !loadRef.current) {

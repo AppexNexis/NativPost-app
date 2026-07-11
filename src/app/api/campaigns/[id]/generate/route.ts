@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server';
 import { getAuthContext } from '@/lib/auth';
 import { checkFeatureAccess, checkPostLimit, hasActiveSubscription } from '@/lib/billing';
 import { drainOneJob } from '@/lib/campaigns/drain-job';
-import { BLITZ_ALLOWED_PLATFORMS, getConnectedPlatforms, NoConnectedChannelsError } from '@/lib/social/connected-platforms';
+import { getConnectedPlatforms, NoConnectedChannelsError } from '@/lib/social/connected-platforms';
 import { getDb } from '@/libs/DB';
 import {
   campaignJobSchema,
@@ -121,27 +121,29 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // 2a. Connected-channel gate — hard-block if the org has no
-    // FB / IG / TikTok connection. The client renders a "Connect a channel"
-    // CTA on this errorCode instead of a generic error banner.
+    // 2a. Connected-channel gate — hard-block if the org has no eligible
+    // channel. Campaigns support FB / IG / TikTok / YouTube (YouTube was
+    // added to the wizard 2026-07-10; Blitz still restricts to the first
+    // three via BLITZ_ALLOWED_PLATFORMS, so we use a local list here).
+    const CAMPAIGN_PUBLISH_PLATFORMS = ['facebook', 'instagram', 'tiktok', 'youtube'];
     try {
       const connected = await getConnectedPlatforms(db, orgId!, {
-        restrictTo: BLITZ_ALLOWED_PLATFORMS as unknown as string[],
+        restrictTo: CAMPAIGN_PUBLISH_PLATFORMS,
       });
       if (connected.length === 0) {
         return NextResponse.json(
           {
-            error: 'Connect Facebook, Instagram, or TikTok before generating posts.',
+            error: 'Connect Facebook, Instagram, TikTok, or YouTube before generating posts.',
             errorCode: 'NO_CONNECTED_CHANNELS',
           },
-          { status: 200 },
+          { status: 400 },
         );
       }
     } catch (chanErr: any) {
       if (chanErr instanceof NoConnectedChannelsError) {
         return NextResponse.json(
           { error: chanErr.message, errorCode: 'NO_CONNECTED_CHANNELS' },
-          { status: 200 },
+          { status: 400 },
         );
       }
       throw chanErr;
@@ -216,6 +218,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       : null;
 
     // 4. Insert job row + flip campaign to generating
+    // Seed postsTotal from the campaign row up-front so the client's
+    // first status poll shows a meaningful denominator instead of "0 of 0".
+    // The drain will overwrite this with the final count when it finishes.
     const [job] = await db
       .insert(campaignJobSchema)
       .values({
@@ -224,6 +229,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         status: 'queued',
         progress: 0,
         step: 'starting',
+        postsTotal: campaign.totalPosts || 0,
         topicOverride,
         targetPlatformsOverride: targetPlatformsOverride as any,
       })
