@@ -1,209 +1,82 @@
 'use client';
 
 import {
-  FileText,
   Grid3X3,
-  ImageIcon,
-  Layers,
   LayoutList,
   List,
   Loader2,
-  Video,
+  Rows3,
 } from 'lucide-react';
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
-import { PlatformIcons } from '@/components/icons/PlatformIcons';
+import { BulkActionBar } from '@/components/content/BulkActionBar';
+import { PostCard } from '@/components/content/PostCard';
+import { PostListRow } from '@/components/content/PostListRow';
+import { PostsFilters } from '@/components/content/PostsFilters';
+import { PostTableView } from '@/components/content/PostTableView';
 import { EmptyState } from '@/features/dashboard/EmptyState';
+import type { ContentItem } from '@/types/v2';
+import { cn } from '@/utils/Helpers';
 
 // -----------------------------------------------------------
-// TYPES
+// STATUS TAB CONFIG
 // -----------------------------------------------------------
-type ContentItem = {
-  id: string;
-  caption: string;
-  contentType: string;
-  status: string;
-  targetPlatforms: string[];
-  scheduledFor: string | null;
-  publishedAt: string | null;
-  createdAt: string;
-  antiSlopScore: number | null;
+type ViewMode = 'grid' | 'list' | 'compact';
+
+type Counts = {
+  draft: number;
+  pending_review: number;
+  approved: number;
+  scheduled: number;
+  published: number;
+  rejected: number;
+  total: number;
 };
 
-type LayoutMode = 'list' | 'grid' | 'compact';
-
-// -----------------------------------------------------------
-// CONFIG
-// -----------------------------------------------------------
-const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string }> = {
-  draft: { label: 'Draft', dot: 'bg-zinc-400', bg: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700/50 dark:text-zinc-400' },
-  pending_review: { label: 'Pending review', dot: 'bg-amber-400', bg: 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400' },
-  approved: { label: 'Approved', dot: 'bg-blue-400', bg: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' },
-  scheduled: { label: 'Scheduled', dot: 'bg-primary', bg: 'bg-primary/10 text-primary' },
-  published: { label: 'Published', dot: 'bg-emerald-500', bg: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' },
-  rejected: { label: 'Rejected', dot: 'bg-red-400', bg: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400' },
+const EMPTY_COUNTS: Counts = {
+  draft: 0,
+  pending_review: 0,
+  approved: 0,
+  scheduled: 0,
+  published: 0,
+  rejected: 0,
+  total: 0,
 };
 
-const CONTENT_TYPE_ICON: Record<string, React.ElementType> = {
-  text: FileText,
-  single_image: ImageIcon,
-  carousel: Layers,
-  reel: Video,
-};
-
-// -----------------------------------------------------------
-// HELPERS
-// -----------------------------------------------------------
-function formatDate(item: ContentItem): string {
-  const ref = item.scheduledFor || item.publishedAt || item.createdAt;
-  return new Date(ref).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function QualityDot({ score }: { score: number | null }) {
-  if (score === null) {
-    return null;
-  }
-  const pct = Math.round(score * 100);
-  const color = score >= 0.8 ? 'bg-emerald-500' : score >= 0.7 ? 'bg-yellow-400' : 'bg-orange-400';
-  return (
-    <span title={`Quality: ${pct}`} className={`inline-flex size-1.5 shrink-0 rounded-full ${color}`} />
-  );
-}
-
-// -----------------------------------------------------------
-// LIST ROW
-// -----------------------------------------------------------
-function ListRow({ item }: { item: ContentItem }) {
-  const config = STATUS_CONFIG[item.status] || STATUS_CONFIG.draft!;
-  const Icon = CONTENT_TYPE_ICON[item.contentType] || FileText;
-
-  return (
-    <Link
-      href={`/dashboard/content/${item.id}`}
-      className="group flex items-start gap-3 rounded-lg border bg-card px-4 py-3.5 transition-colors hover:bg-muted/30 sm:items-center"
-    >
-      {/* Content type icon */}
-      <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/60 text-muted-foreground sm:mt-0">
-        <Icon className="size-3.5" />
-      </div>
-
-      {/* Status badge */}
-      <span className={`hidden shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium sm:inline-flex sm:items-center sm:gap-1 ${config.bg}`}>
-        <span className={`size-1.5 rounded-full ${config.dot}`} />
-        {config.label}
-      </span>
-      {/* Mobile: dot only */}
-      <span className={`mt-1.5 size-2 shrink-0 rounded-full sm:hidden ${config.dot}`} />
-
-      {/* Caption */}
-      <p className="line-clamp-2 min-w-0 flex-1 text-sm leading-relaxed sm:line-clamp-1">
-        {item.caption}
-      </p>
-
-      {/* Right side meta */}
-      <div className="flex shrink-0 items-center gap-3">
-        <QualityDot score={item.antiSlopScore} />
-        <PlatformIcons platforms={item.targetPlatforms || []} className="size-3.5" />
-        <span className="hidden text-xs text-muted-foreground sm:block">
-          {formatDate(item)}
-        </span>
-      </div>
-    </Link>
-  );
-}
-
-// -----------------------------------------------------------
-// GRID CARD
-// -----------------------------------------------------------
-function GridCard({ item }: { item: ContentItem }) {
-  const config = STATUS_CONFIG[item.status] || STATUS_CONFIG.draft!;
-  const Icon = CONTENT_TYPE_ICON[item.contentType] || FileText;
-
-  return (
-    <Link
-      href={`/dashboard/content/${item.id}`}
-      className="group flex flex-col rounded-xl border bg-card p-4 transition-colors hover:bg-muted/30"
-    >
-      {/* Top row: type icon + status + quality */}
-      <div className="mb-3 flex items-center gap-2">
-        <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/60 text-muted-foreground">
-          <Icon className="size-3.5" />
-        </div>
-        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${config.bg}`}>
-          <span className={`size-1.5 rounded-full ${config.dot}`} />
-          {config.label}
-        </span>
-        <div className="ml-auto">
-          <QualityDot score={item.antiSlopScore} />
-        </div>
-      </div>
-
-      {/* Caption */}
-      <p className="mb-4 line-clamp-3 min-h-[3.75rem] flex-1 text-sm leading-relaxed text-foreground/80 group-hover:text-foreground">
-        {item.caption}
-      </p>
-
-      {/* Bottom: platforms + date */}
-      <div className="flex items-center justify-between border-t pt-3">
-        <PlatformIcons platforms={item.targetPlatforms || []} className="size-3.5" />
-        <span className="text-xs text-muted-foreground">{formatDate(item)}</span>
-      </div>
-    </Link>
-  );
-}
-
-// -----------------------------------------------------------
-// COMPACT ROW
-// -----------------------------------------------------------
-function CompactRow({ item }: { item: ContentItem }) {
-  const config = STATUS_CONFIG[item.status] || STATUS_CONFIG.draft!;
-
-  return (
-    <Link
-      href={`/dashboard/content/${item.id}`}
-      className="flex items-center gap-3 border-b px-3 py-2 transition-colors last:border-b-0 hover:bg-muted/30"
-    >
-      <span className={`size-1.5 shrink-0 rounded-full ${config.dot}`} />
-      <p className="min-w-0 flex-1 truncate text-xs">{item.caption}</p>
-      <PlatformIcons platforms={item.targetPlatforms || []} className="size-3" />
-      <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:block">
-        {formatDate(item)}
-      </span>
-    </Link>
-  );
-}
+const STATUS_TABS: { key: keyof Counts | null; label: string; dot: string }[] = [
+  { key: null, label: 'All', dot: 'bg-foreground' },
+  { key: 'draft', label: 'Draft', dot: 'bg-zinc-400' },
+  { key: 'pending_review', label: 'Pending review', dot: 'bg-amber-400' },
+  { key: 'approved', label: 'Approved', dot: 'bg-emerald-500' },
+  { key: 'scheduled', label: 'Scheduled', dot: 'bg-blue-500' },
+  { key: 'published', label: 'Published', dot: 'bg-emerald-600' },
+  { key: 'rejected', label: 'Rejected', dot: 'bg-red-400' },
+];
 
 // -----------------------------------------------------------
 // LAYOUT TOGGLE
 // -----------------------------------------------------------
-function LayoutToggle({
-  layout,
-  onChange,
-}: {
-  layout: LayoutMode;
-  onChange: (l: LayoutMode) => void;
-}) {
-  const options: { value: LayoutMode; icon: typeof List; label: string }[] = [
-    { value: 'list', icon: LayoutList, label: 'List' },
+function ViewToggle({ view, onChange }: { view: ViewMode; onChange: (v: ViewMode) => void }) {
+  const options: { value: ViewMode; icon: typeof List; label: string }[] = [
     { value: 'grid', icon: Grid3X3, label: 'Grid' },
-    { value: 'compact', icon: List, label: 'Compact' },
+    { value: 'list', icon: Rows3, label: 'List' },
+    { value: 'compact', icon: List, label: 'Table' },
   ];
-
   return (
-    <div className="flex rounded-md border p-0.5" role="group" aria-label="Layout">
+    <div className="flex rounded-md border p-0.5" role="group" aria-label="View mode">
       {options.map(({ value, icon: Icon, label }) => (
         <button
           key={value}
           type="button"
           title={label}
           onClick={() => onChange(value)}
-          className={`rounded p-1.5 transition-colors ${
-            layout === value
+          className={cn(
+            'rounded p-1.5 transition-colors',
+            view === value
               ? 'bg-foreground text-background'
-              : 'text-muted-foreground hover:text-foreground'
-          }`}
+              : 'text-muted-foreground hover:text-foreground',
+          )}
         >
           <Icon className="size-3.5" />
         </button>
@@ -213,165 +86,402 @@ function LayoutToggle({
 }
 
 // -----------------------------------------------------------
-// MAIN CONTENT
+// URL HELPERS
 // -----------------------------------------------------------
-function PostsContent() {
+function updateUrl(patch: Record<string, string | null>) {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null || v === '') url.searchParams.delete(k);
+    else url.searchParams.set(k, v);
+  }
+  window.history.replaceState({}, '', url.toString());
+}
+
+// -----------------------------------------------------------
+// MAIN CLIENT
+// -----------------------------------------------------------
+function PostsClient() {
   const searchParams = useSearchParams();
-  const statusFilter = searchParams.get('status');
-  const layoutParam = (searchParams.get('layout') as LayoutMode) || 'list';
 
+  // ── URL-synced filter state ─────────────────────────────────────────────
+  const [statusFilter, setStatusFilter] = useState<string | null>(searchParams.get('status'));
+  const [view, setView] = useState<ViewMode>(() => {
+    const v = searchParams.get('view');
+    return (v === 'list' || v === 'compact' || v === 'grid') ? v : 'grid';
+  });
+  const [search, setSearch] = useState<string>(searchParams.get('search') || '');
+  const [contentTypes, setContentTypes] = useState<string[]>(() => {
+    const v = searchParams.get('contentType');
+    return v ? v.split(',').filter(Boolean) : [];
+  });
+  const [platforms, setPlatforms] = useState<string[]>(() => {
+    const v = searchParams.get('platform');
+    return v ? v.split(',').filter(Boolean) : [];
+  });
+  const [sort, setSort] = useState<string>(searchParams.get('sort') || 'newest');
+
+  // ── Data state ──────────────────────────────────────────────────────────
   const [items, setItems] = useState<ContentItem[]>([]);
+  const [counts, setCounts] = useState<Counts>(EMPTY_COUNTS);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [layout, setLayout] = useState<LayoutMode>(
-    ['list', 'grid', 'compact'].includes(layoutParam) ? layoutParam : 'list',
-  );
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isBulkBusy, setIsBulkBusy] = useState(false);
 
-  const fetchContent = useCallback(async () => {
+  // ── Selection state ─────────────────────────────────────────────────────
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // ── Sync filters to URL ─────────────────────────────────────────────────
+  useEffect(() => {
+    updateUrl({
+      status: statusFilter,
+      view: view === 'grid' ? null : view,
+      search: search || null,
+      contentType: contentTypes.length ? contentTypes.join(',') : null,
+      platform: platforms.length ? platforms.join(',') : null,
+      sort: sort === 'newest' ? null : sort,
+    });
+  }, [statusFilter, view, search, contentTypes, platforms, sort]);
+
+  // ── Fetcher ─────────────────────────────────────────────────────────────
+  const buildParams = useCallback((cursor?: string | null) => {
+    const p = new URLSearchParams({ limit: '50' });
+    if (statusFilter) p.set('status', statusFilter);
+    if (search.trim()) p.set('search', search.trim());
+    if (contentTypes.length) p.set('contentType', contentTypes.join(','));
+    if (platforms.length) p.set('platform', platforms.join(','));
+    if (sort && sort !== 'newest') p.set('sort', sort);
+    if (cursor) p.set('cursor', cursor);
+    return p;
+  }, [statusFilter, search, contentTypes, platforms, sort]);
+
+  const fetchItems = useCallback(async () => {
     setIsLoading(true);
     try {
-      const params = new URLSearchParams({ limit: '100' });
-      if (statusFilter) {
-        params.set('status', statusFilter);
-      }
-      const res = await fetch(`/api/content?${params}`);
+      const res = await fetch(`/api/content?${buildParams()}`, { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         setItems(data.items || []);
+        setCounts(data.counts || EMPTY_COUNTS);
+        setNextCursor(data.nextCursor || null);
       }
     } catch (err) {
-      console.error('Failed to fetch:', err);
+      console.error('[Posts] fetch failed:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter]);
+  }, [buildParams]);
+
+  const fetchMore = useCallback(async () => {
+    if (!nextCursor || isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      const res = await fetch(`/api/content?${buildParams(nextCursor)}`, { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setItems(prev => [...prev, ...(data.items || [])]);
+        setNextCursor(data.nextCursor || null);
+      }
+    } catch (err) {
+      console.error('[Posts] fetch more failed:', err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [nextCursor, isLoadingMore, buildParams]);
 
   useEffect(() => {
-    fetchContent();
-  }, [fetchContent]);
+    fetchItems();
+  }, [fetchItems]);
 
-  // Update URL when layout changes (without full navigation)
-  const handleLayoutChange = (newLayout: LayoutMode) => {
-    setLayout(newLayout);
-    const url = new URL(window.location.href);
-    if (newLayout === 'list') {
-      url.searchParams.delete('layout');
-    } else {
-      url.searchParams.set('layout', newLayout);
+  // ── Selection helpers ───────────────────────────────────────────────────
+  const toggleSelected = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleAll = useCallback((ids: string[], select: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (select) ids.forEach(id => next.add(id));
+      else ids.forEach(id => next.delete(id));
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelected(new Set()), []);
+
+  const selectAllVisible = useCallback(() => {
+    setSelected(new Set(items.map(i => i.id)));
+  }, [items]);
+
+  // ── Mutation helpers ────────────────────────────────────────────────────
+  const callBulk = useCallback(async (
+    action: string,
+    ids: string[],
+    payload?: Record<string, unknown>,
+  ) => {
+    setIsBulkBusy(true);
+    try {
+      const res = await fetch('/api/content/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ids, payload }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error('[Posts] bulk action failed:', err);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error('[Posts] bulk request failed:', err);
+      return false;
+    } finally {
+      setIsBulkBusy(false);
     }
-    window.history.replaceState({}, '', url.toString());
-  };
+  }, []);
 
-  // Count per status from current result set
-  const counts = items.reduce<Record<string, number>>((acc, item) => {
-    acc[item.status] = (acc[item.status] || 0) + 1;
-    return acc;
-  }, {});
+  const applyOptimisticUpdate = useCallback((ids: string[], patch: Partial<ContentItem>) => {
+    setItems(prev => prev.map(item => (ids.includes(item.id) ? { ...item, ...patch } : item)));
+  }, []);
+  const applyOptimisticRemove = useCallback((ids: string[]) => {
+    setItems(prev => prev.filter(item => !ids.includes(item.id)));
+  }, []);
 
-  if (isLoading) {
-    return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  // Single-card handlers
+  const handleApproveOne = useCallback(async (id: string) => {
+    applyOptimisticUpdate([id], { status: 'approved' });
+    const ok = await callBulk('approve', [id]);
+    if (!ok) fetchItems();
+    else fetchItems();
+  }, [callBulk, fetchItems, applyOptimisticUpdate]);
 
-  const pageTitle = statusFilter ? STATUS_CONFIG[statusFilter]?.label || 'Posts' : 'All posts';
+  const handleDeleteOne = useCallback(async (id: string) => {
+    if (!window.confirm('Delete this post? This action cannot be undone.')) return;
+    applyOptimisticRemove([id]);
+    const ok = await callBulk('delete', [id]);
+    if (!ok) fetchItems();
+    else fetchItems();
+  }, [callBulk, fetchItems, applyOptimisticRemove]);
+
+  // Bulk handlers
+  const selectedIds = useMemo(() => Array.from(selected), [selected]);
+
+  const handleBulkApprove = useCallback(async () => {
+    if (selectedIds.length === 0) return;
+    applyOptimisticUpdate(selectedIds, { status: 'approved' });
+    const ok = await callBulk('approve', selectedIds);
+    clearSelection();
+    if (!ok) fetchItems();
+    else fetchItems();
+  }, [selectedIds, callBulk, fetchItems, clearSelection, applyOptimisticUpdate]);
+
+  const handleBulkReject = useCallback(async (feedback: string) => {
+    if (selectedIds.length === 0) return;
+    applyOptimisticUpdate(selectedIds, { status: 'rejected' });
+    const ok = await callBulk('reject', selectedIds, { rejectionFeedback: feedback });
+    clearSelection();
+    if (!ok) fetchItems();
+    else fetchItems();
+  }, [selectedIds, callBulk, fetchItems, clearSelection, applyOptimisticUpdate]);
+
+  const handleBulkSchedule = useCallback(async (scheduledFor: string) => {
+    if (selectedIds.length === 0) return;
+    applyOptimisticUpdate(selectedIds, { status: 'scheduled', scheduledFor });
+    const ok = await callBulk('schedule', selectedIds, { scheduledFor });
+    clearSelection();
+    if (!ok) fetchItems();
+    else fetchItems();
+  }, [selectedIds, callBulk, fetchItems, clearSelection, applyOptimisticUpdate]);
+
+  const handleBulkDelete = useCallback(async () => {
+    if (selectedIds.length === 0) return;
+    applyOptimisticRemove(selectedIds);
+    const ok = await callBulk('delete', selectedIds);
+    clearSelection();
+    if (!ok) fetchItems();
+    else fetchItems();
+  }, [selectedIds, callBulk, fetchItems, clearSelection, applyOptimisticRemove]);
+
+  // ── Derived render bits ─────────────────────────────────────────────────
+  const anySelected = selected.size > 0;
+  const activeTab = STATUS_TABS.find(t => t.key === statusFilter) ?? STATUS_TABS[0]!;
+  const pageTitle = activeTab.label === 'All' ? 'All posts' : activeTab.label;
 
   return (
     <>
       {/* Header */}
-      <div className="mb-5 flex items-center justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">{pageTitle}</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {items.length}
+            {counts.total}
             {' '}
-            {items.length === 1 ? 'post' : 'posts'}
+            {counts.total === 1 ? 'post' : 'posts'}
+            {anySelected && ` — ${selected.size} selected`}
           </p>
         </div>
-
-        {/* Layout toggle — hidden on mobile, visible sm+ */}
-        <div className="hidden sm:block">
-          <LayoutToggle layout={layout} onChange={handleLayoutChange} />
+        <div className="flex items-center gap-2">
+          {anySelected && (
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
+              Deselect all
+            </button>
+          )}
+          {!anySelected && items.length > 0 && (
+            <button
+              type="button"
+              onClick={selectAllVisible}
+              className="text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
+              Select all
+              {' '}
+              {items.length}
+            </button>
+          )}
+          <div className="hidden sm:block">
+            <ViewToggle view={view} onChange={setView} />
+          </div>
         </div>
       </div>
 
-      {/* Status filter tabs — horizontally scrollable on mobile */}
-      <div className="-mx-4 mb-5 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+      {/* Tabs */}
+      <div className="-mx-4 mb-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
         <div className="flex min-w-max items-center gap-1.5 border-b pb-3 sm:min-w-0 sm:flex-wrap">
-          <Link
-            href={`/dashboard/posts${layout !== 'list' ? `?layout=${layout}` : ''}`}
-            className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-              !statusFilter ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted'
-            }`}
-          >
-            All
-            {items.length > 0 && !statusFilter && (
-              <span className="ml-1.5 opacity-60">{items.length}</span>
-            )}
-          </Link>
-          {Object.entries(STATUS_CONFIG).map(([key, config]) => {
-            const count = counts[key];
+          {STATUS_TABS.map((tab) => {
+            const isActive = statusFilter === tab.key;
+            const count = tab.key === null ? counts.total : counts[tab.key];
             return (
-              <Link
-                key={key}
-                href={`/dashboard/posts?status=${key}${layout !== 'list' ? `&layout=${layout}` : ''}`}
-                className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                  statusFilter === key
-                    ? 'bg-foreground text-background'
-                    : 'text-muted-foreground hover:bg-muted'
-                }`}
-              >
-                <span className={`size-1.5 rounded-full ${config.dot} ${statusFilter === key ? 'opacity-60' : ''}`} />
-                {config.label}
-                {count !== undefined && (
-                  <span className={`ml-0.5 ${statusFilter === key ? 'opacity-60' : ''}`}>
-                    (
-                    {count}
-                    )
-                  </span>
+              <button
+                key={tab.key ?? 'all'}
+                type="button"
+                onClick={() => setStatusFilter(tab.key)}
+                className={cn(
+                  'flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                  isActive ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted',
                 )}
-              </Link>
+              >
+                <span className={cn('size-1.5 rounded-full', tab.dot, isActive && 'opacity-60')} />
+                {tab.label}
+                <span className={cn('ml-0.5', isActive && 'opacity-60')}>
+                  (
+                  {count}
+                  )
+                </span>
+              </button>
             );
           })}
         </div>
       </div>
 
+      {/* Filters */}
+      <PostsFilters
+        search={search}
+        onSearchChange={setSearch}
+        contentTypes={contentTypes}
+        onContentTypesChange={setContentTypes}
+        platforms={platforms}
+        onPlatformsChange={setPlatforms}
+        sort={sort}
+        onSortChange={setSort}
+      />
+
       {/* Content */}
-      {items.length === 0 ? (
-        <EmptyState
-          icon={LayoutList}
-          title={statusFilter ? `No ${STATUS_CONFIG[statusFilter]?.label?.toLowerCase()} posts` : 'No posts yet'}
-          description="Content created by your NativPost team will appear here."
-        />
-      ) : (
-        <>
-          {layout === 'list' && (
-            <div className="space-y-1.5">
-              {items.map(item => <ListRow key={item.id} item={item} />)}
+      {isLoading
+        ? (
+            <div className="flex min-h-[400px] items-center justify-center">
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
-          )}
+          )
+        : items.length === 0
+          ? (
+              <EmptyState
+                icon={LayoutList}
+                title={statusFilter ? 'No matching posts' : 'No posts yet'}
+                description="Content created by your NativPost team will appear here."
+                actionLabel="Open Blitz"
+                actionHref="/dashboard/blitz"
+              />
+            )
+          : (
+              <>
+                {view === 'grid' && (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                    {items.map(item => (
+                      <PostCard
+                        key={item.id}
+                        item={item}
+                        selected={selected.has(item.id)}
+                        onToggleSelected={toggleSelected}
+                        onApprove={handleApproveOne}
+                        onDelete={handleDeleteOne}
+                        anySelected={anySelected}
+                      />
+                    ))}
+                  </div>
+                )}
 
-          {layout === 'grid' && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {items.map(item => <GridCard key={item.id} item={item} />)}
-            </div>
-          )}
+                {view === 'list' && (
+                  <div className="space-y-2">
+                    {items.map(item => (
+                      <PostListRow
+                        key={item.id}
+                        item={item}
+                        selected={selected.has(item.id)}
+                        onToggleSelected={toggleSelected}
+                        onApprove={handleApproveOne}
+                        onDelete={handleDeleteOne}
+                      />
+                    ))}
+                  </div>
+                )}
 
-          {layout === 'compact' && (
-            <div className="overflow-hidden rounded-xl border bg-card">
-              {/* Compact header */}
-              <div className="hidden grid-cols-[1rem_1fr_auto_6rem] items-center gap-3 border-b bg-muted/30 px-3 py-2 sm:grid">
-                <span />
-                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Caption</span>
-                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Platforms</span>
-                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Date</span>
-              </div>
-              {items.map(item => <CompactRow key={item.id} item={item} />)}
-            </div>
-          )}
-        </>
-      )}
+                {view === 'compact' && (
+                  <PostTableView
+                    items={items}
+                    selected={selected}
+                    onToggleSelected={toggleSelected}
+                    onToggleAll={toggleAll}
+                    onApprove={handleApproveOne}
+                    onDelete={handleDeleteOne}
+                  />
+                )}
+
+                {/* Load more */}
+                {nextCursor && (
+                  <div className="mt-6 flex justify-center pb-24">
+                    <button
+                      type="button"
+                      onClick={fetchMore}
+                      disabled={isLoadingMore}
+                      className="inline-flex items-center gap-2 rounded-md border bg-card px-4 py-2 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
+                    >
+                      {isLoadingMore && <Loader2 className="size-3.5 animate-spin" />}
+                      {isLoadingMore ? 'Loading...' : 'Load more'}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+
+      {/* Bulk action bar */}
+      <BulkActionBar
+        selectedCount={selected.size}
+        onApprove={handleBulkApprove}
+        onReject={handleBulkReject}
+        onSchedule={handleBulkSchedule}
+        onDelete={handleBulkDelete}
+        onClear={clearSelection}
+        isBusy={isBulkBusy}
+      />
     </>
   );
 }
@@ -388,7 +498,7 @@ export default function PostsPage() {
         </div>
       )}
     >
-      <PostsContent />
+      <PostsClient />
     </Suspense>
   );
 }

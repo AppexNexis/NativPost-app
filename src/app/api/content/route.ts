@@ -1,5 +1,5 @@
 import { clerkClient } from '@clerk/nextjs/server';
-import { and, desc, eq, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ilike, inArray, lt, ne, or, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -11,8 +11,23 @@ import { contentItemSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
 // GET /api/content
-// List content items for the current org (with optional filters)
-// Query params: ?status=draft&limit=20&offset=0
+// List content items for the current org (with optional filters).
+//
+// Query params (all optional):
+//   status         — single status filter (draft/pending_review/approved/…)
+//   search         — case-insensitive substring on caption
+//   contentType    — comma-separated list (slideshow,ugc,talking_head,…)
+//   platform       — comma-separated list (instagram,tiktok,…)
+//                    matches rows whose targetPlatforms JSON array contains
+//                    ANY of the listed platforms
+//   sort           — newest (default) | oldest | scheduled | quality
+//   cursor         — ISO createdAt of the last item on the prior page
+//   limit          — page size, capped at 100 (default 50)
+//
+// Response: { items, counts, nextCursor }
+//   counts is computed server-side across the entire org (respecting the
+//   same search/type/platform filters but ignoring status), so tab pills
+//   stay accurate as the user paginates.
 // -----------------------------------------------------------
 export async function GET(request: NextRequest) {
   const db = await getDb();
@@ -23,29 +38,234 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const status = searchParams.get('status');
-  const limit = Math.min(Number(searchParams.get('limit')) || 20, 100);
-  const offset = Number(searchParams.get('offset')) || 0;
+  const search = searchParams.get('search');
+  const contentTypeParam = searchParams.get('contentType');
+  const platformParam = searchParams.get('platform');
+  const sort = searchParams.get('sort') || 'newest';
+  const cursor = searchParams.get('cursor');
+  const limit = Math.min(Number(searchParams.get('limit')) || 50, 100);
+
+  // Filters shared between the item query and the counts query. Status is
+  // NOT included here — counts must reflect every bucket regardless of the
+  // currently active tab.
+  const sharedConditions = [eq(contentItemSchema.orgId, orgId!)];
+
+  // Archived rows are cleanup byproducts; hide by default unless the
+  // caller explicitly asked for status=archived.
+  if (status !== 'archived') {
+    sharedConditions.push(ne(contentItemSchema.status, 'archived'));
+  }
+
+  if (search && search.trim()) {
+    sharedConditions.push(ilike(contentItemSchema.caption, `%${search.trim()}%`));
+  }
+
+  const contentTypes = contentTypeParam
+    ? contentTypeParam.split(',').map(s => s.trim()).filter(Boolean)
+    : [];
+  if (contentTypes.length > 0) {
+    sharedConditions.push(inArray(contentItemSchema.contentType, contentTypes));
+  }
+
+  const platforms = platformParam
+    ? platformParam.split(',').map(s => s.trim()).filter(Boolean)
+    : [];
+  if (platforms.length > 0) {
+    // targetPlatforms is a JSONB array; use ?| operator to match any of
+    // the requested platforms. Wrapped in sql`` so drizzle keeps the
+    // literal operator intact.
+    sharedConditions.push(
+      sql`${contentItemSchema.targetPlatforms} ?| ${platforms}`,
+    );
+  }
 
   try {
-    const conditions = [eq(contentItemSchema.orgId, orgId!)];
+    // ── Items query ──────────────────────────────────────────────────────
+    const itemConditions = [...sharedConditions];
     if (status) {
-      conditions.push(eq(contentItemSchema.status, status));
-    } else {
-      // No status filter requested — archived variants are cleanup byproducts,
-      // not content anyone should see by default. Callers that explicitly
-      // want them can pass ?status=archived.
-      conditions.push(ne(contentItemSchema.status, 'archived'));
+      itemConditions.push(eq(contentItemSchema.status, status));
+    }
+
+    // Cursor is a base64-encoded JSON blob shaped by the active sort. This
+    // keeps pagination correct across every sort mode — the previous "always
+    // filter createdAt < cursor" was only correct for the default `newest`
+    // sort and silently broke oldest/scheduled/quality (verifier caught it).
+    //
+    // Shape per sort:
+    //   newest    → { ca: ISO }                filter: createdAt < ca
+    //   oldest    → { ca: ISO }                filter: createdAt > ca
+    //   scheduled → { sf: ISO|null, ca: ISO }  filter: (sf > cur.sf) OR (sf == cur.sf AND ca > cur.ca), nulls sort last
+    //   quality   → { q: num|null,  ca: ISO }  filter: (q < cur.q) OR (q == cur.q AND ca < cur.ca), nulls sort last
+    //
+    // Backward-compat: if cursor decodes as a plain ISO date string (older
+    // clients from before this rewrite), treat as { ca: <that date> } under
+    // the current sort so the page still loads instead of 500-ing.
+    type CursorPayload = { ca?: string; sf?: string | null; q?: number | null };
+    let cursorPayload: CursorPayload | null = null;
+    if (cursor) {
+      try {
+        const decoded = Buffer.from(cursor, 'base64').toString('utf8');
+        const parsed = JSON.parse(decoded);
+        if (parsed && typeof parsed === 'object') cursorPayload = parsed;
+      } catch {
+        // Legacy plain-ISO fallback.
+        const d = new Date(cursor);
+        if (!Number.isNaN(d.getTime())) cursorPayload = { ca: d.toISOString() };
+      }
+    }
+
+    let orderBy: ReturnType<typeof asc> | ReturnType<typeof desc> | ReturnType<typeof sql> | any;
+    switch (sort) {
+      case 'oldest':
+        orderBy = asc(contentItemSchema.createdAt);
+        if (cursorPayload?.ca) {
+          const d = new Date(cursorPayload.ca);
+          if (!Number.isNaN(d.getTime())) {
+            itemConditions.push(gt(contentItemSchema.createdAt, d));
+          }
+        }
+        break;
+      case 'scheduled': {
+        // ORDER BY scheduledFor ASC NULLS LAST, createdAt DESC (tiebreaker).
+        orderBy = sql`${contentItemSchema.scheduledFor} ASC NULLS LAST, ${contentItemSchema.createdAt} DESC`;
+        if (cursorPayload) {
+          const sfRaw = cursorPayload.sf;
+          const caRaw = cursorPayload.ca;
+          const sfDate = sfRaw ? new Date(sfRaw) : null;
+          const caDate = caRaw ? new Date(caRaw) : null;
+          if (sfDate && !Number.isNaN(sfDate.getTime()) && caDate && !Number.isNaN(caDate.getTime())) {
+            // Non-null cursor: (sf > cur.sf) OR (sf == cur.sf AND ca < cur.ca) OR (sf IS NULL)
+            const cond = or(
+              sql`${contentItemSchema.scheduledFor} > ${sfDate}`,
+              and(
+                sql`${contentItemSchema.scheduledFor} = ${sfDate}`,
+                lt(contentItemSchema.createdAt, caDate),
+              ),
+              sql`${contentItemSchema.scheduledFor} IS NULL`,
+            );
+            if (cond) itemConditions.push(cond);
+          } else if (caDate && !Number.isNaN(caDate.getTime())) {
+            // Cursor is in the NULLS-LAST tail (sf is null): only createdAt < ca left.
+            itemConditions.push(
+              and(
+                sql`${contentItemSchema.scheduledFor} IS NULL`,
+                lt(contentItemSchema.createdAt, caDate),
+              )!,
+            );
+          }
+        }
+        break;
+      }
+      case 'quality': {
+        orderBy = sql`${contentItemSchema.antiSlopScore} DESC NULLS LAST, ${contentItemSchema.createdAt} DESC`;
+        if (cursorPayload) {
+          const qRaw = cursorPayload.q;
+          const caRaw = cursorPayload.ca;
+          const caDate = caRaw ? new Date(caRaw) : null;
+          if (typeof qRaw === 'number' && caDate && !Number.isNaN(caDate.getTime())) {
+            const cond = or(
+              sql`${contentItemSchema.antiSlopScore} < ${qRaw}`,
+              and(
+                sql`${contentItemSchema.antiSlopScore} = ${qRaw}`,
+                lt(contentItemSchema.createdAt, caDate),
+              ),
+              sql`${contentItemSchema.antiSlopScore} IS NULL`,
+            );
+            if (cond) itemConditions.push(cond);
+          } else if (caDate && !Number.isNaN(caDate.getTime())) {
+            itemConditions.push(
+              and(
+                sql`${contentItemSchema.antiSlopScore} IS NULL`,
+                lt(contentItemSchema.createdAt, caDate),
+              )!,
+            );
+          }
+        }
+        break;
+      }
+      case 'newest':
+      default:
+        orderBy = desc(contentItemSchema.createdAt);
+        if (cursorPayload?.ca) {
+          const d = new Date(cursorPayload.ca);
+          if (!Number.isNaN(d.getTime())) {
+            itemConditions.push(lt(contentItemSchema.createdAt, d));
+          }
+        }
+        break;
     }
 
     const items = await db
       .select()
       .from(contentItemSchema)
-      .where(and(...conditions))
-      .orderBy(desc(contentItemSchema.createdAt))
-      .limit(limit)
-      .offset(offset);
+      .where(and(...itemConditions))
+      .orderBy(orderBy)
+      .limit(limit + 1); // fetch one extra to know if there's a next page
 
-    return NextResponse.json({ items, limit, offset }, { status: 200 });
+    const hasMore = items.length > limit;
+    const pageItems = hasMore ? items.slice(0, limit) : items;
+    const lastItem = pageItems[pageItems.length - 1];
+
+    // Build the next cursor payload matching the active sort so subsequent
+    // calls know exactly where to resume.
+    let nextCursor: string | null = null;
+    if (hasMore && lastItem) {
+      let payload: CursorPayload | null = null;
+      const caIso = lastItem.createdAt.toISOString();
+      switch (sort) {
+        case 'oldest':
+        case 'newest':
+        default:
+          payload = { ca: caIso };
+          break;
+        case 'scheduled':
+          payload = {
+            sf: lastItem.scheduledFor ? lastItem.scheduledFor.toISOString() : null,
+            ca: caIso,
+          };
+          break;
+        case 'quality':
+          payload = {
+            q: lastItem.antiSlopScore ?? null,
+            ca: caIso,
+          };
+          break;
+      }
+      nextCursor = payload ? Buffer.from(JSON.stringify(payload)).toString('base64') : null;
+    }
+
+    // ── Counts query ─────────────────────────────────────────────────────
+    // One query, grouped by status. Filters (search/type/platform) apply
+    // but status does not — we want the full breakdown so tab pills always
+    // reflect the caller's filtered view.
+    const countsRows = await db
+      .select({
+        status: contentItemSchema.status,
+        n: sql<number>`count(*)::int`,
+      })
+      .from(contentItemSchema)
+      .where(and(...sharedConditions))
+      .groupBy(contentItemSchema.status);
+
+    const counts: Record<string, number> = {
+      draft: 0,
+      pending_review: 0,
+      approved: 0,
+      scheduled: 0,
+      published: 0,
+      rejected: 0,
+      total: 0,
+    };
+    for (const row of countsRows) {
+      const key = row.status ?? 'draft';
+      counts[key] = Number(row.n);
+      counts.total = (counts.total ?? 0) + Number(row.n);
+    }
+
+    return NextResponse.json(
+      { items: pageItems, counts, nextCursor },
+      { status: 200 },
+    );
   } catch (err) {
     console.error('Failed to fetch content items:', err);
     return NextResponse.json(
