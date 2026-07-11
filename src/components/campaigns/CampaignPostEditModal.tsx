@@ -32,6 +32,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MediaPickerModal } from '@/components/media/MediaPickerModal';
+import { AudioSelectModal, type AudioSelection } from '@/components/media/AudioSelectModal';
 
 export type CampaignPostEditModalProps = {
   campaignId: string;
@@ -62,8 +63,14 @@ type SlideEntry = { url: string; caption?: string };
 function resolveSlides(enrichment: Record<string, unknown>): SlideEntry[] {
   const mediaSlots = (enrichment.sourceMediaSlots ?? {}) as Record<string, unknown>;
   const script = (enrichment.editorScript ?? {}) as Record<string, unknown>;
-  // Per-slide text lives in editorScript.slideCopy (built by buildEditorScript)
+  // Per-slide text lives in editorScript.slideCopy (built by buildEditorScript).
+  // Older items may not have it — fall back to slideCaptions on the template
+  // snapshot, then to the raw slide object's caption, then to a split of the
+  // post caption. Guarantees each slide gets a caption slot so the "Slide N
+  // text" input on the right panel always has something to bind to.
   const slideCopy = Array.isArray(script.slideCopy) ? (script.slideCopy as string[]) : [];
+  const snapshot = (enrichment.templateSnapshot ?? {}) as Record<string, unknown>;
+  const snapSlideCaptions = Array.isArray(snapshot.slideCaptions) ? (snapshot.slideCaptions as string[]) : [];
 
   const rawSlides = mediaSlots.slides;
   if (Array.isArray(rawSlides) && rawSlides.length > 0) {
@@ -71,8 +78,10 @@ function resolveSlides(enrichment: Record<string, unknown>): SlideEntry[] {
       .filter((s): s is Record<string, unknown> => s && typeof s === 'object')
       .map((s, i) => ({
         url: String(s.url ?? ''),
-        // Prefer slideCopy text over any caption stored on the media slot object
-        caption: slideCopy[i] ?? (s.caption ? String(s.caption) : ''),
+        caption:
+          slideCopy[i]
+          ?? snapSlideCaptions[i]
+          ?? (s.caption ? String(s.caption) : ''),
       }))
       .filter((s) => !!s.url);
   }
@@ -137,7 +146,13 @@ export function CampaignPostEditModal({
   // ── Video asset state ──────────────────────────────────────────────────────
   const [videoThumb, setVideoThumb] = useState(() => resolveVideoThumb(enrichment, item.graphicUrls as string[]));
   const [videoUrl, setVideoUrl] = useState(() => resolveVideoUrl(enrichment, item.graphicUrls as string[]));
-  const [audioLabel, setAudioLabel] = useState<string>('Audio track');
+  const initialAudio = ((enrichment.editorScript as Record<string, unknown> | undefined)?.audioTrack ?? null) as
+    | { name?: string; url?: string; publicId?: string }
+    | null;
+  const [audioTrack, setAudioTrack] = useState<{ name: string; url: string; publicId?: string } | null>(
+    initialAudio && initialAudio.url ? { name: initialAudio.name ?? 'Audio track', url: initialAudio.url, publicId: initialAudio.publicId } : null,
+  );
+  const audioLabel = audioTrack?.name ?? 'No audio selected';
   const [showVideoSwap, setShowVideoSwap] = useState(false);
   const [showAudioSwap, setShowAudioSwap] = useState(false);
 
@@ -252,6 +267,10 @@ export function CampaignPostEditModal({
           }
         : {
             ...(script as Record<string, unknown>),
+            // Persist selected audio track so it survives reload and picks
+            // up in the render pipeline (Remotion <Audio/> reads from
+            // enrichmentData.editorScript.audioTrack).
+            audioTrack: audioTrack ?? null,
             textStyle: { fontFamily, fontWeight, fontSize, color: textColor, strokeWidth, strokeColor, background },
           };
 
@@ -822,14 +841,19 @@ export function CampaignPostEditModal({
         mediaType="video"
       />
 
-      {/* Audio swap picker */}
-      <MediaPickerModal
-        open={showAudioSwap}
-        onClose={() => { markPickerClosed(); setShowAudioSwap(false); }}
-        onSelect={(url) => { setAudioLabel(url.split('/').pop() ?? 'Audio track'); markPickerClosed(); setShowAudioSwap(false); }}
-        title="Select Audio Track"
-        mediaType="all"
-      />
+      {/* Audio swap picker — dedicated audio library modal (matches the
+          Audio tab in the standalone video editor). Formerly this opened
+          MediaPickerModal with mediaType="all", which surfaced images. */}
+      {showAudioSwap && (
+        <AudioSelectModal
+          onSelect={(track: AudioSelection) => {
+            setAudioTrack({ name: track.name, url: track.url, publicId: track.publicId });
+            markPickerClosed();
+            setShowAudioSwap(false);
+          }}
+          onClose={() => { markPickerClosed(); setShowAudioSwap(false); }}
+        />
+      )}
     </>
   );
 }

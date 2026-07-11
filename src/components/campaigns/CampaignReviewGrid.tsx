@@ -132,6 +132,25 @@ function getVideoUrl(item: ReviewItem): string | null {
   return null;
 }
 
+// Returns the hook / body text that should be overlaid on the card thumbnail
+// so the grid preview matches how the post will look on the platform
+// (mirroring the usefastlane review grid: caption sits on top of the media).
+function getOverlayText(item: ReviewItem): string {
+  const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
+  const script = (enrichment.editorScript ?? {}) as Record<string, any>;
+  // Slideshow: prefer the first slide caption (rendered on slide 1)
+  if (item.contentType === 'slideshow') {
+    const slideCopy = Array.isArray(script.slideCopy) ? script.slideCopy : [];
+    if (slideCopy[0] && typeof slideCopy[0] === 'string') return slideCopy[0];
+    const slides = (enrichment.sourceMediaSlots as Record<string, any>)?.slides;
+    if (Array.isArray(slides) && slides[0]?.caption) return String(slides[0].caption);
+  }
+  // Video / static types: hookText first, then bodyText, then caption
+  if (script.hookText && typeof script.hookText === 'string') return script.hookText;
+  if (script.bodyText && typeof script.bodyText === 'string') return script.bodyText;
+  return item.caption ?? '';
+}
+
 // ── Content type label ────────────────────────────────────────────────────────
 function ctLabel(contentType: string | null | undefined): string {
   if (!contentType) return '—';
@@ -416,28 +435,24 @@ function PostCard({
   const primaryPlatform = campaignPlatforms[0] ?? (Array.isArray(item.targetPlatforms) ? String(item.targetPlatforms[0] ?? '') : '');
   const angleColor = item.angleColor ?? '#f97316';
   const typeLabel = item.contentType ? ctLabel(item.contentType) : null;
+  const overlayText = getOverlayText(item);
 
   return (
     <div className={`overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md ${approved ? 'ring-2 ring-emerald-400' : ''}`}>
       {/* Thumbnail */}
       <div className="relative aspect-[9/16] cursor-pointer overflow-hidden bg-muted" onClick={onEdit}>
         {isVideoType && videoUrl ? (
-          /* Video type: show video with hover-to-play, thumbnail as poster */
+          /* Video type: autoplay muted loop (matches usefastlane grid) */
           // eslint-disable-next-line jsx-a11y/media-has-caption
           <video
             src={videoUrl}
             poster={thumb ?? undefined}
             className="h-full w-full object-cover"
+            autoPlay
             muted
             loop
             playsInline
-            preload="none"
-            onMouseEnter={(e) => (e.currentTarget as HTMLVideoElement).play().catch(() => {})}
-            onMouseLeave={(e) => {
-              const v = e.currentTarget as HTMLVideoElement;
-              v.pause();
-              v.currentTime = 0;
-            }}
+            preload="metadata"
           />
         ) : thumb ? (
           // Use plain <img> to avoid Next.js domain restrictions with template CDN URLs
@@ -472,6 +487,23 @@ function PostCard({
         {approved && (
           <div className="absolute left-2 top-10 z-10">
             <Badge className="bg-emerald-500 text-white text-[9px] px-1.5 py-0">Approved</Badge>
+          </div>
+        )}
+
+        {/* Centered hook/caption overlay — mirrors how the post will look on
+            the platform (usefastlane pattern). White text with black stroke
+            keeps it readable over any background. */}
+        {overlayText && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-2.5">
+            <p
+              className="line-clamp-4 text-center text-[11px] font-semibold leading-tight text-white"
+              style={{
+                textShadow:
+                  '1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000, 0 0 4px rgba(0,0,0,0.55)',
+              }}
+            >
+              {overlayText}
+            </p>
           </div>
         )}
 
@@ -724,6 +756,7 @@ function CalendarCard({
   const primaryPlatform = campaignPlatforms[0] ?? (Array.isArray(item.targetPlatforms) ? String(item.targetPlatforms[0] ?? '') : '');
   const angleColor = item.angleColor ?? '#f97316';
   const hasMedia = isVideoType ? !!videoUrl : !!thumb;
+  const overlayText = getOverlayText(item);
 
   return (
     <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
@@ -739,20 +772,28 @@ function CalendarCard({
               src={videoUrl}
               poster={thumb ?? undefined}
               className="h-full w-full object-cover"
+              autoPlay
               muted
               loop
               playsInline
-              preload="none"
-              onMouseEnter={(e) => (e.currentTarget as HTMLVideoElement).play().catch(() => {})}
-              onMouseLeave={(e) => {
-                const v = e.currentTarget as HTMLVideoElement;
-                v.pause();
-                v.currentTime = 0;
-              }}
+              preload="metadata"
             />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={thumb!} alt="" className="h-full w-full object-cover" />
+          )}
+          {overlayText && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-1.5">
+              <p
+                className="line-clamp-3 text-center text-[9px] font-semibold leading-tight text-white"
+                style={{
+                  textShadow:
+                    '1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000, 0 0 3px rgba(0,0,0,0.55)',
+                }}
+              >
+                {overlayText}
+              </p>
+            </div>
           )}
           {primaryPlatform && (
             <div className="absolute left-1 top-1 scale-75 origin-top-left">

@@ -409,6 +409,11 @@ export function CampaignWizard({
         return (
           <StepReview
             {...props}
+            // The wizard's local `campaign` state may still be a Partial
+            // without id at this point — merge the generated campaign id
+            // so downstream fetches like /api/campaigns/[id]/re-roll don't
+            // send "undefined" to Postgres and blow up on uuid parsing.
+            campaign={{ ...(props.campaign as Campaign), id: (props.campaign?.id ?? generatedCampaignId) as string }}
             contentItems={contentItems}
             reviewError={reviewError}
             onEdit={handleEdit}
@@ -416,6 +421,9 @@ export function CampaignWizard({
             onDelete={handleDelete}
             onApprove={handleApprove}
             onScheduleChange={handleScheduleChange}
+            onItemUpdated={(updated) => {
+              setContentItems((prev) => prev.map((it) => (it.id === updated.id ? { ...it, ...updated } : it)));
+            }}
           />
         );
       default: {
@@ -1105,6 +1113,7 @@ function StepReview({
   onDelete,
   onApprove,
   onScheduleChange,
+  onItemUpdated,
 }: StepProps & {
   contentItems: (ContentItem & { sequenceIndex?: number; scheduledDate?: string; scheduledTime?: string; isRolled?: boolean })[];
   reviewError: string | null;
@@ -1113,6 +1122,7 @@ function StepReview({
   onDelete: (itemId: string) => void;
   onApprove: (itemId: string) => void;
   onScheduleChange: (itemId: string, date: string, time: string) => void;
+  onItemUpdated?: (updated: ContentItem) => void;
 }) {
   return (
     <div className="space-y-6">
@@ -1129,6 +1139,7 @@ function StepReview({
         onDelete={onDelete}
         onApprove={onApprove}
         onScheduleChange={onScheduleChange}
+        onItemUpdated={onItemUpdated}
       />
     </div>
   );
