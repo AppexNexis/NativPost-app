@@ -198,6 +198,7 @@ export type ContentMix = {
   wallOfText?: number;
   greenScreen?: number;
   videoHook?: number;
+  videoHookDemo?: number;
   talkingHead?: number;
   carousel?: number;
   ugc?: number;

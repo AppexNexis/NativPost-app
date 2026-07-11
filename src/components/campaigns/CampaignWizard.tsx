@@ -68,7 +68,7 @@ export function CampaignWizard({
   const DEFAULT_CAMPAIGN: Partial<Campaign> = {
     name: '',
     description: '',
-    contentMix: { slideshow: 34, greenScreen: 33, videoHook: 33 },
+    contentMix: { slideshow: 17, talkingHead: 25, videoHookDemo: 33, ugc: 25 },
     remixRatio: 50,
     angles: [],
     mentionFrequency: 'sometimes',
@@ -574,8 +574,9 @@ function StepBasics({ campaign, onUpdate }: StepProps) {
           {(
             [
               ['slideshow', 'Slideshow', 'bg-yellow-400'],
-              ['greenScreen', 'Green screen', 'bg-green-500'],
-              ['videoHook', 'Video hook', 'bg-purple-400'],
+              ['videoHookDemo', 'Video hook demo', 'bg-purple-400'],
+              ['talkingHead', 'Talking head / UGC', 'bg-blue-400'],
+              ['ugc', 'Raw UGC', 'bg-pink-400'],
             ] as [keyof ContentMix, string, string][]
           ).map(([key, label, color]) => (
             <div key={key} className="flex items-center gap-4">

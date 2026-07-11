@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -117,6 +117,21 @@ export function CampaignPostEditModal({
   const [showVideoSwap, setShowVideoSwap] = useState(false);
   const [showAudioSwap, setShowAudioSwap] = useState(false);
 
+  // ── Picker close race guard ───────────────────────────────────────────────
+  // Radix fires onOpenChange(false) on the outer fullscreen Dialog AFTER the
+  // picker Dialog's onClose has already reset state to null/false. A ref
+  // (not state) survives that render cycle, so the outer Dialog's dismiss
+  // handler can still see "a picker was just open" and not close the editor.
+  const pickerWasOpen = useRef(false);
+  const pickerCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const markPickerOpen = useCallback(() => {
+    if (pickerCloseTimer.current) clearTimeout(pickerCloseTimer.current);
+    pickerWasOpen.current = true;
+  }, []);
+  const markPickerClosed = useCallback(() => {
+    pickerCloseTimer.current = setTimeout(() => { pickerWasOpen.current = false; }, 300);
+  }, []);
+
   // ── Left panel ────────────────────────────────────────────────────────────
   const [mentionBusiness, setMentionBusiness] = useState(() => {
     const mf = String(enrichment.mentionFrequency ?? '');
@@ -147,9 +162,8 @@ export function CampaignPostEditModal({
     ? (slides[slideIndex]?.caption ?? String(script.hookText ?? item.caption ?? ''))
     : String(script.hookText ?? script.bodyText ?? item.caption ?? '');
 
-  // True while any media picker is open — used to block the outer Dialog from
-  // closing when the picker Dialog dismisses (Radix UI nested-Dialog issue).
-  const anyPickerOpen = showSlideSwap !== null || showAddSlide || showVideoSwap || showAudioSwap;
+  // (anyPickerOpen state guard removed — using pickerWasOpen ref instead to
+  //  avoid the race where state resets before Radix fires the outer dialog event)
   const STROKE_DIRS: [number, number][] = [[1, 0], [0, 1], [-1, 0], [0, -1]];
   const tShadow =
     strokeWidth > 0
@@ -248,11 +262,11 @@ export function CampaignPostEditModal({
 
   return (
     <>
-      <Dialog open onOpenChange={(o) => { if (!o) onCancel(); }}>
+      <Dialog open onOpenChange={(o) => { if (!o && !pickerWasOpen.current) onCancel(); }}>
         <DialogContent
           className="flex h-screen max-h-screen w-screen max-w-screen flex-col gap-0 rounded-none p-0 [&>button]:hidden"
-          onPointerDownOutside={(e) => { if (anyPickerOpen) e.preventDefault(); }}
-          onInteractOutside={(e) => { if (anyPickerOpen) e.preventDefault(); }}
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
         >
           <DialogTitle className="sr-only">Edit content</DialogTitle>
 
@@ -280,7 +294,7 @@ export function CampaignPostEditModal({
           <div className="flex flex-1 overflow-hidden">
 
             {/* ─ LEFT ─────────────────────────────────────────────────────── */}
-            <ScrollArea className="w-72 shrink-0 border-r bg-card">
+            <ScrollArea className="w-80 shrink-0 border-r bg-card">
               <div className="space-y-6 p-5">
 
                 {/* ASSETS — slideshow mode shows slide thumbnails */}
@@ -308,8 +322,8 @@ export function CampaignPostEditModal({
                               </div>
                             )}
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-medium">Slide {idx + 1}</p>
+                          <div className="min-w-0 flex-1 overflow-hidden">
+                            <p className="truncate text-xs font-medium">Slide {idx + 1}</p>
                             {slide.caption && (
                               <p className="truncate text-[11px] text-muted-foreground">{slide.caption}</p>
                             )}
@@ -318,7 +332,7 @@ export function CampaignPostEditModal({
                             variant="outline"
                             size="sm"
                             className="shrink-0 h-7 text-xs"
-                            onClick={(e) => { e.stopPropagation(); setShowSlideSwap(idx); }}
+                            onClick={(e) => { e.stopPropagation(); markPickerOpen(); setShowSlideSwap(idx); }}
                           >
                             Swap
                           </Button>
@@ -330,7 +344,7 @@ export function CampaignPostEditModal({
                         variant="outline"
                         size="sm"
                         className="w-full gap-2 text-xs"
-                        onClick={() => setShowAddSlide(true)}
+                        onClick={() => { markPickerOpen(); setShowAddSlide(true); }}
                       >
                         <Plus className="size-3.5" />
                         Add slide
@@ -360,7 +374,7 @@ export function CampaignPostEditModal({
                           variant="outline"
                           size="sm"
                           className="shrink-0 h-7 text-xs"
-                          onClick={() => setShowVideoSwap(true)}
+                          onClick={() => { markPickerOpen(); setShowVideoSwap(true); }}
                         >
                           Swap
                         </Button>
@@ -379,7 +393,7 @@ export function CampaignPostEditModal({
                           variant="outline"
                           size="sm"
                           className="shrink-0 h-7 text-xs"
-                          onClick={() => setShowAudioSwap(true)}
+                          onClick={() => { markPickerOpen(); setShowAudioSwap(true); }}
                         >
                           Swap
                         </Button>
@@ -479,7 +493,7 @@ export function CampaignPostEditModal({
                         ...bgStyle,
                       }}
                     >
-                      {item.caption || overlayText}
+                      {overlayText}
                     </p>
                   </div>
                 )}
@@ -725,11 +739,12 @@ export function CampaignPostEditModal({
       {showSlideSwap !== null && (
         <MediaPickerModal
           open
-          onClose={() => setShowSlideSwap(null)}
+          onClose={() => { markPickerClosed(); setShowSlideSwap(null); }}
           onSelect={(url) => {
             const idx = showSlideSwap;
             setSlides((prev) => prev.map((s, i) => (i === idx ? { ...s, url } : s)));
             if (slideIndex !== idx) setSlideIndex(idx);
+            markPickerClosed();
             setShowSlideSwap(null);
           }}
           title={`Replace Slide ${showSlideSwap + 1}`}
@@ -740,13 +755,14 @@ export function CampaignPostEditModal({
       {/* Add slide picker (image only) */}
       <MediaPickerModal
         open={showAddSlide}
-        onClose={() => setShowAddSlide(false)}
+        onClose={() => { markPickerClosed(); setShowAddSlide(false); }}
         onSelect={(url) => {
           setSlides((prev) => {
             const next = [...prev, { url }];
             setSlideIndex(next.length - 1);
             return next;
           });
+          markPickerClosed();
           setShowAddSlide(false);
         }}
         title="Add Slide"
@@ -756,8 +772,8 @@ export function CampaignPostEditModal({
       {/* Video swap picker */}
       <MediaPickerModal
         open={showVideoSwap}
-        onClose={() => setShowVideoSwap(false)}
-        onSelect={(url) => { setVideoThumb(url); setShowVideoSwap(false); }}
+        onClose={() => { markPickerClosed(); setShowVideoSwap(false); }}
+        onSelect={(url) => { setVideoThumb(url); markPickerClosed(); setShowVideoSwap(false); }}
         title="Select Video"
         mediaType="video"
       />
@@ -765,8 +781,8 @@ export function CampaignPostEditModal({
       {/* Audio swap picker */}
       <MediaPickerModal
         open={showAudioSwap}
-        onClose={() => setShowAudioSwap(false)}
-        onSelect={(url) => { setAudioLabel(url.split('/').pop() ?? 'Audio track'); setShowAudioSwap(false); }}
+        onClose={() => { markPickerClosed(); setShowAudioSwap(false); }}
+        onSelect={(url) => { setAudioLabel(url.split('/').pop() ?? 'Audio track'); markPickerClosed(); setShowAudioSwap(false); }}
         title="Select Audio Track"
         mediaType="all"
       />
