@@ -94,13 +94,22 @@ export function AudioSelectModal({
     setPreviewId(asset.publicId);
   };
 
+  // Radix Dialog (used by the campaign post editor) applies
+  // `pointer-events: none` to <body> when it opens with modal=true. That
+  // rule cascades to any inline descendant rendered outside DialogContent,
+  // which is why the X button and backdrop were unclickable. Force
+  // `pointer-events: auto` on our overlay + card so the audio picker
+  // escapes the Dialog's pointer trap without needing a portal
+  // (react-dom types aren't installed in this workspace).
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4"
+      style={{ pointerEvents: 'auto' }}
       onClick={onClose}
     >
       <div
         className="flex max-h-[80vh] w-full flex-col rounded-t-2xl border border-border bg-card shadow-2xl sm:max-w-lg sm:rounded-2xl"
+        style={{ pointerEvents: 'auto' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

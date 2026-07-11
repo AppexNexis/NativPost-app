@@ -10,17 +10,20 @@
  * into the shape appropriate for the template's contentType.
  *
  * Text is length-capped so previews don't overflow the card and so
- * per-slide text stays readable:
- *   - slideshow / carousel     ≤ 80 chars / slide
- *   - wall_of_text             ≤ 220 chars (wallText)
- *   - all others               ≤ 60 char hook, ≤ 140 char body
+ * per-slide text stays readable. Caps were widened 2026-07-11 to give
+ * captions room to actually communicate the post (users reported the
+ * 60-90 char hooks read as filler). Overlays still word-wrap safely.
+ *   - slideshow / carousel     ≤ 110 chars / slide
+ *   - wall_of_text             ≤ 300 chars (wallText)
+ *   - hooks (all card types)   ≤ 120 chars
+ *   - body (video card types)  ≤ 200 chars
  */
 
-const SLIDE_CHAR_CAP = 80;
-const WALL_CHAR_CAP = 220;
-const HOOK_CHAR_CAP = 90;
-const BODY_CHAR_CAP = 140;
-const CTA_CHAR_CAP = 40;
+const SLIDE_CHAR_CAP = 110;
+const WALL_CHAR_CAP = 300;
+const HOOK_CHAR_CAP = 120;
+const BODY_CHAR_CAP = 200;
+const CTA_CHAR_CAP = 60;
 
 function clip(s: string | undefined, cap: number): string | undefined {
   if (!s) return undefined;

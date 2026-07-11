@@ -30,22 +30,61 @@ import type { Campaign, ContentItem } from '@/types/v2';
 
 import { CampaignPostEditModal } from './CampaignPostEditModal';
 
-// Resolve the best available preview thumbnail for a content item. Slideshow
-// items typically populate graphicUrls[0]; video / talking-head / ugc types
-// leave that blank and stash their video source in
-// enrichmentData.sourceMediaSlots.background.{thumbnailUrl, url} instead.
+// Resolve the best available preview thumbnail for a content item.
+//
+// Mirrors CampaignReviewGrid.getThumb so calendar chips and day-sidebar
+// tiles show the same media the Review grid does — the earlier version
+// only checked graphicUrls[0] + background.thumbnailUrl/url and blanked
+// out for slideshow items whose media lives in `slides[0]` and for
+// video-hook items where the thumbnail lives on `templateSnapshot`.
+const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v)(\?|$)/i;
+
 function resolveThumb(item: ContentItem | null): string | null {
   if (!item) return null;
-  const graphic = Array.isArray(item.graphicUrls) ? item.graphicUrls[0] : null;
-  if (graphic) return graphic;
+
   const enrichment = (item.enrichmentData ?? {}) as Record<string, unknown>;
   const slots = (enrichment.sourceMediaSlots ?? {}) as Record<string, unknown>;
+  const snapshot = (enrichment.templateSnapshot ?? {}) as Record<string, unknown>;
+
+  // 1. Slideshow / carousel — first slide image is the natural preview.
+  const rawSlides = slots.slides;
+  if (Array.isArray(rawSlides) && rawSlides.length > 0) {
+    const first = rawSlides[0] as Record<string, unknown> | undefined;
+    if (first && typeof first.url === 'string' && first.url) return first.url;
+  }
+
+  // 2. Static graphicUrls (image posts) — but skip raw video urls that
+  //    happened to land there for engine-supplement rows.
+  const graphic = Array.isArray(item.graphicUrls) ? item.graphicUrls[0] : null;
+  if (graphic && !VIDEO_EXT_RE.test(graphic)) return graphic;
+
+  // 3. Background slot thumbnail (talking_head, green_screen, video_hook).
   const bg = (slots.background ?? {}) as Record<string, unknown>;
-  return (
-    (typeof bg.thumbnailUrl === 'string' && bg.thumbnailUrl) ||
-    (typeof bg.url === 'string' && bg.url) ||
-    null
-  );
+  if (typeof bg.thumbnailUrl === 'string' && bg.thumbnailUrl) return bg.thumbnailUrl;
+
+  // 4. hookVideo slot thumbnail (video_hook, video_hook_demo).
+  const hook = (slots.hookVideo ?? {}) as Record<string, unknown>;
+  if (typeof hook.thumbnailUrl === 'string' && hook.thumbnailUrl) return hook.thumbnailUrl;
+
+  // 5. Template snapshot thumbnails (Phase 1 items always have this).
+  if (typeof snapshot.thumbnailUrl === 'string' && snapshot.thumbnailUrl) {
+    return snapshot.thumbnailUrl;
+  }
+  const tus = snapshot.thumbnailUrls;
+  if (Array.isArray(tus) && tus.length > 0 && typeof tus[0] === 'string') return tus[0];
+  if (tus && typeof tus === 'object' && !Array.isArray(tus)) {
+    const first = Object.values(tus as Record<string, unknown>)[0];
+    if (typeof first === 'string' && first) return first;
+  }
+
+  // 6. Fall back to background.url (may be a video — <img> will 404, but
+  //    at least the tile isn't empty for engine rows).
+  if (typeof bg.url === 'string' && bg.url && !VIDEO_EXT_RE.test(bg.url)) return bg.url;
+
+  // 7. Last resort — a raw video graphicUrl (rare).
+  if (graphic) return graphic;
+
+  return null;
 }
 
 type CampaignContentRow = {

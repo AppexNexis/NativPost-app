@@ -295,6 +295,7 @@ export function CampaignPostEditModal({
   }, [
     isSaving, item, onSaved, enrichment, script, isSlideshow, slides,
     mentionBusiness, fontFamily, fontWeight, fontSize, textColor, strokeWidth, strokeColor, background,
+    audioTrack,
   ]);
 
   // ── Slide nav helpers ─────────────────────────────────────────────────────
@@ -337,8 +338,12 @@ export function CampaignPostEditModal({
           <div className="flex flex-1 overflow-hidden">
 
             {/* ─ LEFT ─────────────────────────────────────────────────────── */}
-            <ScrollArea className="w-80 shrink-0 border-r bg-card">
-              <div className="space-y-6 p-5">
+            {/* h-full so the ScrollArea takes the full height of the flex-row
+                parent — without it the internal viewport was unbounded and
+                the Regenerate Text button rendered below the visible area,
+                appearing to overlap the sections above. */}
+            <ScrollArea className="h-full w-80 shrink-0 border-r bg-card">
+              <div className="space-y-6 p-5 pb-16">
 
                 {/* ASSETS — slideshow mode shows slide thumbnails */}
                 {isSlideshow ? (
@@ -598,8 +603,8 @@ export function CampaignPostEditModal({
             </main>
 
             {/* ─ RIGHT — text controls ────────────────────────────────────── */}
-            <ScrollArea className="w-64 shrink-0 border-l bg-card">
-              <div className="space-y-1 p-4">
+            <ScrollArea className="h-full w-64 shrink-0 border-l bg-card">
+              <div className="space-y-1 p-4 pb-16">
 
                 {/* TEXT accordion header */}
                 <div className="flex items-center gap-2 px-1 py-1">

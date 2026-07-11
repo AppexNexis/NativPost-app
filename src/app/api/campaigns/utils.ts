@@ -196,7 +196,19 @@ export async function callInternalApi(
   return res.json();
 }
 
+// Server-to-server text generation.
+//
+// EARLIER IMPLEMENTATION (broken): posted to /api/content/generate over
+// HTTP with an Authorization: Bearer header. The target route uses Clerk
+// auth() which reads cookies only, so the Bearer token was silently
+// ignored and every internal call came back as 401 Unauthorized. This
+// surfaced in the Campaign editor's "Regenerate Text" button.
+//
+// FIX: call the engine directly (same POST /api/generate contract the
+// public route uses) and return the same `{ variants }` shape callers
+// expect. No HTTP self-fetch, no Clerk round-trip.
 export async function generateTextContent(params: {
+  db: any;
   topic: string;
   contentType: string;
   targetPlatforms: string[];
@@ -204,19 +216,60 @@ export async function generateTextContent(params: {
   templateId?: string;
   angleId?: string;
   campaignId?: string;
-  orgId?: string;
+  orgId: string;
 }) {
-  const body = {
-    topic: params.topic,
-    contentType: params.contentType,
-    targetPlatforms: params.targetPlatforms,
-    numVariants: 1,
-    contentMode: params.contentMode || 'normal',
-    ...(params.templateId ? { templateId: params.templateId } : {}),
-    ...(params.angleId ? { angleId: params.angleId } : {}),
-    ...(params.campaignId ? { campaignId: params.campaignId } : {}),
+  const { db, orgId } = params;
+
+  const [profile] = await db
+    .select()
+    .from(brandProfileSchema)
+    .where(eq(brandProfileSchema.orgId, orgId))
+    .limit(1);
+
+  if (!profile) {
+    throw new Error('No Brand Profile found. Complete your Brand Profile first.');
+  }
+
+  const enginePayload = {
+    brand_profile: buildEngineBrandProfile(profile),
+    topic: params.topic || null,
+    content_type: params.contentType || 'text_only',
+    target_platforms: params.targetPlatforms,
+    num_variants: 1,
+    content_mode: params.contentMode || 'normal',
+    enrichment: null,
   };
-  return callInternalApi('/api/content/generate', 'POST', body, params.orgId);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90_000);
+  let res: Response;
+  try {
+    res = await fetch(`${ENGINE_URL}/api/generate`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${API_KEY}`,
+      },
+      body: JSON.stringify(enginePayload),
+    });
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err?.name === 'AbortError') {
+      throw new Error('Content engine timed out. Please try again.');
+    }
+    throw new Error(`Engine unreachable: ${err?.message || err}`);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => 'Unknown error');
+    throw new Error(`Engine failed: ${res.status} ${text}`);
+  }
+
+  const data = await res.json() as { variants?: any[] };
+  return { variants: data.variants || [] };
 }
 
 export async function generateMediaForContentItem(
@@ -373,76 +426,153 @@ export type CampaignTemplateRow = {
 // Randomised hook pool so Blitz cards never show the same text.
 // Defined at module level so both Phase 1 (template-first) and the
 // template fallback section can reference it.
+//
+// Pool sizing note (2026-07-11): each content type now carries 12+ hooks
+// so a campaign that generates 14 slideshow posts doesn't burn through
+// the pool halfway. Each line targets 80-120 chars per user request so
+// captions read as a real post caption, not a headline. Voice mirrors
+// creator-style (Sahil Bloom, Justin Welsh) — hook first, one concrete
+// specific, no filler, no em/en dashes, no emojis.
 const FALLBACK_HOOKS: Record<string, string[]> = {
   slideshow: [
-    'The step-by-step nobody actually spells out for you',
-    'Save this before you get stuck on step three again',
-    'This is what worked for us last quarter, no filler',
-    'Full breakdown, seven slides, worth the swipe',
-    'Screenshot this so you stop searching for it later',
+    'The exact step by step nobody spells out, saved and screenshotted so you actually finish this weekend.',
+    'This is the seven slide breakdown I wish someone dropped in my DMs before I wasted three months guessing.',
+    'Screenshot every slide, then come back tonight when you have real time to sit with each one properly.',
+    'Full walkthrough of the workflow that shipped four launches this quarter, without adding a single hire.',
+    'The framework we use every Monday, laid out cleanly so you can copy it into your notes app in one pass.',
+    'Save this for later, it is the compressed version of a workshop that used to cost people real money.',
+    'Everything I learned the expensive way, folded into seven slides so you can skip the expensive part.',
+    'The template we run every launch through before we ship a single post, no assumptions, no shortcuts.',
+    'Slide four is the one people miss, and it is the reason the other three do not actually compound.',
+    'This is what a well built content system looks like when you strip out the software and the theatre.',
+    'Read this once slowly, then decide if the way you have been doing this is worth another quarter of it.',
+    'The playbook I would hand a friend on day one if I had to start from zero with only a week to prove it.',
   ],
   carousel: [
-    'Five things I wish someone told me when I started',
-    'The playbook I have been sitting on for months',
-    'Swipe through, keep what is useful, skip the rest',
-    'What actually shifted after we tried it this way',
-    'The short version, before you spend hours on this',
+    'Five things I would tell my past self, if I had to compress two years of trial and error into a swipe.',
+    'The playbook I have been sitting on for months, mostly because I was not sure anyone wanted the honest version.',
+    'Swipe through, keep what is useful, throw the rest away, that is how you actually make a framework yours.',
+    'What actually shifted after we tried it this way, ranked by which decision moved the biggest number.',
+    'The short version, so you can decide in ninety seconds whether the long version is worth your afternoon.',
+    'Every mistake I made in my first year, mapped to the one line of advice that would have prevented it.',
+    'The frameworks I still use weekly, and the ones I threw out after they stopped surviving contact with reality.',
+    'A quick tour of what actually moves the needle when you have less time than the calendar makes it seem.',
+    'Ten years of context, compressed into a swipe you can read on the walk from your kitchen to your desk.',
+    'Not another list of tips, this is the shortlist I actually run through before I commit to a new bet.',
+    'The uncomfortable truths, ranked by how long it took me to accept them, saved for the version of you still resisting.',
+    'A working checklist, not a hype post, use it the next time you are about to say yes to something big.',
   ],
   data_story: [
-    'The number that changed how we think about growth',
-    'This chart made me rethink the whole strategy',
-    'What the last 30 days of data actually shows',
-    'Why the trend everyone is chasing is losing steam',
-    'One metric worth watching this month, no others',
+    'The number that changed how we think about growth, and the one line of context that made it click for the team.',
+    'This chart made me rethink the whole strategy, and I am still not sure the second-order effects are priced in.',
+    'What the last thirty days of data actually shows, once you strip out the vanity spikes everyone loves to post.',
+    'Why the trend everyone is chasing is quietly losing steam, and the smaller signal that is worth watching instead.',
+    'One metric worth watching this month, and the reason the three you are already tracking are lying to you.',
+    'The chart nobody wants to post because it complicates the tidy narrative we all agreed to two quarters ago.',
+    'What happens when you plot the same funnel by cohort instead of by week, and why the picture inverts completely.',
+    'The data we almost missed, sitting in a tab we barely open, and what it says about the next two quarters.',
+    'A quiet number that moved eight percent this month, which is the kind of move you only see if you look for it.',
+    'The one input we can control, plotted against the one output that pays rent, is a shorter conversation than you think.',
+    'Read the axis label twice, then decide whether the chart everyone is sharing means what they think it means.',
+    'A slower cut of the same data, without the smoothing, tells a story you cannot unsee once you have seen it.',
   ],
   green_screen: [
-    'Here is what most people get wrong about this',
-    'The part nobody explains clearly, in 30 seconds',
-    'Simple version: this is why it matters right now',
-    'What is actually happening, no jargon this time',
-    'Quick breakdown for anyone still on the fence',
+    'Here is what most people get wrong about this, and the tiny shift that fixes it without changing anything else.',
+    'The part nobody explains clearly, in thirty seconds, before you have to sit through another vague explainer.',
+    'Simple version, this is why it matters right now, and what the next twelve months probably look like from here.',
+    'What is actually happening, no jargon, no theatre, just the plain read a friend would give you over coffee.',
+    'Quick breakdown for anyone still on the fence, so you can decide before the moment stops being interesting.',
+    'The context nobody adds to the headline, which is usually the reason the headline sounds so tidy in the first place.',
+    'A grounded take, without the outrage economy tax, on why this is a bigger deal than most feeds are treating it as.',
+    'The version of this story I would tell my parents, without any of the industry shorthand nobody agreed to.',
+    'What changed this week, what did not, and which of the two the timeline is currently getting the wrong way round.',
+    'A short read on why this actually matters, once you back out the platform incentives that made it feel urgent.',
+    'Thirty seconds of context that will make every other post about this feel a lot less confusing this week.',
+    'The one framing shift that makes the rest of this story sit differently, and it takes less than a minute to explain.',
   ],
   video_hook: [
-    'Stop scrolling if you are doing this the hard way',
-    'Watch this before you commit to your next launch',
-    'Everyone got this wrong. Here is what really works',
-    'The one shift that made everything else click',
-    'You will want to see this before your next post',
+    'Stop scrolling if you are doing this the hard way, because the shortcut is boring, obvious, and hiding in plain sight.',
+    'Watch this before you commit to your next launch, because the thirty seconds you spend here will save you a month.',
+    'Everyone got this wrong for a full year, and here is the version that actually works when you stop performing it.',
+    'The one shift that made everything else click, and the reason nobody talks about it is that it is not photogenic.',
+    'You will want to see this before your next post goes out, because the second half of the video is the part that changes.',
+    'This is the version I wish someone had made when I was where you are, so I did not have to figure it out slowly.',
+    'The advice that finally landed after I ignored it three times, delivered by a person who has actually tried it.',
+    'A short case for slowing down, from someone who spent a year moving fast and mostly moved in the wrong direction.',
+    'Do not build the next thing yet, watch this first, because the framing at the end changes what you should build.',
+    'What I would tell a smart friend at the exact stage you are in, without the polite hedging LinkedIn requires.',
+    'The uncomfortable middle of the video is the part worth staying for, because that is where the real trade off shows.',
+    'A quick take on the trade nobody wants to name, and the reason most people who succeed at this eventually quit anyway.',
   ],
   video_hook_demo: [
-    'This is what 10 seconds with the right tool looks like',
-    'Watch what happens when you skip the setup step',
-    'The workflow that saves us hours every single week',
-    'Before you copy any tutorial, watch this first',
-    'This is faster than the way you are doing it now',
+    'This is what ten seconds with the right tool looks like, which is roughly what the manual version takes an hour to do.',
+    'Watch what happens when you skip the setup step, because that is the step everyone quietly skips in their tutorials.',
+    'The workflow that saves us hours every single week, filmed in real time so you can see where the seconds actually go.',
+    'Before you copy any tutorial you saw yesterday, watch this, because ninety percent of them are missing the last step.',
+    'This is faster than the way you are doing it now, and the setup only takes the length of the video you are watching.',
+    'The unedited version of the workflow, mistakes included, so you can see what the polished tutorials tend to hide.',
+    'A quick before and after, on the same task, so the trade off between the two ways is not something you have to guess at.',
+    'One tool, three keystrokes, and a small mental model shift, is roughly the whole demo, feel free to skim.',
+    'Every step of the workflow, with none of the hand-waving, so you can decide if the switch is actually worth your time.',
+    'The demo I would run for a friend if we were sitting at the same laptop, which is why it is a little rougher than usual.',
+    'Watch the last twenty seconds twice, because the small decision at the end is where all of the compounding happens.',
+    'A working example, on real data, so you can see the failure modes the demo videos never seem to include on purpose.',
   ],
   talking_head: [
-    'Real talk on what is actually working right now',
-    'Here is the honest take nobody else is giving you',
-    'What I learned after 90 days of testing this',
-    'You may not want to hear this, but here it is',
-    'The uncomfortable truth about the current playbook',
+    'Real talk on what is actually working right now, without the survivorship bias baked into most of the timeline this week.',
+    'Here is the honest take nobody else is giving you, mostly because giving it in public still carries a small career tax.',
+    'What I learned after ninety days of testing this, delivered as a plain read, not a pitch dressed up in soft lighting.',
+    'You may not want to hear this, but the version of the story that keeps landing wrong needs a correction pass.',
+    'The uncomfortable truth about the current playbook, is that most of the people running it stopped believing in it.',
+    'A grounded update from someone who has been quiet on purpose, because the internet rewards the wrong kinds of speed.',
+    'The advice I would give a friend, off the record, if they asked me what to do with the next twelve months of their life.',
+    'What changed my mind this quarter, and the reason I am willing to say it out loud in a place my past self can read it.',
+    'A slower conversation about a fast moving thing, because the pace of the platform is not the pace the decisions need.',
+    'The version of this take I would not have shared a year ago, and the reason I feel differently about it right now.',
+    'A short read on why the smart move looks boring from the outside, and expensive from the inside, but pays anyway.',
+    'The framing that finally stopped costing me sleep, delivered to you in case it stops costing you yours as well.',
   ],
   wall_of_text: [
-    'Take five minutes to read this, it is worth it',
-    'The full argument, laid out step by step',
-    'Bookmark this so you can come back to it later',
-    'The thread I wish someone sent me last year',
-    'Read once, decide if it changes your plan',
+    'Take five minutes to read this, it is worth it, and the parts you disagree with are probably the parts to reread.',
+    'The full argument, laid out step by step, so we can stop arguing past each other in the replies for another week.',
+    'Bookmark this so you can come back to it later, because the version of you reading it in a month will need it more.',
+    'The thread I wish someone sent me last year, in one place, without the reply-tab context nobody wants to reconstruct.',
+    'Read it once, decide if it changes your plan, and if it does, the follow up post will make more sense in a week.',
+    'A longer piece than the timeline usually rewards, because the shorter version got misread three times last month.',
+    'The argument, without the cliffhanger structure, because I have decided the payoff is worth losing the retention curve.',
+    'A slow read, on purpose, because the fast version has been circulating for a month and has quietly done real damage.',
+    'What the shorter posts are not saying out loud, in a format that gives the argument room to actually breathe.',
+    'The complete version of a take I have been trimming for two weeks, published now because the middle is the point.',
+    'A patient walk through the same terrain three other posts skated over, because the details are where the trade lives.',
+    'The version with the caveats included, so you can push back on the exact line instead of the compressed rewrite.',
   ],
   reel: [
-    'This one is going to be everywhere this week',
-    'Trend spotted, here is the version that works',
-    'Do this before it stops working, and it will',
-    'The move most people are missing right now',
-    'Copy this exact setup, then make it your own',
+    'This one is going to be everywhere this week, which is exactly the moment the version that actually works stops working.',
+    'Trend spotted, here is the version that works, filmed without the ironic distance most people are using to hedge it.',
+    'Do this before it stops working, and it will, because the platform is already indexing on the response it triggers.',
+    'The move most people are missing right now, and the reason it is missing is that it looks a little too plain in the feed.',
+    'Copy this exact setup, then make it your own, because the second half of that sentence is the whole game.',
+    'A quick take on the format everyone is about to overuse, with a small tweak that keeps it working past next week.',
+    'The version of the trend that survives the algorithm shift, delivered before the shift has actually happened yet.',
+    'What to do this week if you want a chance at cutting through, without spending three hours filming a single video.',
+    'The idea worth ten of the ones your saved folder has been sitting on since March, filmed in a single take on purpose.',
+    'A working template, not a hype post, so you can decide by the end of the video whether it is worth pressing record.',
+    'Save this, film your version tonight, and post before the format tips into cliche, which is roughly Thursday morning.',
+    'The pattern the last three viral posts share, once you strip out the topics and only look at the shape of them.',
   ],
   ugc: [
-    'Tried it for two weeks, here is what happened',
-    'Honest review, zero sponsorship attached',
-    'This is my third one and I still recommend it',
-    'What nobody tells you about actually using this',
-    'The one thing that made me stick with it',
+    'Tried it for two weeks, here is what happened, without the sponsored polish most of the reviews on this quietly carry.',
+    'Honest review, zero sponsorship attached, filmed on my kitchen counter because the branded set never actually helps.',
+    'This is my third one and I still recommend it, which is not something I say about most of the things I own.',
+    'What nobody tells you about actually using this, because the marketing pages are always describing a slightly different product.',
+    'The one thing that made me stick with it past the two week mark, when I was very close to giving up on it entirely.',
+    'A grounded review, six weeks in, so you can decide by the end of the video whether it earns a spot in your day.',
+    'What broke first, what I fixed easily, and the one thing I am still annoyed about but not annoyed enough to return.',
+    'The real trade off, in the format I would use to describe it to a friend who was thinking about spending money on this.',
+    'The reason it stayed in my routine, plainly, and the reason the previous three did not, so you can weigh both.',
+    'A short pitch for slowing down before you buy, from someone who has been buying too many of these for two years.',
+    'Bought it on a whim, kept it for a reason, and the reason is not the reason the ad copy would like you to believe.',
+    'A quick walk through of the actual daily use, mistakes included, so you can see where the marketing decided to trim.',
   ],
 };
 
@@ -861,6 +991,24 @@ export async function generateCampaignPosts(
       if (!editorScript.hookText) {
         editorScript = { hookText };
       }
+      // Duplicate-hook guard.
+      //
+      // When multiple posts pull from the same template family the derived
+      // hookText tends to collide (same caption prefix → same clip). Even
+      // when it doesn't, similar templates produce near-identical opening
+      // lines. Detect a repeat and swap the collided hook for a fresh
+      // FALLBACK_HOOKS pick (which pickUniqueHook already tracks). The
+      // rest of editorScript (slideCopy, bodyText, ctaText) stays intact
+      // so slideshows still get their per-slide captions.
+      if (editorScript.hookText && usedHooks.has(editorScript.hookText)) {
+        editorScript = { ...editorScript, hookText: pickUniqueHook(resolvedContentType) };
+      } else if (editorScript.hookText) {
+        usedHooks.add(editorScript.hookText);
+      }
+      // Same dedupe on the caption we persist to the DB: the hookText we
+      // saved to caption above is used as the platform post caption. If
+      // two posts share it, the campaign feed looks copy-pasted.
+      const captionForRow = editorScript.hookText || hookText;
 
       // Derive a specific topic label for the Blitz topic pill from the
       // template's caption/hooks — e.g. "Real Results, Real Growth". Falls
@@ -884,7 +1032,7 @@ export async function generateCampaignPosts(
         .insert(contentItemSchema)
         .values({
           orgId,
-          caption: hookText,
+          caption: captionForRow,
           enrichmentData: {
             sourceMediaSlots,
             editorScript,
@@ -1573,6 +1721,7 @@ export async function reRollPost(
   // Regenerate text if requested
   if (!keepText) {
     const textResult = await generateTextContent({
+      db,
       topic: topicOverride || item.topic || 'General',
       contentType: item.contentType,
       targetPlatforms: (item.targetPlatforms as string[]) || ['instagram', 'linkedin'],
