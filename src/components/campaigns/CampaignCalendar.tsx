@@ -30,30 +30,26 @@ import type { Campaign, ContentItem } from '@/types/v2';
 
 import { CampaignPostEditModal } from './CampaignPostEditModal';
 
-// Resolve the best available preview thumbnail for a content item.
+// Thumbnail + video URL resolvers — mirror CampaignReviewGrid exactly.
 //
-// Mirrors CampaignReviewGrid.getThumb so calendar chips and day-sidebar
-// tiles show the same media the Review grid does. Handles all video
-// content types (talking_head, ugc, video_hook, video_hook_demo,
-// green_screen) by (a) checking every media slot's thumbnailUrl and
-// (b) transforming Cloudinary video URLs → JPG posters when no baked
-// thumbnail exists (Apify-imported talking_head/ugc templates land
-// with only a video URL and null template.thumbnailUrl).
+// Key insight: for video content types (talking_head, ugc, green_screen,
+// video_hook*, reel), Cloudinary video URLs cannot reliably be transformed
+// to a still image via `<img>` (Cloudinary AUP moderation + unsigned URL
+// restrictions on the paid video add-on frequently return 401). ReviewGrid
+// solves this by rendering `<video>` with `autoplay muted loop poster=`
+// so the video itself is the preview — with the poster (when present) as
+// the fallback still. We do the same here for both PostChip (calendar cell)
+// and DayPostRow (day sidebar).
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v)(\?|$)/i;
-const CLOUDINARY_VIDEO_RE = /^(https?:\/\/res\.cloudinary\.com\/[^/]+)\/video\/upload\/(.+)$/i;
-
-// Convert a Cloudinary video URL to a JPG poster URL so <img> can render it.
-// Non-Cloudinary videos fall through to null (no way to derive a poster).
-function videoUrlToPoster(url: string | undefined | null): string | null {
-  if (!url || typeof url !== 'string') return null;
-  const match = url.match(CLOUDINARY_VIDEO_RE);
-  if (!match || !match[1] || !match[2]) return null;
-  const base = match[1];
-  const rest = match[2].replace(/\.(mp4|webm|mov|m4v)(\?.*)?$/i, '.jpg');
-  // Insert a light transform (400w, jpg) so the browser gets an actual
-  // image response instead of the raw first-frame default.
-  return `${base}/video/upload/w_400,so_0,f_jpg/${rest}`;
-}
+const VIDEO_CONTENT_TYPES = new Set([
+  'ugc',
+  'talking_head',
+  'video_hook_demo',
+  'video_hook',
+  'green_screen',
+  'green_screen_meme',
+  'reel',
+]);
 
 function resolveThumb(item: ContentItem | null): string | null {
   if (!item) return null;
@@ -62,59 +58,83 @@ function resolveThumb(item: ContentItem | null): string | null {
   const slots = (enrichment.sourceMediaSlots ?? {}) as Record<string, unknown>;
   const snapshot = (enrichment.templateSnapshot ?? {}) as Record<string, unknown>;
 
-  const bg = (slots.background ?? {}) as Record<string, unknown>;
-  const hook = (slots.hookVideo ?? {}) as Record<string, unknown>;
-  const demo = (slots.demoVideo ?? {}) as Record<string, unknown>;
-
-  // 1. Slideshow / carousel — first slide image is the natural preview.
+  // 1. Slideshow / carousel — first slide image (skip if it's a video).
   const rawSlides = slots.slides;
   if (Array.isArray(rawSlides) && rawSlides.length > 0) {
     const first = rawSlides[0] as Record<string, unknown> | undefined;
-    if (first && typeof first.url === 'string' && first.url) return first.url;
+    if (first && typeof first.url === 'string' && first.url && !VIDEO_EXT_RE.test(first.url)) {
+      return first.url;
+    }
   }
 
-  // 2. Static graphicUrls (image posts) — skip raw video urls.
-  const graphic = Array.isArray(item.graphicUrls) ? item.graphicUrls[0] : null;
-  if (graphic && !VIDEO_EXT_RE.test(graphic)) return graphic;
-
-  // 3. Any slot's baked thumbnailUrl (rare on Phase 1, common on Blitz rows).
-  if (typeof bg.thumbnailUrl === 'string' && bg.thumbnailUrl) return bg.thumbnailUrl;
-  if (typeof hook.thumbnailUrl === 'string' && hook.thumbnailUrl) return hook.thumbnailUrl;
-  if (typeof demo.thumbnailUrl === 'string' && demo.thumbnailUrl) return demo.thumbnailUrl;
-
-  // 4. Template snapshot thumbnails (Phase 1 items usually have this — but
-  //    Apify-imported talking_head/ugc templates often ship with a null
-  //    thumbnailUrl and only a mediaUrl, so this is not a guarantee).
-  if (typeof snapshot.thumbnailUrl === 'string' && snapshot.thumbnailUrl) {
+  // 2. Template snapshot thumbnailUrl (usually a CDN image).
+  if (typeof snapshot.thumbnailUrl === 'string' && snapshot.thumbnailUrl && !VIDEO_EXT_RE.test(snapshot.thumbnailUrl)) {
     return snapshot.thumbnailUrl;
   }
+
+  // 3. Template snapshot thumbnailUrls array/object.
   const tus = snapshot.thumbnailUrls;
-  if (Array.isArray(tus) && tus.length > 0 && typeof tus[0] === 'string') return tus[0];
+  if (Array.isArray(tus) && tus.length > 0 && typeof tus[0] === 'string' && !VIDEO_EXT_RE.test(tus[0])) {
+    return tus[0];
+  }
   if (tus && typeof tus === 'object' && !Array.isArray(tus)) {
     const first = Object.values(tus as Record<string, unknown>)[0];
-    if (typeof first === 'string' && first) return first;
+    if (typeof first === 'string' && first && !VIDEO_EXT_RE.test(first)) return first;
   }
 
-  // 5. Non-video background URL (rare, but possible for green_screen images).
-  if (typeof bg.url === 'string' && bg.url && !VIDEO_EXT_RE.test(bg.url)) return bg.url;
+  // 4. Background: explicit thumbnailUrl → image-only url.
+  const bg = (slots.background ?? {}) as Record<string, unknown>;
+  if (typeof bg.thumbnailUrl === 'string' && bg.thumbnailUrl && !VIDEO_EXT_RE.test(bg.thumbnailUrl)) {
+    return bg.thumbnailUrl;
+  }
+  if (typeof bg.url === 'string' && bg.url && bg.assetType !== 'video' && !VIDEO_EXT_RE.test(bg.url)) {
+    return bg.url;
+  }
 
-  // 6. Cloudinary video → JPG poster fallback. This is the path that
-  //    unblocks talking_head + ugc + video_hook* tiles whose only usable
-  //    media is a `.mp4` URL sitting on background/hookVideo/demoVideo.
-  const videoUrl =
-    (typeof demo.url === 'string' && demo.url) ||
-    (typeof hook.url === 'string' && hook.url) ||
-    (typeof bg.url === 'string' && bg.url) ||
-    (typeof snapshot.mediaUrl === 'string' && snapshot.mediaUrl) ||
-    (graphic && VIDEO_EXT_RE.test(graphic) ? graphic : null);
-  const poster = videoUrlToPoster(videoUrl as string | null);
-  if (poster) return poster;
+  // 5. hookVideo / demoVideo thumbnail images.
+  const hook = (slots.hookVideo ?? {}) as Record<string, unknown>;
+  if (typeof hook.thumbnailUrl === 'string' && hook.thumbnailUrl && !VIDEO_EXT_RE.test(hook.thumbnailUrl)) {
+    return hook.thumbnailUrl;
+  }
+  const demo = (slots.demoVideo ?? {}) as Record<string, unknown>;
+  if (typeof demo.thumbnailUrl === 'string' && demo.thumbnailUrl && !VIDEO_EXT_RE.test(demo.thumbnailUrl)) {
+    return demo.thumbnailUrl;
+  }
 
-  // 7. Last resort — a raw video URL (may 404 in <img>, but tile isn't empty).
-  if (typeof snapshot.mediaUrl === 'string' && snapshot.mediaUrl) return snapshot.mediaUrl;
-  if (graphic) return graphic;
+  // 6. graphicUrls — skip video URLs.
+  const graphic = Array.isArray(item.graphicUrls) ? item.graphicUrls[0] : null;
+  if (graphic && typeof graphic === 'string' && !VIDEO_EXT_RE.test(graphic)) return graphic;
 
   return null;
+}
+
+// Returns the raw video URL for video-type content, so PostChip / DayPostRow
+// can render an autoplaying <video> element (matching ReviewGrid).
+function resolveVideoUrl(item: ContentItem | null): string | null {
+  if (!item) return null;
+  const enrichment = (item.enrichmentData ?? {}) as Record<string, unknown>;
+  const slots = (enrichment.sourceMediaSlots ?? {}) as Record<string, unknown>;
+  const bg = (slots.background ?? {}) as Record<string, unknown>;
+  if (typeof bg.url === 'string' && bg.url && (bg.assetType === 'video' || VIDEO_EXT_RE.test(bg.url))) {
+    return bg.url;
+  }
+  const hook = (slots.hookVideo ?? {}) as Record<string, unknown>;
+  if (typeof hook.url === 'string' && hook.url && VIDEO_EXT_RE.test(hook.url)) return hook.url;
+  const demo = (slots.demoVideo ?? {}) as Record<string, unknown>;
+  if (typeof demo.url === 'string' && demo.url && VIDEO_EXT_RE.test(demo.url)) return demo.url;
+  const snapshot = (enrichment.templateSnapshot ?? {}) as Record<string, unknown>;
+  const src = (typeof snapshot.sourceUrl === 'string' ? snapshot.sourceUrl : null)
+    ?? (typeof snapshot.mediaUrl === 'string' ? snapshot.mediaUrl : null);
+  if (src && VIDEO_EXT_RE.test(src)) return src;
+  // Some engine-supplement rows tuck the video into graphicUrls[0].
+  const graphic = Array.isArray(item.graphicUrls) ? item.graphicUrls[0] : null;
+  if (graphic && typeof graphic === 'string' && VIDEO_EXT_RE.test(graphic)) return graphic;
+  return null;
+}
+
+function isVideoContentType(item: ContentItem | null): boolean {
+  if (!item) return false;
+  return VIDEO_CONTENT_TYPES.has(item.contentType ?? '');
 }
 
 type CampaignContentRow = {
@@ -576,6 +596,8 @@ export function CampaignCalendar({ campaign, locale }: Props) {
 function PostChip({ row, dimmed }: { row: CampaignContentRow; dimmed: boolean }) {
   const item = row.contentItem;
   const thumb = resolveThumb(item);
+  const videoUrl = resolveVideoUrl(item);
+  const isVideo = isVideoContentType(item);
   const label = item?.caption?.trim() || item?.topic || item?.contentType || 'Post';
   const platforms = item?.targetPlatforms ?? [];
 
@@ -595,12 +617,24 @@ function PostChip({ row, dimmed }: { row: CampaignContentRow; dimmed: boolean })
       }`}
       title={label}
     >
-      {thumb && (
-        <span className="relative flex h-4 w-4 flex-shrink-0 overflow-hidden rounded-sm bg-muted">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+      <span className="relative flex h-4 w-4 flex-shrink-0 overflow-hidden rounded-sm bg-muted">
+        {isVideo && videoUrl ? (
+          // eslint-disable-next-line jsx-a11y/media-has-caption
+          <video
+            src={videoUrl}
+            poster={thumb ?? undefined}
+            className="h-full w-full object-cover"
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+          />
+        ) : thumb ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img src={thumb} alt="" className="h-full w-full object-cover" />
-        </span>
-      )}
+        ) : null}
+      </span>
       <span className="truncate">{row.scheduledTime?.slice(0, 5) || '—'}</span>
       <span className="truncate text-muted-foreground">
         {platforms[0] || item?.contentType || ''}
@@ -706,6 +740,8 @@ function DayPostRow({
 }) {
   const item = row.contentItem;
   const thumb = resolveThumb(item);
+  const videoUrl = resolveVideoUrl(item);
+  const isVideo = isVideoContentType(item);
   const caption = item?.caption?.trim() || item?.topic || 'Untitled post';
   const platforms = item?.targetPlatforms ?? [];
 
@@ -757,7 +793,19 @@ function DayPostRow({
     <li className="rounded-xl border bg-card p-3">
       <div className="flex gap-3">
         <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
-          {thumb ? (
+          {isVideo && videoUrl ? (
+            // eslint-disable-next-line jsx-a11y/media-has-caption
+            <video
+              src={videoUrl}
+              poster={thumb ?? undefined}
+              className="h-full w-full object-cover"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="metadata"
+            />
+          ) : thumb ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={thumb} alt="" className="h-full w-full object-cover" />
           ) : (
