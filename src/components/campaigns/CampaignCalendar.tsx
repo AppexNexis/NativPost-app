@@ -33,11 +33,27 @@ import { CampaignPostEditModal } from './CampaignPostEditModal';
 // Resolve the best available preview thumbnail for a content item.
 //
 // Mirrors CampaignReviewGrid.getThumb so calendar chips and day-sidebar
-// tiles show the same media the Review grid does — the earlier version
-// only checked graphicUrls[0] + background.thumbnailUrl/url and blanked
-// out for slideshow items whose media lives in `slides[0]` and for
-// video-hook items where the thumbnail lives on `templateSnapshot`.
+// tiles show the same media the Review grid does. Handles all video
+// content types (talking_head, ugc, video_hook, video_hook_demo,
+// green_screen) by (a) checking every media slot's thumbnailUrl and
+// (b) transforming Cloudinary video URLs → JPG posters when no baked
+// thumbnail exists (Apify-imported talking_head/ugc templates land
+// with only a video URL and null template.thumbnailUrl).
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v)(\?|$)/i;
+const CLOUDINARY_VIDEO_RE = /^(https?:\/\/res\.cloudinary\.com\/[^/]+)\/video\/upload\/(.+)$/i;
+
+// Convert a Cloudinary video URL to a JPG poster URL so <img> can render it.
+// Non-Cloudinary videos fall through to null (no way to derive a poster).
+function videoUrlToPoster(url: string | undefined | null): string | null {
+  if (!url || typeof url !== 'string') return null;
+  const match = url.match(CLOUDINARY_VIDEO_RE);
+  if (!match || !match[1] || !match[2]) return null;
+  const base = match[1];
+  const rest = match[2].replace(/\.(mp4|webm|mov|m4v)(\?.*)?$/i, '.jpg');
+  // Insert a light transform (400w, jpg) so the browser gets an actual
+  // image response instead of the raw first-frame default.
+  return `${base}/video/upload/w_400,so_0,f_jpg/${rest}`;
+}
 
 function resolveThumb(item: ContentItem | null): string | null {
   if (!item) return null;
@@ -46,6 +62,10 @@ function resolveThumb(item: ContentItem | null): string | null {
   const slots = (enrichment.sourceMediaSlots ?? {}) as Record<string, unknown>;
   const snapshot = (enrichment.templateSnapshot ?? {}) as Record<string, unknown>;
 
+  const bg = (slots.background ?? {}) as Record<string, unknown>;
+  const hook = (slots.hookVideo ?? {}) as Record<string, unknown>;
+  const demo = (slots.demoVideo ?? {}) as Record<string, unknown>;
+
   // 1. Slideshow / carousel — first slide image is the natural preview.
   const rawSlides = slots.slides;
   if (Array.isArray(rawSlides) && rawSlides.length > 0) {
@@ -53,20 +73,18 @@ function resolveThumb(item: ContentItem | null): string | null {
     if (first && typeof first.url === 'string' && first.url) return first.url;
   }
 
-  // 2. Static graphicUrls (image posts) — but skip raw video urls that
-  //    happened to land there for engine-supplement rows.
+  // 2. Static graphicUrls (image posts) — skip raw video urls.
   const graphic = Array.isArray(item.graphicUrls) ? item.graphicUrls[0] : null;
   if (graphic && !VIDEO_EXT_RE.test(graphic)) return graphic;
 
-  // 3. Background slot thumbnail (talking_head, green_screen, video_hook).
-  const bg = (slots.background ?? {}) as Record<string, unknown>;
+  // 3. Any slot's baked thumbnailUrl (rare on Phase 1, common on Blitz rows).
   if (typeof bg.thumbnailUrl === 'string' && bg.thumbnailUrl) return bg.thumbnailUrl;
-
-  // 4. hookVideo slot thumbnail (video_hook, video_hook_demo).
-  const hook = (slots.hookVideo ?? {}) as Record<string, unknown>;
   if (typeof hook.thumbnailUrl === 'string' && hook.thumbnailUrl) return hook.thumbnailUrl;
+  if (typeof demo.thumbnailUrl === 'string' && demo.thumbnailUrl) return demo.thumbnailUrl;
 
-  // 5. Template snapshot thumbnails (Phase 1 items always have this).
+  // 4. Template snapshot thumbnails (Phase 1 items usually have this — but
+  //    Apify-imported talking_head/ugc templates often ship with a null
+  //    thumbnailUrl and only a mediaUrl, so this is not a guarantee).
   if (typeof snapshot.thumbnailUrl === 'string' && snapshot.thumbnailUrl) {
     return snapshot.thumbnailUrl;
   }
@@ -77,11 +95,23 @@ function resolveThumb(item: ContentItem | null): string | null {
     if (typeof first === 'string' && first) return first;
   }
 
-  // 6. Fall back to background.url (may be a video — <img> will 404, but
-  //    at least the tile isn't empty for engine rows).
+  // 5. Non-video background URL (rare, but possible for green_screen images).
   if (typeof bg.url === 'string' && bg.url && !VIDEO_EXT_RE.test(bg.url)) return bg.url;
 
-  // 7. Last resort — a raw video graphicUrl (rare).
+  // 6. Cloudinary video → JPG poster fallback. This is the path that
+  //    unblocks talking_head + ugc + video_hook* tiles whose only usable
+  //    media is a `.mp4` URL sitting on background/hookVideo/demoVideo.
+  const videoUrl =
+    (typeof demo.url === 'string' && demo.url) ||
+    (typeof hook.url === 'string' && hook.url) ||
+    (typeof bg.url === 'string' && bg.url) ||
+    (typeof snapshot.mediaUrl === 'string' && snapshot.mediaUrl) ||
+    (graphic && VIDEO_EXT_RE.test(graphic) ? graphic : null);
+  const poster = videoUrlToPoster(videoUrl as string | null);
+  if (poster) return poster;
+
+  // 7. Last resort — a raw video URL (may 404 in <img>, but tile isn't empty).
+  if (typeof snapshot.mediaUrl === 'string' && snapshot.mediaUrl) return snapshot.mediaUrl;
   if (graphic) return graphic;
 
   return null;
