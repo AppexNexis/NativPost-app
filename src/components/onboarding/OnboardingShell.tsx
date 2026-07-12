@@ -29,7 +29,7 @@ export function OnboardingShell({
   children,
 }: OnboardingShellProps) {
   return (
-    <div className="grid min-h-screen grid-cols-1 bg-background lg:grid-cols-2">
+    <div className="grid h-screen grid-cols-1 overflow-hidden bg-background lg:grid-cols-2">
       {/* Left brand column */}
       <aside className="relative hidden overflow-hidden bg-neutral-950 text-white lg:flex lg:flex-col lg:justify-between lg:p-10 dark:bg-neutral-950">
         <div className="flex items-center gap-2">
@@ -76,8 +76,9 @@ export function OnboardingShell({
       </aside>
 
       {/* Right wizard column */}
-      <main className="flex min-h-screen items-center justify-center px-4 py-10 sm:px-8">
-        <div className="w-full max-w-lg">
+      <main className="h-screen overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <div className="flex min-h-full items-center justify-center px-4 py-10 sm:px-8">
+          <div className="w-full max-w-lg">
           {/* Mobile-only logo */}
           <div className="mb-6 flex justify-center lg:hidden">
             <Image
@@ -119,6 +120,7 @@ export function OnboardingShell({
               Back
             </button>
           )}
+          </div>
         </div>
       </main>
     </div>
