@@ -3,16 +3,21 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import {
-  engineAuthHeaders,
-  fetchBrandTokens,
-  saveMediaAsset,
-  spendAiCredits,
-  VIDEO_ENGINE_URL,
+  InsufficientCreditsError,
+  reserveCredits,
+  refundCredits,
 } from '@/lib/ai-studio/server';
-import { estimateTalkingHeadCredits, estimateVideoCredits } from '@/lib/ai-studio';
+import { submitFalJob } from '@/lib/ai-studio/fal';
+import { buildFalInput, buildWebhookUrl } from '@/lib/ai-studio/job-helpers';
+import { estimateCredits, getModel } from '@/lib/ai-studio/models';
+import { getDb } from '@/libs/DB';
+import { aiStudioJobSchema } from '@/models/Schema';
+import { eq } from 'drizzle-orm';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
-  const { error, orgId } = await getAuthContext();
+  const { error, orgId, userId } = await getAuthContext();
   if (error) return error;
 
   let body: Record<string, unknown> = {};
@@ -22,177 +27,71 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const subMode = (body.subMode as string) || 'video';
+  const modelId = String(body.modelId || 'pixverse-v6-i2v');
+  const model = getModel(modelId);
+  if (!model || model.kind !== 'video') {
+    return NextResponse.json({ error: `Invalid video model: ${modelId}` }, { status: 400 });
+  }
+
+  const prompt = String(body.prompt || '').trim();
+  const referenceImageUrl = String(body.imageUrl || body.referenceImageUrl || '').trim();
+  if (!referenceImageUrl) {
+    return NextResponse.json({ error: 'Reference image is required for image-to-video' }, { status: 400 });
+  }
+
+  const aspect = String(body.aspect || body.aspectRatio || '9:16');
+  const seconds = Number(body.duration) || model.durations?.[0] || 5;
+  if (!model.durations?.includes(seconds)) {
+    return NextResponse.json({ error: `Duration ${seconds}s not supported by ${modelId}` }, { status: 400 });
+  }
+
+  const credits = estimateCredits(model, { seconds });
+  const db = await getDb();
+
+  const [job] = await db
+    .insert(aiStudioJobSchema)
+    .values({
+      orgId: orgId!,
+      userId: userId ?? null,
+      modelId,
+      kind: 'video',
+      status: 'reserved',
+      creditsReserved: credits,
+      input: { prompt, aspect, referenceImageUrl, seconds },
+    })
+    .returning();
+  if (!job) return NextResponse.json({ error: 'Failed to create job' }, { status: 500 });
 
   try {
-    if (subMode === 'talking-head-ugc') {
-      return await generateTalkingHeadUgc(orgId!, body);
-    }
-    return await generateAIVideo(orgId!, body);
+    await reserveCredits(orgId!, job.id, credits);
   } catch (err) {
-    console.error(`[AI Studio Video /${subMode}] failed:`, err);
-    const message = err instanceof Error ? err.message : String(err);
-    if (message === 'INSUFFICIENT_CREDITS') {
-      return NextResponse.json({ error: 'Insufficient AI credits. Please purchase more credits to continue.', code: 'INSUFFICIENT_CREDITS' }, { status: 402 });
+    await db.delete(aiStudioJobSchema).where(eq(aiStudioJobSchema.id, job.id));
+    if (err instanceof InsufficientCreditsError) {
+      return NextResponse.json({ error: 'Insufficient AI credits', code: 'INSUFFICIENT_CREDITS' }, { status: 402 });
     }
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-}
-
-// ── AI Video (text-to-video / image-to-video) ────────────────────────────────
-
-async function generateAIVideo(orgId: string, body: Record<string, unknown>) {
-  const prompt = (body.prompt as string) || '';
-  if (!prompt.trim()) throw new Error('Prompt is required');
-
-  const duration = Number(body.duration) || 5;
-  const aspectRatio = (body.aspectRatio as string) || '9:16';
-  const modelId = (body.modelId as string) || 'pixverse-v6';
-  const referenceImageUrl = (body.referenceImageUrl as string) || undefined;
-  const credits = estimateVideoCredits(modelId, duration);
-
-  const preferOrder = modelId === 'kling-v3-pro'
-    ? ['kling', 'pixverse', 'sedance']
-    : modelId === 'sedance-2.0'
-      ? ['sedance', 'pixverse', 'kling']
-      : ['pixverse', 'kling', 'sedance'];
-
-  const res = await fetch(`${VIDEO_ENGINE_URL}/render/ai-video`, {
-    method: 'POST',
-    headers: engineAuthHeaders(),
-    body: JSON.stringify({
-      prompt,
-      duration,
-      aspectRatio,
-      preferOrder,
-      referenceImageUrl,
-    }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`AI video engine failed: ${text}`);
+    throw err;
   }
 
-  const data = (await res.json()) as {
-    success: boolean;
-    videoUrl?: string;
-    thumbnailUrl?: string;
-    duration?: number;
-    model?: string;
-    fallbackUsed?: boolean;
-    error?: string;
-  };
+  try {
+    const input = buildFalInput(model, { prompt, imageUrl: referenceImageUrl, aspect, seconds });
+    const submitted = await submitFalJob({
+      falModel: model.falModel,
+      input,
+      webhookUrl: buildWebhookUrl(),
+    });
 
-  if (!data.success || !data.videoUrl) {
-    throw new Error(data.error || 'AI video generation failed');
+    await db
+      .update(aiStudioJobSchema)
+      .set({ status: 'queued', falRequestId: submitted.request_id })
+      .where(eq(aiStudioJobSchema.id, job.id));
+
+    return NextResponse.json({ jobId: job.id, status: 'queued' });
+  } catch (err) {
+    await refundCredits(orgId!, job.id, credits, 'Fal submit failed');
+    await db
+      .update(aiStudioJobSchema)
+      .set({ status: 'failed', errorMessage: err instanceof Error ? err.message : String(err) })
+      .where(eq(aiStudioJobSchema.id, job.id));
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fal submit failed' }, { status: 502 });
   }
-
-  const asset = await saveMediaAsset(orgId, {
-    url: data.videoUrl,
-    thumbnailUrl: data.thumbnailUrl || data.videoUrl,
-    assetType: 'ai_video',
-    aspectRatio,
-    source: data.fallbackUsed ? 'remotion-fallback' : data.model || modelId,
-    description: prompt,
-    durationSeconds: data.duration ?? duration,
-    aiMetadata: {
-      prompt,
-      model: data.model || modelId,
-      duration,
-      referenceImageUrl,
-    },
-    tags: ['ai-generated', 'ai-video', data.model || modelId],
-  });
-
-  const { wallet } = await spendAiCredits(orgId, credits, {
-    type: 'generation',
-    description: `${modelId} ${duration}s video`,
-  });
-
-  return NextResponse.json({
-    success: true,
-    savedAssets: [asset],
-    wallet,
-    remainingCredits: wallet.monthly.limit - wallet.monthly.used + wallet.addon.remaining,
-  });
-}
-
-// ── Talking Head UGC (fallback to branded slideshow) ─────────────────────────
-
-async function generateTalkingHeadUgc(orgId: string, body: Record<string, unknown>) {
-  const script = (body.script as string) || '';
-  if (!script.trim()) throw new Error('Script is required');
-
-  const duration = Number(body.duration) || 5;
-  const language = (body.language as string) || 'en';
-  const captions = Boolean(body.captions);
-  const referenceImageUrl = (body.referenceImageUrl as string) || undefined;
-
-  const wordCount = script.trim().split(/\s+/).length;
-  const credits = estimateTalkingHeadCredits(wordCount, duration);
-
-  const tokens = await fetchBrandTokens(orgId);
-
-  // Fallback: generate a slideshow-style video using the reference image + script.
-  const res = await fetch(`${VIDEO_ENGINE_URL}/render`, {
-    method: 'POST',
-    headers: engineAuthHeaders(),
-    body: JSON.stringify({
-      caption: script,
-      brandName: tokens.brandName,
-      brandPrimary: tokens.brandPrimary,
-      brandSecondary: tokens.brandSecondary,
-      logoUrl: tokens.logoUrl,
-      industry: tokens.industry,
-      imageStyle: 'cinematic',
-      contentMode: 'normal',
-      photoTier: 'none',
-      ...(referenceImageUrl ? { images: [referenceImageUrl] } : {}),
-    }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Talking-head engine failed: ${text}`);
-  }
-
-  const data = (await res.json()) as {
-    vertical?: string;
-    square?: string;
-    durationSeconds?: number;
-  };
-
-  const url = data.vertical || data.square;
-  if (!url) throw new Error('Talking-head engine returned no video');
-
-  const asset = await saveMediaAsset(orgId, {
-    url,
-    thumbnailUrl: url,
-    assetType: 'talking_head_ugc',
-    aspectRatio: data.vertical ? '9:16' : '1:1',
-    source: 'remotion-fallback',
-    description: script,
-    durationSeconds: data.durationSeconds ?? duration,
-    aiMetadata: {
-      script,
-      language,
-      captions,
-      wordCount,
-      referenceImageUrl,
-    },
-    tags: ['ai-generated', 'talking-head-ugc'],
-  });
-
-  const { wallet } = await spendAiCredits(orgId, credits, {
-    type: 'generation',
-    description: `Talking Head UGC · ${wordCount} words · ${duration}s`,
-  });
-
-  return NextResponse.json({
-    success: true,
-    savedAssets: [asset],
-    wallet,
-    remainingCredits: wallet.monthly.limit - wallet.monthly.used + wallet.addon.remaining,
-  });
 }

@@ -848,3 +848,36 @@ export const campaignJobSchema = pgTable('campaign_job', {
     .notNull(),
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
 });
+
+// -----------------------------------------------------------
+// AI STUDIO JOB (Fal.ai queue jobs owned by AI Studio surface)
+//
+// Every generation kicked off from /dashboard/ai-studio inserts a row
+// here. Credits are reserved on submit and either committed (webhook OK)
+// or refunded (webhook error, cancel, sweeper). Webhook route reconciles
+// output payload into Cloudinary + media_asset then flips status.
+// -----------------------------------------------------------
+export const aiStudioJobSchema = pgTable('ai_studio_job', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: text('org_id')
+    .references(() => organizationSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  userId: text('user_id'),
+  modelId: text('model_id').notNull(), // matches models.ts id
+  kind: text('kind').notNull(), // image | image-edit | video | video-lipsync
+  // reserved | queued | processing | succeeded | failed | canceled | refunded
+  status: text('status').default('reserved').notNull(),
+  falRequestId: text('fal_request_id'),
+  input: jsonb('input').default({}).notNull(),
+  output: jsonb('output'),
+  creditsReserved: integer('credits_reserved').default(0).notNull(),
+  creditsCharged: integer('credits_charged'),
+  errorMessage: text('error_message'),
+  mediaAssetId: uuid('media_asset_id').references(() => mediaAssetSchema.id, { onDelete: 'set null' }),
+  webhookReceivedAt: timestamp('webhook_received_at', { mode: 'date' }),
+  updatedAt: timestamp('updated_at', { mode: 'date' })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});

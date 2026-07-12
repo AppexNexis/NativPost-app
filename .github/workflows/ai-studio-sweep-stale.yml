@@ -1,0 +1,23 @@
+name: Sweep Stale AI Studio Jobs
+
+on:
+  schedule:
+    # Every 15 minutes. Jobs stuck in reserved/queued/processing for more
+    # than 20 minutes are refunded and marked failed.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sweep stale jobs
+        run: |
+          curl -X POST \
+            https://app.nativpost.com/api/cron/ai-studio/sweep-stale \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --data '{}' \
+            --fail \
+            --silent \
+            --show-error

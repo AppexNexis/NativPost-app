@@ -64,6 +64,10 @@ export interface AiCreditWallet {
     remaining: number;
   };
   recentActivity: CreditActivity[];
+  /** Credits held for in-flight AI Studio jobs (reserved but not spent). */
+  reservedCredits?: number;
+  /** AI Studio job ids currently holding a reservation. */
+  pendingJobs?: string[];
 }
 
 const ACTIVITY_LIMIT = 50;
@@ -121,6 +125,8 @@ function readWallet(settings: Record<string, unknown>, monthlyLimit?: number): A
       remaining: typeof raw.addon?.remaining === 'number' ? raw.addon.remaining : 0,
     },
     recentActivity: Array.isArray(raw.recentActivity) ? raw.recentActivity : [],
+    reservedCredits: typeof raw.reservedCredits === 'number' ? raw.reservedCredits : 0,
+    pendingJobs: Array.isArray(raw.pendingJobs) ? raw.pendingJobs : [],
   };
 
   return resetMonthlyIfNeeded(wallet);
@@ -289,7 +295,7 @@ export async function resetMonthlyCredits(
   const renewalEvent: CreditActivity = {
     id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     type: 'subscription_renewal',
-    description: `Monthly credits reset — ${newLimit} credits available`,
+    description: `Monthly credits reset. ${newLimit} credits available.`,
     amount: newLimit,
     balanceAfter: newLimit + wallet.addon.remaining,
     createdAt: new Date().toISOString(),
@@ -369,3 +375,131 @@ export async function saveMediaAsset(
   };
 }
 
+// ── AI Studio credit reservations (reserve / commit / refund) ────────────────
+//
+// AI Studio submits jobs to Fal.ai and waits for a webhook. We must not spend
+// credits until the job returns OK, but we also must not let a user queue up
+// infinitely many jobs while the wallet reads full. So we hold credits in
+// `reservedCredits`, then commit or refund based on webhook outcome.
+
+export class InsufficientCreditsError extends Error {
+  constructor(public required: number, public available: number) {
+    super('INSUFFICIENT_CREDITS');
+  }
+}
+
+function totalSpendable(wallet: AiCreditWallet): number {
+  const reserved = wallet.reservedCredits ?? 0;
+  return Math.max(0, totalAvailable(wallet) - reserved);
+}
+
+export async function reserveCredits(
+  orgId: string,
+  jobId: string,
+  amount: number,
+): Promise<AiCreditWallet> {
+  if (amount <= 0) return getAiCreditsWallet(orgId);
+  const db = await getDb();
+  const [org] = await db
+    .select({ settings: organizationSchema.settings })
+    .from(organizationSchema)
+    .where(eq(organizationSchema.id, orgId))
+    .limit(1);
+
+  const settings = (org?.settings ?? {}) as Record<string, unknown>;
+  const wallet = readWallet(settings);
+  const spendable = totalSpendable(wallet);
+  if (spendable < amount) {
+    throw new InsufficientCreditsError(amount, spendable);
+  }
+
+  const updated: AiCreditWallet = {
+    ...wallet,
+    reservedCredits: (wallet.reservedCredits ?? 0) + amount,
+    pendingJobs: [...(wallet.pendingJobs ?? []), jobId],
+  };
+
+  await db
+    .update(organizationSchema)
+    .set({ settings: { ...settings, aiCredits: updated } })
+    .where(eq(organizationSchema.id, orgId));
+
+  return updated;
+}
+
+/** Releases the reservation and spends the credits (webhook OK path). */
+export async function commitCredits(
+  orgId: string,
+  jobId: string,
+  amount: number,
+  description: string,
+): Promise<AiCreditWallet> {
+  if (amount <= 0) return getAiCreditsWallet(orgId);
+  const db = await getDb();
+  const [org] = await db
+    .select({ settings: organizationSchema.settings })
+    .from(organizationSchema)
+    .where(eq(organizationSchema.id, orgId))
+    .limit(1);
+
+  const settings = (org?.settings ?? {}) as Record<string, unknown>;
+  const wallet = readWallet(settings);
+  const released: AiCreditWallet = {
+    ...wallet,
+    reservedCredits: Math.max(0, (wallet.reservedCredits ?? 0) - amount),
+    pendingJobs: (wallet.pendingJobs ?? []).filter(id => id !== jobId),
+  };
+
+  await db
+    .update(organizationSchema)
+    .set({ settings: { ...settings, aiCredits: released } })
+    .where(eq(organizationSchema.id, orgId));
+
+  const { wallet: spent } = await spendAiCredits(orgId, amount, {
+    type: 'generation',
+    description,
+  });
+  return spent;
+}
+
+/** Releases the reservation without charging. Records a refund activity. */
+export async function refundCredits(
+  orgId: string,
+  jobId: string,
+  amount: number,
+  reason: string,
+): Promise<AiCreditWallet> {
+  if (amount <= 0) return getAiCreditsWallet(orgId);
+  const db = await getDb();
+  const [org] = await db
+    .select({ settings: organizationSchema.settings })
+    .from(organizationSchema)
+    .where(eq(organizationSchema.id, orgId))
+    .limit(1);
+
+  const settings = (org?.settings ?? {}) as Record<string, unknown>;
+  const wallet = readWallet(settings);
+
+  const refundEvent: CreditActivity = {
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    type: 'refund',
+    description: `Refund: ${reason}`,
+    amount: 0,
+    balanceAfter: totalAvailable(wallet),
+    createdAt: new Date().toISOString(),
+  };
+
+  const updated: AiCreditWallet = {
+    ...wallet,
+    reservedCredits: Math.max(0, (wallet.reservedCredits ?? 0) - amount),
+    pendingJobs: (wallet.pendingJobs ?? []).filter(id => id !== jobId),
+    recentActivity: [refundEvent, ...wallet.recentActivity].slice(0, ACTIVITY_LIMIT),
+  };
+
+  await db
+    .update(organizationSchema)
+    .set({ settings: { ...settings, aiCredits: updated } })
+    .where(eq(organizationSchema.id, orgId));
+
+  return updated;
+}

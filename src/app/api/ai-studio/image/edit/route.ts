@@ -27,22 +27,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const modelId = String(body.modelId || 'flux-dev');
+  const modelId = String(body.modelId || 'gpt-image-2-edit');
   const model = getModel(modelId);
-  if (!model || model.kind !== 'image') {
-    return NextResponse.json({ error: `Invalid image model: ${modelId}` }, { status: 400 });
+  if (!model || model.kind !== 'image-edit') {
+    return NextResponse.json({ error: `Invalid image-edit model: ${modelId}` }, { status: 400 });
   }
 
   const prompt = String(body.prompt || '').trim();
-  if (!prompt) {
-    return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
-  }
+  const referenceImageUrl = String(body.referenceImageUrl || body.imageUrl || '').trim();
+  if (!prompt) return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
+  if (!referenceImageUrl) return NextResponse.json({ error: 'Reference image is required' }, { status: 400 });
 
   const aspect = String(body.aspect || body.aspectRatio || '9:16');
-  if (!model.aspects.includes(aspect as (typeof model.aspects)[number])) {
-    return NextResponse.json({ error: `Aspect ${aspect} not supported by ${modelId}` }, { status: 400 });
-  }
-
   const credits = estimateCredits(model);
   const db = await getDb();
 
@@ -52,10 +48,10 @@ export async function POST(request: NextRequest) {
       orgId: orgId!,
       userId: userId ?? null,
       modelId,
-      kind: 'image',
+      kind: 'image-edit',
       status: 'reserved',
       creditsReserved: credits,
-      input: { prompt, aspect },
+      input: { prompt, aspect, referenceImageUrl },
     })
     .returning();
   if (!job) return NextResponse.json({ error: 'Failed to create job' }, { status: 500 });
@@ -65,13 +61,13 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     await db.delete(aiStudioJobSchema).where(eq(aiStudioJobSchema.id, job.id));
     if (err instanceof InsufficientCreditsError) {
-      return NextResponse.json({ error: 'Insufficient AI credits', code: 'INSUFFICIENT_CREDITS', required: err.required, available: err.available }, { status: 402 });
+      return NextResponse.json({ error: 'Insufficient AI credits', code: 'INSUFFICIENT_CREDITS' }, { status: 402 });
     }
     throw err;
   }
 
   try {
-    const input = buildFalInput(model, { prompt, aspect });
+    const input = buildFalInput(model, { prompt, imageUrl: referenceImageUrl, aspect });
     const submitted = await submitFalJob({
       falModel: model.falModel,
       input,
