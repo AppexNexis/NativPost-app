@@ -40,6 +40,21 @@ export function normalizedFalAspect(aspect: string): '9:16' | '16:9' | '1:1' {
   return '1:1';
 }
 
+/**
+ * GPT Image 2 uses `image_size` (not aspect_ratio) as a preset enum. Map our
+ * composer aspect selector to Fal's preset names.
+ * Ref: fal.ai/models/openai/gpt-image-2/edit
+ */
+export function gptImageSizeFor(aspect: string): 'square_hd' | 'portrait_16_9' | 'landscape_16_9' | 'portrait_4_3' | 'landscape_4_3' {
+  switch (aspect) {
+    case '9:16': return 'portrait_16_9';
+    case '16:9': return 'landscape_16_9';
+    case '4:5': return 'portrait_4_3';
+    case '1:1':
+    default: return 'square_hd';
+  }
+}
+
 /** Build the Fal input payload per model kind + submitted user fields. */
 export function buildFalInput(model: AiStudioModel, opts: {
   prompt?: string;
@@ -65,15 +80,18 @@ export function buildFalInput(model: AiStudioModel, opts: {
     case 'gpt-image-2':
       return {
         prompt,
-        aspect_ratio: normalizedFalAspect(aspect),
+        image_size: gptImageSizeFor(aspect),
         quality: 'high',
         num_images: 1,
       };
     case 'gpt-image-2-edit':
+      // Docs: openai/gpt-image-2/edit accepts image_size (enum) or auto,
+      // NOT aspect_ratio. Default 'auto' infers dims from the input image,
+      // which matches what Playground does on a successful edit run.
       return {
         prompt,
         image_urls: imageUrl ? [imageUrl] : [],
-        aspect_ratio: normalizedFalAspect(aspect),
+        image_size: 'auto',
         quality: 'high',
       };
     case 'pixverse-v6-i2v':
