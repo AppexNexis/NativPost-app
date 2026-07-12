@@ -1,14 +1,14 @@
 'use client';
 
-import { Download, Loader2, X } from 'lucide-react';
+import { Download, Loader2, RotateCw, X } from 'lucide-react';
 import Image from 'next/image';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { getModel } from '@/lib/ai-studio/models';
+import { estimateCredits, getModel } from '@/lib/ai-studio/models';
 import { cn } from '@/utils/Helpers';
 
-export interface AiStudioJobView {
+export type AiStudioJobView = {
   id: string;
   modelId: string;
   kind: string;
@@ -20,7 +20,7 @@ export interface AiStudioJobView {
   creditsCharged?: number | null;
   createdAt: string;
   updatedAt: string;
-}
+};
 
 const STATUS_CLASS: Record<AiStudioJobView['status'], string> = {
   reserved: 'bg-muted text-foreground',
@@ -32,25 +32,50 @@ const STATUS_CLASS: Record<AiStudioJobView['status'], string> = {
   refunded: 'bg-muted text-muted-foreground',
 };
 
-interface JobCardProps {
+type JobCardProps = {
   job: AiStudioJobView;
   onCanceled?: () => void;
-}
+  onRetried?: () => void;
+};
 
-export function JobCard({ job, onCanceled }: JobCardProps) {
+export function JobCard({ job, onCanceled, onRetried }: JobCardProps) {
   const [busy, setBusy] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
   const model = getModel(job.modelId);
   const inFlight = ['reserved', 'queued', 'processing'].includes(job.status);
+  const canRetry = ['failed', 'canceled', 'refunded'].includes(job.status);
   const isVideo = job.kind === 'video' || job.kind === 'video-lipsync';
   const outUrl = job.output?.url;
   const thumb = job.output?.thumbnailUrl ?? outUrl;
+  const retryCost = model ? estimateCredits(model, { seconds: job.input?.duration }) : job.creditsReserved;
 
   async function cancel() {
-    if (!confirm('Cancel this generation and refund credits?')) return;
+    // eslint-disable-next-line no-alert
+    if (!confirm('Cancel this generation and refund credits?')) {
+      return;
+    }
     setBusy(true);
     try {
       await fetch(`/api/ai-studio/jobs/${job.id}/cancel`, { method: 'POST' });
       onCanceled?.();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function retry() {
+    setBusy(true);
+    setRetryError(null);
+    try {
+      const res = await fetch(`/api/ai-studio/jobs/${job.id}/retry`, { method: 'POST' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setRetryError(body.error || `Retry failed (${res.status})`);
+        return;
+      }
+      onRetried?.();
+    } catch (err) {
+      setRetryError(err instanceof Error ? err.message : 'Retry failed');
     } finally {
       setBusy(false);
     }
@@ -65,7 +90,7 @@ export function JobCard({ job, onCanceled }: JobCardProps) {
                 <video
                   src={outUrl}
                   poster={job.output?.thumbnailUrl}
-                  className="absolute inset-0 h-full w-full object-cover"
+                  className="absolute inset-0 size-full object-cover"
                   autoPlay
                   muted
                   loop
@@ -104,11 +129,16 @@ export function JobCard({ job, onCanceled }: JobCardProps) {
         {job.status === 'failed' && job.errorMessage && (
           <p className="text-[11px] text-destructive">{job.errorMessage}</p>
         )}
+        {retryError && (
+          <p className="text-[11px] text-destructive">{retryError}</p>
+        )}
         <div className="flex items-center gap-2">
           {job.status === 'succeeded' && outUrl && (
             <Button asChild size="sm" variant="secondary" className="h-7 flex-1">
               <a href={outUrl} target="_blank" rel="noopener noreferrer" download>
-                <Download className="mr-1 h-3 w-3" /> Download
+                <Download className="mr-1 size-3" />
+                {' '}
+                Download
               </a>
             </Button>
           )}
@@ -120,8 +150,24 @@ export function JobCard({ job, onCanceled }: JobCardProps) {
               onClick={cancel}
               disabled={busy}
             >
-              {busy ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <X className="mr-1 h-3 w-3" />}
+              {busy ? <Loader2 className="mr-1 size-3 animate-spin" /> : <X className="mr-1 size-3" />}
               Cancel
+            </Button>
+          )}
+          {canRetry && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7 flex-1"
+              onClick={retry}
+              disabled={busy}
+              title={`Retry for ${retryCost} credits`}
+            >
+              {busy ? <Loader2 className="mr-1 size-3 animate-spin" /> : <RotateCw className="mr-1 size-3" />}
+              Retry (
+              {retryCost}
+              {' '}
+              credits)
             </Button>
           )}
         </div>

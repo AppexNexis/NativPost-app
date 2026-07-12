@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { AiCreditWallet } from '@/lib/ai-studio/server';
 import {
   AI_STUDIO_MODELS,
-  estimateCredits,
-  getModel,
   type AiStudioKind,
   type AiStudioTemplate,
+  estimateCredits,
+  getModel,
 } from '@/lib/ai-studio/models';
+import type { AiCreditWallet } from '@/lib/ai-studio/server';
 
 import type { AspectRatio } from './AspectRatioPicker';
 import { CreditBadge } from './CreditBadge';
@@ -28,13 +28,15 @@ const DEFAULT_MODEL_BY_KIND: Record<AiStudioKind, string> = {
   'video-lipsync': 'veed-lipsync',
 };
 
-interface InsufficientState {
+type InsufficientState = {
   required: number;
   available: number;
-}
+};
 
 function spendable(wallet: AiCreditWallet | null): number {
-  if (!wallet) return 0;
+  if (!wallet) {
+    return 0;
+  }
   const monthly = Math.max(0, wallet.monthly.limit - wallet.monthly.used);
   const addon = wallet.addon.remaining ?? 0;
   const reserved = wallet.reservedCredits ?? 0;
@@ -75,7 +77,9 @@ export function AIStudioClient() {
   const fetchJobs = useCallback(async () => {
     try {
       const res = await fetch(`/api/ai-studio/jobs?limit=50`, { cache: 'no-store' });
-      if (!res.ok) return;
+      if (!res.ok) {
+        return;
+      }
       const data = await res.json();
       setJobs(Array.isArray(data.jobs) ? data.jobs : []);
     } catch {
@@ -86,7 +90,9 @@ export function AIStudioClient() {
   const fetchWallet = useCallback(async () => {
     try {
       const res = await fetch('/api/ai-studio/credits', { cache: 'no-store' });
-      if (!res.ok) return;
+      if (!res.ok) {
+        return;
+      }
       const data = await res.json();
       setWallet(data.wallet);
     } catch {
@@ -99,7 +105,9 @@ export function AIStudioClient() {
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
-      if (cancelled) return;
+      if (cancelled) {
+        return;
+      }
       await Promise.all([fetchJobs(), fetchWallet()]);
       const anyInFlight = jobs.some(j =>
         ['reserved', 'queued', 'processing'].includes(j.status),
@@ -110,7 +118,9 @@ export function AIStudioClient() {
     tick();
     return () => {
       cancelled = true;
-      if (pollRef.current) clearTimeout(pollRef.current);
+      if (pollRef.current) {
+        clearTimeout(pollRef.current);
+      }
     };
     // We intentionally re-run this effect when the in-flight-ness of the job
     // list changes so the interval retunes.
@@ -119,7 +129,9 @@ export function AIStudioClient() {
 
   const currentModel = getModel(modelId);
   const requiredCredits = useMemo(() => {
-    if (!currentModel) return 0;
+    if (!currentModel) {
+      return 0;
+    }
     return estimateCredits(currentModel, { seconds: duration });
   }, [currentModel, duration]);
 
@@ -131,7 +143,9 @@ export function AIStudioClient() {
   }, [jobs, kind]);
 
   const submitStandard = useCallback(async () => {
-    if (!currentModel) return;
+    if (!currentModel) {
+      return;
+    }
     setInsufficient(null);
     setErrorMessage(null);
 
@@ -294,7 +308,7 @@ export function AIStudioClient() {
       )}
 
       <section className="flex-1">
-        <JobGrid jobs={filteredJobs} onCanceled={fetchJobs} />
+        <JobGrid jobs={filteredJobs} onCanceled={fetchJobs} onRetried={fetchJobs} />
       </section>
 
       <div className="sticky bottom-0 -mx-4 border-t border-border bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
