@@ -4,7 +4,9 @@ import type { AiStudioModel } from './models';
 
 export function buildWebhookUrl(): string {
   const base = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || '';
-  if (!base) throw new Error('NEXT_PUBLIC_APP_URL is not set');
+  if (!base) {
+    throw new Error('NEXT_PUBLIC_APP_URL is not set');
+  }
   return `${base.replace(/\/$/, '')}/api/ai-studio/webhook/fal`;
 }
 
@@ -29,8 +31,12 @@ export function falImageSizeFor(aspect: string) {
 
 /** Kling accepts aspect_ratio as "9:16" | "16:9" | "1:1". */
 export function normalizedFalAspect(aspect: string): '9:16' | '16:9' | '1:1' {
-  if (aspect === '9:16') return '9:16';
-  if (aspect === '16:9') return '16:9';
+  if (aspect === '9:16') {
+    return '9:16';
+  }
+  if (aspect === '16:9') {
+    return '16:9';
+  }
   return '1:1';
 }
 
@@ -66,7 +72,7 @@ export function buildFalInput(model: AiStudioModel, opts: {
     case 'gpt-image-2-edit':
       return {
         prompt,
-        image_url: imageUrl,
+        image_urls: imageUrl ? [imageUrl] : [],
         aspect_ratio: normalizedFalAspect(aspect),
         quality: 'high',
       };

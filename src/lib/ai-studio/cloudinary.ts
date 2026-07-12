@@ -18,7 +18,7 @@ function ensureConfigured() {
   });
 }
 
-export interface StoredRender {
+export type StoredRender = {
   publicId: string;
   url: string;
   thumbnailUrl: string;
@@ -26,20 +26,24 @@ export interface StoredRender {
   height: number | null;
   durationSeconds: number | null;
   mimeType: string | null;
-}
+};
 
 export async function storeImageRender(
   sourceUrl: string,
   publicId: string,
   context: Record<string, string>,
+  orgId: string,
 ): Promise<StoredRender> {
   ensureConfigured();
   const result = await cloudinary.uploader.upload(sourceUrl, {
     resource_type: 'image',
     public_id: publicId,
-    folder: 'nativpost/renders',
+    // AI Studio renders live inside the org folder so they surface in the
+    // Media Library, which queries `nativpost/{orgId}` on Cloudinary.
+    folder: `nativpost/${orgId}`,
     overwrite: true,
     context,
+    tags: ['ai-studio'],
   });
   return {
     publicId: result.public_id as string,
@@ -56,14 +60,16 @@ export async function storeVideoRender(
   sourceUrl: string,
   publicId: string,
   context: Record<string, string>,
+  orgId: string,
 ): Promise<StoredRender> {
   ensureConfigured();
   const result = await cloudinary.uploader.upload(sourceUrl, {
     resource_type: 'video',
     public_id: publicId,
-    folder: 'nativpost/renders',
+    folder: `nativpost/${orgId}`,
     overwrite: true,
     context,
+    tags: ['ai-studio'],
     eager: [{ width: 720, height: 1280, crop: 'limit', format: 'mp4' }],
     eager_async: false,
   });

@@ -106,8 +106,8 @@ export async function reconcileFalJob(args: {
     };
 
     const stored = isVideo
-      ? await storeVideoRender(sourceUrl, publicId, context)
-      : await storeImageRender(sourceUrl, publicId, context);
+      ? await storeVideoRender(sourceUrl, publicId, context, job.orgId)
+      : await storeImageRender(sourceUrl, publicId, context, job.orgId);
 
     const asset = await saveMediaAsset(job.orgId, {
       url: stored.url,
