@@ -1,0 +1,19 @@
+name: AI Credits Monitor
+
+on:
+  schedule:
+    - cron: '15 * * * *' # Hourly at :15
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger credits monitor endpoint
+        run: |
+          curl -X GET \
+            https://app.nativpost.com/api/cron/credits/monitor \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --fail \
+            --silent \
+            --show-error

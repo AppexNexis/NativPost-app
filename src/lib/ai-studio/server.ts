@@ -53,6 +53,28 @@ export interface CreditActivity {
   createdAt: string;
 }
 
+export interface AutoTopUpConfig {
+  enabled: boolean;
+  /** Balance in dollars below which auto top-up fires. */
+  threshold: number;
+  /** Dollar amount to top up when the threshold is crossed. */
+  amountUsd: number;
+}
+
+export interface LowBalanceAlertConfig {
+  enabled: boolean;
+  /** Balance in dollars below which to send an email alert. */
+  threshold: number;
+  lastNotifiedAt: string | null;
+}
+
+export interface MonthlyUsage {
+  /** ISO date, first of current UTC month. */
+  periodStart: string;
+  /** Credits spent since periodStart. */
+  creditsSpent: number;
+}
+
 export interface AiCreditWallet {
   monthly: {
     limit: number;
@@ -68,6 +90,9 @@ export interface AiCreditWallet {
   reservedCredits?: number;
   /** AI Studio job ids currently holding a reservation. */
   pendingJobs?: string[];
+  autoTopUp: AutoTopUpConfig;
+  lowBalanceAlert: LowBalanceAlertConfig;
+  monthlyUsage: MonthlyUsage;
 }
 
 const ACTIVITY_LIMIT = 50;
@@ -77,6 +102,23 @@ function startOfNextMonth(): Date {
   const d = new Date();
   return new Date(d.getFullYear(), d.getMonth() + 1, 1, 0, 0, 0, 0);
 }
+
+function startOfCurrentMonthUtc(): string {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString();
+}
+
+const DEFAULT_AUTO_TOP_UP: AutoTopUpConfig = {
+  enabled: false,
+  threshold: 10,
+  amountUsd: 20,
+};
+
+const DEFAULT_LOW_BALANCE_ALERT: LowBalanceAlertConfig = {
+  enabled: false,
+  threshold: 10,
+  lastNotifiedAt: null,
+};
 
 function resetMonthlyIfNeeded(wallet: AiCreditWallet): AiCreditWallet {
   const now = new Date();
@@ -106,6 +148,12 @@ function getDefaultWallet(monthlyLimit?: number): AiCreditWallet {
       remaining: 0,
     },
     recentActivity: [],
+    autoTopUp: { ...DEFAULT_AUTO_TOP_UP },
+    lowBalanceAlert: { ...DEFAULT_LOW_BALANCE_ALERT },
+    monthlyUsage: {
+      periodStart: startOfCurrentMonthUtc(),
+      creditsSpent: 0,
+    },
   };
 }
 
@@ -113,6 +161,10 @@ function readWallet(settings: Record<string, unknown>, monthlyLimit?: number): A
   const fallbackLimit = monthlyLimit ?? DEFAULT_MONTHLY_LIMIT;
   const raw = settings.aiCredits as Partial<AiCreditWallet> | undefined;
   if (!raw || typeof raw !== 'object') return getDefaultWallet(monthlyLimit);
+
+  const rawAutoTopUp = (raw as any).autoTopUp as Partial<AutoTopUpConfig> | undefined;
+  const rawLowBalance = (raw as any).lowBalanceAlert as Partial<LowBalanceAlertConfig> | undefined;
+  const rawMonthlyUsage = (raw as any).monthlyUsage as Partial<MonthlyUsage> | undefined;
 
   const wallet: AiCreditWallet = {
     monthly: {
@@ -127,9 +179,31 @@ function readWallet(settings: Record<string, unknown>, monthlyLimit?: number): A
     recentActivity: Array.isArray(raw.recentActivity) ? raw.recentActivity : [],
     reservedCredits: typeof raw.reservedCredits === 'number' ? raw.reservedCredits : 0,
     pendingJobs: Array.isArray(raw.pendingJobs) ? raw.pendingJobs : [],
+    autoTopUp: {
+      enabled: typeof rawAutoTopUp?.enabled === 'boolean' ? rawAutoTopUp.enabled : DEFAULT_AUTO_TOP_UP.enabled,
+      threshold: typeof rawAutoTopUp?.threshold === 'number' ? rawAutoTopUp.threshold : DEFAULT_AUTO_TOP_UP.threshold,
+      amountUsd: typeof rawAutoTopUp?.amountUsd === 'number' ? rawAutoTopUp.amountUsd : DEFAULT_AUTO_TOP_UP.amountUsd,
+    },
+    lowBalanceAlert: {
+      enabled: typeof rawLowBalance?.enabled === 'boolean' ? rawLowBalance.enabled : DEFAULT_LOW_BALANCE_ALERT.enabled,
+      threshold: typeof rawLowBalance?.threshold === 'number' ? rawLowBalance.threshold : DEFAULT_LOW_BALANCE_ALERT.threshold,
+      lastNotifiedAt: typeof rawLowBalance?.lastNotifiedAt === 'string' ? rawLowBalance.lastNotifiedAt : null,
+    },
+    monthlyUsage: rollMonthlyUsage({
+      periodStart: typeof rawMonthlyUsage?.periodStart === 'string' ? rawMonthlyUsage.periodStart : startOfCurrentMonthUtc(),
+      creditsSpent: typeof rawMonthlyUsage?.creditsSpent === 'number' ? rawMonthlyUsage.creditsSpent : 0,
+    }),
   };
 
   return resetMonthlyIfNeeded(wallet);
+}
+
+function rollMonthlyUsage(usage: MonthlyUsage): MonthlyUsage {
+  const currentStart = startOfCurrentMonthUtc();
+  if (usage.periodStart !== currentStart) {
+    return { periodStart: currentStart, creditsSpent: 0 };
+  }
+  return usage;
 }
 
 function totalAvailable(wallet: AiCreditWallet): number {
@@ -209,6 +283,16 @@ export async function spendAiCredits(
       },
     };
   }
+
+  // Track cumulative monthly spend for the usage dashboard.
+  const usage = rollMonthlyUsage(wallet.monthlyUsage);
+  wallet = {
+    ...wallet,
+    monthlyUsage: {
+      periodStart: usage.periodStart,
+      creditsSpent: usage.creditsSpent + amount,
+    },
+  };
 
   const newActivity: CreditActivity = {
     ...activity,
@@ -373,6 +457,80 @@ export async function saveMediaAsset(
     url: created.url,
     format: payload.aspectRatio || undefined,
   };
+}
+
+// ── Wallet config helpers ────────────────────────────────────────────────────
+
+export async function updateAutoTopUpConfig(
+  orgId: string,
+  patch: Partial<AutoTopUpConfig>,
+): Promise<AiCreditWallet> {
+  const db = await getDb();
+  const [org] = await db
+    .select({ settings: organizationSchema.settings })
+    .from(organizationSchema)
+    .where(eq(organizationSchema.id, orgId))
+    .limit(1);
+
+  const settings = (org?.settings ?? {}) as Record<string, unknown>;
+  const wallet = readWallet(settings);
+
+  const updated: AiCreditWallet = {
+    ...wallet,
+    autoTopUp: {
+      enabled: patch.enabled ?? wallet.autoTopUp.enabled,
+      threshold: typeof patch.threshold === 'number' ? patch.threshold : wallet.autoTopUp.threshold,
+      amountUsd: typeof patch.amountUsd === 'number' ? patch.amountUsd : wallet.autoTopUp.amountUsd,
+    },
+  };
+
+  await db
+    .update(organizationSchema)
+    .set({ settings: { ...settings, aiCredits: updated } })
+    .where(eq(organizationSchema.id, orgId));
+
+  return updated;
+}
+
+export async function updateLowBalanceAlertConfig(
+  orgId: string,
+  patch: Partial<LowBalanceAlertConfig>,
+): Promise<AiCreditWallet> {
+  const db = await getDb();
+  const [org] = await db
+    .select({ settings: organizationSchema.settings })
+    .from(organizationSchema)
+    .where(eq(organizationSchema.id, orgId))
+    .limit(1);
+
+  const settings = (org?.settings ?? {}) as Record<string, unknown>;
+  const wallet = readWallet(settings);
+
+  const updated: AiCreditWallet = {
+    ...wallet,
+    lowBalanceAlert: {
+      enabled: patch.enabled ?? wallet.lowBalanceAlert.enabled,
+      threshold: typeof patch.threshold === 'number' ? patch.threshold : wallet.lowBalanceAlert.threshold,
+      lastNotifiedAt: patch.lastNotifiedAt === undefined
+        ? wallet.lowBalanceAlert.lastNotifiedAt
+        : patch.lastNotifiedAt,
+    },
+  };
+
+  await db
+    .update(organizationSchema)
+    .set({ settings: { ...settings, aiCredits: updated } })
+    .where(eq(organizationSchema.id, orgId));
+
+  return updated;
+}
+
+/** Wallet balance in dollars (credits / CREDITS_PER_DOLLAR). */
+export function walletBalanceUsd(wallet: AiCreditWallet): number {
+  const monthlyRemaining = Math.max(0, wallet.monthly.limit - wallet.monthly.used);
+  const reserved = wallet.reservedCredits ?? 0;
+  const credits = Math.max(0, monthlyRemaining + wallet.addon.remaining - reserved);
+  return credits / 10;
 }
 
 // ── AI Studio credit reservations (reserve / commit / refund) ────────────────

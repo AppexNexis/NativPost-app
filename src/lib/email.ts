@@ -149,6 +149,62 @@ export async function sendApprovalNotification(
 }
 
 // -----------------------------------------------------------
+// AI credits low balance alert
+// -----------------------------------------------------------
+export async function sendLowBalanceAlertEmail(
+  to: string,
+  balanceUsd: number,
+  thresholdUsd: number,
+): Promise<boolean> {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[Email] RESEND_API_KEY not set, skipping low balance alert');
+    return false;
+  }
+
+  try {
+    const settingsUrl = `${APP_URL}/dashboard/settings?tab=credits`;
+    const html = `
+      <!doctype html>
+      <html>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:#0a0a0a; color:#f5f5f5; padding:32px;">
+          <div style="max-width:520px; margin:0 auto; background:#111; border:1px solid #262626; border-radius:12px; padding:32px;">
+            <h1 style="font-size:20px; margin:0 0 12px;">Your AI credits are running low</h1>
+            <p style="color:#a3a3a3; line-height:1.6; margin:0 0 16px;">
+              Your NativPost AI Studio balance is $${balanceUsd.toFixed(2)}, which is below your $${thresholdUsd.toFixed(2)} alert threshold.
+            </p>
+            <p style="color:#a3a3a3; line-height:1.6; margin:0 0 24px;">
+              Top up now to keep generating without interruption.
+            </p>
+            <a href="${settingsUrl}" style="display:inline-block; background:#864FFE; color:#fff; text-decoration:none; padding:10px 20px; border-radius:8px; font-weight:600;">
+              Top up credits
+            </a>
+            <p style="color:#525252; font-size:12px; margin-top:32px;">
+              You can disable this alert or change the threshold in Settings, Credits.
+            </p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: 'Your NativPost AI credits are running low',
+      html,
+    });
+
+    if (error) {
+      console.error('[Email] sendLowBalanceAlertEmail error:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('[Email] sendLowBalanceAlertEmail failed:', err);
+    return false;
+  }
+}
+
+// -----------------------------------------------------------
 // Welcome email
 // -----------------------------------------------------------
 export async function sendWelcomeEmail(

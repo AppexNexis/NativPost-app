@@ -28,7 +28,7 @@ export function InsufficientCreditsAlert({
         </AlertDescription>
         <div className="flex items-center gap-2 pt-1">
           <Button asChild size="sm" variant="secondary">
-            <Link href="/dashboard/settings/billing">Buy credits</Link>
+            <Link href="/dashboard/settings?tab=credits">Buy credits</Link>
           </Button>
           {onDismiss && (
             <Button size="sm" variant="ghost" onClick={onDismiss}>

@@ -4,14 +4,17 @@ import {
   Bell,
   Building2,
   ChevronRight,
+  Coins,
   Layout,
   Loader2,
   Palette,
   PenLine,
   Save,
 } from 'lucide-react';
+import { parseAsStringLiteral, useQueryState } from 'nuqs';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { CreditsPanel } from '@/components/settings/credits/CreditsPanel';
 import { PageHeader } from '@/features/dashboard/PageHeader';
 
 // -----------------------------------------------------------
@@ -39,13 +42,15 @@ interface UserPrefs {
   sidebarDensity: string;
 }
 
-type TabKey = 'workspace' | 'notifications' | 'publishing' | 'content' | 'appearance';
+const TAB_KEYS = ['workspace', 'notifications', 'publishing', 'content', 'appearance', 'credits'] as const;
+type TabKey = typeof TAB_KEYS[number];
 
 const TABS: { key: TabKey; label: string; icon: typeof Building2 }[] = [
   { key: 'workspace',    label: 'Workspace',     icon: Building2 },
   { key: 'notifications', label: 'Notifications', icon: Bell },
   { key: 'publishing',   label: 'Publishing',    icon: PenLine },
   { key: 'content',      label: 'Content',       icon: Layout },
+  { key: 'credits',      label: 'Credits',       icon: Coins },
   { key: 'appearance',   label: 'Appearance',    icon: Palette },
 ];
 
@@ -196,7 +201,10 @@ function Select({
 // Main component
 // -----------------------------------------------------------
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<TabKey>('workspace');
+  const [activeTab, setActiveTab] = useQueryState(
+    'tab',
+    parseAsStringLiteral(TAB_KEYS).withDefault('workspace'),
+  );
   const [orgSettings, setOrgSettings] = useState<OrgSettings>(DEFAULT_ORG_SETTINGS);
   const [userPrefs, setUserPrefs] = useState<UserPrefs>(DEFAULT_USER_PREFS);
   const [loading, setLoading] = useState(true);
@@ -284,6 +292,7 @@ export default function SettingsPage() {
   };
 
   const handleSave = async () => {
+    if (activeTab === 'credits') return;
     const isOrgTab = ['workspace', 'publishing', 'content'].includes(activeTab);
     if (isOrgTab) {
       await saveOrgSettings(orgSettings);
@@ -316,15 +325,19 @@ export default function SettingsPage() {
         title="Settings"
         description="Manage your workspace configuration and preferences."
         actions={
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
-          >
-            {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-            {saving ? 'Saving' : saved ? 'Saved' : 'Save changes'}
-          </button>
+          activeTab === 'credits'
+            ? undefined
+            : (
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+                >
+                  {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                  {saving ? 'Saving' : saved ? 'Saved' : 'Save changes'}
+                </button>
+              )
         }
       />
 
@@ -337,7 +350,7 @@ export default function SettingsPage() {
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key)}
+                onClick={() => { void setActiveTab(tab.key); }}
                 className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium whitespace-nowrap transition-colors lg:w-full ${
                   activeTab === tab.key
                     ? 'bg-primary/10 text-primary'
@@ -355,8 +368,17 @@ export default function SettingsPage() {
         </nav>
 
         {/* Tab content */}
-        <div className="flex-1 rounded-xl border bg-background">
-          <div className="divide-y px-6">
+        <div className={
+          activeTab === 'credits'
+            ? 'flex-1'
+            : 'flex-1 rounded-xl border bg-background'
+        }
+        >
+          <div className={activeTab === 'credits' ? '' : 'divide-y px-6'}>
+
+            {/* ── Credits ── */}
+            {activeTab === 'credits' && <CreditsPanel />}
+
 
             {/* ── Workspace ── */}
             {activeTab === 'workspace' && (
