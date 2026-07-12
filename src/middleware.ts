@@ -83,6 +83,7 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
         req.nextUrl.pathname.startsWith('/api/billing/stripe-webhook')
         || req.nextUrl.pathname.startsWith('/api/billing/paystack-webhook')
         || req.nextUrl.pathname.startsWith('/api/cron/')
+        || req.nextUrl.pathname.startsWith('/api/ai-studio/webhook/')
       ) {
         return NextResponse.next();
       }
