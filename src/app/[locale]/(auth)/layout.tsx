@@ -14,13 +14,12 @@ export default function AuthLayout(props: {
   let signUpUrl = '/sign-up';
   let afterSignOutUrl = '/';
 
-  // After sign-in/up, always go to /subscribe first.
-  // The subscribe page will check billing status and either:
-  //   (a) redirect to /dashboard if already subscribed/trialing, or
-  //   (b) show the paywall so user can start their trial.
-  // let postAuthUrl = '/subscribe';
-// let postAuthUrl = '/onboarding/organization-selection';
-let postAuthUrl = '/onboarding/setup';
+  // Send everyone to /dashboard after sign-in. Middleware owns the
+  // routing decision from there: no active org -> organization-selection;
+  // active org without onboarding -> /onboarding/setup; otherwise
+  // dashboard renders. This keeps completed users from flashing through
+  // the onboarding page on every sign-in.
+  let postAuthUrl = '/dashboard';
 
   if (props.params.locale === 'fr') {
     clerkLocale = frFR;

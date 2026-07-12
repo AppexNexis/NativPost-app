@@ -2,6 +2,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { generateContentAnglesFromProfile } from '@/lib/onboarding/generate-content-angles';
 
 const ENGINE_URL = process.env.NATIVPOST_ENGINE_URL || 'http://localhost:8000';
 const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
@@ -100,12 +101,17 @@ export async function POST(request: NextRequest) {
     keyDifferentiators: p.key_differentiators ?? null,
   };
 
+  // Generate content angles from the scraped profile. Failures are
+  // non-fatal - onboarding continues with an empty angle list.
+  const angles = await generateContentAnglesFromProfile(mapped).catch(() => []);
+
   return NextResponse.json(
     {
       profile: mapped,
       fieldsFound: data.fields_found ?? [],
       pagesScraped: data.pages_scraped ?? [],
       sourceUrl: data.source_url ?? url,
+      angles,
     },
     { status: 200 },
   );

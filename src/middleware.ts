@@ -129,6 +129,24 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
       );
     }
 
+    // Onboarding completion gate: block dashboard access until the current
+    // org has been marked onboarded. Reads Clerk sessionClaims.publicMetadata
+    // (zero DB call). Pre-existing users without the metadata flag fall back
+    // to a signed cookie (np_onb_<orgId>=1) set on complete or by first-hit
+    // backfill; if neither exists the middleware sends them to /onboarding/setup
+    // where the wizard's draft check + finish flow will backfill both signals.
+    if (authObj.userId && authObj.orgId && isDashboardRoute(req)) {
+      const claims = authObj.sessionClaims as any;
+      const onboardedOrgs = claims?.publicMetadata?.onboardedOrgs;
+      const orgIsOnboarded = !!(onboardedOrgs && onboardedOrgs[authObj.orgId]);
+      const cookieOk = req.cookies.get(`np_onb_${authObj.orgId}`)?.value === '1';
+      if (!orgIsOnboarded && !cookieOk) {
+        return NextResponse.redirect(
+          new URL('/onboarding/setup', req.url),
+        );
+      }
+    }
+
     return intlMiddleware(req);
   })(request, event);
 }

@@ -15,7 +15,6 @@ import {
   RefreshCw,
   Sparkles,
   Trash2,
-  Upload,
   User,
   X,
 } from 'lucide-react';
@@ -26,6 +25,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import type { ContentAngle } from '@/types/v2';
 
+import { OnboardingLogoUploader } from '@/components/onboarding/OnboardingLogoUploader';
 import {
   type BrandProfileData,
   useBrandProfile,
@@ -50,17 +50,17 @@ const STEPS = [
 const GROWTH_STAGES = [
   {
     value: 'early',
-    label: '0 – 1K',
+    label: '0 to 1K',
     description: 'Building from scratch, finding your voice',
   },
   {
     value: 'growing',
-    label: '1K – 20K',
+    label: '1K to 20K',
     description: 'Found traction, deepening relationships',
   },
   {
     value: 'established',
-    label: '20K – 100K',
+    label: '20K to 100K',
     description: 'Authority forming, thought leadership',
   },
   {
@@ -555,7 +555,7 @@ function StepContentPreferences({ data, onChange }: StepProps) {
       <FormTextarea
         label="Hashtag strategy"
         hint="Describe how hashtags should be used. This instruction is applied to every post."
-        placeholder="e.g. Use 5–8 hashtags per post. Always include #CompanyName. Prioritize niche industry tags over broad ones."
+        placeholder="e.g. Use 5 to 8 hashtags per post. Always include #CompanyName. Prioritize niche industry tags over broad ones."
         value={data.hashtagStrategy}
         onChange={v => onChange({ hashtagStrategy: v })}
         rows={3}
@@ -577,7 +577,7 @@ function StepPlatformVoices({ data, onChange }: StepProps) {
       key: 'instagramVoice' as const,
       label: 'Instagram',
       hint: 'Describe caption length, visual references, and tone differences from your default voice.',
-      placeholder: 'e.g. Short captions, 3–4 lines max. Lead with the visual concept. Conversational.',
+      placeholder: 'e.g. Short captions, 3 to 4 lines max. Lead with the visual concept. Conversational.',
     },
     {
       key: 'twitterVoice' as const,
@@ -1177,148 +1177,15 @@ function ColorPicker({
   );
 }
 
-// ── Logo Uploader using Uploadcare ───────────────────────────
+// ── Logo Uploader (Cloudinary via shared onboarding uploader) ─
 function LogoUploader({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const publicKey = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY || '';
-
-  const handleFile = async (file: File) => {
-    if (!file) {
-      return;
-    }
-
-    const maxMb = 2;
-    if (file.size > maxMb * 1024 * 1024) {
-      setUploadError(`File must be under ${maxMb}MB.`);
-      return;
-    }
-
-    const allowed = ['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp'];
-    if (!allowed.includes(file.type)) {
-      setUploadError('Only PNG, JPG, SVG, or WebP files are accepted.');
-      return;
-    }
-
-    setIsUploading(true);
-    setUploadError(null);
-
-    try {
-      const form = new FormData();
-      form.append('UPLOADCARE_PUB_KEY', publicKey);
-      form.append('UPLOADCARE_STORE', '1');
-      form.append('file', file);
-
-      const res = await fetch('https://upload.uploadcare.com/base/', {
-        method: 'POST',
-        body: form,
-      });
-
-      if (!res.ok) {
-        throw new Error('Upload failed');
-      }
-
-      const data = await res.json() as { file: string };
-      // onChange(`https://32v3ws8ss0.ucarecd.net/${data.file}/`);
-      onChange(`https://9c0v643oty.ucarecd.net/${data.file}/`);
-    } catch {
-      setUploadError('Upload failed. Please try again.');
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      handleFile(file);
-    }
-  };
-
   return (
     <div>
       <p className="mb-1 text-sm font-medium">Logo</p>
       <p className="mb-2 text-xs text-muted-foreground">
         Used in branded video outros and profile pages. PNG, SVG, JPG or WebP, max 2MB.
       </p>
-
-      <input
-        id="logo-upload"
-        type="file"
-        accept="image/png,image/jpeg,image/svg+xml,image/webp"
-        className="sr-only"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) {
-            handleFile(f);
-          }
-        }}
-      />
-
-      {value
-        ? (
-            <div className="flex items-center gap-4 rounded-lg border bg-background p-3">
-              <Image
-                src={value}
-                alt="Logo preview"
-                width={80}
-                height={40}
-                unoptimized
-                className="max-h-10 w-auto rounded object-contain"
-              />
-              <div className="flex flex-col gap-1">
-                <p className="text-xs text-muted-foreground">Logo uploaded</p>
-                <div className="flex gap-3">
-                  <label
-                    htmlFor="logo-upload"
-                    className="cursor-pointer text-xs text-primary hover:underline"
-                  >
-                    Replace
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => onChange('')}
-                    className="text-xs text-red-500 hover:underline"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            </div>
-          )
-        : (
-            <div
-              role="button"
-              tabIndex={0}
-              aria-label="Upload logo"
-              className="flex min-h-[100px] cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed bg-muted/20 p-4 text-center transition-colors hover:bg-muted/40"
-              onDrop={handleDrop}
-              onDragOver={e => e.preventDefault()}
-              onClick={() => document.getElementById('logo-upload')?.click()}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  document.getElementById('logo-upload')?.click();
-                }
-              }}
-            >
-              {isUploading
-                ? (
-                    <Loader2 className="size-5 animate-spin text-muted-foreground" />
-                  )
-                : (
-                    <>
-                      <Upload className="size-5 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">
-                        Click to upload or drag and drop
-                      </span>
-                      <span className="text-xs text-muted-foreground/60">PNG, SVG, JPG, WebP — max 2MB</span>
-                    </>
-                  )}
-            </div>
-          )}
-
-      {uploadError && <p className="mt-1.5 text-xs text-red-500">{uploadError}</p>}
+      <OnboardingLogoUploader value={value} onChange={onChange} />
     </div>
   );
 }
