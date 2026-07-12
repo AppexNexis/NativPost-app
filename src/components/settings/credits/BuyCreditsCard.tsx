@@ -37,47 +37,76 @@ export function BuyCreditsCard({ onBuy }: Props) {
       <RadioGroup
         value={selection}
         onValueChange={setSelection}
-        className="grid grid-cols-2 gap-2 sm:grid-cols-5"
+        className="grid grid-cols-2 gap-2 sm:grid-cols-4"
       >
         {PRESETS.map(v => (
           <label
             key={v}
-            className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
-              selection === v ? 'border-primary bg-primary/5' : 'hover:bg-muted'
+            htmlFor={`buy-${v}`}
+            className={`flex h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-sm transition-colors ${
+              selection === v
+                ? 'border-primary bg-primary/5 text-primary'
+                : 'border-border hover:bg-muted'
             }`}
           >
-            <RadioGroupItem value={v} id={`buy-${v}`} />
+            <RadioGroupItem value={v} id={`buy-${v}`} className="shrink-0" />
             <span className="font-medium">
               $
               {v}
             </span>
           </label>
         ))}
-        <label
-          className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
-            selection === 'custom' ? 'border-primary bg-primary/5' : 'hover:bg-muted'
-          }`}
-        >
-          <RadioGroupItem value="custom" id="buy-custom" />
-          <span className="font-medium">Custom</span>
-        </label>
       </RadioGroup>
+
+      <button
+        type="button"
+        onClick={() => setSelection('custom')}
+        className={`flex h-11 items-center justify-between gap-3 rounded-lg border px-4 text-sm transition-colors ${
+          selection === 'custom'
+            ? 'border-primary bg-primary/5'
+            : 'border-border hover:bg-muted'
+        }`}
+      >
+        <div className="flex items-center gap-3">
+          <span
+            aria-hidden
+            className={`flex size-4 items-center justify-center rounded-full border ${
+              selection === 'custom' ? 'border-primary' : 'border-muted-foreground/40'
+            }`}
+          >
+            {selection === 'custom' && (
+              <span className="size-2 rounded-full bg-primary" />
+            )}
+          </span>
+          <span className={`font-medium ${selection === 'custom' ? 'text-primary' : ''}`}>
+            Custom amount
+          </span>
+        </div>
+        <span className="text-xs text-muted-foreground">$10 to $1000</span>
+      </button>
 
       {selection === 'custom' && (
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="custom-amount" className="text-xs text-muted-foreground">
-            Amount in USD (min $10, max $1000)
+            Enter amount in USD
           </Label>
-          <Input
-            id="custom-amount"
-            type="number"
-            min={10}
-            max={1000}
-            step={1}
-            placeholder="Enter amount"
-            value={custom}
-            onChange={e => setCustom(e.target.value)}
-          />
+          <div className="relative">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+              $
+            </span>
+            <Input
+              id="custom-amount"
+              type="number"
+              min={10}
+              max={1000}
+              step={1}
+              placeholder="0.00"
+              value={custom}
+              onChange={e => setCustom(e.target.value)}
+              className="pl-7"
+              autoFocus
+            />
+          </div>
         </div>
       )}
 
