@@ -13,7 +13,7 @@ export type AiStudioJobView = {
   modelId: string;
   kind: string;
   status: 'reserved' | 'queued' | 'processing' | 'succeeded' | 'failed' | 'canceled' | 'refunded';
-  input?: { prompt?: string; aspect?: string; duration?: number };
+  input?: { prompt?: string; aspect?: string; seconds?: number };
   output?: { url?: string; thumbnailUrl?: string; durationSec?: number };
   errorMessage?: string | null;
   creditsReserved: number;
@@ -47,7 +47,7 @@ export function JobCard({ job, onCanceled, onRetried }: JobCardProps) {
   const isVideo = job.kind === 'video' || job.kind === 'video-lipsync';
   const outUrl = job.output?.url;
   const thumb = job.output?.thumbnailUrl ?? outUrl;
-  const retryCost = model ? estimateCredits(model, { seconds: job.input?.duration }) : job.creditsReserved;
+  const retryCost = model ? estimateCredits(model, { seconds: job.input?.seconds }) : job.creditsReserved;
 
   async function cancel() {
     // eslint-disable-next-line no-alert
