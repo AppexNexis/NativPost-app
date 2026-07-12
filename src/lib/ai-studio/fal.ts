@@ -3,6 +3,7 @@
 //
 // Docs: https://docs.fal.ai/features/queue
 
+import { Buffer } from 'node:buffer';
 import crypto from 'node:crypto';
 
 export const FAL_KEY = process.env.FAL_KEY || '';
@@ -22,16 +23,16 @@ function authHeaders() {
   ensureFalKey();
   return {
     'Content-Type': 'application/json',
-    Authorization: `Key ${FAL_KEY}`,
+    'Authorization': `Key ${FAL_KEY}`,
   };
 }
 
-export interface FalSubmitResult {
+export type FalSubmitResult = {
   request_id: string;
   status_url: string;
   response_url: string;
   cancel_url: string;
-}
+};
 
 export async function submitFalJob(args: {
   falModel: string;
@@ -47,24 +48,24 @@ export async function submitFalJob(args: {
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`Fal submit failed (${res.status}): ${text || res.statusText}`);
+    throw new Error(formatFalError(res.status, text || res.statusText));
   }
 
   return (await res.json()) as FalSubmitResult;
 }
 
-export interface FalStatus {
+export type FalStatus = {
   status: 'IN_QUEUE' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | string;
   queue_position?: number;
   logs?: Array<{ message: string; timestamp: string }>;
-}
+};
 
 export async function getFalStatus(falModel: string, requestId: string): Promise<FalStatus> {
   const url = `${FAL_QUEUE_BASE}/${falModel}/requests/${requestId}/status`;
   const res = await fetch(url, { headers: authHeaders() });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`Fal status failed (${res.status}): ${text || res.statusText}`);
+    throw new Error(formatFalError(res.status, text || res.statusText));
   }
   return (await res.json()) as FalStatus;
 }
@@ -74,7 +75,7 @@ export async function getFalResult<T = unknown>(falModel: string, requestId: str
   const res = await fetch(url, { headers: authHeaders() });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`Fal result failed (${res.status}): ${text || res.statusText}`);
+    throw new Error(formatFalError(res.status, text || res.statusText));
   }
   return (await res.json()) as T;
 }
@@ -101,13 +102,13 @@ export async function cancelFalJob(falModel: string, requestId: string): Promise
 //   3. Load and cache the JWKS keys as ed25519 public KeyObjects.
 //   4. Verify the hex-encoded signature against each candidate key.
 
-interface FalJwk {
+type FalJwk = {
   kty: string;
   crv: string;
   x: string;
   kid?: string;
   use?: string;
-}
+};
 
 let jwksCache: { keys: crypto.KeyObject[]; fetchedAt: number } | null = null;
 
@@ -123,7 +124,9 @@ async function loadFalJwks(): Promise<crypto.KeyObject[]> {
   const data = (await res.json()) as { keys: FalJwk[] };
   const keys: crypto.KeyObject[] = [];
   for (const jwk of data.keys ?? []) {
-    if (jwk.kty !== 'OKP' || jwk.crv !== 'Ed25519' || !jwk.x) continue;
+    if (jwk.kty !== 'OKP' || jwk.crv !== 'Ed25519' || !jwk.x) {
+      continue;
+    }
     try {
       const key = crypto.createPublicKey({
         key: jwk as unknown as crypto.JsonWebKey,
@@ -142,12 +145,12 @@ async function loadFalJwks(): Promise<crypto.KeyObject[]> {
   return keys;
 }
 
-export interface FalWebhookHeaders {
+export type FalWebhookHeaders = {
   requestId: string | null;
   userId: string | null;
   timestamp: string | null;
   signature: string | null;
-}
+};
 
 /**
  * Verifies a Fal webhook signature using their published JWKS.
@@ -158,12 +161,18 @@ export async function verifyFalWebhook(
   rawBody: Buffer | string,
 ): Promise<boolean> {
   const { requestId, userId, timestamp, signature } = headers;
-  if (!requestId || !userId || !timestamp || !signature) return false;
+  if (!requestId || !userId || !timestamp || !signature) {
+    return false;
+  }
 
   const ts = Number(timestamp);
-  if (!Number.isFinite(ts)) return false;
+  if (!Number.isFinite(ts)) {
+    return false;
+  }
   const nowSec = Math.floor(Date.now() / 1000);
-  if (Math.abs(nowSec - ts) > WEBHOOK_MAX_SKEW_SEC) return false;
+  if (Math.abs(nowSec - ts) > WEBHOOK_MAX_SKEW_SEC) {
+    return false;
+  }
 
   const bodyBuf = typeof rawBody === 'string' ? Buffer.from(rawBody, 'utf8') : rawBody;
   const bodyHashHex = crypto.createHash('sha256').update(bodyBuf).digest('hex');
@@ -178,7 +187,9 @@ export async function verifyFalWebhook(
   } catch {
     return false;
   }
-  if (sigBuf.length !== 64) return false;
+  if (sigBuf.length !== 64) {
+    return false;
+  }
 
   let keys: crypto.KeyObject[];
   try {
@@ -189,7 +200,9 @@ export async function verifyFalWebhook(
 
   for (const key of keys) {
     try {
-      if (crypto.verify(null, message, key, sigBuf)) return true;
+      if (crypto.verify(null, message, key, sigBuf)) {
+        return true;
+      }
     } catch {
       // try the next key
     }
@@ -201,17 +214,114 @@ export async function verifyFalWebhook(
  * Fal delivers `payload.status = 'OK' | 'ERROR'` in webhooks.
  * See https://docs.fal.ai/features/queue#webhook-payload
  */
-export interface FalWebhookPayload {
+export type FalWebhookPayload = {
   request_id: string;
   gateway_request_id?: string;
   status: 'OK' | 'ERROR';
   payload?: Record<string, unknown>;
   error?: string;
+};
+
+// ── Error parsing ───────────────────────────────────────────────────────────
+//
+// Fal validation and moderation errors follow FastAPI's shape:
+//   { detail: [{ type, loc, msg, input, ctx? }] }
+// or a bare string { detail: "..." }, or a top-level { message: "..." }.
+// Turn any of these into a short user-facing sentence so the UI can show
+// "Content flagged by moderation" instead of "Unexpected status code: 422".
+
+type FalErrorDetailItem = {
+  type?: string;
+  loc?: unknown[];
+  msg?: string;
+  ctx?: Record<string, unknown>;
+};
+
+const FRIENDLY_BY_TYPE: Record<string, string> = {
+  content_policy_violation: 'Content flagged by moderation. Try a different prompt or reference image.',
+  image_too_large: 'Reference image is too large for this model.',
+  image_load_error: 'Could not load the reference image. Confirm the URL is public.',
+  invalid_image: 'Reference image was rejected by the model.',
+  timeout_error: 'The model timed out. Try again with a shorter duration or simpler prompt.',
+  rate_limit_exceeded: 'Rate limit hit at the model provider. Try again in a minute.',
+  insufficient_balance: 'Provider account is out of credits.',
+  authentication_error: 'Provider authentication failed. Contact support.',
+};
+
+export function parseFalErrorPayload(raw: string | undefined | null): { message: string; type?: string } {
+  if (!raw) {
+    return { message: 'Fal returned error' };
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return { message: 'Fal returned error' };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return { message: trimmed.slice(0, 300) };
+  }
+
+  if (parsed && typeof parsed === 'object') {
+    const obj = parsed as { detail?: unknown; message?: unknown; error?: unknown };
+    if (Array.isArray(obj.detail) && obj.detail.length > 0) {
+      const first = obj.detail[0] as FalErrorDetailItem;
+      const type = typeof first?.type === 'string' ? first.type : undefined;
+      const friendly = type && FRIENDLY_BY_TYPE[type];
+      const msg = friendly || (typeof first?.msg === 'string' ? first.msg : undefined);
+      if (msg) {
+        return { message: msg, type };
+      }
+    }
+    if (typeof obj.detail === 'string') {
+      return { message: obj.detail.slice(0, 300) };
+    }
+    if (typeof obj.message === 'string') {
+      return { message: obj.message.slice(0, 300) };
+    }
+    if (typeof obj.error === 'string') {
+      return { message: obj.error.slice(0, 300) };
+    }
+  }
+
+  return { message: trimmed.slice(0, 300) };
+}
+
+export function formatFalError(status: number, body: string): string {
+  const parsed = parseFalErrorPayload(body);
+  if (parsed.type) {
+    return `${parsed.message} (${parsed.type})`;
+  }
+  if (status >= 400 && status < 500 && parsed.message === 'Fal returned error') {
+    return `Fal request rejected (${status})`;
+  }
+  return parsed.message;
+}
+
+// Fal delivers webhook errors as either a string or a JSON blob depending on
+// the model. This normalizer accepts both shapes.
+export function friendlyFalWebhookError(error: unknown): string {
+  if (!error) {
+    return 'Fal returned error';
+  }
+  if (typeof error === 'string') {
+    return parseFalErrorPayload(error).message;
+  }
+  if (typeof error === 'object') {
+    try {
+      return parseFalErrorPayload(JSON.stringify(error)).message;
+    } catch {
+      return 'Fal returned error';
+    }
+  }
+  return String(error);
 }
 
 // ── Output extraction helpers ───────────────────────────────────────────────
 
-export interface ExtractedMedia {
+export type ExtractedMedia = {
   imageUrl?: string;
   imageUrls?: string[];
   videoUrl?: string;
@@ -219,7 +329,7 @@ export interface ExtractedMedia {
   width?: number;
   height?: number;
   durationSec?: number;
-}
+};
 
 /**
  * Fal model outputs are not perfectly uniform. This picks common shapes:
@@ -228,7 +338,9 @@ export interface ExtractedMedia {
  * - { video: { url }, duration } (Pixverse, Kling, Seedance, Veed)
  */
 export function extractMediaFromFalPayload(payload: Record<string, unknown> | undefined): ExtractedMedia {
-  if (!payload || typeof payload !== 'object') return {};
+  if (!payload || typeof payload !== 'object') {
+    return {};
+  }
   const out: ExtractedMedia = {};
 
   const images = (payload as { images?: Array<{ url?: string; width?: number; height?: number }> }).images;
@@ -252,16 +364,22 @@ export function extractMediaFromFalPayload(payload: Record<string, unknown> | un
   const video = (payload as { video?: { url?: string; duration?: number } }).video;
   if (video?.url) {
     out.videoUrl = video.url;
-    if (typeof video.duration === 'number') out.durationSec = video.duration;
+    if (typeof video.duration === 'number') {
+      out.durationSec = video.duration;
+    }
   }
 
   if (out.durationSec === undefined) {
     const rawDuration = (payload as { duration?: number }).duration;
-    if (typeof rawDuration === 'number') out.durationSec = rawDuration;
+    if (typeof rawDuration === 'number') {
+      out.durationSec = rawDuration;
+    }
   }
 
   const audio = (payload as { audio?: { url?: string } }).audio;
-  if (audio?.url) out.audioUrl = audio.url;
+  if (audio?.url) {
+    out.audioUrl = audio.url;
+  }
 
   return out;
 }

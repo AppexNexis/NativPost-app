@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-import { type FalWebhookPayload, verifyFalWebhook } from '@/lib/ai-studio/fal';
+import { type FalWebhookPayload, friendlyFalWebhookError, verifyFalWebhook } from '@/lib/ai-studio/fal';
 import { reconcileFalJob } from '@/lib/ai-studio/reconcile';
 import { getDb } from '@/libs/DB';
 import { aiStudioJobSchema } from '@/models/Schema';
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
   const outcome = await reconcileFalJob({
     job,
     ok: payload.status === 'OK',
-    error: payload.error,
+    error: payload.status === 'OK' ? undefined : friendlyFalWebhookError(payload.error),
     output: payload.payload,
   });
 
