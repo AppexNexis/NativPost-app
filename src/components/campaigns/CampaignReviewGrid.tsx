@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
-import { format, isSameDay, isToday, parseISO, addDays } from 'date-fns';
+import { addDays, format, isSameDay, isToday, parseISO } from 'date-fns';
 import {
   CalendarDays,
   Check,
@@ -11,7 +10,7 @@ import {
   RefreshCw,
   Trash2,
 } from 'lucide-react';
-import type { Campaign, ContentItem } from '@/types/v2';
+import React, { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,12 +28,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import type { Campaign, ContentItem } from '@/types/v2';
+
 import { CampaignPostEditModal } from './CampaignPostEditModal';
 
 // ── Platform icon ─────────────────────────────────────────────────────────────
 function PlatformIcon({ platform }: { platform: string }) {
   const p = platform.toLowerCase();
-  if (p === 'youtube')
+  if (p === 'youtube') {
     return (
       <span className="flex size-6 items-center justify-center rounded-full bg-white shadow-sm">
         <svg viewBox="0 0 24 24" className="size-4 fill-red-600">
@@ -42,7 +43,8 @@ function PlatformIcon({ platform }: { platform: string }) {
         </svg>
       </span>
     );
-  if (p === 'instagram')
+  }
+  if (p === 'instagram') {
     return (
       <span className="flex size-6 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 shadow-sm">
         <svg viewBox="0 0 24 24" className="size-3.5 fill-white">
@@ -50,7 +52,8 @@ function PlatformIcon({ platform }: { platform: string }) {
         </svg>
       </span>
     );
-  if (p === 'tiktok')
+  }
+  if (p === 'tiktok') {
     return (
       <span className="flex size-6 items-center justify-center rounded-full bg-black shadow-sm">
         <svg viewBox="0 0 24 24" className="size-3.5 fill-white">
@@ -58,6 +61,7 @@ function PlatformIcon({ platform }: { platform: string }) {
         </svg>
       </span>
     );
+  }
   return (
     <span className="flex size-6 items-center justify-center rounded-full bg-blue-600 shadow-sm">
       <svg viewBox="0 0 24 24" className="size-3.5 fill-white">
@@ -82,38 +86,52 @@ function getThumb(item: ReviewItem): string | null {
   const slides = mediaSlots.slides;
   if (Array.isArray(slides) && slides.length > 0) {
     const url = slides[0]?.url;
-    if (url && typeof url === 'string' && !VIDEO_RE.test(url)) return url;
+    if (url && typeof url === 'string' && !VIDEO_RE.test(url)) {
+      return url;
+    }
   }
 
   // 2. Template snapshot thumbnailUrl (usually a CDN image)
-  if (snapshot.thumbnailUrl && typeof snapshot.thumbnailUrl === 'string' && !VIDEO_RE.test(snapshot.thumbnailUrl))
+  if (snapshot.thumbnailUrl && typeof snapshot.thumbnailUrl === 'string' && !VIDEO_RE.test(snapshot.thumbnailUrl)) {
     return snapshot.thumbnailUrl;
+  }
 
   // 3. Template snapshot thumbnailUrls array/object
   const tus = snapshot.thumbnailUrls;
-  if (Array.isArray(tus) && tus.length > 0 && typeof tus[0] === 'string') return tus[0];
+  if (Array.isArray(tus) && tus.length > 0 && typeof tus[0] === 'string') {
+    return tus[0];
+  }
   if (tus && typeof tus === 'object' && !Array.isArray(tus)) {
     const first = Object.values(tus)[0];
-    if (typeof first === 'string' && !VIDEO_RE.test(first)) return first;
+    if (typeof first === 'string' && !VIDEO_RE.test(first)) {
+      return first;
+    }
   }
 
   // 4. Background slot: check explicit thumbnailUrl, then image-only url
   const bg = (mediaSlots.background ?? {}) as Record<string, any>;
-  if (bg.thumbnailUrl && typeof bg.thumbnailUrl === 'string' && !VIDEO_RE.test(bg.thumbnailUrl))
+  if (bg.thumbnailUrl && typeof bg.thumbnailUrl === 'string' && !VIDEO_RE.test(bg.thumbnailUrl)) {
     return bg.thumbnailUrl;
-  if (bg.url && bg.assetType !== 'video' && !VIDEO_RE.test(bg.url)) return bg.url;
+  }
+  if (bg.url && bg.assetType !== 'video' && !VIDEO_RE.test(bg.url)) {
+    return bg.url;
+  }
 
   // 5. hookVideo / demoVideo thumbnail images
   const hookVid = (mediaSlots.hookVideo ?? {}) as Record<string, any>;
-  if (hookVid.thumbnailUrl && typeof hookVid.thumbnailUrl === 'string' && !VIDEO_RE.test(hookVid.thumbnailUrl))
+  if (hookVid.thumbnailUrl && typeof hookVid.thumbnailUrl === 'string' && !VIDEO_RE.test(hookVid.thumbnailUrl)) {
     return hookVid.thumbnailUrl;
+  }
   const demoVid = (mediaSlots.demoVideo ?? {}) as Record<string, any>;
-  if (demoVid.thumbnailUrl && typeof demoVid.thumbnailUrl === 'string' && !VIDEO_RE.test(demoVid.thumbnailUrl))
+  if (demoVid.thumbnailUrl && typeof demoVid.thumbnailUrl === 'string' && !VIDEO_RE.test(demoVid.thumbnailUrl)) {
     return demoVid.thumbnailUrl;
+  }
 
   // 6. graphicUrls — skip video URLs
   const gUrl = item.graphicUrls?.[0];
-  if (gUrl && typeof gUrl === 'string' && !VIDEO_RE.test(gUrl)) return gUrl;
+  if (gUrl && typeof gUrl === 'string' && !VIDEO_RE.test(gUrl)) {
+    return gUrl;
+  }
 
   return null;
 }
@@ -123,12 +141,18 @@ function getVideoUrl(item: ReviewItem): string | null {
   const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
   const mediaSlots = (enrichment.sourceMediaSlots ?? {}) as Record<string, any>;
   const bg = (mediaSlots.background ?? {}) as Record<string, any>;
-  if (bg.url && (bg.assetType === 'video' || VIDEO_RE.test(String(bg.url)))) return String(bg.url);
+  if (bg.url && (bg.assetType === 'video' || VIDEO_RE.test(String(bg.url)))) {
+    return String(bg.url);
+  }
   const hookVid = (mediaSlots.hookVideo ?? {}) as Record<string, any>;
-  if (hookVid.url && VIDEO_RE.test(String(hookVid.url))) return String(hookVid.url);
+  if (hookVid.url && VIDEO_RE.test(String(hookVid.url))) {
+    return String(hookVid.url);
+  }
   const snapshot = (enrichment.templateSnapshot ?? {}) as Record<string, any>;
   const srcUrl = snapshot.sourceUrl || snapshot.mediaUrl;
-  if (srcUrl && typeof srcUrl === 'string' && VIDEO_RE.test(srcUrl)) return srcUrl;
+  if (srcUrl && typeof srcUrl === 'string' && VIDEO_RE.test(srcUrl)) {
+    return srcUrl;
+  }
   return null;
 }
 
@@ -141,19 +165,29 @@ function getOverlayText(item: ReviewItem): string {
   // Slideshow: prefer the first slide caption (rendered on slide 1)
   if (item.contentType === 'slideshow') {
     const slideCopy = Array.isArray(script.slideCopy) ? script.slideCopy : [];
-    if (slideCopy[0] && typeof slideCopy[0] === 'string') return slideCopy[0];
+    if (slideCopy[0] && typeof slideCopy[0] === 'string') {
+      return slideCopy[0];
+    }
     const slides = (enrichment.sourceMediaSlots as Record<string, any>)?.slides;
-    if (Array.isArray(slides) && slides[0]?.caption) return String(slides[0].caption);
+    if (Array.isArray(slides) && slides[0]?.caption) {
+      return String(slides[0].caption);
+    }
   }
   // Video / static types: hookText first, then bodyText, then caption
-  if (script.hookText && typeof script.hookText === 'string') return script.hookText;
-  if (script.bodyText && typeof script.bodyText === 'string') return script.bodyText;
+  if (script.hookText && typeof script.hookText === 'string') {
+    return script.hookText;
+  }
+  if (script.bodyText && typeof script.bodyText === 'string') {
+    return script.bodyText;
+  }
   return item.caption ?? '';
 }
 
 // ── Content type label ────────────────────────────────────────────────────────
 function ctLabel(contentType: string | null | undefined): string {
-  if (!contentType) return '—';
+  if (!contentType) {
+    return '—';
+  }
   return contentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
@@ -167,7 +201,7 @@ export type ReviewItem = ContentItem & {
   angleColor?: string;
 };
 
-interface CampaignReviewGridProps {
+type CampaignReviewGridProps = {
   campaign: Campaign;
   contentItems: ReviewItem[];
   onEdit: (itemId: string) => void;
@@ -177,7 +211,7 @@ interface CampaignReviewGridProps {
   onSkip?: (itemId: string) => void;
   onScheduleChange: (itemId: string, date: string, time: string) => void;
   onItemUpdated?: (updated: ContentItem) => void;
-}
+};
 
 // ── Root component ────────────────────────────────────────────────────────────
 export function CampaignReviewGrid({
@@ -198,7 +232,7 @@ export function CampaignReviewGrid({
   const campaignPlatforms = Array.from(
     new Set(
       ((campaign.targetAccounts ?? []) as { accountId: string; platform: string }[])
-        .map((a) => a.platform)
+        .map(a => a.platform)
         .filter(Boolean),
     ),
   );
@@ -211,7 +245,9 @@ export function CampaignReviewGrid({
           <h3 className="text-base font-semibold">Review your campaign</h3>
           <div className="flex items-center gap-3">
             <span className={`text-sm font-medium ${reRolls <= 3 ? 'text-destructive' : 'text-foreground'}`}>
-              {reRolls} re-rolls left
+              {reRolls}
+              {' '}
+              re-rolls left
             </span>
             <div className="flex overflow-hidden rounded-lg border">
               <Button
@@ -240,7 +276,7 @@ export function CampaignReviewGrid({
         {/* ── View ── */}
         {view === 'grid' ? (
           <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
-            {contentItems.map((item) => (
+            {contentItems.map(item => (
               <PostCard
                 key={item.id}
                 item={item}
@@ -261,10 +297,12 @@ export function CampaignReviewGrid({
             campaign={campaign}
             campaignPlatforms={campaignPlatforms}
             onEdit={(id) => {
-              const it = contentItems.find((i) => i.id === id);
-              if (it) setEditingItem(it);
+              const it = contentItems.find(i => i.id === id);
+              if (it) {
+                setEditingItem(it);
+              }
             }}
-            onReRoll={(id) => reRolls > 0 && onReRoll(id)}
+            onReRoll={id => reRolls > 0 && onReRoll(id)}
             onDelete={onDelete}
             onScheduleChange={onScheduleChange}
           />
@@ -273,12 +311,17 @@ export function CampaignReviewGrid({
         {/* ── Bulk approve ── */}
         <div className="flex items-center justify-between rounded-xl border bg-muted/30 px-4 py-3">
           <span className="text-sm text-muted-foreground">
-            {contentItems.filter((i) => i.status === 'approved').length} / {contentItems.length} approved
+            {contentItems.filter(i => i.status === 'approved').length}
+            {' '}
+            /
+            {contentItems.length}
+            {' '}
+            approved
           </span>
           <Button
             size="sm"
-            className="bg-emerald-600 hover:bg-emerald-700 text-white"
-            onClick={() => contentItems.forEach((i) => onApprove(i.id))}
+            className="bg-emerald-600 text-white hover:bg-emerald-700"
+            onClick={() => contentItems.forEach(i => onApprove(i.id))}
           >
             <Check className="mr-1.5 size-3.5" />
             Approve all
@@ -333,8 +376,11 @@ function SchedulePicker({
           mode="single"
           selected={selected}
           onSelect={(day) => {
-            if (day) onChange(format(day, 'yyyy-MM-dd'), time ?? '09:00');
+            if (day) {
+              onChange(format(day, 'yyyy-MM-dd'), time ?? '09:00');
+            }
           }}
+          // eslint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
         />
         <Separator />
@@ -343,7 +389,7 @@ function SchedulePicker({
           <input
             type="time"
             defaultValue={time ?? '09:00'}
-            onChange={(e) => onChange(date ?? format(new Date(), 'yyyy-MM-dd'), e.target.value)}
+            onChange={e => onChange(date ?? format(new Date(), 'yyyy-MM-dd'), e.target.value)}
             className="flex-1 rounded-md border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40"
           />
           <Button size="sm" className="h-7 text-xs" onClick={() => setOpen(false)}>
@@ -378,7 +424,7 @@ function InfoPopover({ item, campaignPlatforms }: { item: ReviewItem; campaignPl
         <button
           type="button"
           className="flex size-6 items-center justify-center rounded-full border border-white/30 bg-white/80 backdrop-blur-sm hover:bg-white"
-          onClick={(e) => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
         >
           <Info className="size-3.5 text-foreground" />
         </button>
@@ -442,12 +488,12 @@ function PostCard({
       {/* Thumbnail */}
       <div className="relative aspect-[9/16] cursor-pointer overflow-hidden bg-muted" onClick={onEdit}>
         {isVideoType && videoUrl ? (
-          /* Video type: autoplay muted loop (matches usefastlane grid) */
-          // eslint-disable-next-line jsx-a11y/media-has-caption
+        /* Video type: autoplay muted loop (matches usefastlane grid) */
+
           <video
             src={videoUrl}
             poster={thumb ?? undefined}
-            className="h-full w-full object-cover"
+            className="size-full object-cover"
             autoPlay
             muted
             loop
@@ -460,7 +506,7 @@ function PostCard({
           <img
             src={thumb}
             alt={item.caption?.slice(0, 40) ?? 'Post'}
-            className="h-full w-full object-cover"
+            className="size-full object-cover"
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground/30">
@@ -486,7 +532,7 @@ function PostCard({
         {/* Approved chip */}
         {approved && (
           <div className="absolute left-2 top-10 z-10">
-            <Badge className="bg-emerald-500 text-white text-[9px] px-1.5 py-0">Approved</Badge>
+            <Badge className="bg-emerald-500 px-1.5 py-0 text-[9px] text-white">Approved</Badge>
           </div>
         )}
 
@@ -517,7 +563,7 @@ function PostCard({
         {/* Angle pill */}
         {item.angleName && (
           <div
-            className="absolute bottom-2 left-2 right-2 z-10 truncate rounded-full px-2 py-0.5 text-center text-[8px] font-semibold text-white"
+            className="absolute inset-x-2 bottom-2 z-10 truncate rounded-full px-2 py-0.5 text-center text-[8px] font-semibold text-white"
             style={{ backgroundColor: angleColor }}
           >
             {item.angleName}
@@ -546,7 +592,7 @@ function PostCard({
         <div className="flex items-center">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onEdit}>
+              <Button variant="ghost" size="sm" className="size-7 p-0" onClick={onEdit}>
                 <Pencil className="size-3.5" />
               </Button>
             </TooltipTrigger>
@@ -555,7 +601,7 @@ function PostCard({
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onReRoll} disabled={!canReRoll}>
+              <Button variant="ghost" size="sm" className="size-7 p-0" onClick={onReRoll} disabled={!canReRoll}>
                 <RefreshCw className="size-3.5" />
               </Button>
             </TooltipTrigger>
@@ -565,7 +611,7 @@ function PostCard({
           {!approved && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600" onClick={onApprove}>
+                <Button variant="ghost" size="sm" className="size-7 p-0 text-muted-foreground hover:text-emerald-600" onClick={onApprove}>
                   <Check className="size-3.5" />
                 </Button>
               </TooltipTrigger>
@@ -576,9 +622,10 @@ function PostCard({
           {onSkip && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onSkip}>
+                <Button variant="ghost" size="sm" className="size-7 p-0" onClick={onSkip}>
                   <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" />
+                    <polygon points="5 4 15 12 5 20 5 4" />
+                    <line x1="19" y1="5" x2="19" y2="19" />
                   </svg>
                 </Button>
               </TooltipTrigger>
@@ -588,7 +635,7 @@ function PostCard({
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" className="ml-auto h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={onDelete}>
+              <Button variant="ghost" size="sm" className="ml-auto size-7 p-0 text-muted-foreground hover:text-destructive" onClick={onDelete}>
                 <Trash2 className="size-3.5" />
               </Button>
             </TooltipTrigger>
@@ -618,13 +665,19 @@ function CalendarView({
   onDelete: (id: string) => void;
   onScheduleChange: (itemId: string, date: string, time: string) => void;
 }) {
-  // Derive the actual date range from the scheduled posts — not from
-  // campaignLengthDays which may be stale or capped to 7.
-  const scheduledDates = contentItems
-    .filter((it) => it.scheduledDate)
-    .map((it) => parseISO(it.scheduledDate!));
+  // Derive the actual date range from the scheduled posts, not from
+  // campaignLengthDays which may be stale or capped to 7. Every parseISO is
+  // followed by a validity check because date-fns v4 throws RangeError on
+  // format() when given an Invalid Date, which used to blow up the whole view.
+  const isValidDate = (d: Date | null | undefined): d is Date =>
+    d instanceof Date && !Number.isNaN(d.getTime());
 
-  const campaignStart = campaign.startDate ? parseISO(campaign.startDate) : null;
+  const scheduledDates = contentItems
+    .map(it => (it.scheduledDate ? parseISO(it.scheduledDate) : null))
+    .filter(isValidDate);
+
+  const campaignStartRaw = campaign.startDate ? parseISO(campaign.startDate) : null;
+  const campaignStart = isValidDate(campaignStartRaw) ? campaignStartRaw : null;
 
   const earliestDate = scheduledDates.length > 0
     ? scheduledDates.reduce((a, b) => (a < b ? a : b))
@@ -636,7 +689,13 @@ function CalendarView({
 
   // Use campaign start date if it precedes the first scheduled post
   const start = campaignStart && campaignStart < earliestDate ? campaignStart : earliestDate;
-  const totalDays = Math.ceil((latestDate.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+  // Cap totalDays to a sane window so a stray far-future date can't blow up
+  // the render with a multi-thousand-cell grid.
+  const rawTotalDays = Math.ceil((latestDate.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  const totalDays = Number.isFinite(rawTotalDays) && rawTotalDays > 0
+    ? Math.min(rawTotalDays, 90)
+    : Math.max(1, (campaign.campaignLengthDays ?? 7));
 
   const days = Array.from({ length: totalDays }, (_, i) => addDays(start, i));
 
@@ -648,23 +707,31 @@ function CalendarView({
 
   const getItems = (day: Date) =>
     contentItems.filter(
-      (it) => it.scheduledDate && isSameDay(parseISO(it.scheduledDate), day),
+      it => it.scheduledDate && isSameDay(parseISO(it.scheduledDate), day),
     );
 
   return (
     <div className="space-y-4">
       <p className="text-sm font-medium text-muted-foreground">
-        {format(start, 'MMM d')} – {format(latestDate, 'MMM d, yyyy')} · {contentItems.length} posts
+        {format(start, 'MMM d')}
+        {' '}
+        –
+        {format(latestDate, 'MMM d, yyyy')}
+        {' '}
+        ·
+        {contentItems.length}
+        {' '}
+        posts
       </p>
 
       <ScrollArea className="w-full">
-        <div className="space-y-3 pb-2 min-w-[600px]">
+        <div className="min-w-[600px] space-y-3 pb-2">
           {weeks.map((week, wi) => (
             <div key={wi}>
               {/* Day name headers — only first week */}
               {wi === 0 && (
                 <div
-                  className="grid gap-2 mb-1"
+                  className="mb-1 grid gap-2"
                   style={{ gridTemplateColumns: `repeat(${week.length}, minmax(0, 1fr))` }}
                 >
                   {week.map((day, di) => (
@@ -694,7 +761,7 @@ function CalendarView({
                       {/* Date number */}
                       <div className="mb-2 flex justify-center">
                         <span
-                          className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
+                          className={`flex size-6 items-center justify-center rounded-full text-xs font-semibold ${
                             today
                               ? 'bg-primary text-primary-foreground'
                               : 'text-muted-foreground'
@@ -705,7 +772,7 @@ function CalendarView({
                       </div>
 
                       <div className="space-y-1.5">
-                        {dayItems.map((item) => (
+                        {dayItems.map(item => (
                           <CalendarCard
                             key={item.id}
                             item={item}
@@ -767,11 +834,11 @@ function CalendarCard({
           onClick={onEdit}
         >
           {isVideoType && videoUrl ? (
-            // eslint-disable-next-line jsx-a11y/media-has-caption
+
             <video
               src={videoUrl}
               poster={thumb ?? undefined}
-              className="h-full w-full object-cover"
+              className="size-full object-cover"
               autoPlay
               muted
               loop
@@ -780,7 +847,7 @@ function CalendarCard({
             />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={thumb!} alt="" className="h-full w-full object-cover" />
+            <img src={thumb!} alt="" className="size-full object-cover" />
           )}
           {overlayText && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-1.5">
@@ -796,13 +863,13 @@ function CalendarCard({
             </div>
           )}
           {primaryPlatform && (
-            <div className="absolute left-1 top-1 scale-75 origin-top-left">
+            <div className="absolute left-1 top-1 origin-top-left scale-75">
               <PlatformIcon platform={primaryPlatform} />
             </div>
           )}
           {item.angleName && (
             <div
-              className="absolute bottom-1 left-1 right-1 truncate rounded-full px-1.5 py-0.5 text-center text-[8px] font-semibold text-white"
+              className="absolute inset-x-1 bottom-1 truncate rounded-full px-1.5 py-0.5 text-center text-[8px] font-semibold text-white"
               style={{ backgroundColor: angleColor }}
             >
               {item.angleName}
@@ -811,7 +878,8 @@ function CalendarCard({
         </div>
       )}
 
-      <div className="p-1.5 space-y-1">
+      <div className="space-y-1 p-1.5">
+        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
         <p
           className="line-clamp-2 cursor-pointer text-[10px] leading-snug text-foreground hover:text-primary"
           onClick={onEdit}
@@ -828,16 +896,16 @@ function CalendarCard({
 
         {/* Actions */}
         <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={onEdit}>
+          <Button variant="ghost" size="sm" className="size-6 p-0" onClick={onEdit}>
             <Pencil className="size-2.5" />
           </Button>
-          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={onReRoll}>
+          <Button variant="ghost" size="sm" className="size-6 p-0" onClick={onReRoll}>
             <RefreshCw className="size-2.5" />
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            className="ml-auto h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+            className="ml-auto size-6 p-0 text-muted-foreground hover:text-destructive"
             onClick={onDelete}
           >
             <Trash2 className="size-2.5" />
