@@ -92,12 +92,6 @@ const CONTENT_TYPES: ContentTypeDef[] = [
   { id: 'green_screen', label: 'Green Screen', description: 'Subject with keyed background', icon: Clapperboard, platforms: ['instagram', 'tiktok', 'youtube', 'whatsapp'] },
 ];
 
-const CONTENT_MODES = [
-  { id: 'normal', label: 'Normal', description: 'Balanced, on-brand tone' },
-  { id: 'concise', label: 'Concise', description: 'Stripped to essentials' },
-  { id: 'controversial', label: 'Controversial', description: 'Takes a position, sparks debate' },
-];
-
 // -----------------------------------------------------------
 // REMIX → MediaSlots builder
 // -----------------------------------------------------------
@@ -269,7 +263,8 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isApproving, setIsApproving] = useState(false);
-  const [contentMode, setContentMode] = useState('normal');
+  const [showPlatforms, setShowPlatforms] = useState(true);
+  const [showStructure, setShowStructure] = useState(false);
   const [showEnrichment, setShowEnrichment] = useState(false);
   const [enrichment, setEnrichment] = useState<Enrichment>(EMPTY_ENRICHMENT);
   const [refLinkInput, setRefLinkInput] = useState('');
@@ -443,7 +438,6 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
         source: 'remix',
         templateId,
         contentType: contentType,
-        contentMode,
         targetPlatforms: selectedPlatforms,
         aspectRatio: '9:16',
         script: {
@@ -496,7 +490,6 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
           body: JSON.stringify({
             contentType,
             targetPlatforms: selectedPlatforms,
-            contentMode,
             aspectRatio: '9:16',
             numVariants: 3,
             enrichment: hasEnrichment() ? enrichment : undefined,
@@ -553,7 +546,6 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
       contentType,
       targetPlatforms: selectedPlatforms,
       numVariants,
-      contentMode,
     };
     if (hasEnrichment()) payload.enrichment = enrichment;
 
@@ -663,7 +655,6 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
         source: 'generate',
         contentItemId: selectedVariant,
         contentType,
-        contentMode,
         targetPlatforms: selectedPlatforms,
         aspectRatio: '9:16',
       });
@@ -834,6 +825,21 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                   contentType={contentType}
                   onRemix={(t) => {
                     pickedFromBrowseRef.current = true;
+                    // Optimistic template hydration eliminates the empty
+                    // frame between browse and configure. The URL fetch
+                    // effect at loadTemplate() still runs and refreshes
+                    // the object from /api/templates/[id] when it lands.
+                    setTemplate(t);
+                    // Pre-seed the fields the loadTemplate effect derives,
+                    // so the configure form renders complete on the first
+                    // paint instead of populating fields one-by-one.
+                    const structure = t.structure || {};
+                    const derivedTopic = [structure.hook?.text, structure.body?.text, structure.cta?.text]
+                      .filter(Boolean)
+                      .join(' ') || t.sourceCreator || '';
+                    setTopic(derivedTopic);
+                    setContentType(REMIX_TYPE_MAP[t.contentType] || 'reel');
+                    setSelectedPlatforms([t.sourcePlatform === 'tiktok' ? 'tiktok' : 'instagram']);
                     setStep('configure');
                     router.push(`/dashboard/content/create?templateId=${t.id}`);
                   }}
@@ -863,7 +869,7 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
 
             {step === 'configure' && (!isRemix || template) && (
               <div className="grid gap-6 lg:grid-cols-5">
-              <div className="space-y-6 lg:col-span-3">
+              <div className="space-y-4 lg:col-span-3">
                 {/* Content type badge */}
                 {typeDef && (
                   <div className="flex items-center gap-2">
@@ -889,32 +895,6 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                   </div>
                 )}
 
-                {/* Content mode */}
-                <div>
-                  <label className="mb-2 block text-sm font-medium">Content mode</label>
-                  <div className="flex rounded-lg border p-1">
-                    {CONTENT_MODES.map(mode => (
-                      <button
-                        key={mode.id}
-                        type="button"
-                        onClick={() => setContentMode(mode.id)}
-                        className={`flex-1 rounded-md px-3 py-2 text-left transition-colors ${
-                          contentMode === mode.id
-                            ? 'bg-foreground text-background'
-                            : 'text-muted-foreground hover:text-foreground'
-                        }`}
-                      >
-                        <span className="block text-xs font-semibold">{mode.label}</span>
-                        <span className={`mt-0.5 block text-[10px] leading-tight ${
-                          contentMode === mode.id ? 'opacity-70' : 'opacity-50'
-                        }`}>
-                          {mode.description}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
                 {/* Topic */}
                 <div>
                   <label className="mb-1.5 block text-sm font-medium">
@@ -933,44 +913,66 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                   </p>
                 </div>
 
-                {/* Platforms */}
-                <div>
-                  <label className="mb-2 block text-sm font-medium">Target platforms</label>
-                  <div className="space-y-1.5">
-                    {PLATFORMS.map((platform) => {
-                      const PIcon = platform.icon;
-                      const isConnected = connectedPlatformIds.includes(platform.id);
-                      const isSelected = selectedPlatforms.includes(platform.id);
-                      return (
-                        <button
-                          key={platform.id}
-                          type="button"
-                          onClick={() => togglePlatform(platform.id)}
-                          disabled={!isConnected}
-                          className={`flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left text-sm transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
-                            isSelected
-                              ? 'border-primary bg-primary/5'
-                              : 'hover:bg-muted'
-                          }`}
-                        >
-                          <PIcon className={`size-4 shrink-0 sm:size-5 ${
-                            isSelected ? 'text-primary' : 'text-muted-foreground'
-                          }`} />
-                          <span className={`flex-1 ${isSelected ? 'font-medium' : ''}`}>{platform.name}</span>
-                          {!isConnected && <span className="text-xs text-muted-foreground">Not connected</span>}
-                          {isConnected && isSelected && <Check className="size-4 shrink-0 text-primary" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {connectedPlatformIds.length === 0 && (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      No accounts connected.{' '}
-                      <Link href="/dashboard/connections" className="text-primary underline">
-                        Connect platforms
-                      </Link>{' '}
-                      to select them here.
-                    </p>
+                {/* Platforms (collapsible) */}
+                <div className="overflow-hidden rounded-xl border bg-card">
+                  <button
+                    type="button"
+                    onClick={() => setShowPlatforms(p => !p)}
+                    className="flex w-full items-center justify-between px-4 py-3.5 text-left"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Megaphone className="size-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">Target platforms</span>
+                      {selectedPlatforms.length > 0 && (
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                          {selectedPlatforms.length} selected
+                        </span>
+                      )}
+                    </div>
+                    {showPlatforms ? (
+                      <ChevronUp className="size-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="size-4 text-muted-foreground" />
+                    )}
+                  </button>
+
+                  {showPlatforms && (
+                    <div className="border-t p-4">
+                      {connectedPlatformIds.length === 0 ? (
+                        <div className="rounded-lg bg-muted/50 px-3 py-3 text-xs text-muted-foreground">
+                          No accounts connected.{' '}
+                          <Link href="/dashboard/connections" className="text-primary underline">
+                            Connect platforms
+                          </Link>{' '}
+                          to select them here.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2">
+                          {PLATFORMS.filter(p => connectedPlatformIds.includes(p.id)).map((platform) => {
+                            const PIcon = platform.icon;
+                            const isSelected = selectedPlatforms.includes(platform.id);
+                            return (
+                              <button
+                                key={platform.id}
+                                type="button"
+                                onClick={() => togglePlatform(platform.id)}
+                                className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-sm transition-all ${
+                                  isSelected
+                                    ? 'border-primary bg-primary/5'
+                                    : 'border-border hover:bg-muted'
+                                }`}
+                              >
+                                <PIcon className={`size-4 shrink-0 ${
+                                  isSelected ? 'text-primary' : 'text-muted-foreground'
+                                }`} />
+                                <span className={`flex-1 truncate ${isSelected ? 'font-medium' : ''}`}>{platform.name}</span>
+                                {isSelected && <Check className="size-4 shrink-0 text-primary" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -1171,70 +1173,57 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                     </div>
                   </div>
 
-                  {/* Structure info */}
+                  {/* Structure info (collapsible, default collapsed) */}
                   {template.structure && (
-                    <div className="rounded-xl border bg-card p-4">
-                      <h3 className="mb-3 text-sm font-semibold">Content Structure</h3>
-                      <div className="space-y-2.5">
-                        {template.structure.hook && (
-                          <div className="rounded-lg bg-muted/50 p-2.5">
-                            <div className="text-[10px] font-medium uppercase tracking-wider text-purple-600">
-                              Hook &middot; {template.structure.hook.duration}s
-                            </div>
-                            <p className="mt-0.5 text-sm text-foreground line-clamp-2">
-                              {template.structure.hook.text}
-                            </p>
-                          </div>
+                    <div className="overflow-hidden rounded-xl border bg-card">
+                      <button
+                        type="button"
+                        onClick={() => setShowStructure(p => !p)}
+                        className="flex w-full items-center justify-between px-4 py-3.5 text-left"
+                      >
+                        <span className="text-sm font-medium">Content Structure</span>
+                        {showStructure ? (
+                          <ChevronUp className="size-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="size-4 text-muted-foreground" />
                         )}
-                        {template.structure.body && (
-                          <div className="rounded-lg bg-muted/50 p-2.5">
-                            <div className="text-[10px] font-medium uppercase tracking-wider text-blue-600">
-                              Body &middot; {template.structure.body.duration}s
+                      </button>
+                      {showStructure && (
+                        <div className="space-y-2.5 border-t p-4">
+                          {template.structure.hook && (
+                            <div className="rounded-lg bg-muted/50 p-2.5">
+                              <div className="text-[10px] font-medium uppercase tracking-wider text-purple-600 dark:text-purple-400">
+                                Hook &middot; {template.structure.hook.duration}s
+                              </div>
+                              <p className="mt-0.5 text-sm text-foreground line-clamp-2">
+                                {template.structure.hook.text}
+                              </p>
                             </div>
-                            <p className="mt-0.5 text-sm text-foreground line-clamp-2">
-                              {template.structure.body.text}
-                            </p>
-                          </div>
-                        )}
-                        {template.structure.cta && (
-                          <div className="rounded-lg bg-muted/50 p-2.5">
-                            <div className="text-[10px] font-medium uppercase tracking-wider text-green-600">
-                              CTA &middot; {template.structure.cta.duration}s
+                          )}
+                          {template.structure.body && (
+                            <div className="rounded-lg bg-muted/50 p-2.5">
+                              <div className="text-[10px] font-medium uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                                Body &middot; {template.structure.body.duration}s
+                              </div>
+                              <p className="mt-0.5 text-sm text-foreground line-clamp-2">
+                                {template.structure.body.text}
+                              </p>
                             </div>
-                            <p className="mt-0.5 text-sm text-foreground line-clamp-2">
-                              {template.structure.cta.text}
-                            </p>
-                          </div>
-                        )}
-                      </div>
+                          )}
+                          {template.structure.cta && (
+                            <div className="rounded-lg bg-muted/50 p-2.5">
+                              <div className="text-[10px] font-medium uppercase tracking-wider text-green-600 dark:text-green-400">
+                                CTA &middot; {template.structure.cta.duration}s
+                              </div>
+                              <p className="mt-0.5 text-sm text-foreground line-clamp-2">
+                                {template.structure.cta.text}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
-
-                  {/* Meta */}
-                  <div className="rounded-xl border bg-card p-4">
-                    <div className="flex flex-wrap gap-2">
-                      {template.contentType && (
-                        <span className="rounded-full bg-purple-50 px-2.5 py-0.5 text-[11px] font-medium text-purple-700 capitalize">
-                          {template.contentType.replace(/_/g, ' ')}
-                        </span>
-                      )}
-                      {template.sourcePlatform && (
-                        <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] text-muted-foreground capitalize">
-                          {template.sourcePlatform}
-                        </span>
-                      )}
-                      {template.engagementScore != null && (
-                        <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">
-                          {Math.round(template.engagementScore * 100)}% engagement
-                        </span>
-                      )}
-                    </div>
-                    {template.remixCount > 0 && (
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        Remixed {template.remixCount} time{template.remixCount !== 1 ? 's' : ''}
-                      </p>
-                    )}
-                  </div>
                 </>
               )}
 
@@ -1292,11 +1281,6 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
               <div>
                 <h2 className="text-sm font-semibold">
                   {variants.length} variant{variants.length !== 1 ? 's' : ''} generated
-                  {contentMode !== 'normal' && (
-                    <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                      {contentMode} mode
-                    </span>
-                  )}
                 </h2>
                 <p className="text-xs text-muted-foreground">Select the best one, then continue.</p>
               </div>
