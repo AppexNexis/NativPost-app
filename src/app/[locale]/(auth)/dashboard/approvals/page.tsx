@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 import { EmptyState } from '@/features/dashboard/EmptyState';
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
@@ -144,17 +145,22 @@ export default function ApprovalsPage() {
   const approveItem = async (id: string) => {
     setActionLoading(id);
     try {
-      await fetch(`/api/content/${id}`, {
+      const res = await fetch(`/api/content/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'approved', isSelectedVariant: true }),
       });
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}`);
+      }
       setItems(prev => prev.filter(i => i.id !== id));
       setSelected((prev) => {
         const next = new Set(prev); next.delete(id); return next;
       });
+      toast.success('Content approved');
     } catch (err) {
       console.error('Approve failed:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to approve content');
     } finally {
       setActionLoading(null);
     }
@@ -163,16 +169,21 @@ export default function ApprovalsPage() {
   const rejectItem = async (id: string) => {
     setActionLoading(id);
     try {
-      await fetch(`/api/content/${id}`, {
+      const res = await fetch(`/api/content/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'rejected', rejectionFeedback: rejectFeedback }),
       });
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}`);
+      }
       setItems(prev => prev.filter(i => i.id !== id));
       setRejectingId(null);
       setRejectFeedback('');
+      toast.success('Content rejected');
     } catch (err) {
       console.error('Reject failed:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to reject content');
     } finally {
       setActionLoading(null);
     }
@@ -182,7 +193,7 @@ export default function ApprovalsPage() {
   const bulkApprove = async () => {
     setActionLoading('bulk');
     const ids = Array.from(selected);
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       ids.map(id =>
         fetch(`/api/content/${id}`, {
           method: 'PATCH',
@@ -194,6 +205,12 @@ export default function ApprovalsPage() {
     setItems(prev => prev.filter(i => !selected.has(i.id)));
     setSelected(new Set());
     setActionLoading(null);
+    const failures = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok));
+    if (failures.length === 0) {
+      toast.success(`Approved ${ids.length} items`);
+    } else {
+      toast.error(`Approved ${ids.length - failures.length}/${ids.length} items`);
+    }
   };
 
   if (isLoading) {
@@ -212,7 +229,9 @@ export default function ApprovalsPage() {
         <ErrorBanner
           title="Couldn't load approvals queue"
           detail={fetchError}
-          onRetry={() => { void fetchPending(); }}
+          onRetry={() => {
+            void fetchPending();
+          }}
         />
       </>
     );

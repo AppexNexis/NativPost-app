@@ -14,20 +14,20 @@ import {
   ExternalLink,
   FileText,
   Fingerprint,
+  Gift,
   Image,
   LayoutList,
   LifeBuoy,
   Link2,
   Megaphone,
   Menu,
+  MessageCircle,
   PenLine,
   Plus,
   Settings,
   ShieldCheck,
   Sparkles,
   Users,
-  Gift,
-  MessageCircle,
   Zap,
 } from 'lucide-react';
 import NextImage from 'next/image';
@@ -38,13 +38,14 @@ import { useEffect, useRef, useState } from 'react';
 import logoIcon from '/public/assets/images/shared/logo.svg';
 import logoDark from '/public/assets/images/shared/logo-dark.svg';
 import mainLogo from '/public/assets/images/shared/main-logo.svg';
-import { TrialLimitsPill, type TrialLimitsData } from '@/components/billing/TrialLimitsPill';
+import { type TrialLimitsData, TrialLimitsPill } from '@/components/billing/TrialLimitsPill';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import SupportWidget from '@/components/support/SupportWidget';
-import { getNavForRole, getUserRole, isTeamMember } from '@/lib/roles';
-import type { NavItem } from '@/lib/roles';
+import { Toaster } from '@/components/ui/toaster';
 import { BillingGate } from '@/features/dashboard/BillingGate';
 import { useOrgSync } from '@/hooks/useOrgSync';
+import type { NavItem } from '@/lib/roles';
+import { getNavForRole, getUserRole, isTeamMember } from '@/lib/roles';
 
 const ICONS: Record<string, typeof Calendar> = {
   BarChart3,
@@ -103,14 +104,18 @@ export default function DashboardClientLayout({
   useEffect(() => {
     try {
       const stored = localStorage.getItem('np-sidebar-collapsed');
-      if (stored === 'true') setCollapsed(true);
+      if (stored === 'true') {
+        setCollapsed(true);
+      }
     } catch { /* ignore */ }
   }, []);
 
   const toggleCollapsed = () => {
-    setCollapsed(prev => {
+    setCollapsed((prev) => {
       const next = !prev;
-      try { localStorage.setItem('np-sidebar-collapsed', String(next)); } catch { /* ignore */ }
+      try {
+        localStorage.setItem('np-sidebar-collapsed', String(next));
+      } catch { /* ignore */ }
       return next;
     });
   };
@@ -130,7 +135,9 @@ export default function DashboardClientLayout({
         trialExpired?: boolean;
         usage?: { postsThisMonth?: number; postsLimit?: number };
       } | null) => {
-        if (data?.plan) setCurrentPlan(data.plan);
+        if (data?.plan) {
+          setCurrentPlan(data.plan);
+        }
         if (data) {
           setBillingStatus({ planStatus: data.planStatus ?? '', setupFeePaid: data.setupFeePaid ?? false });
           setTrialLimits({
@@ -151,7 +158,9 @@ export default function DashboardClientLayout({
   const cleanPath = pathname.replace(/^\/[a-z]{2}(\/|$)/, '/');
 
   const isActive = (href: string) => {
-    if (href.startsWith('http')) return false;
+    if (href.startsWith('http')) {
+      return false;
+    }
     if (href.includes('?')) {
       return (
         cleanPath === href.split('?')[0]
@@ -162,7 +171,9 @@ export default function DashboardClientLayout({
   };
 
   const isPlanEligible = (item: NavItem) => {
-    if (!item.planRequired) return true;
+    if (!item.planRequired) {
+      return true;
+    }
     return item.planRequired.includes(currentPlan);
   };
 
@@ -174,7 +185,9 @@ export default function DashboardClientLayout({
   };
 
   const isSubNavOpen = (group: string, items: NavItem[]) => {
-    if (subNavOpen[group] !== undefined) return subNavOpen[group];
+    if (subNavOpen[group] !== undefined) {
+      return subNavOpen[group];
+    }
     return hasActiveSubItem(items);
   };
 
@@ -224,7 +237,7 @@ export default function DashboardClientLayout({
           {!collapsed && (
             <>
               <span className="truncate">{item.label}</span>
-              <ExternalLink className="ml-auto size-3 text-muted-foreground/50 shrink-0" />
+              <ExternalLink className="ml-auto size-3 shrink-0 text-muted-foreground/50" />
             </>
           )}
         </a>
@@ -252,11 +265,11 @@ export default function DashboardClientLayout({
         className={`fixed inset-y-0 left-0 z-40 flex h-screen flex-col border-r bg-background transition-all duration-200 ease-in-out
           ${collapsed ? 'w-[56px]' : 'w-[220px]'}
           ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
-          lg:static lg:inset-y-auto lg:z-auto lg:translate-x-0 lg:shrink-0`}
+          lg:static lg:inset-y-auto lg:z-auto lg:shrink-0 lg:translate-x-0`}
       >
         {/* Logo */}
         <div className={`flex h-14 shrink-0 items-center border-b ${collapsed ? 'justify-center px-0' : 'px-4'}`}>
-          <Link href="/dashboard" className="inline-flex items-center min-w-0">
+          <Link href="/dashboard" className="inline-flex min-w-0 items-center">
             {collapsed ? (
               <figure className="w-8 shrink-0">
                 <NextImage src={logoIcon} alt="NativPost" className="block h-auto w-full dark:hidden" priority />
@@ -292,7 +305,7 @@ export default function DashboardClientLayout({
             <Link
               href="/dashboard/content/create"
               title={collapsed ? 'Create post' : undefined}
-              className={`flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90`}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             >
               <Plus className="size-4 shrink-0" />
               {!collapsed && 'Create post'}
@@ -303,7 +316,7 @@ export default function DashboardClientLayout({
         {/* Navigation — hidden scrollbar */}
         <nav
           ref={navRef}
-          className="flex-1 overflow-y-auto p-3 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+          className="flex-1 overflow-y-auto p-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {Object.entries(navGroups).map(([group, items]) => {
             const mainItems = items.filter(i => !i.subGroup);
@@ -314,7 +327,7 @@ export default function DashboardClientLayout({
               <div key={group} className="mb-3">
                 {/* Group label */}
                 {!collapsed && (
-                  <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50 select-none">
+                  <p className="mb-1 select-none px-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
                     {group}
                   </p>
                 )}
@@ -384,7 +397,7 @@ export default function DashboardClientLayout({
               <button
                 type="button"
                 onClick={toggleCollapsed}
-                className="hidden lg:flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="hidden size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:flex"
                 aria-label="Collapse sidebar"
               >
                 <ChevronLeft className="size-3.5" />
@@ -399,7 +412,7 @@ export default function DashboardClientLayout({
               <button
                 type="button"
                 onClick={toggleCollapsed}
-                className="hidden lg:flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="hidden size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:flex"
                 aria-label="Expand sidebar"
               >
                 <ChevronRight className="size-3.5" />
@@ -455,6 +468,7 @@ export default function DashboardClientLayout({
 
       {/* Support widget */}
       <SupportWidget currentPath={cleanPath} />
+      <Toaster />
     </div>
   );
 }
