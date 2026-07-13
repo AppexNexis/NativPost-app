@@ -205,8 +205,9 @@ export async function POST(request: NextRequest) {
               : (session.customer as Stripe.Customer | null)?.id ?? null,
             stripeSubscriptionId: subscriptionId ?? null,
             stripeSubscriptionStatus: subscriptionStatus,
-            stripeSubscriptionPriceId: usedInterval === 'year' ? (plan.stripeAnnualPriceId[env] ?? null) : (plan.stripePriceId[env] ?? null),
-            billingInterval: usedInterval,
+            stripeSubscriptionPriceId: plan.stripePriceId[
+              process.env.BILLING_PLAN_ENV === 'prod' ? 'prod' : 'dev'
+            ] ?? null,
             ...(periodEnd ? { stripeSubscriptionCurrentPeriodEnd: periodEnd } : {}),
             postsPerMonth: plan.features.postsPerMonth === -1 ? 999999 : plan.features.postsPerMonth,
             platformsLimit: plan.features.platformsLimit === -1 ? 99 : plan.features.platformsLimit,
