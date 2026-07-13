@@ -38,6 +38,7 @@ import { useEffect, useRef, useState } from 'react';
 import logoIcon from '/public/assets/images/shared/logo.svg';
 import logoDark from '/public/assets/images/shared/logo-dark.svg';
 import mainLogo from '/public/assets/images/shared/main-logo.svg';
+import { TrialLimitsPill, type TrialLimitsData } from '@/components/billing/TrialLimitsPill';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import SupportWidget from '@/components/support/SupportWidget';
 import { getNavForRole, getUserRole, isTeamMember } from '@/lib/roles';
@@ -85,6 +86,7 @@ export default function DashboardClientLayout({
   const [subNavOpen, setSubNavOpen] = useState<Record<string, boolean>>({});
   const [currentPlan, setCurrentPlan] = useState<string>(plan || 'starter');
   const [billingStatus, setBillingStatus] = useState<{ planStatus: string; setupFeePaid: boolean } | null>(null);
+  const [trialLimits, setTrialLimits] = useState<TrialLimitsData | null>(null);
   const navRef = useRef<HTMLElement>(null);
 
   const role = getUserRole(orgRole);
@@ -113,16 +115,38 @@ export default function DashboardClientLayout({
     });
   };
 
+  // Fetch billing status once on mount. Always run — even when a `plan` prop
+  // was passed — because the trial/usage pill needs live counters that the
+  // prop does not carry.
   useEffect(() => {
-    if (plan) return;
     fetch('/api/billing/status')
       .then(r => r.ok ? r.json() : null)
-      .then((data: { plan?: string; planStatus?: string; setupFeePaid?: boolean } | null) => {
+      .then((data: {
+        plan?: string;
+        planStatus?: string;
+        setupFeePaid?: boolean;
+        isTrialing?: boolean;
+        trialDaysLeft?: number;
+        trialExpired?: boolean;
+        usage?: { postsThisMonth?: number; postsLimit?: number };
+      } | null) => {
         if (data?.plan) setCurrentPlan(data.plan);
-        if (data) setBillingStatus({ planStatus: data.planStatus ?? '', setupFeePaid: data.setupFeePaid ?? false });
+        if (data) {
+          setBillingStatus({ planStatus: data.planStatus ?? '', setupFeePaid: data.setupFeePaid ?? false });
+          setTrialLimits({
+            isTrialing: !!data.isTrialing,
+            trialDaysLeft: data.trialDaysLeft ?? 0,
+            trialExpired: !!data.trialExpired,
+            plan: data.plan ?? 'starter',
+            usage: {
+              postsThisMonth: data.usage?.postsThisMonth ?? 0,
+              postsLimit: data.usage?.postsLimit ?? 0,
+            },
+          });
+        }
       })
       .catch(() => null);
-  }, [plan]);
+  }, []);
 
   const cleanPath = pathname.replace(/^\/[a-z]{2}(\/|$)/, '/');
 
@@ -413,6 +437,7 @@ export default function DashboardClientLayout({
           <div className="flex-1" />
 
           <div className="flex items-center gap-2">
+            <TrialLimitsPill data={trialLimits} />
             <NotificationBell />
             <UserButton
               afterSignOutUrl="/"
