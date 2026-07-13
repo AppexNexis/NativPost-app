@@ -4,7 +4,6 @@ import {
   BarChart3,
   Eye,
   // Heart,
-  Loader2,
   MessageCircle,
   RefreshCw,
   Share2,
@@ -16,6 +15,8 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
 import { EmptyState } from '@/features/dashboard/EmptyState';
+import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
+import { LoadingState } from '@/features/dashboard/LoadingState';
 import { PageHeader } from '@/features/dashboard/PageHeader';
 
 // -----------------------------------------------------------
@@ -216,17 +217,22 @@ export default function AnalyticsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedPost, setExpandedPost] = useState<string | null>(null);
 
   const loadAnalytics = useCallback(async () => {
+    setLoadError(null);
     try {
       const res = await fetch('/api/analytics');
       if (res.ok) {
         const data = await res.json();
         setAnalytics(data);
+      } else {
+        setLoadError(`Server returned ${res.status}. Please try again.`);
       }
     } catch (err) {
       console.error('Failed to load analytics:', err);
+      setLoadError(err instanceof Error ? err.message : 'Network request failed');
     } finally {
       setIsLoading(false);
     }
@@ -259,9 +265,20 @@ export default function AnalyticsPage() {
     return (
       <>
         <PageHeader title="Analytics" description="Track how your content performs across all platforms." />
-        <div className="flex min-h-[400px] items-center justify-center">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        </div>
+        <LoadingState message="Loading your analytics" hint="Fetching engagement from every connected platform" />
+      </>
+    );
+  }
+
+  if (loadError && !analytics) {
+    return (
+      <>
+        <PageHeader title="Analytics" description="Track how your content performs across all platforms." />
+        <ErrorBanner
+          title="Couldn't load analytics"
+          detail={loadError}
+          onRetry={() => { void loadAnalytics(); }}
+        />
       </>
     );
   }
@@ -315,8 +332,13 @@ export default function AnalyticsPage() {
       />
 
       {syncError && (
-        <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {syncError}
+        <div className="mb-4">
+          <ErrorBanner
+            title="Sync failed"
+            detail={syncError}
+            onRetry={() => { void syncNow(); }}
+            onDismiss={() => setSyncError(null)}
+          />
         </div>
       )}
 

@@ -22,6 +22,8 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
 import { EmptyState } from '@/features/dashboard/EmptyState';
+import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
+import { LoadingState } from '@/features/dashboard/LoadingState';
 import { PageHeader } from '@/features/dashboard/PageHeader';
 
 // -----------------------------------------------------------
@@ -313,17 +315,24 @@ export default function SupportPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [showCreate, setShowCreate] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const fetchTickets = useCallback(async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const params = new URLSearchParams({ status: statusFilter, limit: '50' });
       const res = await fetch(`/api/support/tickets?${params}`);
+      if (!res.ok) {
+        setFetchError(`Server returned ${res.status}. Please try again.`);
+        return;
+      }
       const data = await res.json();
       setTickets(data.tickets ?? []);
       setStats(data.stats ?? []);
-    } catch {
-      // fail silently
+    } catch (err) {
+      console.error('[Support] fetch failed:', err);
+      setFetchError(err instanceof Error ? err.message : 'Network request failed');
     } finally {
       setLoading(false);
     }
@@ -409,8 +418,15 @@ export default function SupportPage() {
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            <LoadingState message="Loading tickets" minHeightClass="min-h-[240px]" />
+          ) : fetchError ? (
+            <div className="p-4">
+              <ErrorBanner
+                title="Couldn't load your tickets"
+                detail={fetchError}
+                onRetry={() => { void fetchTickets(); }}
+                onDismiss={() => setFetchError(null)}
+              />
             </div>
           ) : tickets.length === 0 ? (
             <EmptyState

@@ -12,6 +12,8 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
 import { EmptyState } from '@/features/dashboard/EmptyState';
+import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
+import { LoadingState } from '@/features/dashboard/LoadingState';
 import { PageHeader } from '@/features/dashboard/PageHeader';
 
 // -----------------------------------------------------------
@@ -97,16 +99,21 @@ export default function ApprovalsPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectFeedback, setRejectFeedback] = useState('');
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const fetchPending = useCallback(async () => {
+    setFetchError(null);
     try {
       const res = await fetch('/api/content?status=pending_review&limit=100');
       if (res.ok) {
         const data = await res.json();
         setItems(data.items || []);
+      } else {
+        setFetchError(`Server returned ${res.status}. Please try again.`);
       }
     } catch (err) {
       console.error('Failed to fetch pending items:', err);
+      setFetchError(err instanceof Error ? err.message : 'Network request failed');
     } finally {
       setIsLoading(false);
     }
@@ -193,9 +200,20 @@ export default function ApprovalsPage() {
     return (
       <>
         <PageHeader title="Approvals" description="Review and approve content before it goes live." />
-        <div className="flex min-h-[400px] items-center justify-center">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        </div>
+        <LoadingState message="Loading items awaiting review" />
+      </>
+    );
+  }
+
+  if (fetchError && items.length === 0) {
+    return (
+      <>
+        <PageHeader title="Approvals" description="Review and approve content before it goes live." />
+        <ErrorBanner
+          title="Couldn't load approvals queue"
+          detail={fetchError}
+          onRetry={() => { void fetchPending(); }}
+        />
       </>
     );
   }

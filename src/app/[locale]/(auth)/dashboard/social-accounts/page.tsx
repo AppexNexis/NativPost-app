@@ -2,7 +2,6 @@
 'use client';
 
 import {
-  AlertCircle,
   Check,
   Image as ImageIcon,
   Info,
@@ -18,6 +17,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
+import { LoadingState } from '@/features/dashboard/LoadingState';
 
 import {
   FacebookIcon,
@@ -405,16 +406,16 @@ function SocialAccountsContent() {
       )}
 
       {errorType && (
-        <div className="mb-5 flex items-center gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <AlertCircle className="size-4 shrink-0" />
-          Connection failed. Please try again.
+        <div className="mb-5">
+          <ErrorBanner
+            title="Connection failed"
+            detail="The OAuth flow did not complete. Please try connecting again."
+          />
         </div>
       )}
 
       {isLoading ? (
-        <div className="flex min-h-[300px] items-center justify-center">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        </div>
+        <LoadingState message="Loading connected accounts" minHeightClass="min-h-[300px]" />
       ) : (
         <div className="space-y-8">
           {PLATFORM_GROUPS.map((group) => (
@@ -584,13 +585,7 @@ function SocialAccountsContent() {
 // ---------------------------------------------------------------------------
 export default function SocialAccountsPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-[300px] items-center justify-center">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        </div>
-      }
-    >
+    <Suspense fallback={<LoadingState message="Loading connected accounts" minHeightClass="min-h-[300px]" />}>
       <SocialAccountsContent />
     </Suspense>
   );

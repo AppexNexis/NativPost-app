@@ -22,6 +22,8 @@ import type { ContentAngle } from '@/types/v2';
 
 import { useBrandProfile } from '@/features/brand-profile/useBrandProfile';
 import { EmptyState } from '@/features/dashboard/EmptyState';
+import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
+import { LoadingState } from '@/features/dashboard/LoadingState';
 import { PageHeader } from '@/features/dashboard/PageHeader';
 
 const GROWTH_STAGE_LABELS: Record<string, string> = {
@@ -35,11 +37,7 @@ export default function BrandProfilePage() {
   const { data, isLoading, hasProfile, profileCompleteness } = useBrandProfile();
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <LoadingState message="Loading your brand profile" />;
   }
 
   if (!hasProfile) {
@@ -598,11 +596,17 @@ function ContentAnglesSection() {
 
       {/* Angle list */}
       {isFetching ? (
-        <div className="flex items-center justify-center py-10">
-          <Loader2 className="size-5 animate-spin text-muted-foreground" />
-        </div>
+        <LoadingState message="Loading content angles" minHeightClass="min-h-[160px]" />
       ) : loadError ? (
-        <p className="px-5 py-4 text-xs text-destructive">{loadError}</p>
+        <div className="px-5 py-4">
+          <ErrorBanner
+            title="Couldn't load content angles"
+            detail={loadError}
+            onRetry={() => { void fetchAngles(); }}
+            onDismiss={() => setLoadError(null)}
+            compact
+          />
+        </div>
       ) : angles.length === 0 ? (
         <p className="px-5 py-6 text-center text-sm text-muted-foreground">
           No angles yet. Add one to get started.

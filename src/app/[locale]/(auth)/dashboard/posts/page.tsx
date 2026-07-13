@@ -16,6 +16,8 @@ import { PostListRow } from '@/components/content/PostListRow';
 import { PostsFilters } from '@/components/content/PostsFilters';
 import { PostTableView } from '@/components/content/PostTableView';
 import { EmptyState } from '@/features/dashboard/EmptyState';
+import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
+import { LoadingState } from '@/features/dashboard/LoadingState';
 import type { ContentItem } from '@/types/v2';
 import { cn } from '@/utils/Helpers';
 
@@ -128,6 +130,7 @@ function PostsClient() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isBulkBusy, setIsBulkBusy] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // ── Selection state ─────────────────────────────────────────────────────
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -158,6 +161,7 @@ function PostsClient() {
 
   const fetchItems = useCallback(async () => {
     setIsLoading(true);
+    setFetchError(null);
     try {
       const res = await fetch(`/api/content?${buildParams()}`, { cache: 'no-store' });
       if (res.ok) {
@@ -165,9 +169,12 @@ function PostsClient() {
         setItems(data.items || []);
         setCounts(data.counts || EMPTY_COUNTS);
         setNextCursor(data.nextCursor || null);
+      } else {
+        setFetchError(`Server returned ${res.status}. Please try again.`);
       }
     } catch (err) {
       console.error('[Posts] fetch failed:', err);
+      setFetchError(err instanceof Error ? err.message : 'Network request failed');
     } finally {
       setIsLoading(false);
     }
@@ -395,13 +402,19 @@ function PostsClient() {
       />
 
       {/* Content */}
+      {fetchError && !isLoading && (
+        <ErrorBanner
+          title="Couldn't load your posts"
+          detail={fetchError}
+          onRetry={() => { void fetchItems(); }}
+          onDismiss={() => setFetchError(null)}
+        />
+      )}
       {isLoading
         ? (
-            <div className="flex min-h-[400px] items-center justify-center">
-              <Loader2 className="size-6 animate-spin text-muted-foreground" />
-            </div>
+            <LoadingState message="Loading your posts" />
           )
-        : items.length === 0
+        : items.length === 0 && !fetchError
           ? (
               <EmptyState
                 icon={LayoutList}
@@ -493,13 +506,7 @@ function PostsClient() {
 // -----------------------------------------------------------
 export default function PostsPage() {
   return (
-    <Suspense
-      fallback={(
-        <div className="flex min-h-[400px] items-center justify-center">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        </div>
-      )}
-    >
+    <Suspense fallback={<LoadingState message="Loading your posts" />}>
       <PostsClient />
     </Suspense>
   );
