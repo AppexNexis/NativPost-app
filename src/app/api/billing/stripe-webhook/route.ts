@@ -5,11 +5,11 @@ import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
 import { addAiCredits } from '@/lib/ai-studio/server';
+import { firePlanUpgradedEmail, fireSubscriptionCancelledEmail } from '@/lib/billing';
 import { getPlanByStripePriceId, PLAN_CONFIGS } from '@/lib/plans';
+import { sendTrustpilotInvitation } from '@/lib/trustpilot';
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
-import { firePlanUpgradedEmail, fireSubscriptionCancelledEmail } from '@/lib/billing';
-import { sendTrustpilotInvitation } from '@/lib/trustpilot';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
@@ -24,7 +24,9 @@ function getField(obj: object, key: string): unknown {
 async function getEmailForOrg(orgId: string): Promise<string | null> {
   try {
     const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY;
-    if (!CLERK_SECRET_KEY) return null;
+    if (!CLERK_SECRET_KEY) {
+      return null;
+    }
 
     const res = await fetch(
       `https://api.clerk.com/v1/organizations/${orgId}/memberships?limit=10`,
@@ -35,7 +37,9 @@ async function getEmailForOrg(orgId: string): Promise<string | null> {
         }),
       },
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      return null;
+    }
 
     const json = await res.json();
     const members: Array<{ role: string; public_user_data: { identifier: string } }> = json.data ?? json;
@@ -51,7 +55,9 @@ async function getEmailForOrg(orgId: string): Promise<string | null> {
 async function getNameForOrg(orgId: string): Promise<string | null> {
   try {
     const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY;
-    if (!CLERK_SECRET_KEY) return null;
+    if (!CLERK_SECRET_KEY) {
+      return null;
+    }
 
     const res = await fetch(
       `https://api.clerk.com/v1/organizations/${orgId}/memberships?limit=10`,
@@ -62,7 +68,9 @@ async function getNameForOrg(orgId: string): Promise<string | null> {
         }),
       },
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      return null;
+    }
 
     const json = await res.json();
     const members: Array<{
@@ -77,7 +85,9 @@ async function getNameForOrg(orgId: string): Promise<string | null> {
     const admin = members.find(
       m => m.role === 'admin' && m.public_user_data?.identifier !== 'admin@nativpost.com',
     );
-    if (!admin) return null;
+    if (!admin) {
+      return null;
+    }
 
     const { first_name, last_name } = admin.public_user_data;
     return [first_name, last_name].filter(Boolean).join(' ') || null;
@@ -115,11 +125,13 @@ export async function POST(request: NextRequest) {
         const planId = session.metadata?.planId;
         const sessionType = session.metadata?.type;
 
-        if (!orgId) break;
+        if (!orgId) {
+          break;
+        }
 
         // ── AI credits purchase ──
         if (sessionType === 'ai_credits') {
-          const credits = parseInt(session.metadata?.credits ?? '0', 10);
+          const credits = Number.parseInt(session.metadata?.credits ?? '0', 10);
           if (credits > 0) {
             await addAiCredits(orgId, credits, { type: 'purchase', description: `Purchased ${credits} AI credits` });
             console.log(`[Stripe Webhook] ai_credits: org=${orgId} credits=${credits}`);
@@ -142,6 +154,7 @@ export async function POST(request: NextRequest) {
               stripeCustomerId: typeof session.customer === 'string'
                 ? session.customer
                 : (session.customer as Stripe.Customer | null)?.id ?? null,
+              billingInterval: session.metadata?.billingInterval ?? 'month',
               postsPerMonth: 3,
               platformsLimit: 2,
               updatedAt: new Date(),
@@ -153,10 +166,14 @@ export async function POST(request: NextRequest) {
         }
 
         // ── Subscription checkout completed ──
-        if (!planId) break;
+        if (!planId) {
+          break;
+        }
 
         const plan = PLAN_CONFIGS[planId];
-        if (!plan) break;
+        if (!plan) {
+          break;
+        }
 
         const subscriptionId = typeof session.subscription === 'string'
           ? session.subscription
@@ -175,6 +192,9 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        const env = process.env.BILLING_PLAN_ENV === 'prod' ? 'prod' : 'dev';
+        const usedInterval = session.metadata?.billingInterval ?? 'month';
+
         await db
           .update(organizationSchema)
           .set({
@@ -185,9 +205,8 @@ export async function POST(request: NextRequest) {
               : (session.customer as Stripe.Customer | null)?.id ?? null,
             stripeSubscriptionId: subscriptionId ?? null,
             stripeSubscriptionStatus: subscriptionStatus,
-            stripeSubscriptionPriceId: plan.stripePriceId[
-              process.env.BILLING_PLAN_ENV === 'prod' ? 'prod' : 'dev'
-            ] ?? null,
+            stripeSubscriptionPriceId: usedInterval === 'year' ? (plan.stripeAnnualPriceId[env] ?? null) : (plan.stripePriceId[env] ?? null),
+            billingInterval: usedInterval,
             ...(periodEnd ? { stripeSubscriptionCurrentPeriodEnd: periodEnd } : {}),
             postsPerMonth: plan.features.postsPerMonth === -1 ? 999999 : plan.features.postsPerMonth,
             platformsLimit: plan.features.platformsLimit === -1 ? 99 : plan.features.platformsLimit,
@@ -210,7 +229,7 @@ export async function POST(request: NextRequest) {
             const name = await getNameForOrg(orgId);
             sendTrustpilotInvitation({
               customerEmail: email,
-              customerName:  name || 'there',
+              customerName: name || 'there',
               orgId,
               plan: planId,
             }).catch(() => null);
@@ -223,7 +242,9 @@ export async function POST(request: NextRequest) {
       case 'customer.subscription.updated': {
         const subscription = event.data.object as Stripe.Subscription;
         const orgId = subscription.metadata?.orgId;
-        if (!orgId) break;
+        if (!orgId) {
+          break;
+        }
 
         const priceId = subscription.items.data[0]?.price?.id;
         const plan = priceId ? getPlanByStripePriceId(priceId) : null;
@@ -245,12 +266,18 @@ export async function POST(request: NextRequest) {
           .where(eq(organizationSchema.id, orgId))
           .limit(1);
 
+        // Detect billing interval from the price ID used on the subscription
+        const env = process.env.BILLING_PLAN_ENV === 'prod' ? 'prod' : 'dev';
+        const isAnnualPrice = plan && plan.stripeAnnualPriceId[env] === priceId;
+        const changedInterval = priceId ? (isAnnualPrice ? 'year' : 'month') : null;
+
         await db
           .update(organizationSchema)
           .set({
             planStatus,
             stripeSubscriptionStatus: subscription.status,
             stripeSubscriptionPriceId: priceId ?? null,
+            ...(changedInterval ? { billingInterval: changedInterval } : {}),
             ...(periodEnd ? { stripeSubscriptionCurrentPeriodEnd: periodEnd } : {}),
             ...(plan ? {
               plan: plan.id,
@@ -276,7 +303,7 @@ export async function POST(request: NextRequest) {
             const name = await getNameForOrg(orgId);
             sendTrustpilotInvitation({
               customerEmail: email,
-              customerName:  name || 'there',
+              customerName: name || 'there',
               orgId,
               plan: plan.id,
             }).catch(() => null);
@@ -289,7 +316,9 @@ export async function POST(request: NextRequest) {
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription;
         const orgId = subscription.metadata?.orgId;
-        if (!orgId) break;
+        if (!orgId) {
+          break;
+        }
 
         const starterPlan = PLAN_CONFIGS.starter!;
 
@@ -309,7 +338,9 @@ export async function POST(request: NextRequest) {
         console.log(`[Stripe Webhook] subscription.deleted: org=${orgId}`);
 
         const email = await getEmailForOrg(orgId);
-        if (email) await fireSubscriptionCancelledEmail(email);
+        if (email) {
+          await fireSubscriptionCancelledEmail(email);
+        }
 
         break;
       }
@@ -359,7 +390,9 @@ export async function POST(request: NextRequest) {
       case 'customer.subscription.trial_will_end': {
         const subscription = event.data.object as Stripe.Subscription;
         const orgId = subscription.metadata?.orgId;
-        if (!orgId) break;
+        if (!orgId) {
+          break;
+        }
 
         const email = await getEmailForOrg(orgId);
         if (email) {

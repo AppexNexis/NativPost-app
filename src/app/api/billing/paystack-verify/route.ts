@@ -58,53 +58,61 @@ export async function POST(request: NextRequest) {
     }
 
     // paystack-verify.ts — replace the db.update block
-const db = await getDb();
-const { getPaystackPlanCode } = await import('@/lib/plans');
-const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-const planCode = getPaystackPlanCode(resolvedPlanId);
-const customerEmail = txData.customer?.email as string | undefined;
+    const db = await getDb();
+    const { getPaystackPlanCode } = await import('@/lib/plans');
+    const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    // Read the org's billing interval (set during create-paystack-checkout)
+    const [existingOrg] = await db
+      .select({ billingInterval: organizationSchema.billingInterval })
+      .from(organizationSchema)
+      .where(eq(organizationSchema.id, orgId!))
+      .limit(1);
+    const interval = existingOrg?.billingInterval ?? 'month';
+    const planCode = getPaystackPlanCode(resolvedPlanId, interval as 'month' | 'year');
+    const customerEmail = txData.customer?.email as string | undefined;
 
-// Create subscription at trial end (mirror of webhook logic)
-let subscriptionCode: string | null = null;
-if (planCode && authorizationCode && customerCode) {
-  try {
-    const subRes = await fetch('https://api.paystack.co/subscription', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${PAYSTACK_SECRET}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        customer: customerCode,
-        plan: planCode,
-        authorization: authorizationCode,
-        start_date: trialEndsAt.toISOString(),
-      }),
-    });
-    const subData = await subRes.json();
-    subscriptionCode = subData.data?.subscription_code ?? null;
-  } catch {
-    // non-fatal — webhook will retry
-  }
-}
+    // Create subscription at trial end (mirror of webhook logic)
+    let subscriptionCode: string | null = null;
+    if (planCode && authorizationCode && customerCode) {
+      try {
+        const subRes = await fetch('https://api.paystack.co/subscription', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${PAYSTACK_SECRET}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            customer: customerCode,
+            plan: planCode,
+            authorization: authorizationCode,
+            start_date: trialEndsAt.toISOString(),
+          }),
+        });
+        const subData = await subRes.json();
+        subscriptionCode = subData.data?.subscription_code ?? null;
+      } catch {
+        // non-fatal — webhook will retry
+      }
+    }
 
-await db
-  .update(organizationSchema)
-  .set({
-    paystackCustomerCode: customerCode ?? null,
-    paystackCustomerEmail: customerEmail ?? null,     // ← add
-    paystackAuthorizationCode: authorizationCode ?? null,
-    paystackSubscriptionCode: subscriptionCode,        // ← add
-    paystackPlanCode: planCode ?? null,                // ← add
-    setupFeePaid: true,                                // ← add
-    plan: resolvedPlanId,
-    planStatus: 'trialing',
-    trialEndsAt,
-    postsPerMonth: 3,
-    platformsLimit: 2,
-    updatedAt: new Date(),
-  })
-  .where(eq(organizationSchema.id, orgId!));
+    await db
+      .update(organizationSchema)
+      .set({
+        paystackCustomerCode: customerCode ?? null,
+        paystackCustomerEmail: customerEmail ?? null, // ← add
+        paystackAuthorizationCode: authorizationCode ?? null,
+        paystackSubscriptionCode: subscriptionCode, // ← add
+        paystackPlanCode: planCode ?? null, // ← add
+        setupFeePaid: true, // ← add
+        plan: resolvedPlanId,
+        planStatus: 'trialing',
+        billingInterval: interval,
+        trialEndsAt,
+        postsPerMonth: 3,
+        platformsLimit: 2,
+        updatedAt: new Date(),
+      })
+      .where(eq(organizationSchema.id, orgId!));
 
     console.log(`[Paystack Verify] Trial started for org ${orgId} on plan ${resolvedPlanId}`);
 
