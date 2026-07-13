@@ -45,7 +45,8 @@ export function TrialLimitsPill({ data }: { data: TrialLimitsData | null }) {
         className={`${CHIP_BASE} border-red-500/30 bg-red-500/10 text-red-600 hover:bg-red-500/15 dark:text-red-400`}
       >
         <span className="inline-block size-1.5 rounded-full bg-red-500" />
-        Trial expired — Upgrade
+        <span className="sm:hidden">Upgrade</span>
+        <span className="hidden sm:inline">Trial expired — Upgrade</span>
       </Link>
     );
   }
@@ -65,6 +66,10 @@ export function TrialLimitsPill({ data }: { data: TrialLimitsData | null }) {
       : trialDaysLeft === 1
         ? 'Trial: 1 day left'
         : `Trial: ${trialDaysLeft} days left`;
+    // Mobile chips get a compact form so the header does not overflow at 375px.
+    const shortLabel = trialDaysLeft <= 0
+      ? 'Ends today'
+      : `${trialDaysLeft}d left`;
 
     return (
       <Link
@@ -73,7 +78,8 @@ export function TrialLimitsPill({ data }: { data: TrialLimitsData | null }) {
         className={`${CHIP_BASE} ${tone}`}
       >
         <span className={`inline-block size-1.5 rounded-full ${dot}`} />
-        {label}
+        <span className="sm:hidden">{shortLabel}</span>
+        <span className="hidden sm:inline">{label}</span>
       </Link>
     );
   }
@@ -103,7 +109,8 @@ export function TrialLimitsPill({ data }: { data: TrialLimitsData | null }) {
       className={`${CHIP_BASE} ${tone}`}
     >
       <span className={`inline-block size-1.5 rounded-full ${dot}`} />
-      {usage.postsThisMonth}/{usage.postsLimit} posts
+      <span className="sm:hidden">{usage.postsThisMonth}/{usage.postsLimit}</span>
+      <span className="hidden sm:inline">{usage.postsThisMonth}/{usage.postsLimit} posts</span>
     </Link>
   );
 }
