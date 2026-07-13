@@ -160,7 +160,7 @@ export function PostCard({
 
       {/* Footer: caption + actions */}
       <div className="flex flex-col gap-2 border-t p-3">
-        <p className="line-clamp-2 min-h-[2.5rem] text-xs leading-relaxed text-foreground/80">
+        <p className="line-clamp-2 min-h-10 text-xs leading-relaxed text-foreground/80">
           {item.caption || <span className="italic text-muted-foreground">No caption</span>}
         </p>
 
@@ -170,7 +170,7 @@ export function PostCard({
             className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-muted"
           >
             <PencilLine className="size-3" />
-            Edit
+            <span className="hidden sm:inline">Edit</span>
           </Link>
 
           <div className="flex items-center gap-1">
@@ -182,7 +182,7 @@ export function PostCard({
                 aria-label="Approve"
               >
                 <CheckCircle2 className="size-3" />
-                Approve
+                <span className="hidden sm:inline">Approve</span>
               </button>
             )}
             <DropdownMenu>
