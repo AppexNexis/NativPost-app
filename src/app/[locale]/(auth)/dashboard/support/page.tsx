@@ -415,14 +415,15 @@ export default function SupportPage() {
           ) : tickets.length === 0 ? (
             <EmptyState
               icon={MessageSquare}
-              title="No tickets"
+              title={statusFilter === 'all' ? 'Need a hand?' : `No ${statusFilter.replace('_', ' ')} tickets`}
               description={
                 statusFilter === 'all'
-                  ? "You haven't opened any support tickets yet."
-                  : `No ${statusFilter.replace('_', ' ')} tickets.`
+                  ? 'Tell us what you\'re stuck on and the NativPost team will get back within one business day.'
+                  : 'Try a different status filter, or open a new ticket to get help.'
               }
-              actionLabel="Open your first ticket"
-              onAction={() => setShowCreate(true)}
+              primary={statusFilter === 'all'
+                ? { label: 'Open your first ticket', onClick: () => setShowCreate(true) }
+                : { label: 'Open a new ticket', onClick: () => setShowCreate(true) }}
             />
           ) : (
             <div>

@@ -53,10 +53,9 @@ export default function BrandProfilePage() {
         <SetupCallBanner />
         <EmptyState
           icon={Palette}
-          title="No Brand Profile configured"
-          description="Complete your Brand Profile so NativPost can generate content that sounds and looks like your brand."
-          actionLabel="Configure Brand Profile"
-          actionHref="/dashboard/brand-profile/onboarding"
+          title="Teach NativPost your brand voice"
+          description="Paste a website, a social profile, or describe your business — we\u2019ll extract your voice, audience, and offering so every post sounds like you."
+          primary={{ label: 'Set up Brand Profile', href: '/dashboard/brand-profile/onboarding' }}
         />
       </>
     );

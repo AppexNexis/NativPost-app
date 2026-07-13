@@ -405,10 +405,12 @@ function PostsClient() {
           ? (
               <EmptyState
                 icon={LayoutList}
-                title={statusFilter ? 'No matching posts' : 'No posts yet'}
-                description="Content created by your NativPost team will appear here."
-                actionLabel="Open Blitz"
-                actionHref="/dashboard/blitz"
+                title={statusFilter ? 'No matching posts' : 'Publish your first post'}
+                description={statusFilter
+                  ? 'Try a different status filter, or start a new post to fill this view.'
+                  : 'Draft, schedule, and publish across every connected platform from one place. Blitz will generate a swipeable queue in under a minute.'}
+                primary={{ label: 'Start with Blitz', href: '/dashboard/blitz' }}
+                secondary={{ label: 'Create manually', href: '/dashboard/content/create' }}
               />
             )
           : (

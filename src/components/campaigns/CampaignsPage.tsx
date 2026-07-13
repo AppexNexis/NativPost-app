@@ -5,6 +5,7 @@ import { Plus, Calendar, BarChart3, AlertTriangle, CalendarDays, Loader2, Pencil
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CampaignWizard } from "@/components/campaigns/CampaignWizard";
+import { EmptyState } from "@/features/dashboard/EmptyState";
 // import { CampaignReviewGrid } from "@/components/campaigns/CampaignReviewGrid";
 import type { Campaign, ContentAngle, SocialAccount } from "@/types/v2";
 
@@ -207,17 +208,27 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
       </div>
 
       {filteredCampaigns.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-20 text-muted-foreground">
-          <Calendar className="mb-4 h-10 w-10 text-muted-foreground/50" />
-          <p className="text-base font-medium text-foreground">No campaigns yet</p>
-          <p className="mt-1 text-sm">Create your first campaign to start generating content in bulk</p>
-          <button
-            onClick={() => setActiveTab("new")}
-            className="mt-6 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            Create Campaign
-          </button>
-        </div>
+        activeTab === "active" ? (
+          <EmptyState
+            icon={Calendar}
+            title="Plan a multi-day campaign"
+            description="Campaigns generate a coordinated series of posts across your accounts in one shot \u2014 pick a goal, a cadence, and NativPost handles the rest."
+            primary={{ label: "Create campaign", onClick: () => setActiveTab("new") }}
+          />
+        ) : activeTab === "drafts" ? (
+          <EmptyState
+            icon={Calendar}
+            title="No drafts saved"
+            description="Half-finished campaigns land here so you can pick them up later. Start a new one and save it to draft anytime."
+            primary={{ label: "New campaign", onClick: () => setActiveTab("new") }}
+          />
+        ) : (
+          <EmptyState
+            icon={Calendar}
+            title="No completed campaigns yet"
+            description="Wrapped and cancelled campaigns will appear here. Head to Active to see what\u2019s currently running."
+          />
+        )
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {filteredCampaigns.map((campaign) => (

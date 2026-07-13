@@ -272,10 +272,10 @@ export default function AnalyticsPage() {
         <PageHeader title="Analytics" description="Track how your content performs across all platforms." />
         <EmptyState
           icon={BarChart3}
-          title="No data yet"
-          description="Publish your first post to start tracking engagement. Analytics sync automatically every 6 hours once posts are live."
-          actionLabel="Create content"
-          actionHref="/dashboard/content/create"
+          title="Publish your first post to unlock analytics"
+          description="Engagement, reach, and follower growth sync every 6 hours once posts are live. Start with Blitz for a ready-to-go queue, or build a post from scratch."
+          primary={{ label: 'Start with Blitz', href: '/dashboard/blitz' }}
+          secondary={{ label: 'Create manually', href: '/dashboard/content/create' }}
         />
       </>
     );

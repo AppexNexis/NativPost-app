@@ -1222,16 +1222,23 @@ export default function MediaLibraryPage() {
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
         ) : assets.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="mb-3 rounded-xl border border-dashed p-5">
-              <Video className="size-10 text-muted-foreground/30" />
+          <div className="flex min-h-[400px] flex-col items-center justify-center rounded-xl border border-dashed bg-background p-8 text-center">
+            <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-muted">
+              <Video className="size-6 text-muted-foreground" />
             </div>
-            <p className="text-sm font-medium">No assets yet</p>
-            <p className="mt-1 max-w-xs text-xs text-muted-foreground">Upload images and videos to use across your posts and content generation.</p>
-            <button type="button" onClick={() => setShowUploader(true)} className="mt-5 flex items-center gap-2 rounded-lg border px-4 py-2 text-xs font-medium hover:bg-muted">
-              <Upload className="size-3.5" />
-              Upload your first asset
-            </button>
+            <h3 className="mb-1 text-base font-semibold">Upload your first asset</h3>
+            <p className="mb-6 max-w-sm text-sm text-muted-foreground">
+              Product shots, B-roll, screenshots, and hooks — anything you drop here becomes available to Blitz, Campaigns, and the editor.
+            </p>
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-center">
+              <button type="button" onClick={() => setShowUploader(true)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+                <Upload className="size-4" />
+                Upload assets
+              </button>
+              <button type="button" onClick={() => setModal({ kind: 'curated-picker' })} className="inline-flex items-center justify-center gap-2 rounded-lg border bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted">
+                Browse curated themes
+              </button>
+            </div>
           </div>
         ) : (
           <>
