@@ -636,7 +636,7 @@ export default function AnalyticsPage() {
               <p className="text-xs text-muted-foreground">
                 Supported:
                 {' '}
-                <span className="font-medium text-foreground">LinkedIn, YouTube, Instagram, X, Facebook</span>
+                <span className="font-medium text-foreground">Instagram, Facebook, X, YouTube, TikTok, LinkedIn, Threads, Pinterest</span>
               </p>
             </div>
           </div>

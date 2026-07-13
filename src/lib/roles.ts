@@ -75,7 +75,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Media library', href: '/dashboard/media-library', icon: 'Image', roles: ['admin', 'editor'], group: 'Create' },
 
   // --- Workspace ---
-  { label: 'Connections', href: '/dashboard/connections', icon: 'Link2', roles: ['admin', 'editor', 'member'], group: 'Workspace' },
+  { label: 'Social accounts', href: '/dashboard/social-accounts', icon: 'Link2', roles: ['admin', 'editor', 'member'], group: 'Workspace' },
   { label: 'Team', href: '/dashboard/team', icon: 'Users', roles: ['admin'], group: 'Workspace' },
   {
     label: 'Connect',

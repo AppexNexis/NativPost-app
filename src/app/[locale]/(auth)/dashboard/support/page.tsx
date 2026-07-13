@@ -440,7 +440,7 @@ export default function SupportPage() {
           </div>
           <div className="grid grid-cols-1 gap-px bg-border sm:grid-cols-3">
             {[
-              { label: 'Connect a platform', href: '/dashboard/connections' },
+              { label: 'Connect a platform', href: '/dashboard/social-accounts' },
               { label: 'Billing and plans', href: '/dashboard/billing' },
               { label: 'Brand profile', href: '/dashboard/brand-profile' },
             ].map((link) => (

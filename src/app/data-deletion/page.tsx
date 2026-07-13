@@ -1,11 +1,11 @@
 /**
  * /data-deletion
  *
- * Public page — lives OUTSIDE the dashboard layout.
+ * Public page — lives OUTSIDE the dashboard layout and the [locale] group.
  * No auth required. Meta redirects users here after a data deletion request.
  *
  * File location: app/data-deletion/page.tsx
- * (NOT inside app/(dashboard)/ or any auth-gated folder)
+ * (NOT inside app/[locale]/(auth)/ — middleware would force Clerk sign-in)
  */
 
 import { type Metadata } from 'next';

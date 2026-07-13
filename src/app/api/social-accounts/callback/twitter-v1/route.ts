@@ -56,21 +56,21 @@ function oauthSign1a(
 export async function GET(request: NextRequest) {
   const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
   const { error, orgId } = await getAuthContext();
-  if (error) return NextResponse.redirect(`${BASE_URL}/dashboard/connections?error=auth`);
+  if (error) return NextResponse.redirect(`${BASE_URL}/dashboard/social-accounts?error=auth`);
 
   const { searchParams } = request.nextUrl;
   const oauthToken = searchParams.get('oauth_token');
   const oauthVerifier = searchParams.get('oauth_verifier');
 
   if (!oauthToken || !oauthVerifier) {
-    return NextResponse.redirect(`${BASE_URL}/dashboard/connections?error=twitter_v1_callback`);
+    return NextResponse.redirect(`${BASE_URL}/dashboard/social-accounts?error=twitter_v1_callback`);
   }
 
   const requestTokenSecret = twitterRequestTokenStore.get(oauthToken);
   twitterRequestTokenStore.delete(oauthToken);
 
   if (!requestTokenSecret) {
-    return NextResponse.redirect(`${BASE_URL}/dashboard/connections?error=twitter_v1_state`);
+    return NextResponse.redirect(`${BASE_URL}/dashboard/social-accounts?error=twitter_v1_state`);
   }
 
   const consumerKey = process.env.TWITTER_CONSUMER_KEY!;
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
 
   if (!res.ok) {
     console.error('[Twitter 1.0a] access_token failed:', await res.text());
-    return NextResponse.redirect(`${BASE_URL}/dashboard/connections?error=twitter_v1_token`);
+    return NextResponse.redirect(`${BASE_URL}/dashboard/social-accounts?error=twitter_v1_token`);
   }
 
   const body = await res.text();
@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
   const screenName = params.get('screen_name');
 
   if (!accessToken || !accessTokenSecret) {
-    return NextResponse.redirect(`${BASE_URL}/dashboard/connections?error=twitter_v1_token`);
+    return NextResponse.redirect(`${BASE_URL}/dashboard/social-accounts?error=twitter_v1_token`);
   }
 
   try {
@@ -149,9 +149,9 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.redirect(`${BASE_URL}/dashboard/connections?success=twitter`);
+    return NextResponse.redirect(`${BASE_URL}/dashboard/social-accounts?success=twitter`);
   } catch (err) {
     console.error('[Twitter 1.0a] DB error:', err);
-    return NextResponse.redirect(`${BASE_URL}/dashboard/connections?error=twitter_v1_db`);
+    return NextResponse.redirect(`${BASE_URL}/dashboard/social-accounts?error=twitter_v1_db`);
   }
 }

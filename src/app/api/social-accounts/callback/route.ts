@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   const { error, orgId } = await getAuthContext();
   if (error) {
     return NextResponse.redirect(
-      new URL('/dashboard/connections?error=auth', request.url),
+      new URL('/dashboard/social-accounts?error=auth', request.url),
     );
   }
 
@@ -25,13 +25,13 @@ export async function GET(request: NextRequest) {
 
   if (errorParam) {
     return NextResponse.redirect(
-      new URL(`/dashboard/connections?error=${errorParam}`, request.url),
+      new URL(`/dashboard/social-accounts?error=${errorParam}`, request.url),
     );
   }
 
   if (!code || !state) {
     return NextResponse.redirect(
-      new URL('/dashboard/connections?error=missing_params', request.url),
+      new URL('/dashboard/social-accounts?error=missing_params', request.url),
     );
   }
 
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
 
   if (!platform) {
     return NextResponse.redirect(
-      new URL('/dashboard/connections?error=invalid_state', request.url),
+      new URL('/dashboard/social-accounts?error=invalid_state', request.url),
     );
   }
 
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
 
   if (!tokens) {
     return NextResponse.redirect(
-      new URL(`/dashboard/connections?error=token_exchange_failed&platform=${platform}`, request.url),
+      new URL(`/dashboard/social-accounts?error=token_exchange_failed&platform=${platform}`, request.url),
     );
   }
 
@@ -76,11 +76,11 @@ export async function GET(request: NextRequest) {
     );
     if (!saved) {
       return NextResponse.redirect(
-        new URL('/dashboard/connections?error=whatsapp_resolve_failed', request.url),
+        new URL('/dashboard/social-accounts?error=whatsapp_resolve_failed', request.url),
       );
     }
     return NextResponse.redirect(
-      new URL('/dashboard/connections?success=whatsapp', request.url),
+      new URL('/dashboard/social-accounts?success=whatsapp', request.url),
     );
   }
   // ──────────────────────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
     const config = PLATFORM_CONFIGS[platform];
     if (!config) {
       return NextResponse.redirect(
-        new URL('/dashboard/connections?error=invalid_platform', request.url),
+        new URL('/dashboard/social-accounts?error=invalid_platform', request.url),
       );
     }
     const accountType = profile?.type ?? config?.accountType ?? 'personal';
@@ -146,12 +146,12 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.redirect(
-      new URL(`/dashboard/connections?success=${platform}`, request.url),
+      new URL(`/dashboard/social-accounts?success=${platform}`, request.url),
     );
   } catch (err) {
     console.error('Failed to save social account:', err);
     return NextResponse.redirect(
-      new URL(`/dashboard/connections?error=save_failed&platform=${platform}`, request.url),
+      new URL(`/dashboard/social-accounts?error=save_failed&platform=${platform}`, request.url),
     );
   }
 }

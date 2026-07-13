@@ -1039,45 +1039,28 @@ function BillingContent() {
           )}
         </div>
 
-        <div className="overflow-hidden rounded-2xl border bg-card">
-          {/* Table header — hidden on mobile */}
-          <div className="hidden grid-cols-4 border-b bg-muted/30 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:grid">
-            <span>Date</span>
-            <span>Description</span>
-            <span>Method</span>
-            <span className="text-right">Amount</span>
-          </div>
-
-          <div className="flex min-h-[140px] flex-col items-center justify-center gap-2 px-5 py-10 text-center">
-            <p className="text-sm font-semibold text-muted-foreground">No payments yet</p>
-            <p className="max-w-sm text-xs text-muted-foreground">
-              Your payment history will appear here after your first billing cycle.
-              {billing?.hasPaystack
-                ? ' Receipts for Paystack transactions are sent to your email.'
-                : ''}
-            </p>
-          </div>
+        <div className="rounded-2xl border bg-card p-5">
+          <p className="text-sm text-muted-foreground">
+            {billing?.hasStripe && (
+              <>
+                <strong className="font-semibold text-foreground">Stripe:</strong>
+                {' '}
+                Full invoice history is available in the billing portal.
+                {' '}
+              </>
+            )}
+            {billing?.hasPaystack && (
+              <>
+                <strong className="font-semibold text-foreground">Paystack:</strong>
+                {' '}
+                A receipt is sent to your email after every successful transaction.
+              </>
+            )}
+            {!billing?.hasStripe && !billing?.hasPaystack && (
+              <>Your payment history will appear here after your first billing cycle.</>
+            )}
+          </p>
         </div>
-
-        <p className="mt-3 text-xs text-muted-foreground">
-          {billing?.hasStripe && (
-            <>
-              <strong className="font-semibold">Stripe:</strong>
-              {' '}
-              Full invoice history is available
-              via the billing portal.
-              {' '}
-            </>
-          )}
-          {billing?.hasPaystack && (
-            <>
-              <strong className="font-semibold">Paystack:</strong>
-              {' '}
-              A receipt is sent to your email
-              after every successful transaction.
-            </>
-          )}
-        </p>
       </div>
 
       {/* Paystack portal modal */}

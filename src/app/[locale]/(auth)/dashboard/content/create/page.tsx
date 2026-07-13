@@ -723,7 +723,7 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
 
         {step !== 'type' && connectedAndActive.length === 0 && (
           <Link
-            href="/dashboard/connections"
+            href="/dashboard/social-accounts"
             className="hidden shrink-0 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 sm:inline-flex"
           >
             Connect accounts
@@ -780,7 +780,7 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                 {connectedAndActive.length === 0 && (
                   <div className="mt-6 flex flex-col gap-3 rounded-xl bg-muted/50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm text-muted-foreground">Connect your social accounts to publish content.</p>
-                    <Link href="/dashboard/connections" className="self-start rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 sm:self-auto">
+                    <Link href="/dashboard/social-accounts" className="self-start rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 sm:self-auto">
                       Connect accounts
                     </Link>
                   </div>
@@ -941,7 +941,7 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                       {connectedPlatformIds.length === 0 ? (
                         <div className="rounded-lg bg-muted/50 px-3 py-3 text-xs text-muted-foreground">
                           No accounts connected.{' '}
-                          <Link href="/dashboard/connections" className="text-primary underline">
+                          <Link href="/dashboard/social-accounts" className="text-primary underline">
                             Connect platforms
                           </Link>{' '}
                           to select them here.

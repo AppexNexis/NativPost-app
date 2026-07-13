@@ -1,35 +1,16 @@
-import { OrganizationProfile } from '@clerk/nextjs';
-import { useTranslations } from 'next-intl';
+import { redirect } from 'next/navigation';
 
-import { TitleBar } from '@/features/dashboard/TitleBar';
-import { getI18nPath } from '@/utils/Helpers';
-
-const OrganizationProfilePage = (props: { params: { locale: string } }) => {
-  const t = useTranslations('OrganizationProfile');
-
-  return (
-    <>
-      <TitleBar
-        title={t('title_bar')}
-        description={t('title_bar_description')}
-      />
-
-      <OrganizationProfile
-        routing="path"
-        path={getI18nPath(
-          '/dashboard/organization-profile',
-          props.params.locale,
-        )}
-        afterLeaveOrganizationUrl="/onboarding/organization-selection"
-        appearance={{
-          elements: {
-            rootBox: 'w-full',
-            cardBox: 'w-full flex',
-          },
-        }}
-      />
-    </>
-  );
-};
-
-export default OrganizationProfilePage;
+/**
+ * /dashboard/organization-profile is a legacy alias. The canonical route is
+ * /dashboard/team, which wraps the same Clerk widget with a friendlier URL.
+ * Redirect preserves any trailing sub-path Clerk generated internally.
+ */
+export default async function OrganizationProfileRedirectPage({
+  params,
+}: {
+  params: Promise<{ 'organization-profile'?: string[] }>;
+}) {
+  const p = await params;
+  const trailing = p['organization-profile']?.join('/') ?? '';
+  redirect(`/dashboard/team${trailing ? `/${trailing}` : ''}`);
+}

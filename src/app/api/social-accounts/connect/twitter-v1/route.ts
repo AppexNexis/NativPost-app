@@ -82,7 +82,7 @@ export async function GET(_request: NextRequest) {
   if (!res.ok) {
     const text = await res.text();
     console.error('[Twitter 1.0a] request_token failed:', text);
-    return NextResponse.redirect(`${BASE_URL}/dashboard/connections?error=twitter_v1_init`);
+    return NextResponse.redirect(`${BASE_URL}/dashboard/social-accounts?error=twitter_v1_init`);
   }
 
   const body = await res.text();
@@ -91,7 +91,7 @@ export async function GET(_request: NextRequest) {
   const oauthTokenSecret = params.get('oauth_token_secret');
 
   if (!oauthToken || !oauthTokenSecret) {
-    return NextResponse.redirect(`${BASE_URL}/dashboard/connections?error=twitter_v1_init`);
+    return NextResponse.redirect(`${BASE_URL}/dashboard/social-accounts?error=twitter_v1_init`);
   }
 
   // Store secret keyed by request token — retrieved in callback

@@ -81,6 +81,14 @@ function isNativPostStaff(
 }
 
 export default function middleware(request: NextRequest, event: NextFetchEvent) {
+  // PUBLIC PAGES (no auth, no locale rewriting)
+  // /data-deletion is a Meta-required public confirmation page. It lives
+  // outside the [locale] group so it must not be touched by intl middleware
+  // and must not be gated by Clerk.
+  if (request.nextUrl.pathname === '/data-deletion') {
+    return NextResponse.next();
+  }
+
   // API ROUTES
   if (isApiRoute(request)) {
     return clerkMiddleware(async (auth, req) => {

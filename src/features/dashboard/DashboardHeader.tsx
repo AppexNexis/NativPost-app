@@ -47,7 +47,7 @@ export const DashboardHeader = (props: {
         <OrganizationSwitcher
           organizationProfileMode="navigation"
           organizationProfileUrl={getI18nPath(
-            '/dashboard/organization-profile',
+            '/dashboard/team',
             locale,
           )}
           afterCreateOrganizationUrl="/dashboard"

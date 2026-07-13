@@ -598,10 +598,10 @@ const hasUpcoming = (data.upcoming?.length || 0) > 0;
                   sub: 'Performance data',
                 },
                 {
-                  href: '/dashboard/connections',
+                  href: '/dashboard/social-accounts',
                   icon: TrendingUp,
-                  label: 'Connections',
-                  sub: 'Manage social accounts',
+                  label: 'Social accounts',
+                  sub: 'Manage connected platforms',
                 },
                 {
                   href: '/dashboard/brand-profile',

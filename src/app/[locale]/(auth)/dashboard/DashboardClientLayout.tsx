@@ -22,7 +22,6 @@ import {
   Menu,
   PenLine,
   Plus,
-  Search,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -407,20 +406,11 @@ export default function DashboardClientLayout({
             <Menu className="size-5" />
           </button>
 
-          {/* Universal search — desktop */}
-          <button
-            type="button"
-            className="hidden flex-1 max-w-sm items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted lg:flex"
-            onClick={() => {/* TODO: open search modal */}}
-          >
-            <Search className="size-4 shrink-0" />
-            <span className="flex-1 text-left">Search</span>
-            <kbd className="hidden rounded border bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:block">
-              Ctrl K
-            </kbd>
-          </button>
+          {/* Universal search — hidden until the command palette is wired.
+            * Bringing it back means implementing the search modal, then
+            * re-enabling the button and its shortcut handler. */}
 
-          <div className="flex-1 lg:hidden" />
+          <div className="flex-1" />
 
           <div className="flex items-center gap-2">
             <NotificationBell />
