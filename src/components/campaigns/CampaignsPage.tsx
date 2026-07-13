@@ -214,6 +214,7 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
             title="Plan a multi-day campaign"
             description="Campaigns generate a coordinated series of posts across your accounts in one shot \u2014 pick a goal, a cadence, and NativPost handles the rest."
             primary={{ label: "Create campaign", onClick: () => setActiveTab("new") }}
+            secondary={{ label: "Try Blitz instead", href: "/dashboard/blitz" }}
           />
         ) : activeTab === "drafts" ? (
           <EmptyState
@@ -221,12 +222,15 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
             title="No drafts saved"
             description="Half-finished campaigns land here so you can pick them up later. Start a new one and save it to draft anytime."
             primary={{ label: "New campaign", onClick: () => setActiveTab("new") }}
+            secondary={{ label: "View active campaigns", onClick: () => setActiveTab("active") }}
           />
         ) : (
           <EmptyState
             icon={Calendar}
             title="No completed campaigns yet"
             description="Wrapped and cancelled campaigns will appear here. Head to Active to see what\u2019s currently running."
+            primary={{ label: "View active campaigns", onClick: () => setActiveTab("active") }}
+            secondary={{ label: "Start a new campaign", onClick: () => setActiveTab("new") }}
           />
         )
       ) : (

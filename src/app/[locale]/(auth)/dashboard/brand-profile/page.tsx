@@ -56,6 +56,7 @@ export default function BrandProfilePage() {
           title="Teach NativPost your brand voice"
           description="Paste a website, a social profile, or describe your business — we\u2019ll extract your voice, audience, and offering so every post sounds like you."
           primary={{ label: 'Set up Brand Profile', href: '/dashboard/brand-profile/onboarding' }}
+          secondary={{ label: 'Watch a 60s tour', href: '/dashboard/support' }}
         />
       </>
     );

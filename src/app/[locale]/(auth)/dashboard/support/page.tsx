@@ -424,6 +424,9 @@ export default function SupportPage() {
               primary={statusFilter === 'all'
                 ? { label: 'Open your first ticket', onClick: () => setShowCreate(true) }
                 : { label: 'Open a new ticket', onClick: () => setShowCreate(true) }}
+              secondary={statusFilter === 'all'
+                ? { label: 'Check setup guides', href: '/dashboard/social-accounts' }
+                : { label: 'Show all tickets', onClick: () => setStatusFilter('all') }}
             />
           ) : (
             <div>
