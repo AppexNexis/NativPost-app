@@ -30,7 +30,11 @@ import { Input } from '@/components/ui/input';
 // -----------------------------------------------------------
 // TYPES
 // -----------------------------------------------------------
-type BrandContextMode = 'website' | 'description';
+type BrandContextMode = 'website' | 'social' | 'description';
+
+// Phase 1 social-profile onboarding platforms. Matches the engine's
+// BrandProfileExtractRequest.source_type literal set.
+type SocialPlatform = 'instagram' | 'tiktok' | 'twitter' | 'linktree' | 'youtube';
 
 type WizardData = {
   brandName: string;
@@ -40,6 +44,11 @@ type WizardData = {
   websiteFieldsFound: string[] | null;
   websiteError: string | null;
   extracted: Record<string, unknown> | null;
+  // Phase 1 social-profile onboarding
+  socialPlatform: SocialPlatform;
+  socialHandle: string;
+  brandProfileSource: string | null;         // provenance echoed back from engine
+  brandProfileSourceHandle: string | null;   // e.g. 'garyvee'
   angles: ContentAngleDraft[];
   selectedAngles: string[];
   descProduct: string;
@@ -64,6 +73,10 @@ const EMPTY_DATA: WizardData = {
   websiteFieldsFound: null,
   websiteError: null,
   extracted: null,
+  socialPlatform: 'instagram',
+  socialHandle: '',
+  brandProfileSource: null,
+  brandProfileSourceHandle: null,
   angles: [],
   selectedAngles: [],
   descProduct: '',
@@ -142,6 +155,52 @@ function getNormalizedUrl(rawUrl: string): string {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
+// Phase 1 social-profile onboarding helpers.
+// Strip common leading noise so the user can paste `@garyvee`, a bare
+// handle, or a full URL — we always send the engine a canonical bare handle.
+function normalizeSocialHandle(raw: string, platform: SocialPlatform): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  const matchers: Record<SocialPlatform, RegExp> = {
+    instagram: /^https?:\/\/(?:www\.)?instagram\.com\/([^/?#]+)/i,
+    tiktok: /^https?:\/\/(?:www\.)?tiktok\.com\/@?([^/?#]+)/i,
+    twitter: /^https?:\/\/(?:www\.)?(?:x|twitter)\.com\/([^/?#]+)/i,
+    linktree: /^https?:\/\/(?:www\.)?linktr\.ee\/([^/?#]+)/i,
+    youtube: /^https?:\/\/(?:www\.)?youtube\.com\/(?:@)?([^/?#]+)/i,
+  };
+  const match = trimmed.match(matchers[platform]);
+  const bare = (match ? match[1]! : trimmed).replace(/^@+/, '').replace(/\/+$/, '');
+  return bare;
+}
+
+function buildSocialUrl(platform: SocialPlatform, handle: string): string {
+  const bare = handle.replace(/^@+/, '').replace(/\/+$/, '');
+  switch (platform) {
+    case 'instagram':
+      return `https://instagram.com/${bare}`;
+    case 'tiktok':
+      return `https://tiktok.com/@${bare}`;
+    case 'twitter':
+      return `https://x.com/${bare}`;
+    case 'linktree':
+      return `https://linktr.ee/${bare}`;
+    case 'youtube':
+      return `https://youtube.com/@${bare}`;
+  }
+}
+
+const SOCIAL_PLATFORMS: { id: SocialPlatform; label: string; prefix: string }[] = [
+  { id: 'instagram', label: 'Instagram', prefix: 'instagram.com/' },
+  { id: 'tiktok', label: 'TikTok', prefix: 'tiktok.com/@' },
+  { id: 'twitter', label: 'X', prefix: 'x.com/' },
+  { id: 'linktree', label: 'Linktree', prefix: 'linktr.ee/' },
+  { id: 'youtube', label: 'YouTube', prefix: 'youtube.com/@' },
+];
+
+function platformLabel(id: SocialPlatform): string {
+  return SOCIAL_PLATFORMS.find(p => p.id === id)?.label ?? id;
+}
+
 function inferGrowthStage(teamSize: string, revenue: string): 'early' | 'growing' | 'established' {
   const smallTeam = teamSize === 'Just me' || teamSize === '2 to 5';
   const earlyRevenue = revenue === 'Pre-revenue' || revenue === '$1 to $1,000';
@@ -192,34 +251,89 @@ export default function OnboardingSetupPage() {
   const toggleInList = (list: string[], value: string): string[] =>
     list.includes(value) ? list.filter(v => v !== value) : [...list, value];
 
-  const handleAnalyzeWebsite = async () => {
-    const url = getNormalizedUrl(data.websiteUrl);
-    if (!url || url === 'https://') {
-      update({ websiteError: 'Enter a website URL first.' });
-      return;
+  const handleAnalyze = async () => {
+    // Website flow: user pastes a domain, we send { url, sourceType:'website' }.
+    // Social flow: user picks a platform + handle, we build the canonical
+    // URL client-side and send { url, sourceType, sourceHandle }.
+    let url: string;
+    let sourceType: 'website' | SocialPlatform;
+    let sourceHandle: string | null = null;
+
+    if (data.contextMode === 'social') {
+      const bare = normalizeSocialHandle(data.socialHandle, data.socialPlatform);
+      if (!bare) {
+        update({ websiteError: `Enter your ${platformLabel(data.socialPlatform)} handle first.` });
+        return;
+      }
+      url = buildSocialUrl(data.socialPlatform, bare);
+      sourceType = data.socialPlatform;
+      sourceHandle = bare;
+    } else {
+      const normalizedUrl = getNormalizedUrl(data.websiteUrl);
+      if (!normalizedUrl || normalizedUrl === 'https://') {
+        update({ websiteError: 'Enter a website URL first.' });
+        return;
+      }
+      url = normalizedUrl;
+      sourceType = 'website';
     }
+
     setIsAnalyzing(true);
     update({ websiteError: null, websiteFieldsFound: null });
     try {
       const res = await fetch('/api/brand-profile/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, sourceType, sourceHandle }),
       });
       const json = await res.json();
       if (!res.ok) {
-        update({ websiteError: json.error || 'Could not read that site. Try the description option instead.' });
+        // Hard failure (network / 5xx). Website path shows the message.
+        // Social path lets the user try Describe it via the same fallback
+        // link at the bottom of the step.
+        update({
+          websiteError: json.error
+            ?? (data.contextMode === 'social'
+              ? `Could not read that ${platformLabel(data.socialPlatform)} profile. Try the describe option instead.`
+              : 'Could not read that site. Try the description option instead.'),
+        });
         return;
       }
+
+      // Engine soft-failure envelope: partial=true means the adapter could
+      // not extract enough. Drop the user into the Describe step with the
+      // handle prefilled — never a red dead-end (memory: no-blocking-modal-errors).
+      if (json.partial) {
+        update({
+          contextMode: 'description',
+          brandProfileSource: json.sourceType ?? sourceType,
+          brandProfileSourceHandle: json.sourceHandle ?? sourceHandle,
+          brandName: data.brandName || sourceHandle || '',
+          websiteError: `We could not read that ${platformLabel(sourceType as SocialPlatform)} profile automatically. We've started your profile with what we have — fill in the rest below.`,
+        });
+        return;
+      }
+
       const angles: ContentAngleDraft[] = Array.isArray(json.angles) ? json.angles : [];
+      const extractedProfile = json.profile ?? {};
       update({
-        extracted: json.profile,
+        extracted: extractedProfile,
         websiteFieldsFound: json.fieldsFound || [],
         angles,
         selectedAngles: angles.map(a => a.name),
+        brandProfileSource: json.sourceType ?? sourceType,
+        brandProfileSourceHandle: json.sourceHandle ?? sourceHandle,
+        brandName: data.brandName
+          || (typeof extractedProfile.brandName === 'string' ? extractedProfile.brandName : '')
+          || sourceHandle
+          || '',
       });
     } catch {
-      update({ websiteError: 'Something went wrong reaching the analysis service. Try again, or use the description option.' });
+      update({
+        websiteError: data.contextMode === 'social'
+          ? `Something went wrong reading that ${platformLabel(data.socialPlatform)} profile. Try again, or use the describe option.`
+          : 'Something went wrong reaching the analysis service. Try again, or use the description option.',
+      });
     } finally {
       setIsAnalyzing(false);
     }
@@ -253,11 +367,44 @@ export default function OnboardingSetupPage() {
       const brandName = data.brandName || organization?.name || '';
       const extracted: Record<string, unknown> = data.extracted || {};
 
-      const brandProfilePayload = data.contextMode === 'website'
+      // Provenance columns (Phase 1) — attached to whichever payload branch
+      // we take so the row records how the profile was seeded regardless of
+      // whether the user landed via the website or a social handle. Falls
+      // back to 'website' if the flow never touched the extractor.
+      const provenance = {
+        brandProfileSource:
+          data.brandProfileSource
+          ?? (data.contextMode === 'website'
+            ? 'website'
+            : data.contextMode === 'social'
+              ? data.socialPlatform
+              : null),
+        brandProfileSourceHandle:
+          data.brandProfileSourceHandle
+          ?? (data.contextMode === 'social'
+            ? normalizeSocialHandle(data.socialHandle, data.socialPlatform) || null
+            : null),
+      };
+
+      const brandProfilePayload = data.contextMode === 'description'
         ? {
             brandName,
             logoUrl: data.logoUrl,
-            websiteUrl: getNormalizedUrl(data.websiteUrl),
+            companyDescription: [data.descProduct, data.descProblem, data.descBenefits].filter(Boolean).join(' '),
+            targetAudience: data.descAudience,
+            communicationStyle: data.descTone,
+            antiPatterns: data.descAvoid ? [data.descAvoid] : [],
+            growthStage,
+            ...provenance,
+          }
+        : {
+            // 'website' and 'social' share the same extracted-profile shape —
+            // both hydrate `extracted` via /api/brand-profile/extract.
+            brandName,
+            logoUrl: data.logoUrl,
+            websiteUrl: data.contextMode === 'website'
+              ? getNormalizedUrl(data.websiteUrl)
+              : undefined,
             industry: extracted.industry,
             targetAudience: extracted.targetAudience,
             companyDescription: extracted.companyDescription,
@@ -272,15 +419,7 @@ export default function OnboardingSetupPage() {
             toneHumor: extracted.toneHumor,
             toneEnergy: extracted.toneEnergy,
             growthStage,
-          }
-        : {
-            brandName,
-            logoUrl: data.logoUrl,
-            companyDescription: [data.descProduct, data.descProblem, data.descBenefits].filter(Boolean).join(' '),
-            targetAudience: data.descAudience,
-            communicationStyle: data.descTone,
-            antiPatterns: data.descAvoid ? [data.descAvoid] : [],
-            growthStage,
+            ...provenance,
           };
 
       const profileRes = await fetch('/api/brand-profile', {
@@ -364,7 +503,7 @@ export default function OnboardingSetupPage() {
           <div className="mb-4 flex gap-2">
             <button
               type="button"
-              onClick={() => update({ contextMode: 'website' })}
+              onClick={() => update({ contextMode: 'website', websiteError: null })}
               className={`flex-1 rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
                 data.contextMode === 'website'
                   ? 'border-primary bg-primary/10 text-primary'
@@ -375,99 +514,194 @@ export default function OnboardingSetupPage() {
             </button>
             <button
               type="button"
-              onClick={() => update({ contextMode: 'description' })}
+              onClick={() => update({ contextMode: 'social', websiteError: null })}
+              className={`flex-1 rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+                data.contextMode === 'social'
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border text-foreground hover:bg-muted/40'
+              }`}
+            >
+              Social profile
+            </button>
+            <button
+              type="button"
+              onClick={() => update({ contextMode: 'description', websiteError: null })}
               className={`flex-1 rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
                 data.contextMode === 'description'
                   ? 'border-primary bg-primary/10 text-primary'
                   : 'border-border text-foreground hover:bg-muted/40'
               }`}
             >
-              Describe it instead
+              Describe it
             </button>
           </div>
 
-          {data.contextMode === 'website'
-            ? (
-                <div className="space-y-3">
-                  <div className="flex gap-2">
-                    <div className="flex flex-1 items-center overflow-hidden rounded-full border border-input bg-background transition-all focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
-                      <span className="select-none pointer-events-none pl-4 text-sm text-muted-foreground">
-                        https://
-                      </span>
-                      <Input
-                        type="text"
-                        value={data.websiteUrl}
-                        onChange={(e) => {
-                          const cleanVal = e.target.value.replace(/^https?:\/\//i, '').trim();
-                          update({ websiteUrl: cleanVal });
-                        }}
-                        placeholder="nativpost.com"
-                        disabled={isAnalyzing}
-                        className="border-0 bg-transparent pl-1 focus-visible:ring-0 focus-visible:ring-offset-0"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleAnalyzeWebsite}
-                      disabled={isAnalyzing}
-                      className="shrink-0 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
-                    >
-                      {isAnalyzing ? 'Reading...' : 'Analyze'}
-                    </button>
-                  </div>
-                  {data.websiteError && <p className="text-xs text-destructive">{data.websiteError}</p>}
-                  {data.websiteFieldsFound && (
-                    <p className="text-xs text-muted-foreground">
-                      Picked up
-                      {' '}
-                      {data.websiteFieldsFound.length}
-                      {' '}
-                      details from your site and drafted
-                      {' '}
-                      {data.angles.length}
-                      {' '}
-                      content angles. You can review them at the last step.
-                    </p>
-                  )}
+          {data.contextMode === 'website' && (
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <div className="flex flex-1 items-center overflow-hidden rounded-full border border-input bg-background transition-all focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
+                  <span className="select-none pointer-events-none pl-4 text-sm text-muted-foreground">
+                    https://
+                  </span>
+                  <Input
+                    type="text"
+                    value={data.websiteUrl}
+                    onChange={(e) => {
+                      const cleanVal = e.target.value.replace(/^https?:\/\//i, '').trim();
+                      update({ websiteUrl: cleanVal });
+                    }}
+                    placeholder="nativpost.com"
+                    disabled={isAnalyzing}
+                    className="border-0 bg-transparent pl-1 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
                 </div>
-              )
-            : (
-                <div className="space-y-3">
-                  {([
-                    ['descProduct', 'What do you sell or offer?'],
-                    ['descAudience', 'Who is it for?'],
-                    ['descProblem', 'What problem does it solve?'],
-                    ['descBenefits', 'Key benefits, in your own words'],
-                    ['descTone', 'How should your content sound? (e.g. direct, playful, formal)'],
-                    ['descAvoid', 'Anything we should avoid saying or doing?'],
-                  ] as const).map(([field, placeholder]) => (
-                    <Input
-                      key={field}
-                      type="text"
-                      value={data[field]}
-                      onChange={e => update({ [field]: e.target.value } as Partial<WizardData>)}
-                      placeholder={placeholder}
-                    />
-                  ))}
-                  <p className="text-right text-xs text-muted-foreground">
-                    {descriptionChars < minDescriptionChars
-                      ? `${minDescriptionChars - descriptionChars} more characters needed`
-                      : 'Looks good'}
-                  </p>
-                </div>
+                <button
+                  type="button"
+                  onClick={handleAnalyze}
+                  disabled={isAnalyzing}
+                  className="shrink-0 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+                >
+                  {isAnalyzing ? 'Reading...' : 'Analyze site'}
+                </button>
+              </div>
+              {data.websiteError && <p className="text-xs text-destructive">{data.websiteError}</p>}
+              {data.websiteFieldsFound && (
+                <p className="text-xs text-muted-foreground">
+                  Picked up
+                  {' '}
+                  {data.websiteFieldsFound.length}
+                  {' '}
+                  details from your site and drafted
+                  {' '}
+                  {data.angles.length}
+                  {' '}
+                  content angles. You can review them at the last step.
+                </p>
               )}
+            </div>
+          )}
+
+          {data.contextMode === 'social' && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {SOCIAL_PLATFORMS.map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => update({ socialPlatform: p.id, websiteError: null })}
+                    disabled={isAnalyzing}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                      data.socialPlatform === p.id
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border text-foreground hover:bg-muted/40'
+                    } disabled:opacity-60`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <div className="flex flex-1 items-center overflow-hidden rounded-full border border-input bg-background transition-all focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
+                  <span className="select-none pointer-events-none pl-4 text-sm text-muted-foreground">
+                    {SOCIAL_PLATFORMS.find(p => p.id === data.socialPlatform)?.prefix}
+                  </span>
+                  <Input
+                    type="text"
+                    value={data.socialHandle}
+                    onChange={e => update({ socialHandle: e.target.value.trim() })}
+                    placeholder="your-handle"
+                    disabled={isAnalyzing}
+                    className="border-0 bg-transparent pl-1 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAnalyze}
+                  disabled={isAnalyzing}
+                  className="shrink-0 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+                >
+                  {isAnalyzing
+                    ? `Reading ${platformLabel(data.socialPlatform)}...`
+                    : `Analyze ${platformLabel(data.socialPlatform)}`}
+                </button>
+              </div>
+              {data.websiteError && <p className="text-xs text-destructive">{data.websiteError}</p>}
+              {data.websiteFieldsFound && data.brandProfileSourceHandle && (
+                <p className="text-xs text-muted-foreground">
+                  Extracted from @
+                  {data.brandProfileSourceHandle}
+                  {' '}
+                  on
+                  {' '}
+                  {platformLabel(data.socialPlatform)}
+                  . Picked up
+                  {' '}
+                  {data.websiteFieldsFound.length}
+                  {' '}
+                  details and drafted
+                  {' '}
+                  {data.angles.length}
+                  {' '}
+                  content angles.
+                </p>
+              )}
+            </div>
+          )}
+
+          {data.contextMode === 'description' && (
+            <div className="space-y-3">
+              {([
+                ['descProduct', 'What do you sell or offer?'],
+                ['descAudience', 'Who is it for?'],
+                ['descProblem', 'What problem does it solve?'],
+                ['descBenefits', 'Key benefits, in your own words'],
+                ['descTone', 'How should your content sound? (e.g. direct, playful, formal)'],
+                ['descAvoid', 'Anything we should avoid saying or doing?'],
+              ] as const).map(([field, placeholder]) => (
+                <Input
+                  key={field}
+                  type="text"
+                  value={data[field]}
+                  onChange={e => update({ [field]: e.target.value } as Partial<WizardData>)}
+                  placeholder={placeholder}
+                />
+              ))}
+              {/* When we landed here from a partial social extract, surface
+                  the source so the user knows nothing is being silently
+                  dropped and can still finish onboarding. */}
+              {data.brandProfileSource && data.brandProfileSource !== 'website' && (
+                <p className="text-xs text-muted-foreground">
+                  Started from your
+                  {' '}
+                  {platformLabel(data.brandProfileSource as SocialPlatform)}
+                  {' '}
+                  profile
+                  {data.brandProfileSourceHandle ? ` (@${data.brandProfileSourceHandle})` : ''}
+                  {' '}— fill in the rest so we can generate content that sounds like you.
+                </p>
+              )}
+              {data.websiteError && <p className="text-xs text-destructive">{data.websiteError}</p>}
+              <p className="text-right text-xs text-muted-foreground">
+                {descriptionChars < minDescriptionChars
+                  ? `${minDescriptionChars - descriptionChars} more characters needed`
+                  : 'Looks good'}
+              </p>
+            </div>
+          )}
 
           <div className="mt-7 space-y-3">
             <ContinueButton
               onClick={goNext}
-              disabled={data.contextMode === 'website'
-                ? !data.websiteFieldsFound
-                : descriptionChars < minDescriptionChars}
+              disabled={
+                data.contextMode === 'description'
+                  ? descriptionChars < minDescriptionChars
+                  : !data.websiteFieldsFound
+              }
             />
-            {data.contextMode === 'website' && !data.websiteFieldsFound && (
+            {data.contextMode !== 'description' && !data.websiteFieldsFound && (
               <button
                 type="button"
-                onClick={() => update({ contextMode: 'description' })}
+                onClick={() => update({ contextMode: 'description', websiteError: null })}
                 className="block w-full text-center text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
               >
                 Skip analysis and describe it instead

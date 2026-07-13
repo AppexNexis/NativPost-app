@@ -22,7 +22,12 @@ export async function POST(request: NextRequest) {
     return error;
   }
 
-  let body: { url?: string; brandName?: string };
+  let body: {
+    url?: string;
+    brandName?: string;
+    sourceType?: string;
+    sourceHandle?: string;
+  };
   try {
     body = await request.json();
   } catch {
@@ -33,6 +38,24 @@ export async function POST(request: NextRequest) {
   if (!url) {
     return NextResponse.json({ error: 'A website URL is required' }, { status: 400 });
   }
+
+  // Phase 1 social-profile onboarding. Any unknown value falls back to
+  // 'website' on the engine side; the engine's Pydantic Literal accepts
+  // exactly this set.
+  const ALLOWED_SOURCE_TYPES = new Set([
+    'website',
+    'instagram',
+    'tiktok',
+    'twitter',
+    'linktree',
+    'youtube',
+  ]);
+  const sourceType = ALLOWED_SOURCE_TYPES.has(String(body.sourceType || ''))
+    ? String(body.sourceType)
+    : 'website';
+  const sourceHandle = typeof body.sourceHandle === 'string'
+    ? body.sourceHandle.trim() || null
+    : null;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30_000);
@@ -49,6 +72,8 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         url,
         brand_name: body.brandName || null,
+        source_type: sourceType,
+        source_handle: sourceHandle,
       }),
     });
   } catch (fetchErr: any) {
@@ -103,7 +128,13 @@ export async function POST(request: NextRequest) {
 
   // Generate content angles from the scraped profile. Failures are
   // non-fatal - onboarding continues with an empty angle list.
-  const angles = await generateContentAnglesFromProfile(mapped).catch(() => []);
+  // When the engine returned partial=true (adapter soft-failure) we skip
+  // the angles call — there's not enough signal to produce useful angles
+  // and the client is going to drop the user into "Describe it" anyway.
+  const isPartial = Boolean(data.partial);
+  const angles = isPartial
+    ? []
+    : await generateContentAnglesFromProfile(mapped).catch(() => []);
 
   return NextResponse.json(
     {
@@ -111,6 +142,12 @@ export async function POST(request: NextRequest) {
       fieldsFound: data.fields_found ?? [],
       pagesScraped: data.pages_scraped ?? [],
       sourceUrl: data.source_url ?? url,
+      // Provenance echoed back so the client can persist it on the brand
+      // profile row (see Schema.ts: brandProfileSource / brandProfileSourceHandle).
+      sourceType: data.source_type ?? sourceType,
+      sourceHandle: data.source_handle ?? sourceHandle,
+      partial: isPartial,
+      partialReason: data.partial_reason ?? null,
       angles,
     },
     { status: 200 },

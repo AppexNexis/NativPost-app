@@ -117,6 +117,12 @@ export const brandProfileSchema = pgTable('brand_profile', {
   growthStage: text('growth_stage').default('early'),
   profileCompleteness: integer('profile_completeness').default(0),
   onboardingCompleted: boolean('onboarding_completed').default(false),
+  // Phase 1 social-profile onboarding provenance. Nullable so existing
+  // rows stay valid; 'website' | 'instagram' | 'tiktok' | 'twitter' |
+  // 'linktree' | 'youtube' when set. sourceHandle stores the bare handle
+  // (e.g. 'garyvee') or the raw URL when we cannot normalize it.
+  brandProfileSource: text('brand_profile_source'),
+  brandProfileSourceHandle: text('brand_profile_source_handle'),
   updatedAt: timestamp('updated_at', { mode: 'date' })
     .defaultNow()
     .$onUpdate(() => new Date())

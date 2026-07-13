@@ -144,6 +144,11 @@ function sanitizeProfileData(body: Record<string, unknown>) {
     productsServices: Array.isArray(body.productsServices) ? body.productsServices : [],
     keyDifferentiators: body.keyDifferentiators ? String(body.keyDifferentiators) : null,
     growthStage: body.growthStage ? String(body.growthStage) : 'early',
+    // Phase 1 social-profile onboarding provenance. Nullable; keep null
+    // rather than defaulting to 'website' so we don't retro-lie about how
+    // legacy rows were seeded.
+    brandProfileSource: body.brandProfileSource ? String(body.brandProfileSource) : null,
+    brandProfileSourceHandle: body.brandProfileSourceHandle ? String(body.brandProfileSourceHandle) : null,
   };
 }
 
