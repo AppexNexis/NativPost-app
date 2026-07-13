@@ -39,12 +39,16 @@ export async function GET(request: NextRequest) {
   const now = new Date();
   console.log(`[Paystack Activate] Running at ${now.toISOString()}`);
 
-  // NGN plan amounts in kobo
+  // NGN plan amounts in kobo (keyed by planId_interval)
   const planAmounts: Record<string, number> = {
-    starter: 2900000, // NGN 29,000
-    growth: 5900000, // NGN 59,000
-    pro: 11900000, // NGN 119,000
-    agency: 22400000, // NGN 224,000
+    starter_month: 2900000,
+    starter_year: 27840000,
+    growth_month: 5900000,
+    growth_year: 56640000,
+    pro_month: 11900000,
+    pro_year: 114240000,
+    agency_month: 22400000,
+    agency_year: 215040000,
   };
 
   try {
@@ -75,9 +79,10 @@ export async function GET(request: NextRequest) {
       console.log(`[Paystack Activate] Processing org ${org.id} on plan ${org.plan}`);
 
       try {
-        const planCode = getPaystackPlanCode(org.plan);
+        const interval = org.billingInterval ?? 'month';
+        const planCode = getPaystackPlanCode(org.plan, interval as 'month' | 'year');
         const resolvedPlan = PLAN_CONFIGS[org.plan];
-        const amount = planAmounts[org.plan];
+        const amount = planAmounts[`${org.plan}_${interval}`];
 
         if (!planCode || planCode.includes('REPLACE') || !resolvedPlan || !amount) {
           console.error(`[Paystack Activate] Missing config for plan ${org.plan}`);
@@ -140,7 +145,7 @@ export async function GET(request: NextRequest) {
               customer: org.paystackCustomerCode,
               plan: planCode,
               authorization: org.paystackAuthorizationCode,
-              start_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+              start_date: new Date(Date.now() + (interval === 'year' ? 365 : 30) * 24 * 60 * 60 * 1000).toISOString(),
             }),
           });
 
@@ -162,6 +167,7 @@ export async function GET(request: NextRequest) {
           .set({
             plan: org.plan,
             planStatus: 'active',
+            billingInterval: interval,
             paystackSubscriptionCode: subscriptionCode,
             paystackPlanCode: planCode,
             trialEndsAt: null,

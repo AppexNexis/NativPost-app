@@ -69,6 +69,7 @@ export async function GET(_request: NextRequest) {
       paymentType: (!!billing.paystackSubscriptionCode || (!!billing.paystackCustomerCode && !billing.stripeCustomerId))
         ? 'paystack'
         : (billing.paymentType ?? 'stripe'),
+      billingInterval: billing.billingInterval ?? 'month',
       features: billing.features,
       usage: {
         postsThisMonth: usage.postsThisMonth,

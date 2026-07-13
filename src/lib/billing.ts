@@ -11,9 +11,9 @@
 
 import { and, count, eq, gte, isNotNull } from 'drizzle-orm';
 
+import { fireEmailEvent } from '@/lib/email-webhook';
 import { getDb } from '@/libs/DB';
 import { contentItemSchema, organizationSchema, publishingQueueSchema } from '@/models/Schema';
-import { fireEmailEvent } from '@/lib/email-webhook';
 
 import { FREE_TRIAL_DAYS, getEffectivePlanFeatures, type PlanFeatures, TRIAL_FEATURES } from './plans';
 
@@ -33,6 +33,7 @@ export type OrgBillingState = {
   paystackCustomerCode: string | null;
   paystackSubscriptionCode: string | null;
   paymentType: string;
+  billingInterval: string;
   // Computed
   isActive: boolean;
   isTrialing: boolean;
@@ -55,7 +56,9 @@ export type LimitCheckResult =
 const fallbackRanForOrg = new Set<string>();
 
 async function runMissedWebhookFallbacks(orgId: string): Promise<void> {
-  if (fallbackRanForOrg.has(orgId)) return;
+  if (fallbackRanForOrg.has(orgId)) {
+    return;
+  }
   fallbackRanForOrg.add(orgId);
 
   console.log(`[Billing Fallback] Running missed webhook fallbacks for org ${orgId}`);
@@ -187,6 +190,7 @@ export async function getOrgBillingState(orgId: string): Promise<OrgBillingState
     paystackCustomerCode: org.paystackCustomerCode ?? null,
     paystackSubscriptionCode: org.paystackSubscriptionCode ?? null,
     paymentType: org.paymentType ?? 'stripe',
+    billingInterval: org.billingInterval ?? 'month',
     isActive: isActive || (isTrialing && !trialExpired),
     isTrialing,
     trialDaysLeft,
@@ -200,7 +204,9 @@ export async function getOrgBillingState(orgId: string): Promise<OrgBillingState
 // -----------------------------------------------------------
 export async function hasActiveSubscription(orgId: string): Promise<boolean> {
   const billing = await getOrgBillingState(orgId);
-  if (!billing) return false;
+  if (!billing) {
+    return false;
+  }
   return billing.isActive;
 }
 
@@ -218,7 +224,9 @@ export async function checkPostLimit(orgId: string): Promise<LimitCheckResult> {
   }
 
   const { postsPerMonth } = billing.features;
-  if (postsPerMonth === -1) return { allowed: true };
+  if (postsPerMonth === -1) {
+    return { allowed: true };
+  }
 
   let windowStart: Date;
   if (billing.isTrialing && billing.trialEndsAt) {
@@ -287,7 +295,9 @@ export async function checkPlatformsPerPost(
   }
 
   const { platformsLimit } = billing.features;
-  if (platformsLimit === -1) return { allowed: true };
+  if (platformsLimit === -1) {
+    return { allowed: true };
+  }
 
   if (requestedPlatforms.length > platformsLimit) {
     return {
@@ -316,7 +326,9 @@ export async function checkPlatformLimit(
   }
 
   const { platformsLimit } = billing.features;
-  if (platformsLimit === -1) return { allowed: true };
+  if (platformsLimit === -1) {
+    return { allowed: true };
+  }
 
   if (requestedPlatforms.length > platformsLimit) {
     return {

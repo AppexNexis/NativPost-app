@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { planId, setupFeeOnly = false } = body;
+    const { planId, setupFeeOnly = false, interval = 'month' } = body;
     const plan = PLAN_CONFIGS[planId];
 
     if (!plan) {
@@ -95,6 +95,7 @@ export async function POST(request: NextRequest) {
           orgId: orgId!,
           planId,
           type: 'setup_fee',
+          billingInterval: interval,
         },
         success_url: `${APP_URL}/dashboard?setup=success`,
         cancel_url: `${APP_URL}/subscribe?cancelled=true`,
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const priceId = getStripePriceId(planId)!;
+    const priceId = getStripePriceId(planId, interval as 'month' | 'year')!;
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
@@ -121,12 +122,12 @@ export async function POST(request: NextRequest) {
       allow_promotion_codes: true,
       // No trial — they already had their trial
       subscription_data: {
-        metadata: { orgId: orgId!, planId },
+        metadata: { orgId: orgId!, planId, billingInterval: interval },
       },
       billing_address_collection: 'auto',
       success_url: `${APP_URL}/dashboard/billing?success=true&plan=${planId}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${APP_URL}/dashboard/billing?cancelled=true`,
-      metadata: { orgId: orgId!, planId },
+      metadata: { orgId: orgId!, planId, billingInterval: interval },
     });
 
     return NextResponse.json({ url: session.url });

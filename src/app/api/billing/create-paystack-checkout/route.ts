@@ -36,14 +36,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { planId, email } = await request.json();
+    const { planId, email, interval = 'month' } = await request.json();
     const plan = PLAN_CONFIGS[planId];
 
     if (!plan) {
       return NextResponse.json({ error: 'Invalid plan.' }, { status: 400 });
     }
 
-    const planCode = getPaystackPlanCode(planId);
+    const planCode = getPaystackPlanCode(planId, interval as 'month' | 'year');
     if (!planCode || planCode.includes('REPLACE')) {
       return NextResponse.json(
         { error: 'This payment method is not yet configured for this plan. Please use card payment or contact support.' },
@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
           orgId: orgId!,
           planId,
           type: 'setup_fee',
-           affonso_referral: affonsoReferral ?? '', // track referral for setup fee
+          affonso_referral: affonsoReferral ?? '', // track referral for setup fee
           custom_fields: [
             { display_name: 'Plan', variable_name: 'plan', value: plan.name },
             { display_name: 'Org ID', variable_name: 'org_id', value: orgId! },
@@ -119,6 +119,7 @@ export async function POST(request: NextRequest) {
         paystackPlanCode: planCode ?? null,
         plan: planId,
         paymentType: 'paystack', // record that this org uses Paystack
+        billingInterval: interval,
         updatedAt: new Date(),
       })
       .where(eq(organizationSchema.id, orgId!));

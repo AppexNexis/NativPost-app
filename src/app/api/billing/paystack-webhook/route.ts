@@ -4,11 +4,11 @@ import { eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+import { firePlanUpgradedEmail, fireSubscriptionCancelledEmail } from '@/lib/billing';
 import { getPaystackPlanCode, getPlanByPaystackCode, PLAN_CONFIGS } from '@/lib/plans';
+import { sendTrustpilotInvitation } from '@/lib/trustpilot';
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
-import { firePlanUpgradedEmail, fireSubscriptionCancelledEmail } from '@/lib/billing';
-import { sendTrustpilotInvitation } from '@/lib/trustpilot';
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY!;
 
@@ -131,48 +131,54 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
   const metadataType = metadata?.type as string | undefined;
   const isSetupFee = metadataType === 'setup_fee' || (!planCode && !subscriptionCode);
 
+  // Detect billing interval from the plan code used
+  const env_ps = process.env.BILLING_PLAN_ENV === 'prod' ? 'prod' : 'dev';
+  const isAnnual = plan && plan.paystackAnnualPlanCode[env_ps] === resolvedPlanCode;
+  const billingInt = resolvedPlanCode ? (isAnnual ? 'year' : 'month') : null;
+
   if (isSetupFee) {
     // const metaPlanId = metadata?.planId as string | undefined;
     // const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-     const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  const metaPlanId = metadata?.planId as string | undefined;
-  const planCode = getPaystackPlanCode(metaPlanId ?? 'starter');
+    const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const metaPlanId = metadata?.planId as string | undefined;
+    const planCode = getPaystackPlanCode(metaPlanId ?? 'starter');
 
-  // Create subscription starting when trial ends
-  if (planCode && authorizationCode && customerCode) {
-    try {
-      const subRes = await fetch('https://api.paystack.co/subscription', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${PAYSTACK_SECRET}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          customer: customerCode,
-          plan: planCode,
-          authorization: authorizationCode,
-          start_date: trialEndsAt.toISOString(),
-        }),
-      });
-      const subData = await subRes.json();
-      subscriptionCode = subData.data?.subscription_code ?? null;
-    } catch (err) {
-      console.warn('[Paystack Webhook] Sub creation failed at setup fee time:', err);
+    // Create subscription starting when trial ends
+    if (planCode && authorizationCode && customerCode) {
+      try {
+        const subRes = await fetch('https://api.paystack.co/subscription', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${PAYSTACK_SECRET}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            customer: customerCode,
+            plan: planCode,
+            authorization: authorizationCode,
+            start_date: trialEndsAt.toISOString(),
+          }),
+        });
+        const subData = await subRes.json();
+        subscriptionCode = subData.data?.subscription_code ?? null;
+      } catch (err) {
+        console.warn('[Paystack Webhook] Sub creation failed at setup fee time:', err);
+      }
     }
-  }
 
     await db
       .update(organizationSchema)
       .set({
         paystackCustomerCode: customerCode ?? null,
-        paystackCustomerEmail: customerEmail ?? null, 
+        paystackCustomerEmail: customerEmail ?? null,
         paystackAuthorizationCode: authorizationCode ?? null,
-        paystackSubscriptionCode: subscriptionCode,  // ← store it now
+        paystackSubscriptionCode: subscriptionCode, // ← store it now
         setupFeePaid: true,
         plan: metaPlanId ?? 'starter',
         planStatus: 'trialing',
         trialEndsAt,
+        ...(billingInt ? { billingInterval: billingInt } : {}),
         postsPerMonth: 3,
         platformsLimit: 2,
         updatedAt: new Date(),
@@ -226,6 +232,7 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
       paystackAuthorizationCode: authorizationCode ?? null,
       paystackSubscriptionCode: subscriptionCode ?? null,
       paystackPlanCode: resolvedPlanCode,
+      ...(billingInt ? { billingInterval: billingInt } : {}),
       postsPerMonth: resolvedPlan.features.postsPerMonth === -1 ? 999999 : resolvedPlan.features.postsPerMonth,
       platformsLimit: resolvedPlan.features.platformsLimit === -1 ? 99 : resolvedPlan.features.platformsLimit,
       setupFeePaid: true,

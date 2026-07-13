@@ -36,14 +36,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { planId, email } = await request.json();
+    const { planId, email, interval = 'month' } = await request.json();
     const plan = PLAN_CONFIGS[planId];
 
     if (!plan) {
       return NextResponse.json({ error: 'Invalid plan.' }, { status: 400 });
     }
 
-    const planCode = getPaystackPlanCode(planId);
+    const planCode = getPaystackPlanCode(planId, interval as 'month' | 'year');
     if (!planCode || planCode.includes('REPLACE')) {
       return NextResponse.json(
         { error: 'This plan is not yet configured for Paystack. Please use card payment instead.' },
@@ -97,13 +97,13 @@ export async function POST(request: NextRequest) {
     // Per Paystack docs: passing plan= overrides amount, but amount is still
     // required by the API (must be a positive integer). We pass the plan amount.
     // Metadata must be a stringified JSON string, not a raw object.
-    const planAmounts: Record<string, number> = {
-      starter: 2900000, // NGN 29,000 in kobo
-      growth: 5900000, // NGN 59,000 in kobo
-      pro: 11900000, // NGN 119,000 in kobo
-      agency: 22400000, // NGN 224,000 in kobo
+    const planAmounts: Record<string, Record<string, number>> = {
+      starter: { month: 2900000, year: 27840000 }, // ₦29k/mo, ₦278k/yr
+      growth: { month: 5900000, year: 56640000 }, // ₦59k/mo, ₦566k/yr
+      pro: { month: 11900000, year: 114240000 }, // ₦119k/mo, ₦1,142k/yr
+      agency: { month: 22400000, year: 215040000 }, // ₦224k/mo, ₦2,150k/yr
     };
-    const amount = planAmounts[planId] ?? 10000; // fallback to NGN 100 minimum
+    const amount = (planAmounts[planId]?.[interval] ?? 10000); // fallback to NGN 100 minimum
 
     const paystackRes = await fetch('https://api.paystack.co/transaction/initialize', {
       method: 'POST',
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
           orgId: orgId!,
           planId,
           type: 'subscription',
-           affonso_referral: affonsoReferral ?? '', // track referral for subscription
+          affonso_referral: affonsoReferral ?? '', // track referral for subscription
           custom_fields: [
             { display_name: 'Plan', variable_name: 'plan', value: plan.name },
             { display_name: 'Org ID', variable_name: 'org_id', value: orgId! },
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
     // Record that this org uses Paystack before redirecting
     await db
       .update(organizationSchema)
-      .set({ paymentType: 'paystack', updatedAt: new Date() })
+      .set({ paymentType: 'paystack', billingInterval: interval, updatedAt: new Date() })
       .where(eq(organizationSchema.id, orgId!));
 
     return NextResponse.json({ url: paystackData.data.authorization_url });
