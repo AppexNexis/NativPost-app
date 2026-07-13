@@ -11,7 +11,7 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
-import { FREE_TRIAL_DAYS, VISIBLE_PLANS } from '@/lib/plans';
+import { ANNUAL_SAVE_PCT, type BillingInterval, FREE_TRIAL_DAYS, getMonthlyEquivalentDisplay, VISIBLE_PLANS } from '@/lib/plans';
 // import { Logo } from '@/templates/Logo';
 
 type PaymentMethod = 'stripe' | 'paystack';
@@ -58,12 +58,12 @@ const FEATURE_ROWS = [
   {
     label: 'Support',
     render: (plan: typeof VISIBLE_PLANS[0]) =>
-    ({
-      email: 'Email',
-      priority_email: 'Priority email',
-      live_chat: 'Live chat',
-      dedicated_slack: 'Dedicated Slack',
-    }[plan.features.supportLevel] || 'Email'),
+      ({
+        email: 'Email',
+        priority_email: 'Priority email',
+        live_chat: 'Live chat',
+        dedicated_slack: 'Dedicated Slack',
+      }[plan.features.supportLevel] || 'Email'),
   },
 ];
 
@@ -75,6 +75,7 @@ function MobilePlanCard({
   isSelected,
   isPlanLoading,
   isLoading,
+  interval,
   onSelect,
   onSubscribe,
 }: {
@@ -82,6 +83,7 @@ function MobilePlanCard({
   isSelected: boolean;
   isPlanLoading: boolean;
   isLoading: string | null;
+  interval: BillingInterval;
   onSelect: () => void;
   onSubscribe: () => void;
 }) {
@@ -92,7 +94,7 @@ function MobilePlanCard({
       className={`overflow-hidden rounded-2xl border-2 transition-all duration-200 ${isSelected
         ? 'border-foreground shadow-lg'
         : 'border-border hover:border-foreground/30'
-        }`}
+      }`}
     >
       {/* Card header */}
       <div className={`p-5 ${plan.popular ? 'bg-foreground text-background' : 'bg-muted/40'}`}>
@@ -110,11 +112,34 @@ function MobilePlanCard({
             </div>
             <div className="mt-1.5 flex items-baseline gap-1">
               <span className={`text-2xl font-bold tracking-tight ${plan.popular ? 'text-background' : ''}`}>
-                $
-                {plan.priceUsd}
+                {interval === 'year' ? (
+                  <>
+                    $
+                    {plan.annualPriceUsd}
+                  </>
+                ) : (
+                  <>
+                    $
+                    {plan.priceUsd}
+                  </>
+                )}
               </span>
-              <span className={`text-xs ${plan.popular ? 'text-background/60' : 'text-muted-foreground'}`}>/mo</span>
+              <span className={`text-xs ${plan.popular ? 'text-background/60' : 'text-muted-foreground'}`}>
+                {interval === 'year' ? '/yr' : '/mo'}
+              </span>
             </div>
+            {interval === 'year' && (
+              <p className={`mt-0.5 text-xs ${plan.popular ? 'text-background/50' : 'text-muted-foreground'}`}>
+                {getMonthlyEquivalentDisplay(plan.annualPriceUsd)}
+                {' '}
+                &middot;
+                {' '}
+                save
+                {' '}
+                {ANNUAL_SAVE_PCT}
+                %
+              </p>
+            )}
             <p className={`mt-0.5 text-xs ${plan.popular ? 'text-background/50' : 'text-muted-foreground'}`}>
               + $
               {plan.setupFeeUsd}
@@ -134,7 +159,7 @@ function MobilePlanCard({
               : plan.popular
                 ? 'border border-background/30 bg-background/10 text-background hover:bg-background/20'
                 : 'border border-border bg-background text-foreground hover:bg-muted'
-              }`}
+            }`}
           >
             {isSelected ? (
               <span className="flex items-center gap-1">
@@ -156,7 +181,7 @@ function MobilePlanCard({
             className={`mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-3 text-sm font-semibold transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-60 ${plan.popular
               ? 'bg-background text-foreground'
               : 'bg-foreground text-background'
-              }`}
+            }`}
           >
             {isPlanLoading
               ? <Loader2 className="size-4 animate-spin" />
@@ -228,6 +253,7 @@ function SubscribeContent() {
   const [billingChecked, setBillingChecked] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<string>('growth');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('stripe');
+  const [interval, setBillingInterval] = useState<BillingInterval>('month');
   const [isLoading, setIsLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPolling, setIsPolling] = useState(false);
@@ -333,8 +359,8 @@ function SubscribeContent() {
           // Replace the past_due/cancelled block in the init() function:
 
           if (
-            billing?.setupFeePaid &&
-            (billing?.planStatus === 'past_due' || billing?.planStatus === 'cancelled')
+            billing?.setupFeePaid
+            && (billing?.planStatus === 'past_due' || billing?.planStatus === 'cancelled')
           ) {
             router.replace('/dashboard/billing?recovery=true');
             return;
@@ -378,7 +404,7 @@ function SubscribeContent() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           // setupFeeOnly: charge only the $5 setup fee, no subscription yet
-          body: JSON.stringify({ planId, setupFeeOnly: true }),
+          body: JSON.stringify({ planId, setupFeeOnly: true, interval }),
         });
         const data = await res.json();
         if (data.url) {
@@ -394,7 +420,7 @@ function SubscribeContent() {
         const res = await fetch('/api/billing/create-paystack-checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planId, email }),
+          body: JSON.stringify({ planId, email, interval }),
         });
         const data = await res.json();
         if (data.url) {
@@ -535,6 +561,35 @@ function SubscribeContent() {
           </div>
         )}
 
+        {/* ── Billing interval toggle ── */}
+        <div className="mb-6 flex items-center justify-center gap-4">
+          <span className="text-xs font-medium text-muted-foreground">Billed:</span>
+          <div className="flex rounded-lg border bg-muted/50 p-0.5">
+            <button
+              type="button"
+              onClick={() => setBillingInterval('month')}
+              className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${interval === 'month' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              onClick={() => setBillingInterval('year')}
+              className={`relative rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${interval === 'year' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Yearly
+              {interval !== 'year' && (
+                <span className="absolute -right-3 -top-2 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                  Save
+                  {' '}
+                  {ANNUAL_SAVE_PCT}
+                  %
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+
         {/* ── MOBILE: stacked cards ── */}
         <div className="space-y-4 lg:hidden">
           {VISIBLE_PLANS.map(plan => (
@@ -544,6 +599,7 @@ function SubscribeContent() {
               isSelected={selectedPlan === plan.id}
               isPlanLoading={isLoading === plan.id}
               isLoading={isLoading}
+              interval={interval}
               onSelect={() => setSelectedPlan(plan.id)}
               onSubscribe={() => handleSubscribe(plan.id)}
             />
@@ -585,7 +641,7 @@ function SubscribeContent() {
                     className={`relative overflow-hidden rounded-t-2xl p-5 transition-all ${plan.popular
                       ? 'bg-foreground text-background'
                       : 'bg-muted/40'
-                      } ${isSelected ? 'ring-2 ring-foreground ring-offset-0' : ''}`}
+                    } ${isSelected ? 'ring-2 ring-foreground ring-offset-0' : ''}`}
                   >
                     {plan.popular && (
                       <div className="absolute -right-10 -top-10 size-32 rounded-full bg-white/10 blur-2xl" />
@@ -601,11 +657,34 @@ function SubscribeContent() {
                       </p>
                       <div className="mt-2 flex items-baseline gap-1">
                         <span className={`text-3xl font-bold tracking-tight ${plan.popular ? 'text-background' : ''}`}>
-                          $
-                          {plan.priceUsd}
+                          {interval === 'year' ? (
+                            <>
+                              $
+                              {plan.annualPriceUsd}
+                            </>
+                          ) : (
+                            <>
+                              $
+                              {plan.priceUsd}
+                            </>
+                          )}
                         </span>
-                        <span className={`text-sm ${plan.popular ? 'text-background/60' : 'text-muted-foreground'}`}>/mo</span>
+                        <span className={`text-sm ${plan.popular ? 'text-background/60' : 'text-muted-foreground'}`}>
+                          {interval === 'year' ? '/yr' : '/mo'}
+                        </span>
                       </div>
+                      {interval === 'year' && (
+                        <p className={`mt-0.5 text-xs ${plan.popular ? 'text-background/50' : 'text-muted-foreground'}`}>
+                          {getMonthlyEquivalentDisplay(plan.annualPriceUsd)}
+                          {' '}
+                          &middot;
+                          {' '}
+                          save
+                          {' '}
+                          {ANNUAL_SAVE_PCT}
+                          %
+                        </p>
+                      )}
                       <p className={`mt-0.5 text-xs ${plan.popular ? 'text-background/50' : 'text-muted-foreground'}`}>
                         + $
                         {plan.setupFeeUsd}
@@ -625,7 +704,7 @@ function SubscribeContent() {
                             : plan.popular
                               ? 'border border-background/30 bg-background/10 text-background hover:bg-background/20'
                               : 'border border-border bg-background text-foreground hover:bg-muted'
-                            }`}
+                          }`}
                         >
                           {isSelected && <Check className="size-3" />}
                           {isSelected ? 'Selected' : 'Select plan'}
@@ -639,7 +718,7 @@ function SubscribeContent() {
                             className={`flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-60 ${plan.popular
                               ? 'bg-background text-foreground'
                               : 'bg-foreground text-background'
-                              }`}
+                            }`}
                           >
                             {isPlanLoading
                               ? <Loader2 className="size-3.5 animate-spin" />
@@ -663,10 +742,10 @@ function SubscribeContent() {
                           {typeof value === 'boolean'
                             ? value
                               ? (
-                                <div className="flex size-5 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
-                                  <Check className="size-3 text-emerald-600 dark:text-emerald-400" />
-                                </div>
-                              )
+                                  <div className="flex size-5 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+                                    <Check className="size-3 text-emerald-600 dark:text-emerald-400" />
+                                  </div>
+                                )
                               : <span className="text-base text-muted-foreground/25">—</span>
                             : <span className="text-sm font-medium text-foreground">{value}</span>}
                         </div>
@@ -695,7 +774,8 @@ function SubscribeContent() {
 
         {/* ── Legal footer ── */}
         <p className="mt-8 text-center text-[11px] leading-relaxed text-muted-foreground">
-          By continuing, you agree to our{' '}
+          By continuing, you agree to our
+          {' '}
           <a
             href="https://nativpost.com/terms-conditions"
             target="_blank"
@@ -704,7 +784,9 @@ function SubscribeContent() {
           >
             Terms of Service
           </a>
-          {' '}and{' '}
+          {' '}
+          and
+          {' '}
           <a
             href="https://nativpost.com/privacy-policy"
             target="_blank"
