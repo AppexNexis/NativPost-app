@@ -16,7 +16,7 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 
 import { PageHeader } from '@/features/dashboard/PageHeader';
-import { FREE_TRIAL_DAYS, SETUP_FEE_USD, VISIBLE_PLANS } from '@/lib/plans';
+import { ANNUAL_SAVE_PCT, type BillingInterval, FREE_TRIAL_DAYS, getMonthlyEquivalentDisplay, SETUP_FEE_USD, VISIBLE_PLANS } from '@/lib/plans';
 
 // -----------------------------------------------------------
 // TYPES
@@ -48,6 +48,7 @@ type BillingStatus = {
   planStatus: string;
   isActive: boolean;
   isTrialing: boolean;
+  billingInterval?: BillingInterval;
   trialDaysLeft: number;
   trialExpired: boolean;
   trialEndsAt: string | null;
@@ -415,6 +416,7 @@ function BillingContent() {
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'paystack'>('stripe');
+  const [interval, setBillingInterval] = useState<BillingInterval>('month');
   const [error, setError] = useState<string | null>(null);
   const [showPaystackPortal, setShowPaystackPortal] = useState(false);
 
@@ -474,7 +476,7 @@ function BillingContent() {
         const res = await fetch('/api/billing/create-checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planId }),
+          body: JSON.stringify({ planId, interval }),
         });
         const data = await res.json();
         if (data.url) {
@@ -491,7 +493,7 @@ function BillingContent() {
         const res = await fetch('/api/billing/create-paystack-subscription', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planId, email }),
+          body: JSON.stringify({ planId, email, interval }),
         });
         const data = await res.json();
         if (data.url) {
@@ -702,9 +704,19 @@ function BillingContent() {
           <div className="border-t px-5 py-4 sm:border-t-0">
             <p className="text-xs text-muted-foreground">Plan price</p>
             <p className="mt-1 text-2xl font-bold tabular-nums">
-              $
-              {currentPlan?.priceUsd ?? 0}
-              <span className="ml-1 text-sm font-normal text-muted-foreground">/mo</span>
+              {billing?.billingInterval === 'year' ? (
+                <>
+                  $
+                  {currentPlan?.annualPriceUsd ?? currentPlan?.priceUsd ?? 0}
+                  <span className="ml-1 text-sm font-normal text-muted-foreground">/yr</span>
+                </>
+              ) : (
+                <>
+                  $
+                  {currentPlan?.priceUsd ?? 0}
+                  <span className="ml-1 text-sm font-normal text-muted-foreground">/mo</span>
+                </>
+              )}
             </p>
           </div>
 
@@ -834,6 +846,35 @@ function BillingContent() {
           </div>
         </div>
 
+        {/* ── Billing interval toggle ── */}
+        <div className="mb-6 flex items-center justify-start gap-4">
+          <span className="text-xs font-medium text-muted-foreground">Billed:</span>
+          <div className="flex rounded-lg border bg-muted/50 p-0.5">
+            <button
+              type="button"
+              onClick={() => setBillingInterval('month')}
+              className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${interval === 'month' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              onClick={() => setBillingInterval('year')}
+              className={`relative rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${interval === 'year' ? 'border bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Yearly
+              {interval !== 'year' && (
+                <span className="absolute -right-3 -top-2 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                  Save
+                  {' '}
+                  {ANNUAL_SAVE_PCT}
+                  %
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+
         {/* Plan cards — 1 col mobile, 2 col sm, 4 col xl */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {VISIBLE_PLANS.map((plan, idx) => {
@@ -902,16 +943,37 @@ function BillingContent() {
                       className={`text-3xl font-bold tracking-tight ${plan.popular ? 'text-background' : ''
                       }`}
                     >
-                      $
-                      {plan.priceUsd}
+                      {interval === 'year' ? (
+                        <>
+                          $
+                          {plan.annualPriceUsd}
+                        </>
+                      ) : (
+                        <>
+                          $
+                          {plan.priceUsd}
+                        </>
+                      )}
                     </span>
                     <span
                       className={`text-sm ${plan.popular ? 'text-background/60' : 'text-muted-foreground'
                       }`}
                     >
-                      /mo
+                      {interval === 'year' ? '/yr' : '/mo'}
                     </span>
                   </div>
+                  {interval === 'year' && (
+                    <p className={`mt-0.5 text-xs ${plan.popular ? 'text-background/50' : 'text-muted-foreground'}`}>
+                      {getMonthlyEquivalentDisplay(plan.annualPriceUsd)}
+                      {' '}
+                      &middot;
+                      {' '}
+                      save
+                      {' '}
+                      {ANNUAL_SAVE_PCT}
+                      %
+                    </p>
+                  )}
                   <p
                     className={`mt-0.5 text-xs ${plan.popular ? 'text-background/50' : 'text-muted-foreground'
                     }`}
