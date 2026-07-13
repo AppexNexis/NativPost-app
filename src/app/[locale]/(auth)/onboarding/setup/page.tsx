@@ -19,9 +19,9 @@
 import { useAuth, useOrganization, useUser } from '@clerk/nextjs';
 import { Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { ContentAnglesPreview, type ContentAngleDraft } from '@/components/onboarding/ContentAnglesPreview';
+import { type ContentAngleDraft, ContentAnglesPreview } from '@/components/onboarding/ContentAnglesPreview';
 import { OnboardingLogoUploader } from '@/components/onboarding/OnboardingLogoUploader';
 import { OnboardingShell } from '@/components/onboarding/OnboardingShell';
 import { ChoiceGrid, ContinueButton, StepHeading } from '@/components/onboarding/StepShell';
@@ -47,8 +47,8 @@ type WizardData = {
   // Phase 1 social-profile onboarding
   socialPlatform: SocialPlatform;
   socialHandle: string;
-  brandProfileSource: string | null;         // provenance echoed back from engine
-  brandProfileSourceHandle: string | null;   // e.g. 'garyvee'
+  brandProfileSource: string | null; // provenance echoed back from engine
+  brandProfileSourceHandle: string | null; // e.g. 'garyvee'
   angles: ContentAngleDraft[];
   selectedAngles: string[];
   descProduct: string;
@@ -151,7 +151,9 @@ function clearDraft(orgId: string) {
 
 function getNormalizedUrl(rawUrl: string): string {
   const trimmed = rawUrl.trim();
-  if (!trimmed) return '';
+  if (!trimmed) {
+    return '';
+  }
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
@@ -160,13 +162,15 @@ function getNormalizedUrl(rawUrl: string): string {
 // handle, or a full URL — we always send the engine a canonical bare handle.
 function normalizeSocialHandle(raw: string, platform: SocialPlatform): string {
   const trimmed = raw.trim();
-  if (!trimmed) return '';
+  if (!trimmed) {
+    return '';
+  }
   const matchers: Record<SocialPlatform, RegExp> = {
     instagram: /^https?:\/\/(?:www\.)?instagram\.com\/([^/?#]+)/i,
     tiktok: /^https?:\/\/(?:www\.)?tiktok\.com\/@?([^/?#]+)/i,
     twitter: /^https?:\/\/(?:www\.)?(?:x|twitter)\.com\/([^/?#]+)/i,
     linktree: /^https?:\/\/(?:www\.)?linktr\.ee\/([^/?#]+)/i,
-    youtube: /^https?:\/\/(?:www\.)?youtube\.com\/(?:@)?([^/?#]+)/i,
+    youtube: /^https?:\/\/(?:www\.)?youtube\.com\/@?([^/?#]+)/i,
   };
   const match = trimmed.match(matchers[platform]);
   const bare = (match ? match[1]! : trimmed).replace(/^@+/, '').replace(/\/+$/, '');
@@ -207,8 +211,12 @@ function inferGrowthStage(teamSize: string, revenue: string): 'early' | 'growing
   const largeTeam = teamSize === '50+' || teamSize === '21 to 50';
   const highRevenue = revenue === '$500k+';
 
-  if (smallTeam && earlyRevenue) return 'early';
-  if (largeTeam || highRevenue) return 'established';
+  if (smallTeam && earlyRevenue) {
+    return 'early';
+  }
+  if (largeTeam || highRevenue) {
+    return 'established';
+  }
   return 'growing';
 }
 
@@ -225,19 +233,25 @@ export default function OnboardingSetupPage() {
   const [data, setData] = useState<WizardData>(EMPTY_DATA);
   const [isDraftLoaded, setIsDraftLoaded] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisMessage, setAnalysisMessage] = useState('');
+  const analysisTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isFinishing, setIsFinishing] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
 
   const update = (updates: Partial<WizardData>) => {
     setData((prev) => {
       const next = { ...prev, ...updates };
-      if (orgId) saveDraft(orgId, next);
+      if (orgId) {
+        saveDraft(orgId, next);
+      }
       return next;
     });
   };
 
   useEffect(() => {
-    if (!authLoaded) return;
+    if (!authLoaded) {
+      return;
+    }
     if (!orgId) {
       router.replace('/onboarding/organization-selection');
       return;
@@ -245,6 +259,45 @@ export default function OnboardingSetupPage() {
     setData({ ...EMPTY_DATA, ...(loadDraft(orgId) || {}) });
     setIsDraftLoaded(true);
   }, [authLoaded, orgId, router]);
+
+  // Cycle contextual progress messages during brand extraction (15-30s).
+  // Website and social flows get different first-message copy so the user
+  // knows what is being read; both converge on "Building your brand voice"
+  // as the last message before the response arrives.
+  useEffect(() => {
+    if (isAnalyzing) {
+      const flow = data.contextMode === 'social' && data.socialHandle
+        ? 'social'
+        : 'website';
+      const messages = flow === 'social'
+        ? [
+            `Reading @${normalizeSocialHandle(data.socialHandle, data.socialPlatform) || data.socialHandle} on ${platformLabel(data.socialPlatform)}...`,
+            'Analyzing recent posts...',
+            'Building your brand voice...',
+          ]
+        : [
+            'Reading the page...',
+            'Analyzing content and structure...',
+            'Building your brand voice...',
+          ];
+      setAnalysisMessage(messages[0]!);
+      let idx = 0;
+      analysisTimerRef.current = setInterval(() => {
+        idx = (idx + 1) % messages.length;
+        setAnalysisMessage(messages[idx]!);
+      }, 6_000);
+    } else {
+      if (analysisTimerRef.current) {
+        clearInterval(analysisTimerRef.current);
+      }
+      setAnalysisMessage('');
+    }
+    return () => {
+      if (analysisTimerRef.current) {
+        clearInterval(analysisTimerRef.current);
+      }
+    };
+  }, [isAnalyzing, data.contextMode, data.socialHandle, data.socialPlatform]);
 
   const goNext = () => setStepIndex(i => Math.min(i + 1, STEPS.length - 1));
   const goBack = () => setStepIndex(i => Math.max(i - 1, 0));
@@ -340,7 +393,9 @@ export default function OnboardingSetupPage() {
   };
 
   const persistAngles = async () => {
-    if (!data.angles.length || !data.selectedAngles.length) return;
+    if (!data.angles.length || !data.selectedAngles.length) {
+      return;
+    }
     const selected = data.angles.filter(a => data.selectedAngles.includes(a.name));
     await Promise.all(
       selected.map(angle =>
@@ -358,7 +413,9 @@ export default function OnboardingSetupPage() {
   };
 
   const handleFinish = async () => {
-    if (!orgId) return;
+    if (!orgId) {
+      return;
+    }
     setIsFinishing(true);
     setFinishError(null);
 
@@ -427,7 +484,9 @@ export default function OnboardingSetupPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(brandProfilePayload),
       });
-      if (!profileRes.ok) throw new Error('Failed to save brand profile');
+      if (!profileRes.ok) {
+        throw new Error('Failed to save brand profile');
+      }
 
       await persistAngles();
 
@@ -449,7 +508,9 @@ export default function OnboardingSetupPage() {
       });
 
       const completeRes = await fetch('/api/onboarding-progress/complete', { method: 'POST' });
-      if (!completeRes.ok) throw new Error('Failed to mark onboarding complete');
+      if (!completeRes.ok) {
+        throw new Error('Failed to mark onboarding complete');
+      }
 
       // Force a fresh Clerk session token so the middleware sees the new
       // publicMetadata.onboardedOrgs entry on the very next request.
@@ -484,6 +545,7 @@ export default function OnboardingSetupPage() {
     <OnboardingShell
       totalSteps={STEPS.length}
       stepIndex={stepIndex}
+      currentStepLabel={STEPS[stepIndex]!.label}
       onBack={goBack}
       showBack={stepIndex > 0 && stepIndex < STEPS.length - 1}
     >
@@ -540,7 +602,7 @@ export default function OnboardingSetupPage() {
             <div className="space-y-3">
               <div className="flex gap-2">
                 <div className="flex flex-1 items-center overflow-hidden rounded-full border border-input bg-background transition-all focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
-                  <span className="select-none pointer-events-none pl-4 text-sm text-muted-foreground">
+                  <span className="pointer-events-none select-none pl-4 text-sm text-muted-foreground">
                     https://
                   </span>
                   <Input
@@ -564,6 +626,12 @@ export default function OnboardingSetupPage() {
                   {isAnalyzing ? 'Reading...' : 'Analyze site'}
                 </button>
               </div>
+              {isAnalyzing && analysisMessage && (
+                <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="size-3 animate-spin" />
+                  {analysisMessage}
+                </p>
+              )}
               {data.websiteError && <p className="text-xs text-destructive">{data.websiteError}</p>}
               {data.websiteFieldsFound && (
                 <p className="text-xs text-muted-foreground">
@@ -602,7 +670,7 @@ export default function OnboardingSetupPage() {
               </div>
               <div className="flex gap-2">
                 <div className="flex flex-1 items-center overflow-hidden rounded-full border border-input bg-background transition-all focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
-                  <span className="select-none pointer-events-none pl-4 text-sm text-muted-foreground">
+                  <span className="pointer-events-none select-none pl-4 text-sm text-muted-foreground">
                     {SOCIAL_PLATFORMS.find(p => p.id === data.socialPlatform)?.prefix}
                   </span>
                   <Input
@@ -625,6 +693,12 @@ export default function OnboardingSetupPage() {
                     : `Analyze ${platformLabel(data.socialPlatform)}`}
                 </button>
               </div>
+              {isAnalyzing && analysisMessage && (
+                <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="size-3 animate-spin" />
+                  {analysisMessage}
+                </p>
+              )}
               {data.websiteError && <p className="text-xs text-destructive">{data.websiteError}</p>}
               {data.websiteFieldsFound && data.brandProfileSourceHandle && (
                 <p className="text-xs text-muted-foreground">
@@ -677,7 +751,8 @@ export default function OnboardingSetupPage() {
                   {' '}
                   profile
                   {data.brandProfileSourceHandle ? ` (@${data.brandProfileSourceHandle})` : ''}
-                  {' '}— fill in the rest so we can generate content that sounds like you.
+                  {' '}
+                  — fill in the rest so we can generate content that sounds like you.
                 </p>
               )}
               {data.websiteError && <p className="text-xs text-destructive">{data.websiteError}</p>}

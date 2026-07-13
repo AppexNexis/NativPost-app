@@ -16,6 +16,7 @@ import { cn } from '@/utils/Helpers';
 type OnboardingShellProps = {
   totalSteps: number;
   stepIndex: number;
+  currentStepLabel?: string;
   onBack?: () => void;
   showBack?: boolean;
   children: React.ReactNode;
@@ -24,6 +25,7 @@ type OnboardingShellProps = {
 export function OnboardingShell({
   totalSteps,
   stepIndex,
+  currentStepLabel,
   onBack,
   showBack,
   children,
@@ -31,7 +33,7 @@ export function OnboardingShell({
   return (
     <div className="grid h-screen grid-cols-1 overflow-hidden bg-background lg:grid-cols-2">
       {/* Left brand column */}
-      <aside className="relative hidden overflow-hidden bg-neutral-950 text-white lg:flex lg:flex-col lg:justify-between lg:p-10 dark:bg-neutral-950">
+      <aside className="relative hidden overflow-hidden bg-neutral-950 text-white dark:bg-neutral-950 lg:flex lg:flex-col lg:justify-between lg:p-10">
         <div className="flex items-center gap-2">
           <Image
             src="/assets/images/shared/main-logo-dark.svg"
@@ -76,50 +78,63 @@ export function OnboardingShell({
       </aside>
 
       {/* Right wizard column */}
-      <main className="h-screen overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <main className="h-screen overflow-y-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="flex min-h-full items-center justify-center px-4 py-10 sm:px-8">
           <div className="w-full max-w-lg">
-          {/* Mobile-only logo */}
-          <div className="mb-6 flex justify-center lg:hidden">
-            <Image
-              src="/assets/images/shared/main-logo-dark.svg"
-              alt="NativPost"
-              width={128}
-              height={28}
-              priority
-              className="dark:brightness-0 dark:invert"
-            />
-          </div>
-
-          <div className="rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
-            {children}
-          </div>
-
-          <div className="mt-6 flex items-center justify-center gap-1.5" role="progressbar" aria-valuemin={1} aria-valuemax={totalSteps} aria-valuenow={stepIndex + 1}>
-            {Array.from({ length: totalSteps }).map((_, i) => (
-              <div
-                key={i}
-                className={cn(
-                  'h-1.5 rounded-full transition-all',
-                  i === stepIndex
-                    ? 'w-8 bg-primary'
-                    : i < stepIndex
-                      ? 'w-1.5 bg-primary/50 dark:bg-primary/70'
-                      : 'w-1.5 bg-muted-foreground/20 dark:bg-muted-foreground/30',
-                )}
+            {/* Mobile-only logo */}
+            <div className="mb-6 flex justify-center lg:hidden">
+              <Image
+                src="/assets/images/shared/main-logo-dark.svg"
+                alt="NativPost"
+                width={128}
+                height={28}
+                priority
+                className="dark:brightness-0 dark:invert"
               />
-            ))}
-          </div>
+            </div>
 
-          {showBack && onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              className="mx-auto mt-5 block text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Back
-            </button>
-          )}
+            <div className="rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
+              {children}
+            </div>
+
+            <div className="mt-6 flex flex-col items-center gap-2">
+              <div className="flex items-center gap-1.5" role="progressbar" aria-valuemin={1} aria-valuemax={totalSteps} aria-valuenow={stepIndex + 1} aria-label={currentStepLabel ?? `Step ${stepIndex + 1} of ${totalSteps}`}>
+                {Array.from({ length: totalSteps }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      'h-1.5 rounded-full transition-all',
+                      i === stepIndex
+                        ? 'w-8 bg-primary'
+                        : i < stepIndex
+                          ? 'w-1.5 bg-primary/50 dark:bg-primary/70'
+                          : 'w-1.5 bg-muted-foreground/20 dark:bg-muted-foreground/30',
+                    )}
+                  />
+                ))}
+              </div>
+              {currentStepLabel && (
+                <p className="text-xs font-medium text-muted-foreground">
+                  {stepIndex + 1}
+                  /
+                  {totalSteps}
+                  {' '}
+                  —
+                  {' '}
+                  {currentStepLabel}
+                </p>
+              )}
+            </div>
+
+            {showBack && onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="mx-auto mt-5 block text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Back
+              </button>
+            )}
           </div>
         </div>
       </main>
