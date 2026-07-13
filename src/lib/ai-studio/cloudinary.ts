@@ -56,6 +56,33 @@ export async function storeImageRender(
   };
 }
 
+export async function storeAudioRender(
+  audioBuffer: Buffer,
+  publicId: string,
+  context: Record<string, string>,
+  orgId: string,
+): Promise<StoredRender> {
+  ensureConfigured();
+  const dataUri = `data:audio/mpeg;base64,${audioBuffer.toString('base64')}`;
+  const result = await cloudinary.uploader.upload(dataUri, {
+    resource_type: 'auto',
+    public_id: publicId,
+    folder: `nativpost/${orgId}`,
+    overwrite: true,
+    context,
+    tags: ['ai-studio', 'elevenlabs-tts'],
+  });
+  return {
+    publicId: result.public_id as string,
+    url: result.secure_url as string,
+    thumbnailUrl: result.secure_url as string,
+    width: null,
+    height: null,
+    durationSeconds: result.duration ? Number(result.duration) : null,
+    mimeType: typeof result.format === 'string' ? `audio/${result.format}` : 'audio/mpeg',
+  };
+}
+
 export async function storeVideoRender(
   sourceUrl: string,
   publicId: string,

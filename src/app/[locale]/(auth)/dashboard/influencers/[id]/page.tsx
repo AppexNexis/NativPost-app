@@ -4,8 +4,10 @@ import {
   ArrowLeft,
   CheckCircle2,
   Copy,
+  Film,
   Loader2,
   Mic,
+  Play,
   Sparkles,
   Trash2,
   UserRound,
@@ -61,6 +63,13 @@ export default function InfluencerDetailPage() {
   const [generating, setGenerating] = useState<'image' | 'consistency' | 'retrain' | 'delete' | null>(null);
   const [consistencyResults, setConsistencyResults] = useState<string[] | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [videoScript, setVideoScript] = useState('');
+  const [videoDuration, setVideoDuration] = useState(5);
+  const [videoAspect, setVideoAspect] = useState<'9:16' | '1:1' | '16:9'>('9:16');
+  const [videoGenerating, setVideoGenerating] = useState(false);
+  const [videoJobId, setVideoJobId] = useState<string | null>(null);
+  const [videoJobStatus, setVideoJobStatus] = useState<string | null>(null);
+  const [videoJobResult, setVideoJobResult] = useState<{ url?: string; thumbnailUrl?: string } | null>(null);
 
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -190,6 +199,73 @@ export default function InfluencerDetailPage() {
       setGenerating(null);
     }
   }
+
+  async function handleGenerateVideo() {
+    if (generating || videoGenerating || !id) return;
+    if (videoScript.trim().length < 20) return;
+    setVideoGenerating(true);
+    setVideoJobId(null);
+    setVideoJobStatus(null);
+    setVideoJobResult(null);
+    setActionMsg(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/ai-influencers/${id}/generate-video`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          script: videoScript.trim(),
+          aspect: videoAspect,
+          duration: videoDuration,
+        }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.error || `Video generation failed (${res.status})`);
+      }
+      const data = await res.json();
+      setVideoJobId(data.jobId);
+      setVideoJobStatus(data.status);
+      setActionMsg('Video pipeline queued. The chain takes 2-5 minutes.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setVideoGenerating(false);
+    }
+  }
+
+  // Poll video job status while in progress
+  useEffect(() => {
+    if (!videoJobId || videoJobStatus === 'succeeded' || videoJobStatus === 'failed') return;
+
+    let cancelled = false;
+    async function poll() {
+      try {
+        const res = await fetch(`/api/ai-studio/jobs/${videoJobId}`, { cache: 'no-store' });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setVideoJobStatus(data.job?.status || data.status);
+        if (data.job?.output) {
+          setVideoJobResult(data.job.output);
+        }
+        if (data.job?.status === 'succeeded' || data.job?.status === 'failed') {
+          setVideoGenerating(false);
+          if (data.job?.status === 'succeeded') {
+            setActionMsg('Talking-head video generated.');
+            load(); // refresh usage count
+          }
+        }
+      } catch {
+        // retry next tick
+      }
+    }
+    const timer = setInterval(poll, 3000);
+    poll();
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [videoJobId, videoJobStatus, load]);
 
   async function handleDelete() {
     if (generating || !id) return;
@@ -384,6 +460,80 @@ export default function InfluencerDetailPage() {
           </section>
 
           <section className="rounded-lg border border-border bg-card p-4">
+            <div className="mb-3 flex items-center gap-2 text-sm font-medium">
+              <Film size={14} />
+              Generate Video
+            </div>
+            {item.loraStatus === 'ready' && item.voiceId
+              ? (
+                  <div className="space-y-3">
+                    <textarea
+                      placeholder="What should this influencer say? (min 20 chars)"
+                      value={videoScript}
+                      onChange={e => setVideoScript(e.target.value)}
+                      rows={4}
+                      maxLength={5000}
+                      disabled={videoGenerating}
+                      className="w-full resize-none rounded-md border border-border bg-muted px-3 py-2 text-sm placeholder:text-muted-foreground disabled:opacity-50"
+                    />
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={videoDuration}
+                        onChange={e => setVideoDuration(Number(e.target.value))}
+                        disabled={videoGenerating}
+                        className="rounded-md border border-border bg-muted px-2 py-1 text-xs disabled:opacity-50"
+                      >
+                        <option value={5}>5s</option>
+                        <option value={8}>8s</option>
+                        <option value={10}>10s</option>
+                      </select>
+                      <div className="flex items-center gap-1">
+                        {(['9:16', '1:1', '16:9'] as const).map(a => (
+                          <button
+                            key={a}
+                            type="button"
+                            onClick={() => setVideoAspect(a)}
+                            disabled={videoGenerating}
+                            className={`rounded px-2 py-1 text-xs transition ${
+                              videoAspect === a
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-muted text-muted-foreground hover:text-foreground'
+                            } disabled:opacity-50`}
+                          >
+                            {a}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleGenerateVideo}
+                      disabled={videoGenerating || videoScript.trim().length < 20 || generating !== null}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+                    >
+                      {videoGenerating && !videoJobId
+                        ? <Loader2 size={14} className="animate-spin" />
+                        : <Play size={14} />}
+                      {videoGenerating && !videoJobId ? 'Generating…' : 'Generate talking-head video'}
+                    </button>
+                    {videoJobId && (
+                      <VideoJobStatusBanner
+                        status={videoJobStatus}
+                        result={videoJobResult}
+                      />
+                    )}
+                  </div>
+                )
+              : (
+                  <div className="text-sm text-muted-foreground">
+                    {item.loraStatus !== 'ready'
+                      ? 'Train the face lock first to enable video generation.'
+                      : 'Assign a voice to enable video generation.'}
+                  </div>
+                )}
+          </section>
+
+          <section className="rounded-lg border border-border bg-card p-4">
             <div className="mb-2 flex items-center gap-2 text-sm font-medium">
               <UserRound size={14} />
               Persona prompt
@@ -533,4 +683,59 @@ function LoraBanner({ status, loraModelId }: { status: string | null; loraModelI
     );
   }
   return null;
+}
+
+function VideoJobStatusBanner({
+  status,
+  result,
+}: {
+  status: string | null;
+  result: { url?: string; thumbnailUrl?: string } | null;
+}) {
+  if (!status || status === 'succeeded' || status === 'failed' || status === 'canceled') {
+    if (status === 'succeeded' && result?.thumbnailUrl) {
+      return (
+        <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-2">
+          <div className="mb-1 flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+            <CheckCircle2 size={12} />
+            Video ready
+          </div>
+          <Image
+            src={result.thumbnailUrl}
+            alt="Generated video thumbnail"
+            width={320}
+            height={180}
+            className="w-full rounded object-cover"
+          />
+        </div>
+      );
+    }
+    if (status === 'succeeded') {
+      return (
+        <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+          <CheckCircle2 size={12} />
+          Video generated successfully.
+        </div>
+      );
+    }
+    if (status === 'failed') {
+      return (
+        <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+          <XCircle size={12} />
+          Video generation failed.
+        </div>
+      );
+    }
+    return null;
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-600 dark:text-amber-400">
+      <Loader2 size={12} className="animate-spin" />
+      {status === 'queued' && 'Queued…'}
+      {status === 'reserved' && 'Reserving…'}
+      {status === 'processing' && 'Generating video…'}
+      {(status === 'IN_QUEUE' || status === 'IN_PROGRESS') && 'Rendering on fal.ai…'}
+    </div>
+  );
 }
