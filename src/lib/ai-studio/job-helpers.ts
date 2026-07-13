@@ -59,12 +59,13 @@ export function gptImageSizeFor(aspect: string): 'square_hd' | 'portrait_16_9' |
 export function buildFalInput(model: AiStudioModel, opts: {
   prompt?: string;
   imageUrl?: string;
+  imageUrls?: string[];
   audioUrl?: string;
   seconds?: number;
   aspect: string;
   seed?: number;
 }): Record<string, unknown> {
-  const { prompt, imageUrl, audioUrl, seconds, aspect, seed } = opts;
+  const { prompt, imageUrl, imageUrls, audioUrl, seconds, aspect, seed } = opts;
 
   switch (model.id) {
     case 'flux-dev':
@@ -73,6 +74,23 @@ export function buildFalInput(model: AiStudioModel, opts: {
         image_size: falImageSizeFor(aspect),
         num_inference_steps: 28,
         guidance_scale: 3.5,
+        num_images: 1,
+        enable_safety_checker: true,
+        ...(typeof seed === 'number' ? { seed } : {}),
+      };
+    case 'krea-2-turbo':
+      return {
+        prompt,
+        image_size: falImageSizeFor(aspect),
+        num_images: 1,
+        enable_safety_checker: true,
+        ...(typeof seed === 'number' ? { seed } : {}),
+      };
+    case 'krea-2-turbo-style':
+      return {
+        prompt,
+        image_size: falImageSizeFor(aspect),
+        reference_image_urls: (imageUrls ?? (imageUrl ? [imageUrl] : [])).slice(0, 4),
         num_images: 1,
         enable_safety_checker: true,
         ...(typeof seed === 'number' ? { seed } : {}),
@@ -108,6 +126,23 @@ export function buildFalInput(model: AiStudioModel, opts: {
         prompt: prompt || 'Natural motion',
         aspect_ratio: normalizedFalAspect(aspect),
         duration: String(seconds ?? 5),
+      };
+    case 'happy-horse-i2v':
+      // Aspect is derived from the source image by fal. No aspect_ratio field.
+      return {
+        image_url: imageUrl,
+        prompt: prompt || 'Natural motion with spoken dialogue',
+        duration: seconds ?? 5,
+        resolution: '1080p',
+      };
+    case 'kling-v3-pro-i2v':
+      // Aspect derived from start_image by fal. Kling wants duration as string.
+      // MVP: no @Element / elements array; add later when multi-ref UI is wired.
+      return {
+        start_image_url: imageUrl,
+        prompt: prompt || 'Natural cinematic motion',
+        duration: String(seconds ?? 5),
+        generate_audio: true,
       };
     case 'seedance-2-i2v':
       return {

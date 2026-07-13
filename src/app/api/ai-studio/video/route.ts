@@ -39,6 +39,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Reference image is required for image-to-video' }, { status: 400 });
   }
 
+  const rawReferences = Array.isArray(body.references) ? body.references : [referenceImageUrl];
+  const references = rawReferences
+    .map(r => String(r || '').trim())
+    .filter(r => r.length > 0)
+    .slice(0, 4);
+
   const aspect = String(body.aspect || body.aspectRatio || '9:16');
   const seconds = Number(body.duration) || model.durations?.[0] || 5;
   if (!model.durations?.includes(seconds)) {
@@ -73,7 +79,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const input = buildFalInput(model, { prompt, imageUrl: referenceImageUrl, aspect, seconds });
+    const input = buildFalInput(model, {
+      prompt,
+      imageUrl: referenceImageUrl,
+      imageUrls: references,
+      aspect,
+      seconds,
+    });
     const submitted = await submitFalJob({
       falModel: model.falModel,
       input,

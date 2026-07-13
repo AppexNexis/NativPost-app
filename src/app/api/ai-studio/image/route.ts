@@ -43,6 +43,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Aspect ${aspect} not supported by ${modelId}` }, { status: 400 });
   }
 
+  const rawReferences = Array.isArray(body.references) ? body.references : [];
+  const references = rawReferences
+    .map(r => String(r || '').trim())
+    .filter(r => r.length > 0)
+    .slice(0, 4);
+
+  if (model.requiresImage && references.length === 0) {
+    return NextResponse.json({ error: `${model.label} requires at least one reference image` }, { status: 400 });
+  }
+
   const credits = estimateCredits(model);
   const db = await getDb();
 
@@ -55,7 +65,7 @@ export async function POST(request: NextRequest) {
       kind: 'image',
       status: 'reserved',
       creditsReserved: credits,
-      input: { prompt, aspect },
+      input: { prompt, aspect, references },
     })
     .returning();
   if (!job) return NextResponse.json({ error: 'Failed to create job' }, { status: 500 });
@@ -71,7 +81,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const input = buildFalInput(model, { prompt, aspect });
+    const input = buildFalInput(model, {
+      prompt,
+      aspect,
+      imageUrl: references[0],
+      imageUrls: references,
+    });
     const submitted = await submitFalJob({
       falModel: model.falModel,
       input,

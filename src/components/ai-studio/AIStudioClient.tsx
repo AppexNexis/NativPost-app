@@ -162,6 +162,7 @@ export function AIStudioClient() {
         modelId,
         prompt: prompt.trim(),
         aspect,
+        references,
       };
 
       if (kind === 'image-edit') {
@@ -180,6 +181,7 @@ export function AIStudioClient() {
           aspect,
           duration,
           imageUrl: references[0],
+          references,
         };
       }
 
