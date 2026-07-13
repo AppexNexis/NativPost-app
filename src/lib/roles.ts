@@ -72,6 +72,7 @@ export const NAV_ITEMS: NavItem[] = [
   // --- Create (team only) ---
   { label: 'New post', href: '/dashboard/content/create', icon: 'PenLine', roles: ['admin', 'editor'], group: 'Create' },
   { label: 'Brand Profile', href: '/dashboard/brand-profile', icon: 'Fingerprint', roles: ['admin', 'editor'], group: 'Create' },
+  { label: 'Influencers', href: '/dashboard/influencers', icon: 'UserRound', roles: ['admin', 'editor'], group: 'Create' },
   { label: 'Media library', href: '/dashboard/media-library', icon: 'Image', roles: ['admin', 'editor'], group: 'Create' },
 
   // --- Workspace ---

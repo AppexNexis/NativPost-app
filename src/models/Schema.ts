@@ -684,9 +684,8 @@ export const campaignContentSchema = pgTable('campaign_content', {
 // -----------------------------------------------------------
 export const aiInfluencerSchema = pgTable('ai_influencer', {
   id: uuid('id').primaryKey().defaultRandom(),
-  orgId: text('org_id')
-    .references(() => organizationSchema.id, { onDelete: 'cascade' })
-    .notNull(),
+  // org_id is nullable to allow system baseline library rows (is_system=true)
+  orgId: text('org_id').references(() => organizationSchema.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   description: text('description'),
   gender: text('gender'),
@@ -701,12 +700,35 @@ export const aiInfluencerSchema = pgTable('ai_influencer', {
   baseImageUrl: text('base_image_url'),
   referenceImageUrls: jsonb('reference_image_urls').default([]),
   loraModelId: text('lora_model_id'),
+  // Phase I1 additions
+  voiceId: text('voice_id'),
+  voiceProvider: text('voice_provider').default('elevenlabs'),
+  loraTrainingJobId: text('lora_training_job_id'),
+  loraStatus: text('lora_status').default('pending'), // pending | training | ready | failed
+  isSystem: boolean('is_system').default(false),
+  personaPrompt: text('persona_prompt'),
+  archetype: text('archetype'), // journey | theme | spinoff (v2)
   usageCount: integer('usage_count').default(0),
   isActive: boolean('is_active').default(true),
   updatedAt: timestamp('updated_at', { mode: 'date' })
     .defaultNow()
     .$onUpdate(() => new Date())
     .notNull(),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------
+// INFLUENCER ANGLE (join: ai_influencer ↔ content_angle)
+// -----------------------------------------------------------
+export const influencerAngleSchema = pgTable('influencer_angle', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  influencerId: uuid('influencer_id')
+    .references(() => aiInfluencerSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  contentAngleId: uuid('content_angle_id')
+    .references(() => contentAngleSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  weight: integer('weight').default(1),
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
 });
 

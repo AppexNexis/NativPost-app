@@ -27,6 +27,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  UserRound,
   Users,
   Zap,
 } from 'lucide-react';
@@ -66,6 +67,7 @@ const ICONS: Record<string, typeof Calendar> = {
   PenLine,
   Settings,
   Sparkles,
+  UserRound,
   Users,
   Gift,
   MessageCircle,

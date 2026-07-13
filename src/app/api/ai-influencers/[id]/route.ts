@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, or } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -20,10 +20,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
 
   try {
+    // Allow reading own-org rows AND system baseline rows
     const [item] = await db
       .select()
       .from(aiInfluencerSchema)
-      .where(and(eq(aiInfluencerSchema.id, id), eq(aiInfluencerSchema.orgId, orgId!)))
+      .where(and(
+        eq(aiInfluencerSchema.id, id),
+        or(eq(aiInfluencerSchema.orgId, orgId!), eq(aiInfluencerSchema.isSystem, true)),
+      ))
       .limit(1);
 
     if (!item) {
@@ -66,6 +70,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (body.baseImageUrl !== undefined) updates.baseImageUrl = body.baseImageUrl;
     if (body.referenceImageUrls !== undefined) updates.referenceImageUrls = body.referenceImageUrls;
     if (body.loraModelId !== undefined) updates.loraModelId = body.loraModelId;
+    if (body.voiceId !== undefined) updates.voiceId = body.voiceId;
+    if (body.voiceProvider !== undefined) updates.voiceProvider = body.voiceProvider;
+    if (body.personaPrompt !== undefined) updates.personaPrompt = body.personaPrompt;
+    if (body.archetype !== undefined) updates.archetype = body.archetype;
+    if (body.loraStatus !== undefined) updates.loraStatus = body.loraStatus;
+    if (body.loraTrainingJobId !== undefined) updates.loraTrainingJobId = body.loraTrainingJobId;
     if (body.isActive !== undefined) updates.isActive = body.isActive;
     updates.updatedAt = new Date();
 

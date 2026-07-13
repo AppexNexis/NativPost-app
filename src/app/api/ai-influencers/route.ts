@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, or } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -16,10 +16,11 @@ export async function GET(_request: NextRequest) {
   if (error) return error;
 
   try {
+    // Return the org's own rows AND the shared system baseline library
     const items = await db
       .select()
       .from(aiInfluencerSchema)
-      .where(eq(aiInfluencerSchema.orgId, orgId!))
+      .where(or(eq(aiInfluencerSchema.orgId, orgId!), eq(aiInfluencerSchema.isSystem, true)))
       .orderBy(aiInfluencerSchema.createdAt);
 
     return NextResponse.json({ items }, { status: 200 });
@@ -59,6 +60,10 @@ export async function POST(request: NextRequest) {
         baseImageUrl: body.baseImageUrl || null,
         referenceImageUrls: body.referenceImageUrls || [],
         loraModelId: body.loraModelId || null,
+        voiceId: body.voiceId || null,
+        voiceProvider: body.voiceProvider || 'elevenlabs',
+        personaPrompt: body.personaPrompt || null,
+        archetype: body.archetype || null,
       })
       .returning();
 
