@@ -184,8 +184,13 @@ export function ContentPreview({
                 </div>
               )}
 
-              {/* Video branch — Remotion when editor state exists AND not compiled */}
-              {useVideoBranch && !isCompiled && hasEditorState && remotionInputProps.backgroundUrl && (
+              {/* Video branch — Remotion whenever editor state exists.
+                * `isCompiled` intentionally NOT gating here: per team memory
+                * (isCompiled-not-video-signal, wysiwyg-output), the Remotion
+                * live render is the source of truth for the preview and must
+                * match the editor exactly. The compiled MP4 in graphicUrls[0]
+                * is used for downloads / social publish only. */}
+              {useVideoBranch && hasEditorState && remotionInputProps.backgroundUrl && (
                 <div className="flex justify-center">
                   <div
                     className="relative overflow-hidden rounded-[2rem] border-[1.5px] border-white/[0.06] bg-neutral-900/40 shadow-2xl"
@@ -199,8 +204,10 @@ export function ContentPreview({
                 </div>
               )}
 
-              {/* Video branch — plain <video> for compiled or non-editor items */}
-              {useVideoBranch && (isCompiled || !hasEditorState) && videoUrl && (
+              {/* Video branch — plain <video> only for items without any
+                * editor state (legacy imports, plain publishes). Anything
+                * that went through the editor renders via Remotion above. */}
+              {useVideoBranch && !hasEditorState && videoUrl && (
                 <div className="flex justify-center">
                   <div
                     className="relative overflow-hidden rounded-[2rem] border-[1.5px] border-white/[0.06] bg-neutral-900/40 shadow-2xl"
