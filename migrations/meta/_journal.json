@@ -204,6 +204,13 @@
       "when": 1815091200000,
       "tag": "0028_brand_profile_source",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1822500000000,
+      "tag": "0029_billing_interval",
+      "breakpoints": true
     }
   ]
 }

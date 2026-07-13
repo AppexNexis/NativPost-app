@@ -4,7 +4,12 @@
  *
  * v2: monthlyPlanTopics added — how many topic suggestions per month
  *     (0 = Monthly Plan not available on this tier)
+ *
+ * v3: annual/yearly billing — BillingInterval type, annualPriceUsd,
+ *     stripeAnnualPriceId, paystackAnnualPlanCode on every PlanConfig.
  */
+
+export type BillingInterval = 'month' | 'year';
 
 export type PlanFeatures = {
   postsPerMonth: number; // -1 = unlimited
@@ -33,10 +38,13 @@ export type PlanConfig = {
   name: string;
   tagline: string;
   priceUsd: number;
+  annualPriceUsd: number; // total billed once per 12 months (~20% off monthly × 12)
   setupFeeUsd: number; // flat $5 across all plans
   features: PlanFeatures;
   stripePriceId: { dev: string; prod: string };
+  stripeAnnualPriceId: { dev: string; prod: string };
   paystackPlanCode: { dev: string; prod: string };
+  paystackAnnualPlanCode: { dev: string; prod: string };
   popular?: boolean;
   hidden?: boolean;
 };
@@ -47,6 +55,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     name: 'Starter',
     tagline: 'Get consistent, on-brand content without the agency price tag.',
     priceUsd: 19,
+    annualPriceUsd: 182,
     setupFeeUsd: 5,
     popular: false,
     features: {
@@ -71,7 +80,9 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       monthlyAiCredits: 250,
     },
     stripePriceId: { dev: 'price_STARTER_DEV_REPLACE', prod: 'price_1TLfHe8UA4orc9zNIcmWwP1d' },
+    stripeAnnualPriceId: { dev: 'price_STARTER_ANNUAL_DEV_REPLACE', prod: 'price_STARTER_ANNUAL_PROD_REPLACE' },
     paystackPlanCode: { dev: 'PLN_jjfdqyrgr1vbsvv', prod: 'PLN_4jzn7zd6blqssag' },
+    paystackAnnualPlanCode: { dev: 'PLN_STARTER_ANNUAL_DEV_REPLACE', prod: 'PLN_STARTER_ANNUAL_PROD_REPLACE' },
   },
 
   growth: {
@@ -79,6 +90,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     name: 'Growth',
     tagline: 'More reach, richer content, and video — for brands that are serious.',
     priceUsd: 39,
+    annualPriceUsd: 374,
     setupFeeUsd: 5,
     popular: true,
     features: {
@@ -103,7 +115,9 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       monthlyAiCredits: 500,
     },
     stripePriceId: { dev: 'price_GROWTH_DEV_REPLACE', prod: 'price_1TLfIW8UA4orc9zN5SvYEWkD' },
+    stripeAnnualPriceId: { dev: 'price_GROWTH_ANNUAL_DEV_REPLACE', prod: 'price_GROWTH_ANNUAL_PROD_REPLACE' },
     paystackPlanCode: { dev: 'PLN_8h1kodnrprlt3sp', prod: 'PLN_u39i4zlh6416qbb' },
+    paystackAnnualPlanCode: { dev: 'PLN_GROWTH_ANNUAL_DEV_REPLACE', prod: 'PLN_GROWTH_ANNUAL_PROD_REPLACE' },
   },
 
   pro: {
@@ -111,6 +125,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     name: 'Pro',
     tagline: 'Agency-quality content with a human eye on everything before it goes live.',
     priceUsd: 79,
+    annualPriceUsd: 758,
     setupFeeUsd: 5,
     popular: false,
     features: {
@@ -135,7 +150,9 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       monthlyAiCredits: 1250,
     },
     stripePriceId: { dev: 'price_PRO_DEV_REPLACE', prod: 'price_1TLfJ08UA4orc9zNrNzFnRr7' },
+    stripeAnnualPriceId: { dev: 'price_PRO_ANNUAL_DEV_REPLACE', prod: 'price_PRO_ANNUAL_PROD_REPLACE' },
     paystackPlanCode: { dev: 'PLN_fdwtqby00izl4ro', prod: 'PLN_o7ebuljkyw9iyaw' },
+    paystackAnnualPlanCode: { dev: 'PLN_PRO_ANNUAL_DEV_REPLACE', prod: 'PLN_PRO_ANNUAL_PROD_REPLACE' },
   },
 
   agency: {
@@ -143,6 +160,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     name: 'Agency',
     tagline: 'Run content for multiple clients at scale, under one roof.',
     priceUsd: 149,
+    annualPriceUsd: 1430,
     setupFeeUsd: 5,
     popular: false,
     features: {
@@ -167,7 +185,9 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       monthlyAiCredits: 2000,
     },
     stripePriceId: { dev: 'price_AGENCY_DEV_REPLACE', prod: 'price_1TLfKa8UA4orc9zNw27oyVak' },
+    stripeAnnualPriceId: { dev: 'price_AGENCY_ANNUAL_DEV_REPLACE', prod: 'price_AGENCY_ANNUAL_PROD_REPLACE' },
     paystackPlanCode: { dev: 'PLN_lu1zsbqua45q58b', prod: 'PLN_uevdm7btk36wdhg' },
+    paystackAnnualPlanCode: { dev: 'PLN_AGENCY_ANNUAL_DEV_REPLACE', prod: 'PLN_AGENCY_ANNUAL_PROD_REPLACE' },
   },
 
   enterprise: {
@@ -175,6 +195,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     name: 'Enterprise',
     tagline: 'Custom solution for large organisations.',
     priceUsd: 0,
+    annualPriceUsd: 0,
     setupFeeUsd: 0,
     hidden: true,
     features: {
@@ -199,7 +220,9 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       monthlyAiCredits: 2000,
     },
     stripePriceId: { dev: '', prod: '' },
+    stripeAnnualPriceId: { dev: '', prod: '' },
     paystackPlanCode: { dev: '', prod: '' },
+    paystackAnnualPlanCode: { dev: '', prod: '' },
   },
 };
 
@@ -246,30 +269,40 @@ export function getPlanConfig(planId: string): PlanConfig | null {
   return PLAN_CONFIGS[planId] ?? null;
 }
 
-export function getStripePriceId(planId: string): string | null {
+export function getStripePriceId(planId: string, interval?: BillingInterval): string | null {
   const plan = PLAN_CONFIGS[planId];
   if (!plan) {
     return null;
   }
+  if (interval === 'year') {
+    return plan.stripeAnnualPriceId[getEnv()];
+  }
   return plan.stripePriceId[getEnv()];
 }
 
-export function getPaystackPlanCode(planId: string): string | null {
+export function getPaystackPlanCode(planId: string, interval?: BillingInterval): string | null {
   const plan = PLAN_CONFIGS[planId];
   if (!plan) {
     return null;
+  }
+  if (interval === 'year') {
+    return plan.paystackAnnualPlanCode[getEnv()];
   }
   return plan.paystackPlanCode[getEnv()];
 }
 
 export function getPlanByStripePriceId(priceId: string): PlanConfig | null {
   const env = getEnv();
-  return Object.values(PLAN_CONFIGS).find(p => p.stripePriceId[env] === priceId) ?? null;
+  return Object.values(PLAN_CONFIGS).find(
+    p => p.stripePriceId[env] === priceId || p.stripeAnnualPriceId[env] === priceId,
+  ) ?? null;
 }
 
 export function getPlanByPaystackCode(planCode: string): PlanConfig | null {
   const env = getEnv();
-  return Object.values(PLAN_CONFIGS).find(p => p.paystackPlanCode[env] === planCode) ?? null;
+  return Object.values(PLAN_CONFIGS).find(
+    p => p.paystackPlanCode[env] === planCode || p.paystackAnnualPlanCode[env] === planCode,
+  ) ?? null;
 }
 
 export function getEffectivePlanFeatures(planId: string, planStatus: string): PlanFeatures {
@@ -283,6 +316,24 @@ export function isPlanConfigured(planId: string): boolean {
   const priceId = getStripePriceId(planId);
   return !!priceId && !priceId.includes('REPLACE');
 }
+
+export function getAnnualPrice(planId: string): number | null {
+  const plan = PLAN_CONFIGS[planId];
+  if (!plan) {
+    return null;
+  }
+  return plan.annualPriceUsd;
+}
+
+export function getMonthlyEquivalentDisplay(annualPriceUsd: number): string {
+  const mo = annualPriceUsd / 12;
+  if (mo >= 1) {
+    return `≈$${Math.round(mo)}/mo`;
+  }
+  return `<$${(Math.round(mo * 100) / 100).toFixed(2)}/mo`;
+}
+
+export const ANNUAL_SAVE_PCT = 20;
 
 export function formatLimit(value: number, singular: string, plural?: string): string {
   if (value === -1) {

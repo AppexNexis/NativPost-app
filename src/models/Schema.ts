@@ -42,6 +42,7 @@ export const organizationSchema = pgTable(
     setupFeePaid: boolean('setup_fee_paid').default(false).notNull(),
     trialEndsAt: timestamp('trial_ends_at', { mode: 'date' }),
     paymentType: text('payment_type').default('stripe'),
+    billingInterval: text('billing_interval').default('month').notNull(),
     settings: jsonb('settings').default({}).notNull(),
     updatedAt: timestamp('updated_at', { mode: 'date' })
       .defaultNow()
@@ -186,15 +187,19 @@ export const contentItemSchema = pgTable('content_item', {
   enrichmentApplied: jsonb('enrichment_applied').default([]),
   engagementData: jsonb('engagement_data').default({}),
   // v2 fields
+  // eslint-disable-next-line ts/no-use-before-define
   campaignId: uuid('campaign_id').references(() => campaignSchema.id, {
     onDelete: 'set null',
   }),
+  // eslint-disable-next-line ts/no-use-before-define
   templateId: uuid('template_id').references(() => contentTemplateSchema.id, {
     onDelete: 'set null',
   }),
+  // eslint-disable-next-line ts/no-use-before-define
   influencerId: uuid('influencer_id').references(() => aiInfluencerSchema.id, {
     onDelete: 'set null',
   }),
+  // eslint-disable-next-line ts/no-use-before-define
   angleId: uuid('angle_id').references(() => contentAngleSchema.id, {
     onDelete: 'set null',
   }),
@@ -244,7 +249,7 @@ export const contentPlanSchema = pgTable(
     generatedAt: timestamp('generated_at', { mode: 'date' }).defaultNow().notNull(),
     createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
   },
-  (table) => ({
+  table => ({
     orgMonthIdx: uniqueIndex('content_plan_org_month_idx').on(
       table.orgId,
       table.month,
@@ -442,7 +447,7 @@ export const userSettingsSchema = pgTable(
       .notNull(),
     createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
   },
-  (table) => ({
+  table => ({
     userOrgIdx: uniqueIndex('user_settings_user_org_idx').on(
       table.userId,
       table.orgId,
@@ -554,7 +559,7 @@ export const contentTemplateSchema = pgTable(
       .notNull(),
     createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
   },
-  (table) => ({
+  table => ({
     // This creates the exact index Postgres needs for source_url upserts
     sourceUrlIdx: uniqueIndex('content_template_source_url_idx').on(table.sourceUrl),
   }),
@@ -792,7 +797,6 @@ export const engineRequestLogSchema = pgTable('engine_request_log', {
   costEstimate: real('cost_estimate'),
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
 });
-
 
 // -----------------------------------------------------------
 // APIFY SEED RUN (async ingestion tracking for trending seed pipeline)
