@@ -315,14 +315,14 @@ async function main() {
           if (!fresh) throw new Error('Row disappeared');
 
           const refUrls = (fresh.referenceImageUrls as string[]) || [];
-          if (refUrls.length < 5) {
-            throw new Error(`Only ${refUrls.length} reference images available, need 5+`);
-          }
 
           console.log('  Phase 2: Submitting LoRA training...');
           if (dryRun) {
-            console.log(`  (dry run) would submit training for ${refUrls.length} images`);
+            console.log('  (dry run) would submit LoRA training');
           } else {
+            if (refUrls.length < 5) {
+              throw new Error(`Only ${refUrls.length} reference images available, need 5+`);
+            }
             const requestId = await submitLoraTraining(refUrls, triggerWord);
             console.log(`  requestId: ${requestId}`);
 
