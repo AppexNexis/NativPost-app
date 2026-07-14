@@ -10,6 +10,14 @@ import { aiInfluencerSchema, brandProfileSchema } from '@/models/Schema';
 const IMAGE_ENGINE_URL = process.env.NATIVPOST_IMAGE_URL || 'http://localhost:4000';
 const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 
+function sanitizeTriggerWord(name: string | null): string {
+  if (!name) return 'nativpost';
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .slice(0, 20);
+}
+
 type RouteParams = { params: Promise<{ id: string }> };
 
 // -----------------------------------------------------------
@@ -49,10 +57,52 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       .where(eq(brandProfileSchema.orgId, orgId!))
       .limit(1);
 
-    // Build detailed prompt from traits
     const prompt = buildInfluencerPrompt(influencer);
     const caption = buildInfluencerCaption(influencer);
 
+    // ── LoRA path (face-locked, consistent) ──
+    if (influencer.loraStatus === 'ready' && influencer.loraModelId) {
+      console.log('[Influencer] Generating with LoRA for:', id, '| name:', influencer.name);
+      const triggerWord = sanitizeTriggerWord(influencer.name);
+
+      try {
+        const loraRes = await fetch(`${IMAGE_ENGINE_URL}/render/lora-inference`, {
+          method: 'POST',
+          signal: AbortSignal.timeout(180_000),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${ENGINE_API_KEY}`,
+          },
+          body: JSON.stringify({
+            loraUrl: influencer.loraModelId,
+            triggerWord,
+            prompt,
+            uploadToCloudinary: true,
+          }),
+        });
+
+        if (loraRes.ok) {
+          const loraData = await loraRes.json() as { imageUrl: string; seed: number; generationMs: number };
+          const imageUrl = loraData.imageUrl;
+          if (imageUrl) {
+            const existingRefs = (influencer.referenceImageUrls as string[]) || [];
+            const updatedRefs = [...existingRefs, imageUrl];
+
+            await db
+              .update(aiInfluencerSchema)
+              .set({ baseImageUrl: imageUrl, referenceImageUrls: updatedRefs, updatedAt: new Date() })
+              .where(and(eq(aiInfluencerSchema.id, id), eq(aiInfluencerSchema.orgId, orgId!)));
+
+            return NextResponse.json({ success: true, imageUrl, seed: loraData.seed, generationMs: loraData.generationMs, method: 'lora' });
+          }
+        }
+        console.warn('[Influencer] LoRA inference failed, falling back to /render/scene:', loraRes.status);
+      } catch (err) {
+        console.warn('[Influencer] LoRA inference error, falling back to /render/scene:', String(err));
+      }
+    }
+
+    // ── Fallback: generic scene endpoint ──
     const payload = {
       caption,
       scenePrompt: prompt,
@@ -67,7 +117,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       industry: profile?.industry || undefined,
     };
 
-    console.log('[Influencer] Generating base image for:', id, '| name:', influencer.name);
+    console.log('[Influencer] Generating base image (scene) for:', id, '| name:', influencer.name);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120_000);
