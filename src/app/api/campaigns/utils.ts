@@ -1443,7 +1443,7 @@ export async function generateCampaignPosts(
           enrichmentApplied: [],
           campaignId: campaign.id,
           angleId: post.angle_id || null,
-          influencerId: null,
+          influencerId: (campaign.enabledInfluencerIds as string[])?.[0] || null,
           generationParams: {
             campaignId: campaign.id,
             angleId: post.angle_id,

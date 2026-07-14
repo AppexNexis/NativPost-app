@@ -22,6 +22,7 @@ interface Props {
   };
   mediaSlots?: {
     background?: { url: string };
+    faceVideo?: { url: string };
   };
   audioTrack?: {
     url: string;
@@ -61,6 +62,30 @@ export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }
           muted
           loop
         />
+      )}
+
+      {mediaSlots?.faceVideo?.url && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 120,
+            right: 20,
+            width: width * 0.28,
+            aspectRatio: '9 / 16',
+            borderRadius: 12,
+            overflow: 'hidden',
+            border: '3px solid rgba(255,255,255,0.25)',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+            zIndex: 10,
+          }}
+        >
+          <Video
+            src={mediaSlots.faceVideo.url}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            muted
+            loop
+          />
+        </div>
       )}
 
       <AbsoluteFill

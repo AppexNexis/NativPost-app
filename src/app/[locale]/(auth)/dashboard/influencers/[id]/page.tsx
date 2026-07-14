@@ -8,9 +8,12 @@ import {
   Loader2,
   Mic,
   Play,
+  Plus,
   Sparkles,
   Trash2,
   UserRound,
+  Wand2,
+  X,
   XCircle,
 } from 'lucide-react';
 import Image from 'next/image';
@@ -70,6 +73,12 @@ export default function InfluencerDetailPage() {
   const [videoJobId, setVideoJobId] = useState<string | null>(null);
   const [videoJobStatus, setVideoJobStatus] = useState<string | null>(null);
   const [videoJobResult, setVideoJobResult] = useState<{ url?: string; thumbnailUrl?: string } | null>(null);
+  const [scriptGenerating, setScriptGenerating] = useState(false);
+  const [scriptTopic, setScriptTopic] = useState('');
+  const [assignedAngles, setAssignedAngles] = useState<Array<{ assignmentId: string; angleId: string; name: string; description: string | null; color: string | null; weight: number }>>([]);
+  const [angleSearchOpen, setAngleSearchOpen] = useState(false);
+  const [angleSearchQ, setAngleSearchQ] = useState('');
+  const [availableAngles, setAvailableAngles] = useState<Array<{ id: string; name: string; description: string | null; color: string | null }>>([]);
 
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -91,6 +100,7 @@ export default function InfluencerDetailPage() {
 
   useEffect(() => {
     load();
+    loadAngles();
   }, [load]);
 
   // Poll LoRA training status while it's training
@@ -266,6 +276,97 @@ export default function InfluencerDetailPage() {
       clearInterval(timer);
     };
   }, [videoJobId, videoJobStatus, load]);
+
+  async function loadAngles() {
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/ai-influencers/${id}/angles`, { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setAssignedAngles(data.angles || []);
+      }
+    } catch {
+      // non-fatal
+    }
+  }
+
+  async function loadAvailableAngles() {
+    try {
+      const res = await fetch('/api/content-angles', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        const list = data.angles || data.items || [];
+        setAvailableAngles(list);
+      }
+    } catch {
+      setAvailableAngles([]);
+    }
+  }
+
+  async function handleAssignAngle(angleId: string) {
+    if (!id) return;
+    const newIds = [...new Set([...assignedAngles.map(a => a.angleId), angleId])];
+    try {
+      const res = await fetch(`/api/ai-influencers/${id}/angles`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ angleIds: newIds }),
+      });
+      if (res.ok) {
+        await loadAngles();
+      }
+    } catch { /* non-fatal */ }
+    setAngleSearchOpen(false);
+    setAngleSearchQ('');
+  }
+
+  async function handleRemoveAngle(assignmentId: string) {
+    if (!id) return;
+    const newIds = assignedAngles.filter(a => a.assignmentId !== assignmentId).map(a => a.angleId);
+    try {
+      const res = await fetch(`/api/ai-influencers/${id}/angles`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ angleIds: newIds }),
+      });
+      if (res.ok) {
+        await loadAngles();
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  async function handleGenerateScript() {
+    if (scriptGenerating || !id) return;
+    setScriptGenerating(true);
+    setError(null);
+    try {
+      const body: Record<string, unknown> = {
+        duration: videoDuration,
+      };
+      if (scriptTopic.trim()) body.topic = scriptTopic.trim();
+      // Use the first assigned angle if any
+      if (assignedAngles.length > 0) body.angleId = assignedAngles[0]!.angleId;
+
+      const res = await fetch(`/api/ai-influencers/${id}/generate-script`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.error || `Script generation failed (${res.status})`);
+      }
+      const data = await res.json();
+      if (data.script) {
+        setVideoScript(data.script);
+        setActionMsg('Script generated. Review and edit before generating video.');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setScriptGenerating(false);
+    }
+  }
 
   async function handleDelete() {
     if (generating || !id) return;
@@ -459,6 +560,79 @@ export default function InfluencerDetailPage() {
                 )}
           </section>
 
+          {!isSystem && (
+            <section className="rounded-lg border border-border bg-card p-4">
+              <div className="mb-2 flex items-center justify-between text-sm font-medium">
+                <span>Content angles</span>
+                <button
+                  type="button"
+                  onClick={() => { setAngleSearchOpen(!angleSearchOpen); if (!angleSearchOpen) { setAngleSearchQ(''); loadAvailableAngles(); } }}
+                  disabled={generating !== null}
+                  className="inline-flex items-center gap-1 rounded p-1 text-muted-foreground hover:text-foreground disabled:opacity-50"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+              {angleSearchOpen && (
+                <div className="mb-2 space-y-1">
+                  <input
+                    type="text"
+                    placeholder="Search angles..."
+                    value={angleSearchQ}
+                    onChange={e => setAngleSearchQ(e.target.value)}
+                    className="w-full rounded-md border border-border bg-muted px-2 py-1 text-xs placeholder:text-muted-foreground"
+                    autoFocus
+                  />
+                  <div className="max-h-32 overflow-y-auto rounded-md border border-border">
+                    {availableAngles
+                        .filter(a => !angleSearchQ || a.name.toLowerCase().includes(angleSearchQ.toLowerCase()))
+                        .filter(a => !assignedAngles.some(aa => aa.angleId === a.id))
+                        .length === 0
+                      ? <div className="px-2 py-1.5 text-xs text-muted-foreground">No angles found. Create angles in Campaigns.</div>
+                      : availableAngles
+                          .filter(a => !angleSearchQ || a.name.toLowerCase().includes(angleSearchQ.toLowerCase()))
+                          .filter(a => !assignedAngles.some(aa => aa.angleId === a.id))
+                          .map(a => (
+                            <button
+                              key={a.id}
+                              type="button"
+                              onClick={() => handleAssignAngle(a.id)}
+                              disabled={assignedAngles.some(aa => aa.angleId === a.id)}
+                              className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-muted disabled:opacity-40"
+                            >
+                              {a.color
+                                ? <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: a.color }} />
+                                : null}
+                              <span className="truncate">{a.name}</span>
+                            </button>
+                          ))}
+                  </div>
+                </div>
+              )}
+              {assignedAngles.length === 0
+                ? <div className="text-xs text-muted-foreground">No angles assigned. Assign angles to help script generation.</div>
+                : (
+                    <div className="flex flex-wrap gap-1">
+                      {assignedAngles.map(a => (
+                        <span key={a.assignmentId} className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs">
+                          {a.color
+                            ? <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: a.color }} />
+                            : null}
+                          <span className="truncate max-w-[120px]">{a.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveAngle(a.assignmentId)}
+                            className="shrink-0 rounded-full p-0.5 text-muted-foreground hover:text-foreground"
+                          >
+                            <X size={10} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+            </section>
+          )}
+
           <section className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center gap-2 text-sm font-medium">
               <Film size={14} />
@@ -476,6 +650,26 @@ export default function InfluencerDetailPage() {
                       disabled={videoGenerating}
                       className="w-full resize-none rounded-md border border-border bg-muted px-3 py-2 text-sm placeholder:text-muted-foreground disabled:opacity-50"
                     />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={handleGenerateScript}
+                        disabled={scriptGenerating || videoGenerating || !item.personaPrompt}
+                        title={!item.personaPrompt ? 'Set a persona prompt in the wizard first' : 'Generate a persona-aware script'}
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                      >
+                        {scriptGenerating ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
+                        Generate script
+                      </button>
+                      <input
+                        type="text"
+                        placeholder="Optional topic"
+                        value={scriptTopic}
+                        onChange={e => setScriptTopic(e.target.value)}
+                        disabled={scriptGenerating || videoGenerating}
+                        className="w-32 rounded-md border border-border bg-muted px-2 py-1 text-xs placeholder:text-muted-foreground disabled:opacity-50"
+                      />
+                    </div>
                     <div className="flex items-center gap-2">
                       <select
                         value={videoDuration}
