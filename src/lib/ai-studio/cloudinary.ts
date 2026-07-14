@@ -97,13 +97,14 @@ export async function storeVideoRender(
     overwrite: true,
     context,
     tags: ['ai-studio'],
-    eager: [{ width: 720, height: 1280, crop: 'limit', format: 'mp4' }],
+    eager: [{ width: 720, height: 1280, crop: 'limit', format: 'jpg' }],
     eager_async: false,
   });
   return {
     publicId: result.public_id as string,
     url: result.secure_url as string,
-    thumbnailUrl: (result.eager?.[0]?.secure_url as string) || (result.secure_url as string),
+    // eager[0] is a jpg poster frame derived from the video
+    thumbnailUrl: (result.eager?.[0]?.secure_url as string) || `${result.secure_url}.jpg`,
     width: result.width ? Number(result.width) : null,
     height: result.height ? Number(result.height) : null,
     durationSeconds: result.duration ? Number(result.duration) : null,

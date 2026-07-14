@@ -1098,19 +1098,22 @@ function VideoJobStatusBanner({
   result: { url?: string; thumbnailUrl?: string } | null;
 }) {
   if (!status || status === 'succeeded' || status === 'failed' || status === 'canceled') {
-    if (status === 'succeeded' && result?.thumbnailUrl) {
+    if (status === 'succeeded' && result?.url) {
+      // Cloudinary video URL → derive a jpg poster from it
+      const posterUrl = result.thumbnailUrl || result.url?.replace(/\.mp4[\w]*(\?.*)?$/, '.jpg');
       return (
         <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-2">
           <div className="mb-1 flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
             <CheckCircle2 size={12} />
             Video ready
           </div>
-          <Image
-            src={result.thumbnailUrl}
-            alt="Generated video thumbnail"
-            width={320}
-            height={180}
+          <video
+            src={result.url}
+            poster={posterUrl}
+            controls
+            preload="metadata"
             className="w-full rounded object-cover"
+            style={{ maxHeight: 360 }}
           />
         </div>
       );
