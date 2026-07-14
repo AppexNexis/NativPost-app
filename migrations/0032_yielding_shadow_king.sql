@@ -1,0 +1,1 @@
+ALTER TABLE "ai_influencer" ADD COLUMN "latest_video_url" text;

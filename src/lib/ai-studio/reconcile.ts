@@ -7,7 +7,7 @@ import type { InferSelectModel } from 'drizzle-orm';
 import { eq } from 'drizzle-orm';
 
 import { getDb } from '@/libs/DB';
-import { aiStudioJobSchema } from '@/models/Schema';
+import { aiInfluencerSchema, aiStudioJobSchema } from '@/models/Schema';
 
 import { storeImageRender, storeVideoRender } from './cloudinary';
 import { extractMediaFromFalPayload, submitFalJob } from './fal';
@@ -138,6 +138,21 @@ export async function reconcileFalJob(args: {
       : job.creditsReserved;
 
     await commitCredits(job.orgId, job.id, commitAmount, `AI Studio: ${model?.label || job.modelId}`);
+
+    // Cache the final URL on the influencer row when this was a face-lipsync
+    // render, so campaign posts assigned to this influencer can hydrate
+    // sourceMediaSlots.faceVideo without re-rendering. Non-fatal on failure.
+    if (job.kind === 'video-lipsync' && (input as { influencerId?: string }).influencerId) {
+      const influencerId = String((input as { influencerId?: string }).influencerId);
+      try {
+        await db
+          .update(aiInfluencerSchema)
+          .set({ latestVideoUrl: stored.url, updatedAt: new Date() })
+          .where(eq(aiInfluencerSchema.id, influencerId));
+      } catch (err) {
+        console.warn('[reconcile] Failed to bump influencer latestVideoUrl:', err);
+      }
+    }
 
     await db
       .update(aiStudioJobSchema)

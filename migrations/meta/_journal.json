@@ -225,6 +225,13 @@
       "when": 1783984408880,
       "tag": "0031_nasty_blue_shield",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1784009253109,
+      "tag": "0032_yielding_shadow_king",
+      "breakpoints": true
     }
   ]
 }

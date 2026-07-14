@@ -15,6 +15,7 @@ import {
   NoConnectedChannelsError,
 } from '@/lib/social/connected-platforms';
 import {
+  aiInfluencerSchema,
   brandProfileSchema,
   campaignContentSchema,
   campaignSchema,
@@ -1277,6 +1278,27 @@ export async function generateCampaignPosts(
   let failedPosts = 0;
   const contentItemIds: string[] = [];
 
+  // Preload latestVideoUrl for every enabled influencer so we can hydrate
+  // sourceMediaSlots.faceVideo per post without N+1 queries. Only used for
+  // talking_head content; other content types ignore the map.
+  const enabledInfluencerIds = Array.isArray(campaign.enabledInfluencerIds)
+    ? (campaign.enabledInfluencerIds as string[])
+    : [];
+  const influencerVideoMap = new Map<string, string>();
+  if (enabledInfluencerIds.length > 0) {
+    try {
+      const influencerRows = await db
+        .select({ id: aiInfluencerSchema.id, latestVideoUrl: aiInfluencerSchema.latestVideoUrl })
+        .from(aiInfluencerSchema)
+        .where(inArray(aiInfluencerSchema.id, enabledInfluencerIds));
+      for (const r of influencerRows) {
+        if (r.latestVideoUrl) influencerVideoMap.set(r.id, r.latestVideoUrl);
+      }
+    } catch (err) {
+      console.warn('[Campaign] Failed to load influencer video map:', err);
+    }
+  }
+
   // Guarantee exactly postsPerDay cards reach the Blitz queue. The engine
   // may return more posts than needed (buffer) or some posts may reference
   // unresolvable template_ids. We stop once we've successfully inserted
@@ -1430,6 +1452,26 @@ export async function generateCampaignPosts(
       // the untouched original (team memory: preserve-raw-source-in-compile-pipeline).
       const rawSource = template.mediaUrl || template.thumbnailUrl || template.sourceUrl || null;
 
+      // Pick the influencer for this post once (Phase I6 rotation). If the
+      // pick lands on an influencer with a cached talking-head render, use
+      // it to hydrate mediaSlots.faceVideo so the TalkingHead composition
+      // stops rendering black in the PiP window.
+      const pickedInfluencerId = pickInfluencerForPost(
+        campaign.enabledInfluencerIds as string[] | null,
+        campaign.influencerFrequency as number | null,
+        i,
+      );
+      if (
+        pickedInfluencerId
+        && resolvedContentType === 'talking_head'
+        && influencerVideoMap.has(pickedInfluencerId)
+      ) {
+        sourceMediaSlots = {
+          ...sourceMediaSlots,
+          faceVideo: { url: influencerVideoMap.get(pickedInfluencerId)! },
+        };
+      }
+
       // Insert content item — populates templateId FK column AND full
       // enrichmentData so downstream previews (Blitz swipe, detail page,
       // editor rehydrate) find everything they need without extra fetches.
@@ -1470,11 +1512,7 @@ export async function generateCampaignPosts(
           enrichmentApplied: [],
           campaignId: campaign.id,
           angleId: post.angle_id || null,
-          influencerId: pickInfluencerForPost(
-            campaign.enabledInfluencerIds as string[] | null,
-            campaign.influencerFrequency as number | null,
-            i,
-          ),
+          influencerId: pickedInfluencerId,
           generationParams: {
             campaignId: campaign.id,
             angleId: post.angle_id,

@@ -709,6 +709,10 @@ export const aiInfluencerSchema = pgTable('ai_influencer', {
   personaPrompt: text('persona_prompt'),
   archetype: text('archetype'), // journey | theme | spinoff (v2)
   usageCount: integer('usage_count').default(0),
+  // Cloudinary URL of most recent talking-head render. Producer: reconcile.ts
+  // sets this on lipsync success. Consumer: campaign engine hydrates
+  // sourceMediaSlots.faceVideo for talking_head posts.
+  latestVideoUrl: text('latest_video_url'),
   isActive: boolean('is_active').default(true),
   updatedAt: timestamp('updated_at', { mode: 'date' })
     .defaultNow()
