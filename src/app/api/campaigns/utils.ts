@@ -47,6 +47,33 @@ const RENDERABLE_CONTENT_TYPES = new Set([
   'single_image',
 ]);
 
+// ── Influencer rotation ──────────────────────────────────────────────────────
+
+/**
+ * Assigns an influencer to a post at loop index `postIndex`.
+ *
+ * Rules:
+ *  - Empty enabled list → null
+ *  - frequency <= 0     → null (slider off means never attach)
+ *  - frequency === 100  → deterministic round-robin by index
+ *  - 0 < frequency < 100 → probabilistic roll; on pass, round-robin
+ *
+ * Round-robin (vs Math.random pick) so a user with 3 influencers and
+ * freq=100 gets an even A/B/C/A/B/C spread — not an unlucky ABABAB cluster.
+ */
+function pickInfluencerForPost(
+  enabledIds: string[] | null | undefined,
+  frequency: number | null | undefined,
+  postIndex: number,
+): string | null {
+  const ids = Array.isArray(enabledIds) ? enabledIds : [];
+  if (ids.length === 0) return null;
+  const freq = typeof frequency === 'number' ? frequency : 0;
+  if (freq <= 0) return null;
+  if (freq < 100 && Math.random() * 100 >= freq) return null;
+  return ids[postIndex % ids.length] ?? null;
+}
+
 // ── Content type mapping ─────────────────────────────────────────────────────
 
 const MIX_KEY_TO_CONTENT_TYPE: Record<string, string> = {
@@ -1443,7 +1470,11 @@ export async function generateCampaignPosts(
           enrichmentApplied: [],
           campaignId: campaign.id,
           angleId: post.angle_id || null,
-          influencerId: (campaign.enabledInfluencerIds as string[])?.[0] || null,
+          influencerId: pickInfluencerForPost(
+            campaign.enabledInfluencerIds as string[] | null,
+            campaign.influencerFrequency as number | null,
+            i,
+          ),
           generationParams: {
             campaignId: campaign.id,
             angleId: post.angle_id,
