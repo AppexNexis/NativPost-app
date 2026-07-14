@@ -2,12 +2,12 @@ import { and, eq, or } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-import { getAuthContext } from '@/lib/auth';
 import { textToSpeech } from '@/lib/ai-studio/elevenlabs';
-import { extractMediaFromFalPayload, getFalResult, submitFalJob } from '@/lib/ai-studio/fal';
+import { extractMediaFromFalPayload, getFalResult, getFalStatus, submitFalJob } from '@/lib/ai-studio/fal';
 import { buildFalInput, buildWebhookUrl, falImageSizeFor } from '@/lib/ai-studio/job-helpers';
 import { estimateCredits, getModel } from '@/lib/ai-studio/models';
 import { reserveCredits } from '@/lib/ai-studio/server';
+import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { aiInfluencerSchema, aiStudioJobSchema } from '@/models/Schema';
 
@@ -34,7 +34,9 @@ const FACE_STILL_PROMPT = 'Professional headshot, soft studio lighting, looking 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId, userId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 
@@ -143,6 +145,25 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       input: faceInput,
       webhookUrl: buildWebhookUrl(), // unused since we poll
     });
+
+    // Poll for completion — Flux+LoRA takes 2-15s typically, Vercel 300s limit
+    const FACE_POLL_MS = 1500;
+    const FACE_MAX_POLLS = 60; // 90s max
+    let faceStatus: string | undefined;
+    for (let i = 0; i < FACE_MAX_POLLS; i++) {
+      const status = await getFalStatus(FAL_FLUX_LORA, faceJob.request_id);
+      if (status.status === 'COMPLETED') {
+        faceStatus = 'COMPLETED'; break;
+      }
+      if (status.status === 'FAILED') {
+        faceStatus = 'FAILED'; break;
+      }
+      await new Promise(r => setTimeout(r, FACE_POLL_MS));
+    }
+    if (faceStatus !== 'COMPLETED') {
+      throw new Error(`Face still ${faceStatus || 'timed out'} after ${FACE_MAX_POLLS * FACE_POLL_MS / 1000}s`);
+    }
+
     const faceResult = await getFalResult<Record<string, unknown>>(FAL_FLUX_LORA, faceJob.request_id);
     const media = extractMediaFromFalPayload(faceResult);
     if (!media.imageUrl) {
@@ -194,11 +215,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       },
     })
     .returning();
-  if (!job) return NextResponse.json({ error: 'Failed to create job' }, { status: 500 });
+  if (!job) {
+    return NextResponse.json({ error: 'Failed to create job' }, { status: 500 });
+  }
 
   try {
     await reserveCredits(orgId!, job.id, credits);
-  } catch (err) {
+  } catch {
     await db.delete(aiStudioJobSchema).where(eq(aiStudioJobSchema.id, job.id));
     return NextResponse.json(
       { error: 'Insufficient AI credits', code: 'INSUFFICIENT_CREDITS' },
