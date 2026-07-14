@@ -24,10 +24,22 @@
  *   DATABASE_URL, NATIVPOST_IMAGE_URL, NATIVPOST_ENGINE_API_KEY
  */
 
-import { eq, and, isNotNull, isNull } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull } from 'drizzle-orm';
+import { Pool as PgPool } from 'pg';
+
 import { buildInfluencerPrompt } from '../src/lib/ai-influencers/build-prompt';
 import { getDb } from '../src/libs/DB';
 import { aiInfluencerSchema } from '../src/models/Schema';
+
+// Separate short-lived pool for writes after long polling
+function getWritePool(): PgPool {
+  return new PgPool({
+    connectionString: process.env.DATABASE_URL,
+    max: 1,
+    connectionTimeoutMillis: 10_000,
+    idleTimeoutMillis: 5_000,
+  });
+}
 
 const IMAGE_ENGINE_URL = process.env.NATIVPOST_IMAGE_URL || 'http://localhost:4000';
 const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
@@ -47,7 +59,9 @@ function parseArgs(): {
   const args = process.argv.slice(2);
   const getNum = (flag: string, fallback: number): number => {
     const idx = args.indexOf(flag);
-    if (idx < 0) return fallback;
+    if (idx < 0) {
+      return fallback;
+    }
     return Number(args[idx + 1]!) || fallback;
   };
   return {
@@ -60,7 +74,9 @@ function parseArgs(): {
 }
 
 function sanitizeTriggerWord(name: string | null): string {
-  if (!name) return 'nativpost';
+  if (!name) {
+    return 'nativpost';
+  }
   return name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
 }
 
@@ -102,7 +118,9 @@ async function generateReferenceImage(
   }
 
   const data = await res.json() as { square?: string };
-  if (!data.square) throw new Error('Scene gen returned no image URL');
+  if (!data.square) {
+    throw new Error('Scene gen returned no image URL');
+  }
   return data.square;
 }
 
@@ -122,7 +140,9 @@ async function generateReferenceImages(
       process.stdout.write(`X(${String(err).slice(0, 30)})`);
     }
     process.stdout.write('\n');
-    if (i < REFERENCE_IMAGE_COUNT - 1) await sleep(750);
+    if (i < REFERENCE_IMAGE_COUNT - 1) {
+      await sleep(750);
+    }
   }
   return urls;
 }
@@ -155,7 +175,7 @@ async function pollLoraStatus(requestId: string): Promise<{ status: string; lora
     `${IMAGE_ENGINE_URL}/render/lora-status?requestId=${encodeURIComponent(requestId)}`,
     {
       signal: AbortSignal.timeout(30_000),
-      headers: { 'Authorization': `Bearer ${ENGINE_API_KEY}` },
+      headers: { Authorization: `Bearer ${ENGINE_API_KEY}` },
     },
   );
 
@@ -175,7 +195,9 @@ async function trainAndWait(requestId: string): Promise<string> {
     process.stdout.write(`  ${status} (${elapsed}s) `);
 
     if (status === 'COMPLETED') {
-      if (!loraUrl) throw new Error('COMPLETED but no loraUrl returned');
+      if (!loraUrl) {
+        throw new Error('COMPLETED but no loraUrl returned');
+      }
       return loraUrl;
     }
     if (status === 'FAILED') {
@@ -312,7 +334,9 @@ async function main() {
           const [fresh] = dryRun
             ? [row]
             : await db.select().from(aiInfluencerSchema).where(eq(aiInfluencerSchema.id, row.id)).limit(1);
-          if (!fresh) throw new Error('Row disappeared');
+          if (!fresh) {
+            throw new Error('Row disappeared');
+          }
 
           const refUrls = (fresh.referenceImageUrls as string[]) || [];
 
@@ -334,10 +358,13 @@ async function main() {
             console.log('  Phase 2: Polling for completion...');
             const loraUrl = await trainAndWait(requestId);
 
-            await db
-              .update(aiInfluencerSchema)
-              .set({ loraModelId: loraUrl, loraStatus: 'ready', updatedAt: new Date() })
-              .where(eq(aiInfluencerSchema.id, fresh.id));
+            // Write via fresh pool — Drizzle pool may have expired during long poll
+            const wp = getWritePool();
+            await wp.query(
+              `UPDATE ai_influencer SET lora_model_id=$1, lora_status='ready', updated_at=NOW() WHERE id=$2`,
+              [loraUrl, fresh.id],
+            );
+            await wp.end();
 
             console.log(`  Phase 2 done: LoRA ready`);
 
@@ -364,11 +391,15 @@ async function main() {
       }
     }));
 
-    if (batchStart + concurrency < targets.length) await sleep(500); // inter-batch pause
+    if (batchStart + concurrency < targets.length) {
+      await sleep(500);
+    } // inter-batch pause
   }
 
   console.log(`\n[bootstrap-lora] Summary: completed=${completed} failed=${failed}`);
-  if (dryRun) console.log('[bootstrap-lora] (dry run — no changes committed)');
+  if (dryRun) {
+    console.log('[bootstrap-lora] (dry run — no changes committed)');
+  }
   process.exit(failed > 0 ? 2 : 0);
 }
 
