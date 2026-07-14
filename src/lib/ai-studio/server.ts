@@ -426,6 +426,7 @@ export async function saveMediaAsset(
     width?: number | null;
     height?: number | null;
     mimeType?: string | null;
+    influencerId?: string | null;
   },
 ): Promise<SavedAsset> {
   const db = await getDb();
@@ -445,6 +446,7 @@ export async function saveMediaAsset(
       width: payload.width ?? null,
       height: payload.height ?? null,
       mimeType: payload.mimeType || null,
+      influencerId: payload.influencerId || null,
     })
     .returning();
 

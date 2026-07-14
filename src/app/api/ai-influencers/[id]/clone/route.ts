@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -23,12 +23,12 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
   const [source] = await db
     .select()
     .from(aiInfluencerSchema)
-    .where(and(eq(aiInfluencerSchema.id, id), eq(aiInfluencerSchema.isSystem, true)))
+    .where(and(eq(aiInfluencerSchema.id, id), or(eq(aiInfluencerSchema.isSystem, true), eq(aiInfluencerSchema.orgId, orgId!))))
     .limit(1);
 
   if (!source) {
     return NextResponse.json(
-      { error: 'Only system influencers can be cloned' },
+      { error: 'Influencer not found or not clonable' },
       { status: 400 },
     );
   }

@@ -116,6 +116,7 @@ export async function reconcileFalJob(args: {
       aspectRatio: String((input as { aspect?: string }).aspect || '9:16'),
       source: 'ai-studio',
       description: String((input as { prompt?: string }).prompt || ''),
+      influencerId: (input as { influencerId?: string }).influencerId || null,
       aiMetadata: {
         jobId: job.id,
         modelId: job.modelId,

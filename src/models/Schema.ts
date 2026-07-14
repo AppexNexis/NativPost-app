@@ -759,6 +759,7 @@ export const mediaAssetSchema = pgTable('media_asset', {
     .references(() => organizationSchema.id, { onDelete: 'cascade' })
     .notNull(),
   uploadcareUuid: text('uploadcare_uuid'),
+  influencerId: uuid('influencer_id').references(() => aiInfluencerSchema.id, { onDelete: 'set null' }),
   url: text('url').notNull(),
   thumbnailUrl: text('thumbnail_url'),
   assetType: text('asset_type').notNull(),

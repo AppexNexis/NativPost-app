@@ -969,6 +969,29 @@ export async function generateCampaignPosts(
     `(target=${postsToCreate}, available=${templates.length})`,
   );
 
+  // Preload latestVideoUrl + baseImageUrl for every enabled influencer once
+  // before ANY insertion path so all three sites (template posts, engine
+  // supplement, fallback) can hydrate sourceMediaSlots without N+1 queries.
+  const enabledInfluencerIds = Array.isArray(campaign.enabledInfluencerIds)
+    ? (campaign.enabledInfluencerIds as string[])
+    : [];
+  const influencerVideoMap = new Map<string, string>();
+  const influencerBaseImageMap = new Map<string, string>();
+  if (enabledInfluencerIds.length > 0) {
+    try {
+      const influencerRows = await db
+        .select({ id: aiInfluencerSchema.id, latestVideoUrl: aiInfluencerSchema.latestVideoUrl, baseImageUrl: aiInfluencerSchema.baseImageUrl })
+        .from(aiInfluencerSchema)
+        .where(inArray(aiInfluencerSchema.id, enabledInfluencerIds));
+      for (const r of influencerRows) {
+        if (r.latestVideoUrl) influencerVideoMap.set(r.id, r.latestVideoUrl);
+        if (r.baseImageUrl) influencerBaseImageMap.set(r.id, r.baseImageUrl);
+      }
+    } catch (err) {
+      console.warn('[Campaign] Failed to load influencer video map:', err);
+    }
+  }
+
   // Insert template posts with media set substitution
   let inserted = 0;
   const contentItemIds: string[] = [];
@@ -1056,6 +1079,33 @@ export async function generateCampaignPosts(
 
       const rawSource = template.mediaUrl || template.thumbnailUrl || template.sourceUrl || null;
 
+      // Pick influencer + hydrate slots (same pattern as site 2).
+      const pickedInfluencerId = pickInfluencerForPost(
+        campaign.enabledInfluencerIds as string[] | null,
+        campaign.influencerFrequency as number | null,
+        inserted,
+      );
+      if (
+        pickedInfluencerId
+        && resolvedContentType === 'talking_head'
+        && influencerVideoMap.has(pickedInfluencerId)
+      ) {
+        sourceMediaSlots = {
+          ...sourceMediaSlots,
+          faceVideo: { url: influencerVideoMap.get(pickedInfluencerId)! },
+        };
+      }
+      if (
+        pickedInfluencerId
+        && (!sourceMediaSlots.background || !sourceMediaSlots.background.url)
+        && influencerBaseImageMap.has(pickedInfluencerId)
+      ) {
+        sourceMediaSlots = {
+          ...sourceMediaSlots,
+          background: { url: influencerBaseImageMap.get(pickedInfluencerId)!, assetType: 'image' as const },
+        };
+      }
+
       const [contentItem] = await db
         .insert(contentItemSchema)
         .values({
@@ -1075,6 +1125,8 @@ export async function generateCampaignPosts(
           status: 'pending_review',
           brandProfileId: profile?.id || null,
           angleId: null,
+          influencerId: pickedInfluencerId,
+          campaignId: campaign.id,
           targetPlatforms,
           graphicUrls: rawSource
             ? [rawSource]
@@ -1086,6 +1138,13 @@ export async function generateCampaignPosts(
 
       contentItemIds.push(contentItem.id);
       inserted++;
+
+      if (pickedInfluencerId) {
+        db.update(aiInfluencerSchema)
+          .set({ usageCount: sql`usage_count + 1`, updatedAt: new Date() })
+          .where(eq(aiInfluencerSchema.id, pickedInfluencerId))
+          .execute().catch((err: unknown) => console.warn('[Campaign] Failed to bump usageCount:', err));
+      }
 
       // Emit progress after each Phase 1 insert so the client status poll
       // has a live denominator + counter. Without this, Phase 1 fills every
@@ -1278,27 +1337,6 @@ export async function generateCampaignPosts(
   let failedPosts = 0;
   const contentItemIds: string[] = [];
 
-  // Preload latestVideoUrl for every enabled influencer so we can hydrate
-  // sourceMediaSlots.faceVideo per post without N+1 queries. Only used for
-  // talking_head content; other content types ignore the map.
-  const enabledInfluencerIds = Array.isArray(campaign.enabledInfluencerIds)
-    ? (campaign.enabledInfluencerIds as string[])
-    : [];
-  const influencerVideoMap = new Map<string, string>();
-  if (enabledInfluencerIds.length > 0) {
-    try {
-      const influencerRows = await db
-        .select({ id: aiInfluencerSchema.id, latestVideoUrl: aiInfluencerSchema.latestVideoUrl })
-        .from(aiInfluencerSchema)
-        .where(inArray(aiInfluencerSchema.id, enabledInfluencerIds));
-      for (const r of influencerRows) {
-        if (r.latestVideoUrl) influencerVideoMap.set(r.id, r.latestVideoUrl);
-      }
-    } catch (err) {
-      console.warn('[Campaign] Failed to load influencer video map:', err);
-    }
-  }
-
   // Guarantee exactly postsPerDay cards reach the Blitz queue. The engine
   // may return more posts than needed (buffer) or some posts may reference
   // unresolvable template_ids. We stop once we've successfully inserted
@@ -1471,6 +1509,16 @@ export async function generateCampaignPosts(
           faceVideo: { url: influencerVideoMap.get(pickedInfluencerId)! },
         };
       }
+      if (
+        pickedInfluencerId
+        && (!sourceMediaSlots.background || !sourceMediaSlots.background.url)
+        && influencerBaseImageMap.has(pickedInfluencerId)
+      ) {
+        sourceMediaSlots = {
+          ...sourceMediaSlots,
+          background: { url: influencerBaseImageMap.get(pickedInfluencerId)!, assetType: 'image' as const },
+        };
+      }
 
       // Insert content item — populates templateId FK column AND full
       // enrichmentData so downstream previews (Blitz swipe, detail page,
@@ -1529,6 +1577,13 @@ export async function generateCampaignPosts(
         .returning();
 
       contentItemIds.push(contentItem.id);
+
+      if (pickedInfluencerId) {
+        db.update(aiInfluencerSchema)
+          .set({ usageCount: sql`usage_count + 1`, updatedAt: new Date() })
+          .where(eq(aiInfluencerSchema.id, pickedInfluencerId))
+          .execute().catch((err: unknown) => console.warn('[Campaign] Failed to bump usageCount:', err));
+      }
 
       // Link to campaign
       const scheduledDate = post.scheduled_date
@@ -1680,6 +1735,33 @@ export async function generateCampaignPosts(
 
         const rawSource = template.mediaUrl || template.thumbnailUrl || template.sourceUrl || null;
 
+        // Pick influencer + hydrate slots (same pattern as site 2).
+        const pickedInfluencerId = pickInfluencerForPost(
+          campaign.enabledInfluencerIds as string[] | null,
+          campaign.influencerFrequency as number | null,
+          inserted,
+        );
+        if (
+          pickedInfluencerId
+          && resolvedContentType === 'talking_head'
+          && influencerVideoMap.has(pickedInfluencerId)
+        ) {
+          sourceMediaSlots = {
+            ...sourceMediaSlots,
+            faceVideo: { url: influencerVideoMap.get(pickedInfluencerId)! },
+          };
+        }
+        if (
+          pickedInfluencerId
+          && (!sourceMediaSlots.background || !sourceMediaSlots.background.url)
+          && influencerBaseImageMap.has(pickedInfluencerId)
+        ) {
+          sourceMediaSlots = {
+            ...sourceMediaSlots,
+            background: { url: influencerBaseImageMap.get(pickedInfluencerId)!, assetType: 'image' as const },
+          };
+        }
+
         const [contentItem] = await db
           .insert(contentItemSchema)
           .values({
@@ -1714,11 +1796,20 @@ export async function generateCampaignPosts(
             contentFormat: resolvedContentType === 'slideshow' ? 'carousel' : 'single',
             aspectRatio: '9:16',
             aiModelUsed: 'template-fallback',
+            influencerId: pickedInfluencerId,
+            campaignId: campaign.id,
             targetPlatforms,
           })
           .returning();
 
         contentItemIds.push(contentItem.id);
+
+        if (pickedInfluencerId) {
+          db.update(aiInfluencerSchema)
+            .set({ usageCount: sql`usage_count + 1`, updatedAt: new Date() })
+            .where(eq(aiInfluencerSchema.id, pickedInfluencerId))
+            .execute().catch((err: unknown) => console.warn('[Campaign] Failed to bump usageCount:', err));
+        }
 
         await db.insert(campaignContentSchema).values({
           campaignId: campaign.id,

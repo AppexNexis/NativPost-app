@@ -24,6 +24,7 @@ export type SourceMediaSlots = {
   background?: { url: string; assetType?: 'image' | 'video' };
   hookVideo?: { url: string; assetType?: 'video' };
   demoVideo?: { url: string; assetType?: 'video' };
+  faceVideo?: { url: string; assetType?: 'video' };
   slides?: { url: string; assetType: 'image' }[];
 };
 

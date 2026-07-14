@@ -77,6 +77,9 @@ export default function InfluencerDetailPage() {
   const [scriptGenerating, setScriptGenerating] = useState(false);
   const [batchGenerating, setBatchGenerating] = useState(false);
   const [batchScripts, setBatchScripts] = useState<Array<{ angleId: string; angleName: string; hookText: string; bodyText: string; ctaText: string; script: string }>>([]);
+  const [batchVideoJobs, setBatchVideoJobs] = useState<Map<string, { jobId: string; status: string; thumbnailUrl?: string }>>(new Map());
+  const [clips, setClips] = useState<Array<{ id: string; url: string; thumbnailUrl: string | null }>>([]);
+  const [analytics, setAnalytics] = useState<{ totalPosts: number; totalEngagement: number; topPlatform: string } | null>(null);
   const [scriptTopic, setScriptTopic] = useState('');
   const [assignedAngles, setAssignedAngles] = useState<Array<{ assignmentId: string; angleId: string; name: string; description: string | null; color: string | null; weight: number }>>([]);
   const [angleSearchOpen, setAngleSearchOpen] = useState(false);
@@ -145,6 +148,33 @@ export default function InfluencerDetailPage() {
       }
     };
   }, [id, item, load]);
+
+  // Load analytics for this influencer
+  useEffect(() => {
+    if (!id || item?.isSystem || !item) return;
+    let cancelled = false;
+    fetch(`/api/analytics/influencers?orgId=${encodeURIComponent(item.orgId || '')}`, { cache: 'no-store' })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (!cancelled && data?.influencers) {
+          const match = (data.influencers as any[]).find((inf: any) => inf.id === id);
+          if (match) setAnalytics({ totalPosts: match.totalPosts || 0, totalEngagement: match.totalEngagement || 0, topPlatform: match.topPlatform || '—' });
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [id, item]);
+
+  // Load generated clips for the gallery
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    fetch(`/api/ai-influencers/${id}/media`, { cache: 'no-store' })
+      .then(res => res.json())
+      .then(data => { if (!cancelled) setClips(data.items || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [id]);
 
   async function handleGenerateImage() {
     if (generating || !id) return;
@@ -416,6 +446,34 @@ export default function InfluencerDetailPage() {
     }
   }
 
+  async function handleBatchGenerateVideos() {
+    if (batchGenerating || scriptGenerating || videoGenerating || !id || batchScripts.length === 0) return;
+    setBatchGenerating(true);
+    setError(null);
+    const newMap = new Map(batchVideoJobs);
+    try {
+      for (const s of batchScripts) {
+        const res = await fetch(`/api/ai-influencers/${id}/generate-video`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script: s.script, duration: videoDuration }),
+        });
+        if (!res.ok) {
+          newMap.set(s.angleId, { jobId: '', status: 'failed' });
+          continue;
+        }
+        const data = await res.json();
+        newMap.set(s.angleId, { jobId: data.jobId, status: data.status || 'queued' });
+        setBatchVideoJobs(new Map(newMap));
+      }
+      setActionMsg(`Queued ${newMap.size} video jobs. Monitor progress below.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBatchGenerating(false);
+    }
+  }
+
   async function handleDelete() {
     if (generating || !id) return;
     setGenerating('delete');
@@ -472,17 +530,15 @@ export default function InfluencerDetailPage() {
               <ArrowLeft size={16} />
               Back
             </Link>
-            {isSystem && (
-              <button
+            <button
                 type="button"
                 onClick={handleClone}
                 disabled={generating !== null || cloning}
                 className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
                 {cloning ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />}
-                {cloning ? 'Cloning…' : 'Clone to my org'}
+                {cloning ? 'Cloning…' : isSystem ? 'Clone to my org' : 'Duplicate'}
               </button>
-            )}
           </div>
         )}
       />
@@ -568,6 +624,28 @@ export default function InfluencerDetailPage() {
                       fill
                       sizes="(max-width: 640px) 50vw, 20vw"
                       className="object-cover"
+                    />
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {clips.length > 0 && (
+            <section className="rounded-lg border border-border bg-card p-4">
+              <div className="mb-3 text-sm font-medium">Generated clips</div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {clips.map((clip) => (
+                  <div key={clip.id} className="relative aspect-square overflow-hidden rounded-md border border-border group">
+                    <video
+                      src={clip.url}
+                      poster={clip.thumbnailUrl || undefined}
+                      muted
+                      loop
+                      preload="metadata"
+                      className="h-full w-full object-cover"
+                      onMouseEnter={(e) => (e.currentTarget as HTMLVideoElement).play().catch(() => {})}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLVideoElement).pause(); (e.currentTarget as HTMLVideoElement).currentTime = 0; }}
                     />
                   </div>
                 ))}
@@ -804,21 +882,37 @@ export default function InfluencerDetailPage() {
                 {batchGenerating ? `Generating ${assignedAngles.length} scripts…` : `Generate ${assignedAngles.length} scripts`}
               </button>
               {batchScripts.length > 0 && (
-                <div className="mt-3 space-y-2">
-                  {batchScripts.map(s => (
-                    <button
-                      key={s.angleId}
-                      type="button"
-                      onClick={() => { setVideoScript(s.script); setActionMsg(`Loaded "${s.angleName}" script.`); }}
-                      className="w-full rounded-md border border-border p-2 text-left hover:bg-muted transition"
-                    >
-                      <div className="flex items-center gap-1.5 text-xs font-medium">
-                        <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px]">{s.angleName}</span>
-                      </div>
-                      <div className="mt-1 truncate text-xs text-muted-foreground">{s.hookText}</div>
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div className="mt-3 space-y-2">
+                    {batchScripts.map(s => (
+                      <button
+                        key={s.angleId}
+                        type="button"
+                        onClick={() => { setVideoScript(s.script); setActionMsg(`Loaded "${s.angleName}" script.`); }}
+                        className="w-full rounded-md border border-border p-2 text-left hover:bg-muted transition"
+                      >
+                        <div className="flex items-center gap-1.5 text-xs font-medium">
+                          <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px]">{s.angleName}</span>
+                          {batchVideoJobs.has(s.angleId) && (
+                            <span className={batchVideoJobs.get(s.angleId)!.status === 'succeeded' ? 'text-emerald-500' : batchVideoJobs.get(s.angleId)!.status === 'failed' ? 'text-red-500' : 'text-amber-500'}>
+                              {batchVideoJobs.get(s.angleId)!.status === 'succeeded' ? 'Done' : batchVideoJobs.get(s.angleId)!.status === 'failed' ? 'Failed' : 'Queued'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1 truncate text-xs text-muted-foreground">{s.hookText}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleBatchGenerateVideos}
+                    disabled={batchGenerating || videoGenerating}
+                    className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
+                  >
+                    {batchGenerating ? <Loader2 size={14} className="animate-spin" /> : <Film size={14} />}
+                    {batchGenerating ? 'Queuing videos…' : `Generate ${batchScripts.length} videos`}
+                  </button>
+                </>
               )}
             </section>
           )}
@@ -913,6 +1007,26 @@ export default function InfluencerDetailPage() {
               </div>
             </section>
           )}
+
+          {!isSystem && analytics !== null && (
+            <section className="rounded-lg border border-border bg-card p-4">
+              <div className="mb-3 text-sm font-medium">Performance</div>
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div>
+                  <div className="text-lg font-semibold">{analytics.totalPosts}</div>
+                  <div className="text-[11px] text-muted-foreground">Posts</div>
+                </div>
+                <div>
+                  <div className="text-lg font-semibold">{analytics.totalEngagement.toLocaleString()}</div>
+                  <div className="text-[11px] text-muted-foreground">Engagement</div>
+                </div>
+                <div>
+                  <div className="text-lg font-semibold">{analytics.topPlatform}</div>
+                  <div className="text-[11px] text-muted-foreground">Top platform</div>
+                </div>
+              </div>
+            </section>
+          )}
         </div>
       </div>
     </>
@@ -930,6 +1044,7 @@ function buildTraitPairs(item: Influencer): [string, string][] {
   if (item.fashionStyle) pairs.push(['Fashion', item.fashionStyle]);
   if (item.poseStyle) pairs.push(['Pose', item.poseStyle]);
   if (item.backgroundPreference) pairs.push(['Background', item.backgroundPreference]);
+  if (item.archetype) pairs.push(['Archetype', item.archetype]);
   return pairs;
 }
 

@@ -1,4 +1,4 @@
-import { eq, and, desc, gte } from 'drizzle-orm';
+import { eq, and, desc, gte, inArray } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -28,6 +28,7 @@ export async function GET(_request: NextRequest) {
       ? await db
         .select({
           id: contentItemSchema.id,
+          influencerId: contentItemSchema.influencerId,
           engagementData: contentItemSchema.engagementData,
           contentType: contentItemSchema.contentType,
           publishedAt: contentItemSchema.publishedAt,
@@ -36,15 +37,16 @@ export async function GET(_request: NextRequest) {
         .where(
           and(
             eq(contentItemSchema.orgId, orgId!),
+            inArray(contentItemSchema.influencerId, influencerIds),
             gte(contentItemSchema.createdAt, new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)),
           ),
         )
       : [];
 
     const result = influencers.map((inf) => {
-      // Match content items to this influencer via enrichmentData or a hypothetical match
-      // In practice, you'd store influencerId on contentItem. For now, we aggregate all.
-      const posts = contentItems.map((item) => {
+      // Filter content items to only those referencing this influencer.
+      const influencerItems = contentItems.filter((item) => item.influencerId === inf.id);
+      const posts = influencerItems.map((item) => {
         const eng = (item.engagementData as Record<string, any>) || {};
         let likes = 0;
         let comments = 0;
@@ -74,11 +76,32 @@ export async function GET(_request: NextRequest) {
         ? Math.round((posts.reduce((sum, p) => sum + p.engagementRate, 0) / posts.length) * 1000) / 1000
         : 0;
 
+      // Compute total engagement across all posts
+      let totalEngagement = 0;
+      const platformCounts: Record<string, number> = {};
+      for (const p of influencerItems) {
+        const eng = (p.engagementData as Record<string, any>) || {};
+        for (const platform of Object.keys(eng)) {
+          const metrics = eng[platform] || {};
+          const postEng = (metrics.likes || 0) + (metrics.comments || 0) + (metrics.shares || metrics.retweets || 0);
+          totalEngagement += postEng;
+          platformCounts[platform] = (platformCounts[platform] || 0) + postEng;
+        }
+      }
+      let topPlatform = '—';
+      let topCount = 0;
+      for (const [p, c] of Object.entries(platformCounts)) {
+        if (c > topCount) { topPlatform = p; topCount = c; }
+      }
+
       return {
         id: inf.id,
         name: inf.name,
         usageCount: inf.usageCount,
         avgEngagementRate,
+        totalPosts: influencerItems.length,
+        totalEngagement,
+        topPlatform,
         posts,
       };
     });

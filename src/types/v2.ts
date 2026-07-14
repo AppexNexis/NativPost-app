@@ -440,6 +440,7 @@ export type MediaSlot = {
 export type MediaSlots = {
   background?: MediaSlot;
   hookVideo?: MediaSlot;
+  faceVideo?: MediaSlot;
   slides?: MediaSlot[];
   demoVideo?: MediaSlot;
 };

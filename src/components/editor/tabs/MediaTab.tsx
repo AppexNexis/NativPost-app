@@ -262,6 +262,70 @@ export function MediaTab() {
   const contentType = state.edit?.contentType ?? '';
   const slots = state.mediaSlots || {};
 
+  // Influencer regen — resolves influencer by content item, then calls
+  // generate-video with current script and sets result into faceVideo.
+  const contentItemId = (state.edit as any)?.contentItemId as string | undefined;
+  const [influencerId, setInfluencerId] = useState<string | null>(null);
+  const [regenJobId, setRegenJobId] = useState<string | null>(null);
+  const [regenStatus, setRegenStatus] = useState<'idle' | 'submitting' | 'polling' | 'done' | 'failed'>('idle');
+
+  useEffect(() => {
+    if (!contentItemId) return;
+    let cancelled = false;
+    fetch(`/api/ai-influencers/by-content/${contentItemId}`, { cache: 'no-store' })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => { if (!cancelled && data?.id) setInfluencerId(data.id); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [contentItemId]);
+
+  // Poll regen job
+  useEffect(() => {
+    if (!regenJobId || regenStatus !== 'polling') return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/ai-studio/jobs/${regenJobId}`, { cache: 'no-store' });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (cancelled) return;
+        if (data.job?.status === 'succeeded') {
+          setRegenStatus('done');
+          const resultUrl = data.job?.output?.videoUrl || data.job?.output?.url;
+          if (resultUrl) {
+            dispatch({ type: 'UPDATE_MEDIA_SLOTS', payload: { faceVideo: { url: resultUrl, assetType: 'video' } } });
+          }
+        } else if (data.job?.status === 'failed') {
+          setRegenStatus('failed');
+        } else {
+          setTimeout(() => { if (!cancelled) poll(); }, 3000);
+        }
+      } catch { /* retry next tick */ }
+    };
+    poll();
+    return () => { cancelled = true; };
+  }, [regenJobId, regenStatus, dispatch]);
+
+  async function handleRegenViaInfluencer() {
+    if (!influencerId || regenStatus === 'submitting' || regenStatus === 'polling') return;
+    const script = [state.script.hookText, state.script.bodyText, state.script.ctaText].filter(Boolean).join(' ');
+    if (script.length < 20) return;
+    setRegenStatus('submitting');
+    try {
+      const res = await fetch(`/api/ai-influencers/${influencerId}/generate-video`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ script, aspect: state.aspectRatio || '9:16', duration: 5 }),
+      });
+      if (!res.ok) throw new Error('Generate failed');
+      const data = await res.json();
+      setRegenJobId(data.jobId);
+      setRegenStatus('polling');
+    } catch {
+      setRegenStatus('failed');
+    }
+  }
+
   const getSlotLabel = (key: string) => SLOT_LABELS[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
 
   // Determine which slots to show based on content type
@@ -347,13 +411,31 @@ export function MediaTab() {
           <div key={slot}>
             <div className="mb-1.5 flex items-center justify-between">
               <label className="text-xs font-medium text-foreground">{getSlotLabel(slot)}</label>
-              <button
-                type="button"
-                onClick={() => setActiveSlot(slot)}
-                className="text-[11px] font-medium text-primary transition-colors hover:text-primary/80"
-              >
-                Select
-              </button>
+              <div className="flex items-center gap-2">
+                {slot === 'faceVideo' && influencerId && (
+                  <button
+                    type="button"
+                    onClick={handleRegenViaInfluencer}
+                    disabled={regenStatus === 'submitting' || regenStatus === 'polling'}
+                    className="text-[11px] font-medium text-violet-400 transition-colors hover:text-violet-300 disabled:opacity-50"
+                  >
+                    {regenStatus === 'submitting' || regenStatus === 'polling' ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : regenStatus === 'done' ? (
+                      'Done'
+                    ) : (
+                      'Regen via AI'
+                    )}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setActiveSlot(slot)}
+                  className="text-[11px] font-medium text-primary transition-colors hover:text-primary/80"
+                >
+                  Select
+                </button>
+              </div>
             </div>
 
             {/* Current media preview */}

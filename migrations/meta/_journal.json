@@ -232,6 +232,13 @@
       "when": 1784009253109,
       "tag": "0032_yielding_shadow_king",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1784014608640,
+      "tag": "0033_military_wasp",
+      "breakpoints": true
     }
   ]
 }

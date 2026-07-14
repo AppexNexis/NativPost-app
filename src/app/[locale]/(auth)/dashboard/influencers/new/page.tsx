@@ -21,6 +21,7 @@ const BODY_TYPES = ['slim', 'athletic', 'average', 'muscular', 'curvy'];
 const FASHION_STYLES = ['professional', 'casual', 'streetwear', 'gym', 'formal', 'trendy', 'minimalist'];
 const POSE_STYLES = ['portrait', 'confident', 'candid', 'action', 'seated'];
 const BACKGROUND_PREFS = ['studio', 'office', 'outdoor', 'cafe', 'urban', 'gym', 'home'];
+const ARCHETYPES = ['journey', 'theme', 'spinoff'];
 
 // ElevenLabs curated stock voices — no cloning at v1 (see brainstorm §10)
 const VOICES = [
@@ -47,6 +48,7 @@ type Traits = {
   fashionStyle: string;
   poseStyle: string;
   backgroundPreference: string;
+  archetype: string;
 };
 
 const EMPTY_TRAITS: Traits = {
@@ -61,6 +63,7 @@ const EMPTY_TRAITS: Traits = {
   fashionStyle: '',
   poseStyle: '',
   backgroundPreference: '',
+  archetype: '',
 };
 
 type Step = 'traits' | 'references' | 'basePreview' | 'voice' | 'persona' | 'review';
@@ -347,6 +350,7 @@ function TraitsStep({ traits, setTraits }: { traits: Traits; setTraits: (t: Trai
       <TraitPicker label="Fashion style" options={FASHION_STYLES} value={traits.fashionStyle} onChange={v => set('fashionStyle', v)} />
       <TraitPicker label="Pose style" options={POSE_STYLES} value={traits.poseStyle} onChange={v => set('poseStyle', v)} />
       <TraitPicker label="Background preference" options={BACKGROUND_PREFS} value={traits.backgroundPreference} onChange={v => set('backgroundPreference', v)} />
+      <TraitPicker label="Content archetype" options={ARCHETYPES} value={traits.archetype} onChange={v => set('archetype', v)} />
     </div>
   );
 }

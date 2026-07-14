@@ -11,6 +11,24 @@ type RouteParams = { params: Promise<{ id: string }> };
 
 const VALID_DURATIONS = [5, 8, 10] as const;
 
+const ARCHETYPE_DEFAULT_ANGLES: Record<string, Array<{ name: string; description: string }>> = {
+  journey: [
+    { name: 'Behind the scenes', description: 'A candid look at process, setup, or daily workflow.' },
+    { name: 'Day in the life', description: 'A chronological walkthrough of a typical day or routine.' },
+    { name: 'Transformation', description: 'Before/after, journey milestones, or personal growth arc.' },
+  ],
+  theme: [
+    { name: 'Educational breakdown', description: 'Teaches a concept, framework, or skill in under 60s.' },
+    { name: 'Trending topic', description: 'Hot take or reaction to a current industry/niche topic.' },
+    { name: 'Hot take / opinion', description: 'Strong, polarizing viewpoint designed to spark debate.' },
+  ],
+  spinoff: [
+    { name: 'Reaction / duet', description: 'Reacting to or building on someone else\'s content.' },
+    { name: 'Remix', description: 'Reinterpreting a popular format or trend with your own spin.' },
+    { name: 'Reply to comment', description: 'Turning a viewer comment or question into a full post.' },
+  ],
+};
+
 function wordTarget(duration: number): number {
   switch (duration) {
     case 5: return 13;
@@ -83,6 +101,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   const angles = angleRows
     .filter(r => r.angleId && r.name)
     .filter(r => requestedAngleIds.length === 0 || requestedAngleIds.includes(r.angleId!));
+
+  // Fall back to archetype-default angles when no angles are assigned
+  // but the influencer has an archetype (journey|theme|spinoff).
+  if (angles.length === 0 && influencer.archetype) {
+    const defaults = ARCHETYPE_DEFAULT_ANGLES[influencer.archetype];
+    if (defaults) {
+      angles.push(...defaults.map((d, i) => ({
+        angleId: `__archetype_${influencer.archetype}_${i}`,
+        name: d.name,
+        description: d.description,
+      })));
+    }
+  }
 
   if (angles.length === 0) {
     return NextResponse.json(

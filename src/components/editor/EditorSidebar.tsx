@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { AlignLeft, Image, Layers, Music, RefreshCw } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { AlignLeft, Image, Layers, Music, RefreshCw, UserRound } from 'lucide-react';
 
 import { useEditor } from './EditorContext';
 import { TextTab } from './tabs/TextTab';
@@ -31,6 +31,18 @@ export function EditorSidebar() {
 
   const availableTabs = getEditorTabs(contentType);
   const [activeTab, setActiveTab] = useState<TabId>(availableTabs[0] as TabId);
+  const contentItemId = (state.edit as any)?.contentItemId as string | undefined;
+  const [influencerInfo, setInfluencerInfo] = useState<{ id: string; name: string; baseImageUrl: string | null } | null>(null);
+
+  useEffect(() => {
+    if (!contentItemId) return;
+    let cancelled = false;
+    fetch(`/api/ai-influencers/by-content/${contentItemId}`, { cache: 'no-store' })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => { if (!cancelled && data) setInfluencerInfo(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [contentItemId]);
 
   // Sync active tab when content type changes
   React.useEffect(() => {
@@ -65,6 +77,12 @@ export function EditorSidebar() {
           {isRemix && (
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
               Remix
+            </span>
+          )}
+          {influencerInfo && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-accent/20 px-2 py-0.5 text-[11px] font-medium">
+              <UserRound size={10} />
+              {influencerInfo.name}
             </span>
           )}
         </div>
