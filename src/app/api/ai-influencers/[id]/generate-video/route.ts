@@ -19,7 +19,9 @@ const VALID_ASPECTS = ['9:16', '1:1', '16:9'] as const;
 const VALID_DURATIONS = [5, 8, 10] as const;
 
 // Default i2v model for the chained talking-head pipeline.
-const DEFAULT_I2V_MODEL = 'seedance-2-i2v';
+// Seedance (bytedance) rejects Flux-generated faces as content_policy_violation.
+// Pixverse doesn't have the same restriction and runs at 720p.
+const DEFAULT_I2V_MODEL = 'pixverse-v6-i2v';
 const FACE_STILL_PROMPT = 'Professional headshot, soft studio lighting, looking directly at camera, neutral expression, sharp focus on face, clean background.';
 
 // -----------------------------------------------------------
