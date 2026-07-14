@@ -2,7 +2,7 @@ import { eq, and } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-import { buildInfluencerPrompt } from '@/lib/ai-influencers/build-prompt';
+import { buildInfluencerCaption, buildInfluencerPrompt } from '@/lib/ai-influencers/build-prompt';
 import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { aiInfluencerSchema, brandProfileSchema } from '@/models/Schema';
@@ -51,8 +51,10 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
     // Build detailed prompt from traits
     const prompt = buildInfluencerPrompt(influencer);
+    const caption = buildInfluencerCaption(influencer);
 
     const payload = {
+      caption,
       scenePrompt: prompt,
       formats: ['square'],
       imageStyle: 'professional',
