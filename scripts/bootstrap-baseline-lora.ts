@@ -117,11 +117,13 @@ async function generateReferenceImage(
     throw new Error(`Scene gen failed HTTP ${res.status}: ${text.slice(0, 200)}`);
   }
 
-  const data = await res.json() as { square?: string };
-  if (!data.square) {
+  const data = await res.json() as { square?: string | { url: string } };
+  const raw = data.square;
+  if (!raw) {
     throw new Error('Scene gen returned no image URL');
   }
-  return data.square;
+  // /render/scene returns the full CloudinaryUploadResult object, not a bare URL
+  return typeof raw === 'string' ? raw : raw.url;
 }
 
 async function generateReferenceImages(

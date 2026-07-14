@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -11,7 +11,9 @@ const IMAGE_ENGINE_URL = process.env.NATIVPOST_IMAGE_URL || 'http://localhost:40
 const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 
 function sanitizeTriggerWord(name: string | null): string {
-  if (!name) return 'nativpost';
+  if (!name) {
+    return 'nativpost';
+  }
   return name
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '')
@@ -27,7 +29,9 @@ type RouteParams = { params: Promise<{ id: string }> };
 export async function POST(_request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 
@@ -151,14 +155,15 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     }
 
     const renderData = await renderRes.json() as {
-      square?: string;
-      vertical?: string;
+      square?: string | { url: string };
+      vertical?: string | { url: string };
       promptUsed?: string;
       modelUsed?: string;
       totalMs?: number;
     };
 
-    const imageUrl = renderData.square || renderData.vertical;
+    const rawUrl = renderData.square || renderData.vertical;
+    const imageUrl = typeof rawUrl === 'string' ? rawUrl : rawUrl?.url;
 
     if (!imageUrl) {
       return NextResponse.json({ error: 'Image engine returned no image' }, { status: 502 });
@@ -191,4 +196,3 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: `Image generation failed: ${String(err)}` }, { status: 500 });
   }
 }
-
