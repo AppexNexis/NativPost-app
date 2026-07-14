@@ -1,41 +1,40 @@
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-import { buildInfluencerPrompt } from '@/lib/ai-influencers/build-prompt';
+import { buildInfluencerPrompt, type InfluencerTraits } from '@/lib/ai-influencers/build-prompt';
 import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
-import { aiInfluencerSchema, brandProfileSchema } from '@/models/Schema';
+import { brandProfileSchema } from '@/models/Schema';
 
 const IMAGE_ENGINE_URL = process.env.NATIVPOST_IMAGE_URL || 'http://localhost:4000';
 const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 
-type RouteParams = { params: Promise<{ id: string }> };
-
 // -----------------------------------------------------------
-// POST /api/ai-influencers/[id]/generate-image
-// Generate a base reference image for an AI influencer
+// POST /api/ai-influencers/preview-face
+// Generate a candidate base-character face for the create wizard.
+// The influencer row does NOT exist yet — this endpoint is stateless
+// (no DB writes) and is called repeatedly while the user regenerates.
 // -----------------------------------------------------------
-export async function POST(_request: NextRequest, { params }: RouteParams) {
+export async function POST(request: NextRequest) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) return error;
 
-  const { id } = await params;
+  let body: { traits?: InfluencerTraits; regenerationInstructions?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  const traits = body.traits;
+  if (!traits || typeof traits !== 'object') {
+    return NextResponse.json({ error: 'Missing traits' }, { status: 400 });
+  }
 
   try {
-    // Fetch influencer
-    const [influencer] = await db
-      .select()
-      .from(aiInfluencerSchema)
-      .where(and(eq(aiInfluencerSchema.id, id), eq(aiInfluencerSchema.orgId, orgId!)))
-      .limit(1);
-
-    if (!influencer) {
-      return NextResponse.json({ error: 'Influencer not found' }, { status: 404 });
-    }
-
-    // Fetch brand profile for colors
+    // Fetch brand profile for colors (matches [id]/generate-image payload shape)
     const [profile] = await db
       .select({
         brandName: brandProfileSchema.brandName,
@@ -49,8 +48,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       .where(eq(brandProfileSchema.orgId, orgId!))
       .limit(1);
 
-    // Build detailed prompt from traits
-    const prompt = buildInfluencerPrompt(influencer);
+    const prompt = buildInfluencerPrompt(traits, body.regenerationInstructions);
 
     const payload = {
       scenePrompt: prompt,
@@ -65,7 +63,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       industry: profile?.industry || undefined,
     };
 
-    console.log('[Influencer] Generating base image for:', id, '| name:', influencer.name);
+    console.log('[Influencer] Preview face | name:', traits.name || '(unnamed)', '| regen:', !!body.regenerationInstructions);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120_000);
@@ -94,7 +92,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
     if (!renderRes.ok) {
       const errText = await renderRes.text();
-      console.error('[Influencer] Engine error:', renderRes.status, errText);
+      console.error('[Influencer] Preview engine error:', renderRes.status, errText);
       return NextResponse.json({ error: 'Image generation failed.', detail: errText }, { status: 502 });
     }
 
@@ -112,31 +110,15 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Image engine returned no image' }, { status: 502 });
     }
 
-    // Update influencer with new base image and append to reference images
-    const existingRefs = (influencer.referenceImageUrls as string[]) || [];
-    const updatedRefs = [...existingRefs, imageUrl];
-
-    const [updated] = await db
-      .update(aiInfluencerSchema)
-      .set({
-        baseImageUrl: imageUrl,
-        referenceImageUrls: updatedRefs,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(aiInfluencerSchema.id, id), eq(aiInfluencerSchema.orgId, orgId!)))
-      .returning();
-
     return NextResponse.json({
       success: true,
       imageUrl,
       promptUsed: renderData.promptUsed,
       modelUsed: renderData.modelUsed,
       totalMs: renderData.totalMs,
-      influencer: updated,
     });
   } catch (err) {
-    console.error('[Influencer] generate-image failed:', err);
-    return NextResponse.json({ error: `Image generation failed: ${String(err)}` }, { status: 500 });
+    console.error('[Influencer] preview-face failed:', err);
+    return NextResponse.json({ error: `Preview generation failed: ${String(err)}` }, { status: 500 });
   }
 }
-

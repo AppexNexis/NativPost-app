@@ -73,7 +73,10 @@ export default function InfluencerDetailPage() {
   const [videoJobId, setVideoJobId] = useState<string | null>(null);
   const [videoJobStatus, setVideoJobStatus] = useState<string | null>(null);
   const [videoJobResult, setVideoJobResult] = useState<{ url?: string; thumbnailUrl?: string } | null>(null);
+  const [cloning, setCloning] = useState(false);
   const [scriptGenerating, setScriptGenerating] = useState(false);
+  const [batchGenerating, setBatchGenerating] = useState(false);
+  const [batchScripts, setBatchScripts] = useState<Array<{ angleId: string; angleName: string; hookText: string; bodyText: string; ctaText: string; script: string }>>([]);
   const [scriptTopic, setScriptTopic] = useState('');
   const [assignedAngles, setAssignedAngles] = useState<Array<{ assignmentId: string; angleId: string; name: string; description: string | null; color: string | null; weight: number }>>([]);
   const [angleSearchOpen, setAngleSearchOpen] = useState(false);
@@ -368,6 +371,51 @@ export default function InfluencerDetailPage() {
     }
   }
 
+  async function handleClone() {
+    if (cloning || generating || !id) return;
+    setCloning(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/ai-influencers/${id}/clone`, { method: 'POST' });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.error || `Clone failed (${res.status})`);
+      }
+      const data = await res.json();
+      router.push(`/dashboard/influencers/${data.influencer.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setCloning(false);
+    }
+  }
+
+  async function handleBatchGenerate() {
+    if (batchGenerating || scriptGenerating || !id) return;
+    setBatchGenerating(true);
+    setBatchScripts([]);
+    setError(null);
+    try {
+      const body: Record<string, unknown> = { duration: videoDuration };
+      if (scriptTopic.trim()) body.topic = scriptTopic.trim();
+      const res = await fetch(`/api/ai-influencers/${id}/generate-scripts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.error || `Batch script generation failed (${res.status})`);
+      }
+      const data = await res.json();
+      setBatchScripts(data.scripts || []);
+      setActionMsg(`Generated ${data.scripts?.length || 0} scripts. Pick one to load into the video editor.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBatchGenerating(false);
+    }
+  }
+
   async function handleDelete() {
     if (generating || !id) return;
     setGenerating('delete');
@@ -416,13 +464,26 @@ export default function InfluencerDetailPage() {
         title={item.name}
         description={item.description || (isSystem ? 'Baseline library persona.' : 'Face-locked AI creator.')}
         actions={(
-          <Link
-            href="/dashboard/influencers"
-            className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
-          >
-            <ArrowLeft size={16} />
-            Back
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/dashboard/influencers"
+              className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
+            >
+              <ArrowLeft size={16} />
+              Back
+            </Link>
+            {isSystem && (
+              <button
+                type="button"
+                onClick={handleClone}
+                disabled={generating !== null || cloning}
+                className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {cloning ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />}
+                {cloning ? 'Cloning…' : 'Clone to my org'}
+              </button>
+            )}
+          </div>
         )}
       />
 
@@ -726,6 +787,41 @@ export default function InfluencerDetailPage() {
                   </div>
                 )}
           </section>
+
+          {!isSystem && assignedAngles.length >= 2 && (
+            <section className="rounded-lg border border-border bg-card p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium">
+                <Wand2 size={14} />
+                Batch scripts
+              </div>
+              <button
+                type="button"
+                onClick={handleBatchGenerate}
+                disabled={batchGenerating || scriptGenerating || videoGenerating}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
+              >
+                {batchGenerating ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                {batchGenerating ? `Generating ${assignedAngles.length} scripts…` : `Generate ${assignedAngles.length} scripts`}
+              </button>
+              {batchScripts.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {batchScripts.map(s => (
+                    <button
+                      key={s.angleId}
+                      type="button"
+                      onClick={() => { setVideoScript(s.script); setActionMsg(`Loaded "${s.angleName}" script.`); }}
+                      className="w-full rounded-md border border-border p-2 text-left hover:bg-muted transition"
+                    >
+                      <div className="flex items-center gap-1.5 text-xs font-medium">
+                        <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px]">{s.angleName}</span>
+                      </div>
+                      <div className="mt-1 truncate text-xs text-muted-foreground">{s.hookText}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
 
           <section className="rounded-lg border border-border bg-card p-4">
             <div className="mb-2 flex items-center gap-2 text-sm font-medium">

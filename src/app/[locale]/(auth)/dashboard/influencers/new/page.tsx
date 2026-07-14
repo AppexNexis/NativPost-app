@@ -1,10 +1,10 @@
 'use client';
 
-import { ArrowLeft, ArrowRight, ImagePlus, Loader2, Mic, Sparkles, UserRound, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Clock, ImagePlus, Loader2, Mic, RefreshCw, Sparkles, UserRound, Wand2, X } from 'lucide-react';
 import { CldImage, CldUploadWidget, type CloudinaryUploadWidgetOptions } from 'next-cloudinary';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { type Dispatch, type SetStateAction, useState } from 'react';
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from 'react';
 
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
 import { PageHeader } from '@/features/dashboard/PageHeader';
@@ -63,8 +63,8 @@ const EMPTY_TRAITS: Traits = {
   backgroundPreference: '',
 };
 
-type Step = 'traits' | 'references' | 'voice' | 'persona';
-const STEPS: Step[] = ['traits', 'references', 'voice', 'persona'];
+type Step = 'traits' | 'references' | 'basePreview' | 'voice' | 'persona' | 'review';
+const STEPS: Step[] = ['traits', 'references', 'basePreview', 'voice', 'persona', 'review'];
 
 export default function NewInfluencerPage() {
   const router = useRouter();
@@ -75,9 +75,13 @@ export default function NewInfluencerPage() {
   const [personaPrompt, setPersonaPrompt] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [regenInstructions, setRegenInstructions] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const stepIndex = STEPS.indexOf(step);
-  const canNext = stepGuard(step, traits, references, voiceId, personaPrompt);
+  const canNext = stepGuard(step, traits, references, voiceId, personaPrompt, previewUrl);
 
   function goNext() {
     if (stepIndex < STEPS.length - 1) {
@@ -89,6 +93,35 @@ export default function NewInfluencerPage() {
       setStep(STEPS[stepIndex - 1]!);
     }
   }
+
+  const generatePreview = useCallback(async (regen?: string) => {
+    if (previewLoading) return;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const res = await fetch('/api/ai-influencers/preview-face', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          traits,
+          regenerationInstructions: regen?.trim() || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.error || `Preview failed (${res.status})`);
+      }
+      const data = await res.json();
+      if (!data.imageUrl) {
+        throw new Error('Engine returned no image');
+      }
+      setPreviewUrl(data.imageUrl);
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [previewLoading, traits]);
 
   async function handleSubmit() {
     if (submitting) return;
@@ -102,6 +135,7 @@ export default function NewInfluencerPage() {
         body: JSON.stringify({
           ...traits,
           referenceImageUrls: references,
+          baseImageUrl: previewUrl,
           voiceId,
           personaPrompt,
         }),
@@ -152,9 +186,28 @@ export default function NewInfluencerPage() {
         {step === 'references' && (
           <ReferencesStep references={references} setReferences={setReferences} />
         )}
+        {step === 'basePreview' && (
+          <BasePreviewStep
+            previewUrl={previewUrl}
+            regenInstructions={regenInstructions}
+            setRegenInstructions={setRegenInstructions}
+            previewLoading={previewLoading}
+            previewError={previewError}
+            generatePreview={generatePreview}
+          />
+        )}
         {step === 'voice' && <VoiceStep voiceId={voiceId} setVoiceId={setVoiceId} />}
         {step === 'persona' && (
           <PersonaStep personaPrompt={personaPrompt} setPersonaPrompt={setPersonaPrompt} />
+        )}
+        {step === 'review' && (
+          <ReviewStep
+            traits={traits}
+            references={references}
+            voiceId={voiceId}
+            personaPrompt={personaPrompt}
+            previewUrl={previewUrl}
+          />
         )}
       </div>
 
@@ -196,18 +249,24 @@ export default function NewInfluencerPage() {
   );
 }
 
-function stepGuard(step: Step, traits: Traits, references: string[], voiceId: string, personaPrompt: string): boolean {
+function stepGuard(step: Step, traits: Traits, references: string[], voiceId: string, personaPrompt: string, previewUrl: string | null): boolean {
   if (step === 'traits') {
     return traits.name.trim().length > 0 && traits.gender.length > 0 && traits.ageRange.length > 0;
   }
   if (step === 'references') {
     return references.length >= MIN_REFERENCES;
   }
+  if (step === 'basePreview') {
+    return previewUrl !== null;
+  }
   if (step === 'voice') {
     return voiceId.length > 0;
   }
   if (step === 'persona') {
     return personaPrompt.trim().length > 20;
+  }
+  if (step === 'review') {
+    return previewUrl !== null && voiceId.length > 0 && personaPrompt.trim().length > 20;
   }
   return false;
 }
@@ -217,8 +276,10 @@ function StepIndicator({ step }: { step: Step }) {
   const labels: Record<Step, string> = {
     traits: 'Traits',
     references: 'References',
+    basePreview: 'Preview',
     voice: 'Voice',
     persona: 'Persona',
+    review: 'Review',
   };
   return (
     <div className="flex items-center gap-2">
@@ -515,6 +576,189 @@ function PersonaStep({
         {' '}
         characters (20 minimum)
       </div>
+    </div>
+  );
+}
+
+// ── Step: Base Character Preview ───────────────────────────
+function BasePreviewStep({
+  previewUrl,
+  regenInstructions,
+  setRegenInstructions,
+  previewLoading,
+  previewError,
+  generatePreview,
+}: {
+  previewUrl: string | null;
+  regenInstructions: string;
+  setRegenInstructions: (v: string) => void;
+  previewLoading: boolean;
+  previewError: string | null;
+  generatePreview: (regen?: string) => Promise<void>;
+}) {
+  // Auto-fire the first candidate when the user lands on this step.
+  useEffect(() => {
+    if (previewUrl === null && !previewLoading && previewError === null) {
+      void generatePreview();
+    }
+    // Only run on mount — subsequent regens go through the button.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Wand2 size={16} />
+          Base character preview
+        </div>
+        <p className="mt-1 text-sm text-muted-foreground">
+          We're generating a candidate face from your traits. Don't like it? Add
+          instructions below and hit Regenerate to try a different look. Regenerations
+          produce a brand-new person, not edits to this one.
+        </p>
+      </div>
+
+      <div className="mx-auto flex aspect-[9/16] max-w-xs items-center justify-center overflow-hidden rounded-lg border border-border bg-muted">
+        {previewLoading
+          ? <Loader2 size={32} className="animate-spin text-muted-foreground" />
+          : previewError
+            ? (
+                <div className="p-4 text-center text-sm text-destructive">
+                  {previewError}
+                </div>
+              )
+            : previewUrl
+              ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={previewUrl}
+                    alt="Base character preview"
+                    className="size-full object-cover"
+                  />
+                )
+              : <span className="text-sm text-muted-foreground">Preparing…</span>}
+      </div>
+
+      <div>
+        <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground" htmlFor="regen-instructions">
+          Regeneration instructions (optional)
+        </label>
+        <textarea
+          id="regen-instructions"
+          value={regenInstructions}
+          onChange={e => setRegenInstructions(e.target.value)}
+          placeholder="e.g. curlier hair, softer features, in a coffee shop"
+          rows={2}
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          ~$0.02 per regeneration · unlimited
+        </p>
+        <button
+          type="button"
+          onClick={() => generatePreview(regenInstructions)}
+          disabled={previewLoading}
+          className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
+        >
+          {previewLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+          {previewLoading ? 'Generating…' : 'Regenerate'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Step: Review & Create ──────────────────────────────────
+function ReviewStep({
+  traits,
+  references,
+  voiceId,
+  personaPrompt,
+  previewUrl,
+}: {
+  traits: Traits;
+  references: string[];
+  voiceId: string;
+  personaPrompt: string;
+  previewUrl: string | null;
+}) {
+  const voice = VOICES.find(v => v.id === voiceId);
+  const traitSummary = [
+    traits.gender,
+    traits.ageRange,
+    traits.ethnicity,
+    traits.hairColor && traits.hairStyle ? `${traits.hairColor} ${traits.hairStyle} hair` : traits.hairStyle || traits.hairColor,
+    traits.bodyType,
+    traits.fashionStyle,
+  ].filter(Boolean).join(' · ');
+
+  const personaPreview = personaPrompt.length > 120
+    ? `${personaPrompt.slice(0, 120)}…`
+    : personaPrompt;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Sparkles size={16} />
+          Review &amp; create
+        </div>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Our agents will train the LoRA and prep the first talking-head video for
+          {' '}
+          <span className="font-medium text-foreground">{traits.name || 'this influencer'}</span>
+          {' '}
+          now. Check the summary below before you commit.
+        </p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-[minmax(0,200px)_1fr]">
+        <div className="mx-auto aspect-[9/16] w-full max-w-[200px] overflow-hidden rounded-lg border border-border bg-muted">
+          {previewUrl
+            ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={previewUrl} alt="Base character" className="size-full object-cover" />
+              )
+            : (
+                <div className="flex size-full items-center justify-center text-xs text-muted-foreground">
+                  No preview
+                </div>
+              )}
+        </div>
+
+        <dl className="space-y-3 text-sm">
+          <SummaryRow label="Name" value={traits.name || '—'} />
+          <SummaryRow label="Traits" value={traitSummary || '—'} />
+          <SummaryRow label="References" value={`${references.length} photo${references.length === 1 ? '' : 's'} uploaded`} />
+          <SummaryRow label="Voice" value={voice ? `${voice.name} · ${voice.accent} · ${voice.vibe}` : '—'} />
+          <SummaryRow label="Persona" value={personaPreview || '—'} />
+        </dl>
+      </div>
+
+      <div className="rounded-md border border-border bg-muted/40 p-4 text-sm">
+        <div className="mb-2 flex items-center gap-2 font-medium">
+          <Clock size={14} />
+          What happens after you click Create
+        </div>
+        <ul className="space-y-1 text-muted-foreground">
+          <li>Training takes about 15–30 minutes.</li>
+          <li>Estimated AI cost: ~$1.50 (LoRA training + first talking-head video).</li>
+          <li>You can start using this influencer as soon as training finishes — we'll show progress on the detail page.</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-3">
+      <dt className="min-w-[92px] text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className="flex-1 capitalize">{value}</dd>
     </div>
   );
 }
