@@ -11,7 +11,8 @@ import { aiInfluencerSchema, brandProfileSchema } from '@/models/Schema';
 const IMAGE_ENGINE_URL = process.env.NATIVPOST_IMAGE_URL || 'http://localhost:4000';
 const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 
-const GENERATE_IMAGE_CREDITS = 3;
+const GENERATE_IMAGE_CREDITS_LORA = 3;
+const GENERATE_IMAGE_CREDITS_NANO = 5;
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -59,9 +60,12 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     const prompt = buildInfluencerPrompt(influencer);
     const caption = buildInfluencerCaption(influencer);
 
+    const isNano = influencer.trainingMode === 'nano_banana';
+    const genCredits = isNano ? GENERATE_IMAGE_CREDITS_NANO : GENERATE_IMAGE_CREDITS_LORA;
+
     // Reserve credits before calling the engine
     try {
-      await reserveCredits(orgId!, reservationId, GENERATE_IMAGE_CREDITS);
+      await reserveCredits(orgId!, reservationId, genCredits);
     } catch {
       return NextResponse.json(
         { error: 'Insufficient AI credits', code: 'INSUFFICIENT_CREDITS' },
@@ -69,7 +73,51 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // ── Identity path (face-locked, consistent) ──
+    // ── Nano Banana: Instant Identity ──
+    if (isNano && influencer.loraStatus === 'ready') {
+      console.log('[Influencer] Generating with Nano Banana for:', id, '| name:', influencer.name);
+      const refs = (influencer.referenceImageUrls as string[]) || [];
+
+      try {
+        const nanoRes = await fetch(`${IMAGE_ENGINE_URL}/render/nano-banana-generate`, {
+          method: 'POST',
+          signal: AbortSignal.timeout(180_000),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${ENGINE_API_KEY}`,
+          },
+          body: JSON.stringify({
+            prompt,
+            imageUrls: refs,
+            numImages: 1,
+            aspectRatio: '1:1',
+            resolution: '1K',
+          }),
+        });
+
+        if (nanoRes.ok) {
+          const nanoData = await nanoRes.json() as { imageUrl: string; seed: number; generationMs: number };
+          const imageUrl = nanoData.imageUrl;
+          if (imageUrl) {
+            const existingRefs = (influencer.referenceImageUrls as string[]) || [];
+            const updatedRefs = [...existingRefs, imageUrl];
+
+            await db
+              .update(aiInfluencerSchema)
+              .set({ baseImageUrl: imageUrl, referenceImageUrls: updatedRefs, updatedAt: new Date() })
+              .where(and(eq(aiInfluencerSchema.id, id), eq(aiInfluencerSchema.orgId, orgId!)));
+
+            await commitCredits(orgId!, reservationId, genCredits, 'Generate influencer image (Instant Identity)');
+            return NextResponse.json({ success: true, imageUrl, seed: nanoData.seed, generationMs: nanoData.generationMs, method: 'nano_banana' });
+          }
+        }
+        console.warn('[Influencer] Nano Banana failed, falling back to /render/scene:', nanoRes.status);
+      } catch (err) {
+        console.warn('[Influencer] Nano Banana error, falling back to /render/scene:', String(err));
+      }
+    }
+
+    // ── Identity path (face-locked, FLUX.2 LoRA) ──
     if (influencer.loraStatus === 'ready' && influencer.loraModelId) {
       console.log('[Influencer] Generating with identity model for:', id, '| name:', influencer.name);
 
@@ -100,7 +148,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
               .set({ baseImageUrl: imageUrl, referenceImageUrls: updatedRefs, updatedAt: new Date() })
               .where(and(eq(aiInfluencerSchema.id, id), eq(aiInfluencerSchema.orgId, orgId!)));
 
-            await commitCredits(orgId!, reservationId, GENERATE_IMAGE_CREDITS, 'Generate influencer base image');
+            await commitCredits(orgId!, reservationId, genCredits, 'Generate influencer base image');
             return NextResponse.json({ success: true, imageUrl, seed: loraData.seed, generationMs: loraData.generationMs, method: 'lora' });
           }
         }
@@ -144,7 +192,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     } catch (fetchErr: unknown) {
       clearTimeout(timeoutId);
       try {
-        await refundCredits(orgId!, reservationId, GENERATE_IMAGE_CREDITS, String(fetchErr));
+        await refundCredits(orgId!, reservationId, genCredits, String(fetchErr));
       } catch { /* best effort */ }
       const isAbort = fetchErr instanceof Error && fetchErr.name === 'AbortError';
       if (isAbort) {
@@ -159,7 +207,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       const errText = await renderRes.text();
       console.error('[Influencer] Engine error:', renderRes.status, errText);
       try {
-        await refundCredits(orgId!, reservationId, GENERATE_IMAGE_CREDITS, errText);
+        await refundCredits(orgId!, reservationId, genCredits, errText);
       } catch { /* best effort */ }
       return NextResponse.json({ error: 'Image generation failed.', detail: errText }, { status: 502 });
     }
@@ -177,7 +225,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
     if (!imageUrl) {
       try {
-        await refundCredits(orgId!, reservationId, GENERATE_IMAGE_CREDITS, 'No image returned');
+        await refundCredits(orgId!, reservationId, genCredits, 'No image returned');
       } catch { /* best effort */ }
       return NextResponse.json({ error: 'Image engine returned no image' }, { status: 502 });
     }
@@ -196,7 +244,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       .where(and(eq(aiInfluencerSchema.id, id), eq(aiInfluencerSchema.orgId, orgId!)))
       .returning();
 
-    await commitCredits(orgId!, reservationId, GENERATE_IMAGE_CREDITS, 'Generate influencer base image');
+    await commitCredits(orgId!, reservationId, genCredits, 'Generate influencer base image');
     return NextResponse.json({
       success: true,
       imageUrl,
@@ -208,7 +256,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
   } catch (err) {
     console.error('[Influencer] generate-image failed:', err);
     try {
-      await refundCredits(orgId!, reservationId, GENERATE_IMAGE_CREDITS, String(err));
+      await refundCredits(orgId!, reservationId, genCredits, String(err));
     } catch { /* best effort */ }
     return NextResponse.json({ error: `Image generation failed: ${String(err)}` }, { status: 500 });
   }

@@ -705,6 +705,7 @@ export const aiInfluencerSchema = pgTable('ai_influencer', {
   voiceProvider: text('voice_provider').default('elevenlabs'),
   loraTrainingJobId: text('lora_training_job_id'),
   loraStatus: text('lora_status').default('pending'), // pending | training | ready | failed
+  trainingMode: text('training_mode').default('flux_lora'), // flux_lora | nano_banana
   isSystem: boolean('is_system').default(false),
   personaPrompt: text('persona_prompt'),
   archetype: text('archetype'), // journey | theme | spinoff (v2)
@@ -722,6 +723,20 @@ export const aiInfluencerSchema = pgTable('ai_influencer', {
 });
 
 // -----------------------------------------------------------
+// CONTENT ANGLE
+// -----------------------------------------------------------
+export const contentAngleSchema = pgTable('content_angle', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: text('org_id').references(() => organizationSchema.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  description: text('description'),
+  color: text('color'),
+  isSystem: boolean('is_system').default(false),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------
 // INFLUENCER ANGLE (join: ai_influencer ↔ content_angle)
 // -----------------------------------------------------------
 export const influencerAngleSchema = pgTable('influencer_angle', {
@@ -733,20 +748,6 @@ export const influencerAngleSchema = pgTable('influencer_angle', {
     .references(() => contentAngleSchema.id, { onDelete: 'cascade' })
     .notNull(),
   weight: integer('weight').default(1),
-  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
-});
-
-// -----------------------------------------------------------
-// CONTENT ANGLE
-// -----------------------------------------------------------
-export const contentAngleSchema = pgTable('content_angle', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  orgId: text('org_id').references(() => organizationSchema.id, { onDelete: 'cascade' }),
-  name: text('name').notNull(),
-  description: text('description'),
-  color: text('color'),
-  isSystem: boolean('is_system').default(false),
-  isActive: boolean('is_active').default(true),
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
 });
 

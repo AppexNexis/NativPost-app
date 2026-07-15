@@ -1,15 +1,20 @@
 #!/usr/bin/env node
 /**
  * Bootstrap script: generate 8 reference face images for each baseline (system)
- * influencer, then train a Flux-LoRA for face-locked consistency.
+ * influencer, then set up identity via FLUX.2 LoRA or Nano Banana Pro.
  *
- * Two-phase process:
- *   Phase 1 — Seed reference images: call /render/scene 8x per persona with
- *             varied seeds, collect Cloudinary URLs into referenceImageUrls.
- *   Phase 2 — Train LoRA: call /render/lora-train with the collected URLs,
- *             poll /render/lora-status every 60s until COMPLETED, save loraModelId.
- *   Phase 3 — Generate preview: call /render/lora-inference once to populate
- *             baseImageUrl with a fresh face-locked portrait.
+ * Modes:
+ *   flux_lora (default) — Train a LoRA for face-locked consistency.
+ *   nano_banana         — Generate base image instantly via Nano Banana Pro.
+ *
+ * Phases (flux_lora mode):
+ *   Phase 1 — Seed reference images: call /render/scene 8x per persona.
+ *   Phase 2 — Train LoRA: call /render/lora-train, poll /render/lora-status.
+ *   Phase 3 — Generate preview: call /render/lora-inference for baseImageUrl.
+ *
+ * Phases (nano_banana mode):
+ *   Phase 1 — Seed reference images (same as flux_lora).
+ *   Phase 2 — Call /render/nano-banana-generate, save baseImageUrl, set ready.
  *
  * Usage:
  *   npx dotenv -c production -- npx tsx scripts/bootstrap-baseline-lora.ts
@@ -19,6 +24,7 @@
  *   npx dotenv -c production -- npx tsx scripts/bootstrap-baseline-lora.ts --phase 1  (images only)
  *   npx dotenv -c production -- npx tsx scripts/bootstrap-baseline-lora.ts --phase 2  (train only)
  *   npx dotenv -c production -- npx tsx scripts/bootstrap-baseline-lora.ts --skip-existing
+ *   npx dotenv -c production -- npx tsx scripts/bootstrap-baseline-lora.ts --mode nano_banana
  *
  * Env vars required:
  *   DATABASE_URL, NATIVPOST_IMAGE_URL, NATIVPOST_ENGINE_API_KEY
@@ -55,6 +61,7 @@ function parseArgs(): {
   concurrency: number;
   phase: number;
   skipExisting: boolean;
+  mode: 'flux_lora' | 'nano_banana';
 } {
   const args = process.argv.slice(2);
   const getNum = (flag: string, fallback: number): number => {
@@ -64,12 +71,20 @@ function parseArgs(): {
     }
     return Number(args[idx + 1]!) || fallback;
   };
+  const getStr = (flag: string, fallback: string): string => {
+    const idx = args.indexOf(flag);
+    if (idx < 0) {
+      return fallback;
+    }
+    return args[idx + 1]! || fallback;
+  };
   return {
     dryRun: args.includes('--dry-run'),
     limit: getNum('--limit', 0),
     concurrency: getNum('--concurrency', DEFAULT_CONCURRENCY),
     phase: getNum('--phase', 0), // 0 = all phases
     skipExisting: args.includes('--skip-existing'),
+    mode: getStr('--mode', 'flux_lora') as 'flux_lora' | 'nano_banana',
   };
 }
 
@@ -237,9 +252,10 @@ async function generateFacePreview(
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const { dryRun, limit, concurrency, phase, skipExisting } = parseArgs();
+  const { dryRun, limit, concurrency, phase, skipExisting, mode } = parseArgs();
 
   console.log('[bootstrap-lora] Baseline Face-Lock Bootstrap');
+  console.log('[bootstrap-lora] Mode:       ', mode);
   console.log('[bootstrap-lora] Dry run:    ', dryRun);
   console.log('[bootstrap-lora] Limit:      ', limit || 'none');
   console.log('[bootstrap-lora] Concurrency:', concurrency);
@@ -329,7 +345,7 @@ async function main() {
           }
         }
 
-        // Phase 2: Train LoRA
+        // Phase 2+3: Identity setup
         if (phase === 0 || phase === 2) {
           // Re-read row to get fresh referenceImageUrls from phase 1
           const [fresh] = dryRun
@@ -341,45 +357,84 @@ async function main() {
 
           const refUrls = (fresh.referenceImageUrls as string[]) || [];
 
-          console.log('  Phase 2: Submitting LoRA training...');
-          if (dryRun) {
-            console.log('  (dry run) would submit LoRA training');
-          } else {
-            if (refUrls.length < 5) {
-              throw new Error(`Only ${refUrls.length} reference images available, need 5+`);
+          if (mode === 'nano_banana') {
+            // ── Nano Banana Pro: Instant Identity ──
+            console.log('  Phase 2: Generating with Nano Banana Pro...');
+            if (dryRun) {
+              console.log('  (dry run) would generate with Nano Banana');
+            } else {
+              const nanoRes = await fetch(`${IMAGE_ENGINE_URL}/render/nano-banana-generate`, {
+                method: 'POST',
+                signal: AbortSignal.timeout(180_000),
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${ENGINE_API_KEY}`,
+                },
+                body: JSON.stringify({
+                  prompt,
+                  imageUrls: refUrls,
+                  numImages: 1,
+                  aspectRatio: '1:1',
+                  resolution: '1K',
+                }),
+              });
+              if (!nanoRes.ok) {
+                const errText = await nanoRes.text();
+                throw new Error(`Nano Banana generation failed HTTP ${nanoRes.status}: ${errText.slice(0, 200)}`);
+              }
+              const { imageUrl } = await nanoRes.json() as { imageUrl: string };
+
+              const wp = getWritePool();
+              await wp.query(
+                `UPDATE ai_influencer SET training_mode='nano_banana', lora_status='ready', base_image_url=$1, updated_at=NOW() WHERE id=$2`,
+                [imageUrl, fresh.id],
+              );
+              await wp.end();
+
+              console.log('  Phase 2 done: Instant Identity ready');
             }
-            const requestId = await submitLoraTraining(refUrls, defaultCaption);
-            console.log(`  requestId: ${requestId}`);
+          } else {
+            // ── FLUX.2 LoRA: Identity Lock ──
+            console.log('  Phase 2: Submitting LoRA training...');
+            if (dryRun) {
+              console.log('  (dry run) would submit LoRA training');
+            } else {
+              if (refUrls.length < 5) {
+                throw new Error(`Only ${refUrls.length} reference images available, need 5+`);
+              }
+              const requestId = await submitLoraTraining(refUrls, defaultCaption);
+              console.log(`  requestId: ${requestId}`);
 
-            await db
-              .update(aiInfluencerSchema)
-              .set({ loraTrainingJobId: requestId, loraStatus: 'training', updatedAt: new Date() })
-              .where(eq(aiInfluencerSchema.id, fresh.id));
-
-            console.log('  Phase 2: Polling for completion...');
-            const loraUrl = await trainAndWait(requestId);
-
-            // Write via fresh pool — Drizzle pool may have expired during long poll
-            const wp = getWritePool();
-            await wp.query(
-              `UPDATE ai_influencer SET lora_model_id=$1, lora_status='ready', updated_at=NOW() WHERE id=$2`,
-              [loraUrl, fresh.id],
-            );
-            await wp.end();
-
-            console.log(`  Phase 2 done: LoRA ready`);
-
-            // Phase 3: Generate face preview via LoRA inference
-            console.log('  Phase 3: Generating face-locked preview...');
-            try {
-              const previewUrl = await generateFacePreview(loraUrl, prompt);
               await db
                 .update(aiInfluencerSchema)
-                .set({ baseImageUrl: previewUrl, updatedAt: new Date() })
+                .set({ loraTrainingJobId: requestId, loraStatus: 'training', updatedAt: new Date() })
                 .where(eq(aiInfluencerSchema.id, fresh.id));
-              console.log(`  Phase 3 done: preview saved`);
-            } catch (previewErr) {
-              console.log(`  Phase 3 skipped: ${String(previewErr).slice(0, 100)}`);
+
+              console.log('  Phase 2: Polling for completion...');
+              const loraUrl = await trainAndWait(requestId);
+
+              // Write via fresh pool — Drizzle pool may have expired during long poll
+              const wp = getWritePool();
+              await wp.query(
+                `UPDATE ai_influencer SET training_mode='flux_lora', lora_model_id=$1, lora_status='ready', updated_at=NOW() WHERE id=$2`,
+                [loraUrl, fresh.id],
+              );
+              await wp.end();
+
+              console.log(`  Phase 2 done: LoRA ready`);
+
+              // Phase 3: Generate face preview via LoRA inference
+              console.log('  Phase 3: Generating face-locked preview...');
+              try {
+                const previewUrl = await generateFacePreview(loraUrl, prompt);
+                await db
+                  .update(aiInfluencerSchema)
+                  .set({ baseImageUrl: previewUrl, updatedAt: new Date() })
+                  .where(eq(aiInfluencerSchema.id, fresh.id));
+                console.log(`  Phase 3 done: preview saved`);
+              } catch (previewErr) {
+                console.log(`  Phase 3 skipped: ${String(previewErr).slice(0, 100)}`);
+              }
             }
           }
         }

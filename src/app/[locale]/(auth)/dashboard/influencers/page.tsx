@@ -22,6 +22,7 @@ type Influencer = {
   referenceImageUrls: string[] | null;
   loraStatus: string | null;
   loraModelId: string | null;
+  trainingMode: string | null;
   isSystem: boolean | null;
   isActive: boolean | null;
   usageCount: number | null;
@@ -168,7 +169,7 @@ function InfluencerCard({ item }: { item: Influencer }) {
                 <UserRound size={48} />
               </div>
             )}
-        <TrainingStatusBadge status={item.loraStatus} />
+        <TrainingStatusBadge status={item.loraStatus} trainingMode={item.trainingMode} />
       </div>
       <div className="p-3">
         <div className="truncate text-sm font-medium">{item.name}</div>
@@ -186,7 +187,7 @@ function InfluencerCard({ item }: { item: Influencer }) {
   );
 }
 
-function TrainingStatusBadge({ status }: { status: string | null }) {
+function TrainingStatusBadge({ status, trainingMode: tm }: { status: string | null; trainingMode?: string | null }) {
   if (!status || status === 'pending') {
     return null;
   }
@@ -199,9 +200,13 @@ function TrainingStatusBadge({ status }: { status: string | null }) {
     );
   }
   if (status === 'ready') {
+    const label = tm === 'nano_banana' ? 'Instant' : 'Ready';
+    const color = tm === 'nano_banana'
+      ? 'bg-blue-500/90'
+      : 'bg-emerald-500/90';
     return (
-      <span className="absolute right-2 top-2 rounded-full bg-emerald-500/90 px-2 py-0.5 text-xs font-medium text-white">
-        Ready
+      <span className={`absolute right-2 top-2 rounded-full ${color} px-2 py-0.5 text-xs font-medium text-white`}>
+        {label}
       </span>
     );
   }

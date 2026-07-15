@@ -15,6 +15,7 @@ type RouteParams = { params: Promise<{ id: string }> };
 // -----------------------------------------------------------
 // GET /api/ai-influencers/[id]/lora-status
 // Poll the status of an identity training job. Caches result to DB.
+// For Instant Identity (nano_banana), returns ready immediately — no polling needed.
 // -----------------------------------------------------------
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
@@ -34,6 +35,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     if (!influencer) {
       return NextResponse.json({ error: 'Influencer not found' }, { status: 404 });
+    }
+
+    // Nano Banana has no async training — always ready
+    if (influencer.trainingMode === 'nano_banana') {
+      return NextResponse.json({
+        status: 'ready',
+        trainingMode: 'nano_banana',
+      });
     }
 
     // If already cached as ready/failed, return immediately

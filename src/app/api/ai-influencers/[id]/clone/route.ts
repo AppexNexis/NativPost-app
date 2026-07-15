@@ -58,6 +58,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       loraStatus: 'pending',
       loraModelId: null,
       loraTrainingJobId: null,
+      trainingMode: source.trainingMode,
       isSystem: false,
       isActive: true,
     })

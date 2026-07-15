@@ -15,6 +15,7 @@ import {
   Wand2,
   X,
   XCircle,
+  Zap,
 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -44,6 +45,7 @@ type Influencer = {
   loraStatus: string | null;
   loraModelId: string | null;
   loraTrainingJobId: string | null;
+  trainingMode: string | null;
   voiceId: string | null;
   voiceProvider: string | null;
   personaPrompt: string | null;
@@ -72,6 +74,7 @@ export default function InfluencerDetailPage() {
   const [videoGenerating, setVideoGenerating] = useState(false);
   const [videoJobId, setVideoJobId] = useState<string | null>(null);
   const [videoJobStatus, setVideoJobStatus] = useState<string | null>(null);
+  const [trainingMode, setTrainingMode] = useState<'flux_lora' | 'nano_banana'>('flux_lora');
   const [videoJobResult, setVideoJobResult] = useState<{ url?: string; thumbnailUrl?: string } | null>(null);
   const [cloning, setCloning] = useState(false);
   const [scriptGenerating, setScriptGenerating] = useState(false);
@@ -257,12 +260,20 @@ export default function InfluencerDetailPage() {
     setActionMsg(null);
     setError(null);
     try {
-      const res = await fetch(`/api/ai-influencers/${id}/train-lora`, { method: 'POST' });
+      const res = await fetch(`/api/ai-influencers/${id}/train-lora`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trainingMode }),
+      });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
         throw new Error(detail.error || `Training failed (${res.status})`);
       }
-      setActionMsg('Training started. This usually takes a few minutes.');
+      if (trainingMode === 'nano_banana') {
+        setActionMsg('Identity ready! Your influencer is set up with Instant Identity.');
+      } else {
+        setActionMsg('Training started. This usually takes a few minutes.');
+      }
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -611,7 +622,7 @@ export default function InfluencerDetailPage() {
         </div>
       )}
 
-      <TrainingBanner status={item.loraStatus} />
+      <TrainingBanner status={item.loraStatus} trainingMode={item.trainingMode} />
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Left: base image + reference grid */}
@@ -1024,16 +1035,61 @@ export default function InfluencerDetailPage() {
                   {generating === 'consistency' ? 'Testing…' : 'Test consistency (9 credits)'}
                 </button>
 
-                {(item.loraStatus === 'failed' || item.loraStatus === 'pending' || !item.loraStatus) && refs.length >= 5 && (
-                  <button
-                    type="button"
-                    onClick={handleRetrain}
-                    disabled={generating !== null}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm disabled:opacity-50"
-                  >
-                    {generating === 'retrain' ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                    {item.loraStatus === 'failed' ? 'Retry training' : 'Start training (250 credits)'}
-                  </button>
+                {(item.loraStatus === 'failed' || item.loraStatus === 'pending' || !item.loraStatus) && refs.length >= 1 && (
+                  <div className="space-y-2">
+                    {/* Mode selector */}
+                    <div className="rounded-md border border-border bg-muted/30 p-2">
+                      <div className="mb-1 text-xs font-medium text-muted-foreground">Training mode</div>
+                      <label
+                        className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${trainingMode === 'flux_lora' ? 'bg-card ring-1 ring-purple-500/40' : 'hover:bg-muted/50'}`}
+                        title="Trains a custom face model for exact identity across every post. Best for high-volume creators. ~10 min setup. 250 credits."
+                      >
+                        <input
+                          type="radio"
+                          name="trainingMode"
+                          value="flux_lora"
+                          checked={trainingMode === 'flux_lora'}
+                          onChange={() => setTrainingMode('flux_lora')}
+                          className="sr-only"
+                        />
+                        <Zap size={12} className={trainingMode === 'flux_lora' ? 'text-purple-400' : 'text-muted-foreground'} />
+                        <span className={trainingMode === 'flux_lora' ? 'font-medium' : ''}>Identity Lock</span>
+                        <span className="text-muted-foreground">250 credits</span>
+                      </label>
+                      <label
+                        className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${trainingMode === 'nano_banana' ? 'bg-card ring-1 ring-blue-500/40' : 'hover:bg-muted/50'}`}
+                        title="Zero training. Uses Google Gemini 3 Pro for natural skin, realistic lighting. Ready instantly. 20 credits setup, 5 credits/image."
+                      >
+                        <input
+                          type="radio"
+                          name="trainingMode"
+                          value="nano_banana"
+                          checked={trainingMode === 'nano_banana'}
+                          onChange={() => setTrainingMode('nano_banana')}
+                          className="sr-only"
+                        />
+                        <Sparkles size={12} className={trainingMode === 'nano_banana' ? 'text-blue-400' : 'text-muted-foreground'} />
+                        <span className={trainingMode === 'nano_banana' ? 'font-medium' : ''}>Instant Identity</span>
+                        <span className="text-muted-foreground">20 credits</span>
+                      </label>
+                    </div>
+
+                    {/* Action button */}
+                    <button
+                      type="button"
+                      onClick={handleRetrain}
+                      disabled={generating !== null || (trainingMode === 'flux_lora' && refs.length < 5)}
+                      title={trainingMode === 'flux_lora' && refs.length < 5 ? 'Need at least 5 reference images for Identity Lock' : ''}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm disabled:opacity-50"
+                    >
+                      {generating === 'retrain' ? <Loader2 size={14} className="animate-spin" /> : (trainingMode === 'nano_banana' ? <Sparkles size={14} /> : <Zap size={14} />)}
+                      {item.loraStatus === 'failed'
+                        ? 'Retry setup'
+                        : trainingMode === 'nano_banana'
+                          ? 'Setup Instant Identity (20 credits)'
+                          : 'Start Training (250 credits)'}
+                    </button>
+                  </div>
                 )}
 
                 {!confirmDelete
@@ -1134,12 +1190,13 @@ function buildTraitPairs(item: Influencer): [string, string][] {
   return pairs;
 }
 
-function TrainingBanner({ status }: { status: string | null }) {
+function TrainingBanner({ status, trainingMode: tm }: { status: string | null; trainingMode?: string | null }) {
+  const modeLabel = tm === 'nano_banana' ? 'Instant Identity' : 'Identity Lock';
   if (!status || status === 'pending') {
     return (
       <div className="mb-4 flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
         <Sparkles size={14} />
-        Identity not trained yet. Add 5+ reference photos and start training.
+        Identity not set up yet. Add reference photos and select a training mode below.
       </div>
     );
   }
@@ -1147,7 +1204,7 @@ function TrainingBanner({ status }: { status: string | null }) {
     return (
       <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
         <Loader2 size={14} className="animate-spin" />
-        Training in progress. This typically takes 3-10 minutes. You can leave this page.
+        Training in progress (Identity Lock). This typically takes 3-10 minutes. You can leave this page.
       </div>
     );
   }
@@ -1155,7 +1212,9 @@ function TrainingBanner({ status }: { status: string | null }) {
     return (
       <div className="mb-4 flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
         <CheckCircle2 size={14} />
-        Identity training complete.
+        Identity ready (
+        {modeLabel}
+        ).
       </div>
     );
   }
@@ -1163,7 +1222,7 @@ function TrainingBanner({ status }: { status: string | null }) {
     return (
       <div className="mb-4 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
         <XCircle size={14} />
-        Identity training failed. Retry with different reference photos.
+        Identity setup failed. Retry with different reference photos.
       </div>
     );
   }

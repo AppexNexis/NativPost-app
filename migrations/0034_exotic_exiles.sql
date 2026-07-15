@@ -1,0 +1,1 @@
+ALTER TABLE "ai_influencer" ADD COLUMN "training_mode" text DEFAULT 'flux_lora';

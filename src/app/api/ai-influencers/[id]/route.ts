@@ -1,4 +1,4 @@
-import { eq, and, or } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -15,7 +15,9 @@ type RouteParams = { params: Promise<{ id: string }> };
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 
@@ -48,7 +50,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 
@@ -56,27 +60,72 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
 
     const updates: Record<string, any> = {};
-    if (body.name !== undefined) updates.name = body.name;
-    if (body.description !== undefined) updates.description = body.description;
-    if (body.gender !== undefined) updates.gender = body.gender;
-    if (body.ageRange !== undefined) updates.ageRange = body.ageRange;
-    if (body.ethnicity !== undefined) updates.ethnicity = body.ethnicity;
-    if (body.hairStyle !== undefined) updates.hairStyle = body.hairStyle;
-    if (body.hairColor !== undefined) updates.hairColor = body.hairColor;
-    if (body.bodyType !== undefined) updates.bodyType = body.bodyType;
-    if (body.fashionStyle !== undefined) updates.fashionStyle = body.fashionStyle;
-    if (body.poseStyle !== undefined) updates.poseStyle = body.poseStyle;
-    if (body.backgroundPreference !== undefined) updates.backgroundPreference = body.backgroundPreference;
-    if (body.baseImageUrl !== undefined) updates.baseImageUrl = body.baseImageUrl;
-    if (body.referenceImageUrls !== undefined) updates.referenceImageUrls = body.referenceImageUrls;
-    if (body.loraModelId !== undefined) updates.loraModelId = body.loraModelId;
-    if (body.voiceId !== undefined) updates.voiceId = body.voiceId;
-    if (body.voiceProvider !== undefined) updates.voiceProvider = body.voiceProvider;
-    if (body.personaPrompt !== undefined) updates.personaPrompt = body.personaPrompt;
-    if (body.archetype !== undefined) updates.archetype = body.archetype;
-    if (body.loraStatus !== undefined) updates.loraStatus = body.loraStatus;
-    if (body.loraTrainingJobId !== undefined) updates.loraTrainingJobId = body.loraTrainingJobId;
-    if (body.isActive !== undefined) updates.isActive = body.isActive;
+    if (body.name !== undefined) {
+      updates.name = body.name;
+    }
+    if (body.description !== undefined) {
+      updates.description = body.description;
+    }
+    if (body.gender !== undefined) {
+      updates.gender = body.gender;
+    }
+    if (body.ageRange !== undefined) {
+      updates.ageRange = body.ageRange;
+    }
+    if (body.ethnicity !== undefined) {
+      updates.ethnicity = body.ethnicity;
+    }
+    if (body.hairStyle !== undefined) {
+      updates.hairStyle = body.hairStyle;
+    }
+    if (body.hairColor !== undefined) {
+      updates.hairColor = body.hairColor;
+    }
+    if (body.bodyType !== undefined) {
+      updates.bodyType = body.bodyType;
+    }
+    if (body.fashionStyle !== undefined) {
+      updates.fashionStyle = body.fashionStyle;
+    }
+    if (body.poseStyle !== undefined) {
+      updates.poseStyle = body.poseStyle;
+    }
+    if (body.backgroundPreference !== undefined) {
+      updates.backgroundPreference = body.backgroundPreference;
+    }
+    if (body.baseImageUrl !== undefined) {
+      updates.baseImageUrl = body.baseImageUrl;
+    }
+    if (body.referenceImageUrls !== undefined) {
+      updates.referenceImageUrls = body.referenceImageUrls;
+    }
+    if (body.loraModelId !== undefined) {
+      updates.loraModelId = body.loraModelId;
+    }
+    if (body.voiceId !== undefined) {
+      updates.voiceId = body.voiceId;
+    }
+    if (body.voiceProvider !== undefined) {
+      updates.voiceProvider = body.voiceProvider;
+    }
+    if (body.personaPrompt !== undefined) {
+      updates.personaPrompt = body.personaPrompt;
+    }
+    if (body.archetype !== undefined) {
+      updates.archetype = body.archetype;
+    }
+    if (body.loraStatus !== undefined) {
+      updates.loraStatus = body.loraStatus;
+    }
+    if (body.loraTrainingJobId !== undefined) {
+      updates.loraTrainingJobId = body.loraTrainingJobId;
+    }
+    if (body.trainingMode !== undefined) {
+      updates.trainingMode = body.trainingMode;
+    }
+    if (body.isActive !== undefined) {
+      updates.isActive = body.isActive;
+    }
     updates.updatedAt = new Date();
 
     const [updated] = await db
@@ -103,7 +152,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 

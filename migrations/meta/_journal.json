@@ -239,6 +239,13 @@
       "when": 1784014608640,
       "tag": "0033_military_wasp",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1784147170239,
+      "tag": "0034_exotic_exiles",
+      "breakpoints": true
     }
   ]
 }

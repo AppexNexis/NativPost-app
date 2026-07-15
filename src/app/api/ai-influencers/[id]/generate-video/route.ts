@@ -15,6 +15,9 @@ type RouteParams = { params: Promise<{ id: string }> };
 
 const FAL_FLUX_LORA = 'fal-ai/flux-2/lora';
 
+const IMAGE_ENGINE_URL = process.env.NATIVPOST_IMAGE_URL || 'http://localhost:4000';
+const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
+
 const VALID_ASPECTS = ['9:16', '1:1', '16:9'] as const;
 const VALID_DURATIONS = [5, 10] as const;
 
@@ -70,7 +73,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       { status: 400 },
     );
   }
-  if (!influencer.loraModelId) {
+  // Nano Banana doesn't need loraModelId — reference images used directly
+  if (influencer.trainingMode !== 'nano_banana' && !influencer.loraModelId) {
     return NextResponse.json(
       { error: 'Identity model not available. Complete training first.' },
       { status: 400 },
@@ -184,49 +188,79 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   let faceImageUrl: string;
   try {
     const facePrompt = `${FACE_STILL_PROMPT} A ${influencer.gender || ''} ${influencer.ethnicity || ''} person, ${influencer.ageRange || 'adult'} age range.`;
-    const faceInput = {
-      prompt: facePrompt,
-      image_size: falImageSizeFor(aspect),
-      num_images: 1,
-      loras: [{ path: influencer.loraModelId, scale: 0.9 }],
-      enable_safety_checker: true,
-    };
-    const faceJob = await submitFalJob({
-      falModel: FAL_FLUX_LORA,
-      input: faceInput,
-      webhookUrl: buildWebhookUrl(), // unused since we poll
-    });
 
-    // Poll for completion — identity model still takes 2-15s typically
-    const FACE_POLL_MS = 1500;
-    const FACE_MAX_POLLS = 60; // 90s max
-    let faceStatus: string | undefined;
-    for (let i = 0; i < FACE_MAX_POLLS; i++) {
-      const status = await getFalStatus(FAL_FLUX_LORA, faceJob.request_id);
-      if (status.status === 'COMPLETED') {
-        faceStatus = 'COMPLETED'; break;
+    // Nano Banana: use reference images directly via image engine
+    if (influencer.trainingMode === 'nano_banana') {
+      const refs = (influencer.referenceImageUrls as string[]) || [];
+      const nanoRes = await fetch(`${IMAGE_ENGINE_URL}/render/nano-banana-generate`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(180_000),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ENGINE_API_KEY}`,
+        },
+        body: JSON.stringify({
+          prompt: facePrompt,
+          imageUrls: refs,
+          numImages: 1,
+          aspectRatio: '1:1',
+          resolution: '1K',
+        }),
+      });
+      if (!nanoRes.ok) {
+        throw new Error(`Nano Banana face still failed HTTP ${nanoRes.status}`);
       }
-      if (status.status === 'FAILED') {
-        faceStatus = 'FAILED'; break;
+      const nanoData = await nanoRes.json() as { imageUrl: string };
+      if (!nanoData.imageUrl) {
+        throw new Error('Nano Banana face still returned no image');
       }
-      await new Promise(r => setTimeout(r, FACE_POLL_MS));
-    }
-    if (faceStatus !== 'COMPLETED') {
-      throw new Error(`Face still ${faceStatus || 'timed out'} after ${FACE_MAX_POLLS * FACE_POLL_MS / 1000}s`);
-    }
+      faceImageUrl = nanoData.imageUrl;
+    } else {
+      // FLUX.2 LoRA: use trained LoRA weights
+      const faceInput = {
+        prompt: facePrompt,
+        image_size: falImageSizeFor(aspect),
+        num_images: 1,
+        loras: [{ path: influencer.loraModelId, scale: 0.9 }],
+        enable_safety_checker: true,
+      };
+      const faceJob = await submitFalJob({
+        falModel: FAL_FLUX_LORA,
+        input: faceInput,
+        webhookUrl: buildWebhookUrl(),
+      });
 
-    const faceResult = await getFalResult<Record<string, unknown>>(FAL_FLUX_LORA, faceJob.request_id);
-    const media = extractMediaFromFalPayload(faceResult);
-    if (!media.imageUrl) {
-      try {
-        await db.delete(aiStudioJobSchema).where(eq(aiStudioJobSchema.id, job.id));
-      } catch { /* best effort */ }
-      return NextResponse.json(
-        { error: 'Face still generation produced no image' },
-        { status: 502 },
-      );
+      // Poll for completion
+      const FACE_POLL_MS = 1500;
+      const FACE_MAX_POLLS = 60;
+      let faceStatus: string | undefined;
+      for (let i = 0; i < FACE_MAX_POLLS; i++) {
+        const status = await getFalStatus(FAL_FLUX_LORA, faceJob.request_id);
+        if (status.status === 'COMPLETED') {
+          faceStatus = 'COMPLETED'; break;
+        }
+        if (status.status === 'FAILED') {
+          faceStatus = 'FAILED'; break;
+        }
+        await new Promise(r => setTimeout(r, FACE_POLL_MS));
+      }
+      if (faceStatus !== 'COMPLETED') {
+        throw new Error(`Face still ${faceStatus || 'timed out'} after ${FACE_MAX_POLLS * FACE_POLL_MS / 1000}s`);
+      }
+
+      const faceResult = await getFalResult<Record<string, unknown>>(FAL_FLUX_LORA, faceJob.request_id);
+      const media = extractMediaFromFalPayload(faceResult);
+      if (!media.imageUrl) {
+        try {
+          await db.delete(aiStudioJobSchema).where(eq(aiStudioJobSchema.id, job.id));
+        } catch { /* best effort */ }
+        return NextResponse.json(
+          { error: 'Face still generation produced no image' },
+          { status: 502 },
+        );
+      }
+      faceImageUrl = media.imageUrl;
     }
-    faceImageUrl = media.imageUrl;
   } catch (err) {
     console.error('[Influencer] Face still failed:', err);
     try {

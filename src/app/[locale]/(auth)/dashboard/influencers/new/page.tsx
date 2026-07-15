@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, ArrowRight, Clock, ImagePlus, Loader2, Mic, RefreshCw, Sparkles, UserRound, Wand2, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Clock, ImagePlus, Loader2, Mic, RefreshCw, Sparkles, UserRound, Wand2, X, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CldImage, CldUploadWidget, type CloudinaryUploadWidgetOptions } from 'next-cloudinary';
@@ -82,6 +82,7 @@ export default function NewInfluencerPage() {
   const [regenInstructions, setRegenInstructions] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [trainingMode, setTrainingMode] = useState<'flux_lora' | 'nano_banana'>('flux_lora');
 
   const stepIndex = STEPS.indexOf(step);
   const canNext = stepGuard(step, traits, references, voiceId, personaPrompt, previewUrl);
@@ -158,7 +159,11 @@ export default function NewInfluencerPage() {
       }
 
       // 2. Kick off identity training
-      const trainRes = await fetch(`/api/ai-influencers/${id}/train-lora`, { method: 'POST' });
+      const trainRes = await fetch(`/api/ai-influencers/${id}/train-lora`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trainingMode }),
+      });
       if (!trainRes.ok) {
         const trainErr = await trainRes.json().catch(() => ({}));
         if (trainRes.status === 402) {
@@ -220,6 +225,8 @@ export default function NewInfluencerPage() {
             voiceId={voiceId}
             personaPrompt={personaPrompt}
             previewUrl={previewUrl}
+            trainingMode={trainingMode}
+            setTrainingMode={setTrainingMode}
           />
         )}
       </div>
@@ -254,7 +261,11 @@ export default function NewInfluencerPage() {
                 className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
               >
                 {submitting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                {submitting ? 'Creating…' : 'Create & Start Training (250 credits)'}
+                {submitting
+                  ? 'Creating…'
+                  : trainingMode === 'nano_banana'
+                    ? 'Create & Setup Identity (20 credits)'
+                    : 'Create & Start Training (250 credits)'}
               </button>
             )}
       </div>
@@ -695,12 +706,16 @@ function ReviewStep({
   voiceId,
   personaPrompt,
   previewUrl,
+  trainingMode,
+  setTrainingMode,
 }: {
   traits: Traits;
   references: string[];
   voiceId: string;
   personaPrompt: string;
   previewUrl: string | null;
+  trainingMode: 'flux_lora' | 'nano_banana';
+  setTrainingMode: (mode: 'flux_lora' | 'nano_banana') => void;
 }) {
   const voice = VOICES.find(v => v.id === voiceId);
   const traitSummary = [
@@ -753,6 +768,37 @@ function ReviewStep({
           <SummaryRow label="Voice" value={voice ? `${voice.name} · ${voice.accent} · ${voice.vibe}` : '—'} />
           <SummaryRow label="Persona" value={personaPreview || '—'} />
         </dl>
+
+        {/* Training mode selector */}
+        <div className="rounded-md border border-border bg-muted/30 p-3">
+          <div className="mb-2 text-xs font-medium text-muted-foreground">Select training mode</div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setTrainingMode('flux_lora')}
+              className={`rounded-md border p-2 text-left text-xs transition-colors ${trainingMode === 'flux_lora' ? 'border-purple-500/40 bg-purple-500/10 ring-1 ring-purple-500/30' : 'border-border hover:bg-muted/50'}`}
+              title="Trains a custom face model for exact identity across every post. Best for high-volume creators."
+            >
+              <div className="mb-1 flex items-center gap-1 font-medium">
+                <Zap size={12} className="text-purple-400" />
+                Identity Lock
+              </div>
+              <div className="text-muted-foreground">Exact face consistency. ~10 min setup. 250 credits.</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTrainingMode('nano_banana')}
+              className={`rounded-md border p-2 text-left text-xs transition-colors ${trainingMode === 'nano_banana' ? 'border-blue-500/40 bg-blue-500/10 ring-1 ring-blue-500/30' : 'border-border hover:bg-muted/50'}`}
+              title="Zero training. Uses Google Gemini 3 Pro for natural skin, realistic lighting. Ready instantly."
+            >
+              <div className="mb-1 flex items-center gap-1 font-medium">
+                <Sparkles size={12} className="text-blue-400" />
+                Instant Identity
+              </div>
+              <div className="text-muted-foreground">Natural look, instant setup. 20 credits.</div>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="rounded-md border border-border bg-muted/40 p-4 text-sm">
@@ -761,9 +807,19 @@ function ReviewStep({
           What happens after you click Create
         </div>
         <ul className="space-y-1 text-muted-foreground">
-          <li>Training takes about 15–30 minutes.</li>
-          <li>Estimated cost: ~360 credits (250 identity training + 110 talking-head video).</li>
-          <li>You can start using this influencer as soon as training finishes — we'll show progress on the detail page.</li>
+          {trainingMode === 'flux_lora' ? (
+            <>
+              <li>Training takes about 3–10 minutes.</li>
+              <li>Estimated cost: ~360 credits (250 identity training + 110 talking-head video).</li>
+              <li>You can start using this influencer as soon as training finishes — we'll show progress on the detail page.</li>
+            </>
+          ) : (
+            <>
+              <li>Identity is ready instantly — no training wait.</li>
+              <li>Estimated cost: ~130 credits (20 setup + 110 talking-head video).</li>
+              <li>Each image generation costs 5 credits and uses your reference photos for identity.</li>
+            </>
+          )}
         </ul>
       </div>
     </div>
