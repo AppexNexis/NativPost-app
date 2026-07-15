@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -11,11 +11,11 @@ const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-interface GenerationVariant {
+type GenerationVariant = {
   setting: string;
   pose: string;
   background: string;
-}
+};
 
 const CONSISTENCY_VARIANTS: GenerationVariant[] = [
   { setting: 'a modern office with city skyline view', pose: 'standing confidently', background: 'professional office' },
@@ -30,7 +30,9 @@ const CONSISTENCY_VARIANTS: GenerationVariant[] = [
 export async function POST(_request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 
@@ -100,13 +102,14 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
           }
 
           const renderData = await renderRes.json() as {
-            square?: string;
-            vertical?: string;
+            square?: string | { url: string };
+            vertical?: string | { url: string };
             promptUsed?: string;
             modelUsed?: string;
           };
 
-          const imageUrl = renderData.square || renderData.vertical;
+          const rawUrl = renderData.square || renderData.vertical;
+          const imageUrl = typeof rawUrl === 'string' ? rawUrl : rawUrl?.url;
 
           return {
             index: index + 1,
@@ -128,13 +131,13 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     );
 
     // Check if any succeeded
-    const successes = results.filter((r) => r.imageUrl);
+    const successes = results.filter(r => r.imageUrl);
     if (successes.length === 0) {
       return NextResponse.json({ error: 'All consistency test generations failed', results }, { status: 502 });
     }
 
     // Append generated images to referenceImageUrls
-    const newUrls = successes.map((r) => r.imageUrl!).filter(Boolean);
+    const newUrls = successes.map(r => r.imageUrl!).filter(Boolean);
     const existingRefs = (influencer.referenceImageUrls as string[]) || [];
     const updatedRefs = [...existingRefs, ...newUrls];
 
@@ -168,10 +171,18 @@ function buildInfluencerBaseDescription(influencer: {
 }): string {
   const parts: string[] = ['A photorealistic photograph of the same person'];
 
-  if (influencer.gender) parts.push(influencer.gender);
-  if (influencer.ageRange) parts.push(`aged ${influencer.ageRange}`);
-  if (influencer.ethnicity) parts.push(`of ${influencer.ethnicity} ethnicity`);
-  if (influencer.bodyType) parts.push(`with a ${influencer.bodyType} build`);
+  if (influencer.gender) {
+    parts.push(influencer.gender);
+  }
+  if (influencer.ageRange) {
+    parts.push(`aged ${influencer.ageRange}`);
+  }
+  if (influencer.ethnicity) {
+    parts.push(`of ${influencer.ethnicity} ethnicity`);
+  }
+  if (influencer.bodyType) {
+    parts.push(`with a ${influencer.bodyType} build`);
+  }
   if (influencer.hairStyle && influencer.hairColor) {
     parts.push(`with ${influencer.hairColor} ${influencer.hairStyle} hair`);
   } else if (influencer.hairColor) {
@@ -179,7 +190,9 @@ function buildInfluencerBaseDescription(influencer: {
   } else if (influencer.hairStyle) {
     parts.push(`with ${influencer.hairStyle} hair`);
   }
-  if (influencer.fashionStyle) parts.push(`wearing ${influencer.fashionStyle} clothing`);
+  if (influencer.fashionStyle) {
+    parts.push(`wearing ${influencer.fashionStyle} clothing`);
+  }
 
   return parts.join(', ');
 }

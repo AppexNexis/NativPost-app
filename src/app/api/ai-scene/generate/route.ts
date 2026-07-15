@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -20,7 +20,9 @@ const VALID_OVERLAY_STYLES = ['standard', 'minimal', 'none'] as const;
 export async function POST(request: NextRequest) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   let body: Record<string, unknown> = {};
   try {
@@ -36,7 +38,7 @@ export async function POST(request: NextRequest) {
   }
 
   const formats = (body.formats as string[]) || ['square', 'vertical'];
-  const invalidFormat = formats.find((f) => !VALID_FORMATS.includes(f as typeof VALID_FORMATS[number]));
+  const invalidFormat = formats.find(f => !VALID_FORMATS.includes(f as typeof VALID_FORMATS[number]));
   if (invalidFormat) {
     return NextResponse.json({ error: `Invalid format: ${invalidFormat}. Valid: ${VALID_FORMATS.join(', ')}` }, { status: 400 });
   }
@@ -138,20 +140,31 @@ export async function POST(request: NextRequest) {
     }
 
     const renderData = await renderRes.json() as {
-      square?: string;
-      vertical?: string;
-      landscape?: string;
-      portrait?: string;
+      square?: string | { url: string };
+      vertical?: string | { url: string };
+      landscape?: string | { url: string };
+      portrait?: string | { url: string };
       promptUsed?: string;
       modelUsed?: string;
       totalMs?: number;
     };
 
+    const extractUrl = (val: string | { url: string }): string =>
+      typeof val === 'string' ? val : val.url;
+
     const imageUrls: Record<string, string> = {};
-    if (renderData.square) imageUrls.square = renderData.square;
-    if (renderData.vertical) imageUrls.vertical = renderData.vertical;
-    if (renderData.landscape) imageUrls.landscape = renderData.landscape;
-    if (renderData.portrait) imageUrls.portrait = renderData.portrait;
+    if (renderData.square) {
+      imageUrls.square = extractUrl(renderData.square);
+    }
+    if (renderData.vertical) {
+      imageUrls.vertical = extractUrl(renderData.vertical);
+    }
+    if (renderData.landscape) {
+      imageUrls.landscape = extractUrl(renderData.landscape);
+    }
+    if (renderData.portrait) {
+      imageUrls.portrait = extractUrl(renderData.portrait);
+    }
 
     const urlEntries = Object.entries(imageUrls);
     if (urlEntries.length === 0) {
@@ -161,7 +174,7 @@ export async function POST(request: NextRequest) {
     // Save to media library if requested
     const savedAssets: { id: string; url: string; format: string }[] = [];
 
-   if (saveToMediaLibrary) {
+    if (saveToMediaLibrary) {
       for (const [format, url] of urlEntries) {
         const [created] = await db
           .insert(mediaAssetSchema)
@@ -216,10 +229,18 @@ function buildInfluencerDescription(influencer: {
 }): string {
   const parts: string[] = [];
 
-  if (influencer.gender) parts.push(influencer.gender);
-  if (influencer.ageRange) parts.push(`aged ${influencer.ageRange}`);
-  if (influencer.ethnicity) parts.push(`of ${influencer.ethnicity} ethnicity`);
-  if (influencer.bodyType) parts.push(`with a ${influencer.bodyType} build`);
+  if (influencer.gender) {
+    parts.push(influencer.gender);
+  }
+  if (influencer.ageRange) {
+    parts.push(`aged ${influencer.ageRange}`);
+  }
+  if (influencer.ethnicity) {
+    parts.push(`of ${influencer.ethnicity} ethnicity`);
+  }
+  if (influencer.bodyType) {
+    parts.push(`with a ${influencer.bodyType} build`);
+  }
   if (influencer.hairStyle && influencer.hairColor) {
     parts.push(`with ${influencer.hairColor} ${influencer.hairStyle} hair`);
   } else if (influencer.hairColor) {
@@ -227,7 +248,9 @@ function buildInfluencerDescription(influencer: {
   } else if (influencer.hairStyle) {
     parts.push(`with ${influencer.hairStyle} hair`);
   }
-  if (influencer.fashionStyle) parts.push(`wearing ${influencer.fashionStyle} clothing`);
+  if (influencer.fashionStyle) {
+    parts.push(`wearing ${influencer.fashionStyle} clothing`);
+  }
 
   return parts.join(', ');
 }
