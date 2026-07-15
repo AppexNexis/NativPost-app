@@ -1,9 +1,9 @@
 'use client';
 
 import { ArrowLeft, ArrowRight, Clock, ImagePlus, Loader2, Mic, RefreshCw, Sparkles, UserRound, Wand2, X } from 'lucide-react';
-import { CldImage, CldUploadWidget, type CloudinaryUploadWidgetOptions } from 'next-cloudinary';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { CldImage, CldUploadWidget, type CloudinaryUploadWidgetOptions } from 'next-cloudinary';
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from 'react';
 
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
@@ -23,7 +23,7 @@ const POSE_STYLES = ['portrait', 'confident', 'candid', 'action', 'seated'];
 const BACKGROUND_PREFS = ['studio', 'office', 'outdoor', 'cafe', 'urban', 'gym', 'home'];
 const ARCHETYPES = ['journey', 'theme', 'spinoff'];
 
-// ElevenLabs curated stock voices — no cloning at v1 (see brainstorm §10)
+// Curated stock voices — no cloning at v1 (see brainstorm §10)
 const VOICES = [
   { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', gender: 'female', accent: 'american', vibe: 'warm' },
   { id: 'nPczCjzI2devNBz1zQrb', name: 'Brian', gender: 'male', accent: 'american', vibe: 'natural' },
@@ -33,7 +33,7 @@ const VOICES = [
   { id: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily', gender: 'female', accent: 'british', vibe: 'sweet' },
 ];
 
-const MIN_REFERENCES = 3;
+const MIN_REFERENCES = 5;
 const MAX_REFERENCES = 10;
 
 type Traits = {
@@ -98,7 +98,9 @@ export default function NewInfluencerPage() {
   }
 
   const generatePreview = useCallback(async (regen?: string) => {
-    if (previewLoading) return;
+    if (previewLoading) {
+      return;
+    }
     setPreviewLoading(true);
     setPreviewError(null);
     try {
@@ -127,7 +129,9 @@ export default function NewInfluencerPage() {
   }, [previewLoading, traits]);
 
   async function handleSubmit() {
-    if (submitting) return;
+    if (submitting) {
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -153,9 +157,15 @@ export default function NewInfluencerPage() {
         throw new Error('Server did not return influencer id');
       }
 
-      // 2. Kick off LoRA training (fire and forget — user sees training banner on detail page)
-      await fetch(`/api/ai-influencers/${id}/train-lora`, { method: 'POST' })
-        .catch(err => console.warn('[Wizard] train-lora kickoff failed:', err));
+      // 2. Kick off identity training
+      const trainRes = await fetch(`/api/ai-influencers/${id}/train-lora`, { method: 'POST' });
+      if (!trainRes.ok) {
+        const trainErr = await trainRes.json().catch(() => ({}));
+        if (trainRes.status === 402) {
+          throw new Error('Insufficient AI credits. Please add credits and try again.');
+        }
+        throw new Error(trainErr.error || `Training kickoff failed (${trainRes.status})`);
+      }
 
       // 3. Redirect to detail
       router.push(`/dashboard/influencers/${id}`);
@@ -244,7 +254,7 @@ export default function NewInfluencerPage() {
                 className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
               >
                 {submitting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                {submitting ? 'Creating…' : 'Create & Start Training'}
+                {submitting ? 'Creating…' : 'Create & Start Training (250 credits)'}
               </button>
             )}
       </div>
@@ -432,7 +442,7 @@ function ReferencesStep({
           {MAX_REFERENCES}
           {' '}
           clear photos of the same face. Different angles, expressions, and lighting help
-          the LoRA lock the identity across generations.
+          helps lock the identity across generations.
         </p>
       </div>
 
@@ -465,7 +475,9 @@ function ReferencesStep({
             options={widgetOptions}
             onSuccess={(result) => {
               const info: any = (result as any)?.info;
-              if (!info?.public_id) return;
+              if (!info?.public_id) {
+                return;
+              }
               const url = buildDelivery(info.public_id);
               // Avoid duplicates — CldUploadWidget fires per-file, so we merge in order.
               setReferences(prev => (prev.includes(url) ? prev : [...prev, url]));
@@ -509,7 +521,7 @@ function VoiceStep({ voiceId, setVoiceId }: { voiceId: string; setVoiceId: (v: s
           Pick a voice
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          ElevenLabs stock voices. This will be the voice-over for every talking-head video
+          Stock voices. This will be the voice-over for every talking-head video
           generated from this influencer. Voice cloning ships in a later phase.
         </p>
       </div>
@@ -660,7 +672,7 @@ function BasePreviewStep({
 
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          ~$0.02 per regeneration · unlimited
+          ~3 credits per regeneration
         </p>
         <button
           type="button"
@@ -712,7 +724,7 @@ function ReviewStep({
           Review &amp; create
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          Our agents will train the LoRA and prep the first talking-head video for
+          Our agents will train the identity model for
           {' '}
           <span className="font-medium text-foreground">{traits.name || 'this influencer'}</span>
           {' '}
@@ -750,7 +762,7 @@ function ReviewStep({
         </div>
         <ul className="space-y-1 text-muted-foreground">
           <li>Training takes about 15–30 minutes.</li>
-          <li>Estimated AI cost: ~$1.50 (LoRA training + first talking-head video).</li>
+          <li>Estimated cost: ~360 credits (250 identity training + 110 talking-head video).</li>
           <li>You can start using this influencer as soon as training finishes — we'll show progress on the detail page.</li>
         </ul>
       </div>

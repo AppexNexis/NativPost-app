@@ -3,12 +3,15 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { buildInfluencerCaption, buildInfluencerPrompt } from '@/lib/ai-influencers/build-prompt';
+import { commitCredits, refundCredits, reserveCredits } from '@/lib/ai-studio/server';
 import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { aiInfluencerSchema, brandProfileSchema } from '@/models/Schema';
 
 const IMAGE_ENGINE_URL = process.env.NATIVPOST_IMAGE_URL || 'http://localhost:4000';
 const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
+
+const GENERATE_IMAGE_CREDITS = 3;
 
 function sanitizeTriggerWord(name: string | null): string {
   if (!name) {
@@ -24,7 +27,8 @@ type RouteParams = { params: Promise<{ id: string }> };
 
 // -----------------------------------------------------------
 // POST /api/ai-influencers/[id]/generate-image
-// Generate a base reference image for an AI influencer
+// Generate a base reference image for an AI influencer.
+// Costs 3 credits.
 // -----------------------------------------------------------
 export async function POST(_request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
@@ -35,6 +39,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
   const { id } = await params;
 
+  const reservationId = `influencer-image-${id}-${Date.now()}`;
   try {
     // Fetch influencer
     const [influencer] = await db
@@ -64,9 +69,19 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     const prompt = buildInfluencerPrompt(influencer);
     const caption = buildInfluencerCaption(influencer);
 
-    // ── LoRA path (face-locked, consistent) ──
+    // Reserve credits before calling the engine
+    try {
+      await reserveCredits(orgId!, reservationId, GENERATE_IMAGE_CREDITS);
+    } catch {
+      return NextResponse.json(
+        { error: 'Insufficient AI credits', code: 'INSUFFICIENT_CREDITS' },
+        { status: 402 },
+      );
+    }
+
+    // ── Identity path (face-locked, consistent) ──
     if (influencer.loraStatus === 'ready' && influencer.loraModelId) {
-      console.log('[Influencer] Generating with LoRA for:', id, '| name:', influencer.name);
+      console.log('[Influencer] Generating with identity model for:', id, '| name:', influencer.name);
       const triggerWord = sanitizeTriggerWord(influencer.name);
 
       try {
@@ -97,12 +112,13 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
               .set({ baseImageUrl: imageUrl, referenceImageUrls: updatedRefs, updatedAt: new Date() })
               .where(and(eq(aiInfluencerSchema.id, id), eq(aiInfluencerSchema.orgId, orgId!)));
 
+            await commitCredits(orgId!, reservationId, GENERATE_IMAGE_CREDITS, 'Generate influencer base image');
             return NextResponse.json({ success: true, imageUrl, seed: loraData.seed, generationMs: loraData.generationMs, method: 'lora' });
           }
         }
-        console.warn('[Influencer] LoRA inference failed, falling back to /render/scene:', loraRes.status);
+        console.warn('[Influencer] Identity inference failed, falling back to /render/scene:', loraRes.status);
       } catch (err) {
-        console.warn('[Influencer] LoRA inference error, falling back to /render/scene:', String(err));
+        console.warn('[Influencer] Identity inference error, falling back to /render/scene:', String(err));
       }
     }
 
@@ -139,6 +155,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       });
     } catch (fetchErr: unknown) {
       clearTimeout(timeoutId);
+      try {
+        await refundCredits(orgId!, reservationId, GENERATE_IMAGE_CREDITS, String(fetchErr));
+      } catch { /* best effort */ }
       const isAbort = fetchErr instanceof Error && fetchErr.name === 'AbortError';
       if (isAbort) {
         return NextResponse.json({ error: 'Image generation timed out. Please try again.' }, { status: 503 });
@@ -151,6 +170,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     if (!renderRes.ok) {
       const errText = await renderRes.text();
       console.error('[Influencer] Engine error:', renderRes.status, errText);
+      try {
+        await refundCredits(orgId!, reservationId, GENERATE_IMAGE_CREDITS, errText);
+      } catch { /* best effort */ }
       return NextResponse.json({ error: 'Image generation failed.', detail: errText }, { status: 502 });
     }
 
@@ -166,6 +188,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     const imageUrl = typeof rawUrl === 'string' ? rawUrl : rawUrl?.url;
 
     if (!imageUrl) {
+      try {
+        await refundCredits(orgId!, reservationId, GENERATE_IMAGE_CREDITS, 'No image returned');
+      } catch { /* best effort */ }
       return NextResponse.json({ error: 'Image engine returned no image' }, { status: 502 });
     }
 
@@ -183,6 +208,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       .where(and(eq(aiInfluencerSchema.id, id), eq(aiInfluencerSchema.orgId, orgId!)))
       .returning();
 
+    await commitCredits(orgId!, reservationId, GENERATE_IMAGE_CREDITS, 'Generate influencer base image');
     return NextResponse.json({
       success: true,
       imageUrl,
@@ -193,6 +219,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     });
   } catch (err) {
     console.error('[Influencer] generate-image failed:', err);
+    try {
+      await refundCredits(orgId!, reservationId, GENERATE_IMAGE_CREDITS, String(err));
+    } catch { /* best effort */ }
     return NextResponse.json({ error: `Image generation failed: ${String(err)}` }, { status: 500 });
   }
 }

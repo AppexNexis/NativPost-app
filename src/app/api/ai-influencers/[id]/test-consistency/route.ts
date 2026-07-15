@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+import { commitCredits, refundCredits, reserveCredits } from '@/lib/ai-studio/server';
 import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { aiInfluencerSchema, brandProfileSchema } from '@/models/Schema';
@@ -36,6 +37,8 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
   const { id } = await params;
 
+  const TEST_CONSISTENCY_CREDITS = 9;
+  const reservationId = `influencer-consistency-${id}-${Date.now()}`;
   try {
     const [influencer] = await db
       .select()
@@ -61,6 +64,15 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       .limit(1);
 
     const baseDescription = buildInfluencerBaseDescription(influencer);
+
+    try {
+      await reserveCredits(orgId!, reservationId, TEST_CONSISTENCY_CREDITS);
+    } catch {
+      return NextResponse.json(
+        { error: 'Insufficient AI credits', code: 'INSUFFICIENT_CREDITS' },
+        { status: 402 },
+      );
+    }
 
     // Generate 3 images in parallel
     const results = await Promise.all(
@@ -133,6 +145,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     // Check if any succeeded
     const successes = results.filter(r => r.imageUrl);
     if (successes.length === 0) {
+      try {
+        await refundCredits(orgId!, reservationId, TEST_CONSISTENCY_CREDITS, 'All consistency tests failed');
+      } catch { /* best effort */ }
       return NextResponse.json({ error: 'All consistency test generations failed', results }, { status: 502 });
     }
 
@@ -149,6 +164,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       })
       .where(and(eq(aiInfluencerSchema.id, id), eq(aiInfluencerSchema.orgId, orgId!)));
 
+    await commitCredits(orgId!, reservationId, TEST_CONSISTENCY_CREDITS, 'Consistency test');
     return NextResponse.json({
       success: true,
       results,
@@ -156,6 +172,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     });
   } catch (err) {
     console.error('[Consistency] test-consistency failed:', err);
+    try {
+      await refundCredits(orgId!, reservationId, TEST_CONSISTENCY_CREDITS, String(err));
+    } catch { /* best effort */ }
     return NextResponse.json({ error: `Consistency test failed: ${String(err)}` }, { status: 500 });
   }
 }

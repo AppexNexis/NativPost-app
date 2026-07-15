@@ -89,7 +89,9 @@ export default function InfluencerDetailPage() {
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
-    if (!id) return;
+    if (!id) {
+      return;
+    }
     try {
       const res = await fetch(`/api/ai-influencers/${id}`, { cache: 'no-store' });
       if (!res.ok) {
@@ -109,9 +111,11 @@ export default function InfluencerDetailPage() {
     loadAngles();
   }, [load]);
 
-  // Poll LoRA training status while it's training
+  // Poll training status while it's training
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      return;
+    }
     if (!item || item.loraStatus !== 'training') {
       if (pollTimer.current) {
         clearTimeout(pollTimer.current);
@@ -124,9 +128,13 @@ export default function InfluencerDetailPage() {
     async function poll() {
       try {
         const res = await fetch(`/api/ai-influencers/${id}/train-lora`, { cache: 'no-store' });
-        if (!res.ok) return;
+        if (!res.ok) {
+          return;
+        }
         const data = await res.json();
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
         if (data.loraStatus && data.loraStatus !== 'training') {
           load();
           return;
@@ -151,33 +159,49 @@ export default function InfluencerDetailPage() {
 
   // Load analytics for this influencer
   useEffect(() => {
-    if (!id || item?.isSystem || !item) return;
+    if (!id || item?.isSystem || !item) {
+      return;
+    }
     let cancelled = false;
     fetch(`/api/analytics/influencers?orgId=${encodeURIComponent(item.orgId || '')}`, { cache: 'no-store' })
       .then(res => (res.ok ? res.json() : null))
-      .then(data => {
+      .then((data) => {
         if (!cancelled && data?.influencers) {
           const match = (data.influencers as any[]).find((inf: any) => inf.id === id);
-          if (match) setAnalytics({ totalPosts: match.totalPosts || 0, totalEngagement: match.totalEngagement || 0, topPlatform: match.topPlatform || '—' });
+          if (match) {
+            setAnalytics({ totalPosts: match.totalPosts || 0, totalEngagement: match.totalEngagement || 0, topPlatform: match.topPlatform || '—' });
+          }
         }
       })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [id, item]);
 
   // Load generated clips for the gallery
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      return;
+    }
     let cancelled = false;
     fetch(`/api/ai-influencers/${id}/media`, { cache: 'no-store' })
       .then(res => res.json())
-      .then(data => { if (!cancelled) setClips(data.items || []); })
+      .then((data) => {
+        if (!cancelled) {
+          setClips(data.items || []);
+        }
+      })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   async function handleGenerateImage() {
-    if (generating || !id) return;
+    if (generating || !id) {
+      return;
+    }
     setGenerating('image');
     setActionMsg(null);
     setError(null);
@@ -197,7 +221,9 @@ export default function InfluencerDetailPage() {
   }
 
   async function handleTestConsistency() {
-    if (generating || !id) return;
+    if (generating || !id) {
+      return;
+    }
     setGenerating('consistency');
     setActionMsg(null);
     setError(null);
@@ -224,7 +250,9 @@ export default function InfluencerDetailPage() {
   }
 
   async function handleRetrain() {
-    if (generating || !id) return;
+    if (generating || !id) {
+      return;
+    }
     setGenerating('retrain');
     setActionMsg(null);
     setError(null);
@@ -244,8 +272,12 @@ export default function InfluencerDetailPage() {
   }
 
   async function handleGenerateVideo() {
-    if (generating || videoGenerating || !id) return;
-    if (videoScript.trim().length < 20) return;
+    if (generating || videoGenerating || !id) {
+      return;
+    }
+    if (videoScript.trim().length < 20) {
+      return;
+    }
     setVideoGenerating(true);
     setVideoJobId(null);
     setVideoJobStatus(null);
@@ -278,15 +310,21 @@ export default function InfluencerDetailPage() {
 
   // Poll video job status while in progress
   useEffect(() => {
-    if (!videoJobId || videoJobStatus === 'succeeded' || videoJobStatus === 'failed') return;
+    if (!videoJobId || videoJobStatus === 'succeeded' || videoJobStatus === 'failed') {
+      return;
+    }
 
     let cancelled = false;
     async function poll() {
       try {
         const res = await fetch(`/api/ai-studio/jobs/${videoJobId}`, { cache: 'no-store' });
-        if (!res.ok || cancelled) return;
+        if (!res.ok || cancelled) {
+          return;
+        }
         const data = await res.json();
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
         setVideoJobStatus(data.job?.status || data.status);
         if (data.job?.output) {
           setVideoJobResult(data.job.output);
@@ -311,7 +349,9 @@ export default function InfluencerDetailPage() {
   }, [videoJobId, videoJobStatus, load]);
 
   async function loadAngles() {
-    if (!id) return;
+    if (!id) {
+      return;
+    }
     try {
       const res = await fetch(`/api/ai-influencers/${id}/angles`, { cache: 'no-store' });
       if (res.ok) {
@@ -337,7 +377,9 @@ export default function InfluencerDetailPage() {
   }
 
   async function handleAssignAngle(angleId: string) {
-    if (!id) return;
+    if (!id) {
+      return;
+    }
     const newIds = [...new Set([...assignedAngles.map(a => a.angleId), angleId])];
     try {
       const res = await fetch(`/api/ai-influencers/${id}/angles`, {
@@ -354,7 +396,9 @@ export default function InfluencerDetailPage() {
   }
 
   async function handleRemoveAngle(assignmentId: string) {
-    if (!id) return;
+    if (!id) {
+      return;
+    }
     const newIds = assignedAngles.filter(a => a.assignmentId !== assignmentId).map(a => a.angleId);
     try {
       const res = await fetch(`/api/ai-influencers/${id}/angles`, {
@@ -369,16 +413,22 @@ export default function InfluencerDetailPage() {
   }
 
   async function handleGenerateScript() {
-    if (scriptGenerating || !id) return;
+    if (scriptGenerating || !id) {
+      return;
+    }
     setScriptGenerating(true);
     setError(null);
     try {
       const body: Record<string, unknown> = {
         duration: videoDuration,
       };
-      if (scriptTopic.trim()) body.topic = scriptTopic.trim();
+      if (scriptTopic.trim()) {
+        body.topic = scriptTopic.trim();
+      }
       // Use the first assigned angle if any
-      if (assignedAngles.length > 0) body.angleId = assignedAngles[0]!.angleId;
+      if (assignedAngles.length > 0) {
+        body.angleId = assignedAngles[0]!.angleId;
+      }
 
       const res = await fetch(`/api/ai-influencers/${id}/generate-script`, {
         method: 'POST',
@@ -402,7 +452,9 @@ export default function InfluencerDetailPage() {
   }
 
   async function handleClone() {
-    if (cloning || generating || !id) return;
+    if (cloning || generating || !id) {
+      return;
+    }
     setCloning(true);
     setError(null);
     try {
@@ -420,13 +472,17 @@ export default function InfluencerDetailPage() {
   }
 
   async function handleBatchGenerate() {
-    if (batchGenerating || scriptGenerating || !id) return;
+    if (batchGenerating || scriptGenerating || !id) {
+      return;
+    }
     setBatchGenerating(true);
     setBatchScripts([]);
     setError(null);
     try {
       const body: Record<string, unknown> = { duration: videoDuration };
-      if (scriptTopic.trim()) body.topic = scriptTopic.trim();
+      if (scriptTopic.trim()) {
+        body.topic = scriptTopic.trim();
+      }
       const res = await fetch(`/api/ai-influencers/${id}/generate-scripts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -447,7 +503,9 @@ export default function InfluencerDetailPage() {
   }
 
   async function handleBatchGenerateVideos() {
-    if (batchGenerating || scriptGenerating || videoGenerating || !id || batchScripts.length === 0) return;
+    if (batchGenerating || scriptGenerating || videoGenerating || !id || batchScripts.length === 0) {
+      return;
+    }
     setBatchGenerating(true);
     setError(null);
     const newMap = new Map(batchVideoJobs);
@@ -475,7 +533,9 @@ export default function InfluencerDetailPage() {
   }
 
   async function handleDelete() {
-    if (generating || !id) return;
+    if (generating || !id) {
+      return;
+    }
     setGenerating('delete');
     setActionMsg(null);
     setError(null);
@@ -531,14 +591,14 @@ export default function InfluencerDetailPage() {
               Back
             </Link>
             <button
-                type="button"
-                onClick={handleClone}
-                disabled={generating !== null || cloning}
-                className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              >
-                {cloning ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />}
-                {cloning ? 'Cloning…' : isSystem ? 'Clone to my org' : 'Duplicate'}
-              </button>
+              type="button"
+              onClick={handleClone}
+              disabled={generating !== null || cloning}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {cloning ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />}
+              {cloning ? 'Cloning…' : isSystem ? 'Clone to my org' : 'Duplicate'}
+            </button>
           </div>
         )}
       />
@@ -551,11 +611,11 @@ export default function InfluencerDetailPage() {
         </div>
       )}
 
-      <LoraBanner status={item.loraStatus} loraModelId={item.loraModelId} />
+      <TrainingBanner status={item.loraStatus} />
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Left: base image + reference grid */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className="space-y-4 lg:col-span-2">
           <section className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 text-sm font-medium">Base image</div>
             <div className="relative aspect-square w-full max-w-md overflow-hidden rounded-md bg-muted">
@@ -570,7 +630,7 @@ export default function InfluencerDetailPage() {
                     />
                   )
                 : (
-                    <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                    <div className="flex size-full items-center justify-center text-muted-foreground">
                       <UserRound size={64} />
                     </div>
                   )}
@@ -635,18 +695,22 @@ export default function InfluencerDetailPage() {
             <section className="rounded-lg border border-border bg-card p-4">
               <div className="mb-3 text-sm font-medium">Generated clips</div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {clips.map((clip) => (
-                  <div key={clip.id} className="relative aspect-square overflow-hidden rounded-md border border-border group">
+                {clips.map(clip => (
+                  <div key={clip.id} className="group relative aspect-square overflow-hidden rounded-md border border-border">
                     <video
                       src={clip.url}
                       poster={clip.thumbnailUrl || undefined}
                       muted
                       loop
                       preload="metadata"
-                      className="h-full w-full object-cover"
-                      onMouseEnter={(e) => (e.currentTarget as HTMLVideoElement).play().catch(() => {})}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLVideoElement).pause(); (e.currentTarget as HTMLVideoElement).currentTime = 0; }}
-                    />
+                      className="size-full object-cover"
+                      onMouseEnter={e => (e.currentTarget as HTMLVideoElement).play().catch(() => {})}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLVideoElement).pause(); (e.currentTarget as HTMLVideoElement).currentTime = 0;
+                      }}
+                    >
+                      <track kind="captions" />
+                    </video>
                   </div>
                 ))}
               </div>
@@ -680,7 +744,7 @@ export default function InfluencerDetailPage() {
             {item.voiceId
               ? (
                   <div className="text-sm">
-                    <div className="capitalize">{item.voiceProvider || 'elevenlabs'}</div>
+                    <div className="capitalize">{item.voiceProvider || 'standard'}</div>
                     <div className="mt-1 flex items-center gap-1 font-mono text-xs text-muted-foreground">
                       <span className="truncate">{item.voiceId}</span>
                       <button
@@ -705,7 +769,11 @@ export default function InfluencerDetailPage() {
                 <span>Content angles</span>
                 <button
                   type="button"
-                  onClick={() => { setAngleSearchOpen(!angleSearchOpen); if (!angleSearchOpen) { setAngleSearchQ(''); loadAvailableAngles(); } }}
+                  onClick={() => {
+                    setAngleSearchOpen(!angleSearchOpen); if (!angleSearchOpen) {
+                      setAngleSearchQ(''); loadAvailableAngles();
+                    }
+                  }}
                   disabled={generating !== null}
                   className="inline-flex items-center gap-1 rounded p-1 text-muted-foreground hover:text-foreground disabled:opacity-50"
                 >
@@ -720,13 +788,12 @@ export default function InfluencerDetailPage() {
                     value={angleSearchQ}
                     onChange={e => setAngleSearchQ(e.target.value)}
                     className="w-full rounded-md border border-border bg-muted px-2 py-1 text-xs placeholder:text-muted-foreground"
-                    autoFocus
                   />
                   <div className="max-h-32 overflow-y-auto rounded-md border border-border">
                     {availableAngles
-                        .filter(a => !angleSearchQ || a.name.toLowerCase().includes(angleSearchQ.toLowerCase()))
-                        .filter(a => !assignedAngles.some(aa => aa.angleId === a.id))
-                        .length === 0
+                      .filter(a => !angleSearchQ || a.name.toLowerCase().includes(angleSearchQ.toLowerCase()))
+                      .filter(a => !assignedAngles.some(aa => aa.angleId === a.id))
+                      .length === 0
                       ? <div className="px-2 py-1.5 text-xs text-muted-foreground">No angles found. Create angles in Campaigns.</div>
                       : availableAngles
                           .filter(a => !angleSearchQ || a.name.toLowerCase().includes(angleSearchQ.toLowerCase()))
@@ -740,7 +807,7 @@ export default function InfluencerDetailPage() {
                               className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-muted disabled:opacity-40"
                             >
                               {a.color
-                                ? <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: a.color }} />
+                                ? <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: a.color }} />
                                 : null}
                               <span className="truncate">{a.name}</span>
                             </button>
@@ -755,9 +822,9 @@ export default function InfluencerDetailPage() {
                       {assignedAngles.map(a => (
                         <span key={a.assignmentId} className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs">
                           {a.color
-                            ? <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: a.color }} />
+                            ? <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: a.color }} />
                             : null}
-                          <span className="truncate max-w-[120px]">{a.name}</span>
+                          <span className="max-w-[120px] truncate">{a.name}</span>
                           <button
                             type="button"
                             onClick={() => handleRemoveAngle(a.assignmentId)}
@@ -789,7 +856,7 @@ export default function InfluencerDetailPage() {
                       disabled={videoGenerating}
                       className="w-full resize-none rounded-md border border-border bg-muted px-3 py-2 text-sm placeholder:text-muted-foreground disabled:opacity-50"
                     />
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={handleGenerateScript}
@@ -817,7 +884,6 @@ export default function InfluencerDetailPage() {
                         className="rounded-md border border-border bg-muted px-2 py-1 text-xs disabled:opacity-50"
                       >
                         <option value={5}>5s</option>
-                        <option value={8}>8s</option>
                         <option value={10}>10s</option>
                       </select>
                       <div className="flex items-center gap-1">
@@ -847,7 +913,7 @@ export default function InfluencerDetailPage() {
                       {videoGenerating && !videoJobId
                         ? <Loader2 size={14} className="animate-spin" />
                         : <Play size={14} />}
-                      {videoGenerating && !videoJobId ? 'Generating…' : 'Generate talking-head video'}
+                      {videoGenerating && !videoJobId ? 'Generating…' : 'Generate talking-head video (110 credits)'}
                     </button>
                     {videoJobId && (
                       <VideoJobStatusBanner
@@ -860,7 +926,7 @@ export default function InfluencerDetailPage() {
               : (
                   <div className="text-sm text-muted-foreground">
                     {item.loraStatus !== 'ready'
-                      ? 'Train the face lock first to enable video generation.'
+                      ? 'Complete identity training first to enable video generation.'
                       : 'Assign a voice to enable video generation.'}
                   </div>
                 )}
@@ -888,8 +954,10 @@ export default function InfluencerDetailPage() {
                       <button
                         key={s.angleId}
                         type="button"
-                        onClick={() => { setVideoScript(s.script); setActionMsg(`Loaded "${s.angleName}" script.`); }}
-                        className="w-full rounded-md border border-border p-2 text-left hover:bg-muted transition"
+                        onClick={() => {
+                          setVideoScript(s.script); setActionMsg(`Loaded "${s.angleName}" script.`);
+                        }}
+                        className="w-full rounded-md border border-border p-2 text-left transition hover:bg-muted"
                       >
                         <div className="flex items-center gap-1.5 text-xs font-medium">
                           <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px]">{s.angleName}</span>
@@ -942,21 +1010,21 @@ export default function InfluencerDetailPage() {
                   className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
                 >
                   {generating === 'image' ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                  {generating === 'image' ? 'Generating…' : 'Generate base image'}
+                  {generating === 'image' ? 'Generating…' : 'Generate base image (3 credits)'}
                 </button>
 
                 <button
                   type="button"
                   onClick={handleTestConsistency}
                   disabled={generating !== null || item.loraStatus !== 'ready'}
-                  title={item.loraStatus !== 'ready' ? 'Train the LoRA first' : ''}
+                  title={item.loraStatus !== 'ready' ? 'Complete identity training first' : ''}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm disabled:opacity-50"
                 >
                   {generating === 'consistency' ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                  {generating === 'consistency' ? 'Testing…' : 'Test consistency'}
+                  {generating === 'consistency' ? 'Testing…' : 'Test consistency (9 credits)'}
                 </button>
 
-                {(item.loraStatus === 'failed' || item.loraStatus === 'pending' || !item.loraStatus) && refs.length >= 3 && (
+                {(item.loraStatus === 'failed' || item.loraStatus === 'pending' || !item.loraStatus) && refs.length >= 5 && (
                   <button
                     type="button"
                     onClick={handleRetrain}
@@ -964,7 +1032,7 @@ export default function InfluencerDetailPage() {
                     className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm disabled:opacity-50"
                   >
                     {generating === 'retrain' ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                    {item.loraStatus === 'failed' ? 'Retry training' : 'Start training'}
+                    {item.loraStatus === 'failed' ? 'Retry training' : 'Start training (250 credits)'}
                   </button>
                 )}
 
@@ -1035,25 +1103,43 @@ export default function InfluencerDetailPage() {
 
 function buildTraitPairs(item: Influencer): [string, string][] {
   const pairs: [string, string][] = [];
-  if (item.gender) pairs.push(['Gender', item.gender]);
-  if (item.ageRange) pairs.push(['Age', item.ageRange]);
-  if (item.ethnicity) pairs.push(['Ethnicity', item.ethnicity]);
+  if (item.gender) {
+    pairs.push(['Gender', item.gender]);
+  }
+  if (item.ageRange) {
+    pairs.push(['Age', item.ageRange]);
+  }
+  if (item.ethnicity) {
+    pairs.push(['Ethnicity', item.ethnicity]);
+  }
   const hair = [item.hairColor, item.hairStyle].filter(Boolean).join(' ');
-  if (hair) pairs.push(['Hair', hair]);
-  if (item.bodyType) pairs.push(['Body', item.bodyType]);
-  if (item.fashionStyle) pairs.push(['Fashion', item.fashionStyle]);
-  if (item.poseStyle) pairs.push(['Pose', item.poseStyle]);
-  if (item.backgroundPreference) pairs.push(['Background', item.backgroundPreference]);
-  if (item.archetype) pairs.push(['Archetype', item.archetype]);
+  if (hair) {
+    pairs.push(['Hair', hair]);
+  }
+  if (item.bodyType) {
+    pairs.push(['Body', item.bodyType]);
+  }
+  if (item.fashionStyle) {
+    pairs.push(['Fashion', item.fashionStyle]);
+  }
+  if (item.poseStyle) {
+    pairs.push(['Pose', item.poseStyle]);
+  }
+  if (item.backgroundPreference) {
+    pairs.push(['Background', item.backgroundPreference]);
+  }
+  if (item.archetype) {
+    pairs.push(['Archetype', item.archetype]);
+  }
   return pairs;
 }
 
-function LoraBanner({ status, loraModelId }: { status: string | null; loraModelId: string | null }) {
+function TrainingBanner({ status }: { status: string | null }) {
   if (!status || status === 'pending') {
     return (
       <div className="mb-4 flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
         <Sparkles size={14} />
-        LoRA not trained yet. Add 3+ reference photos and start training to lock the face.
+        Identity not trained yet. Add 5+ reference photos and start training.
       </div>
     );
   }
@@ -1061,7 +1147,7 @@ function LoraBanner({ status, loraModelId }: { status: string | null; loraModelI
     return (
       <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
         <Loader2 size={14} className="animate-spin" />
-        Training face lock. This typically takes 3-10 minutes. You can leave this page.
+        Training in progress. This typically takes 3-10 minutes. You can leave this page.
       </div>
     );
   }
@@ -1069,13 +1155,7 @@ function LoraBanner({ status, loraModelId }: { status: string | null; loraModelI
     return (
       <div className="mb-4 flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
         <CheckCircle2 size={14} />
-        Face lock ready.
-        {loraModelId && (
-          <span className="ml-1 truncate font-mono text-xs opacity-70">
-            {loraModelId.slice(0, 40)}
-            …
-          </span>
-        )}
+        Identity training complete.
       </div>
     );
   }
@@ -1083,7 +1163,7 @@ function LoraBanner({ status, loraModelId }: { status: string | null; loraModelI
     return (
       <div className="mb-4 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
         <XCircle size={14} />
-        Face-lock training failed. Retry with different reference photos.
+        Identity training failed. Retry with different reference photos.
       </div>
     );
   }
@@ -1100,7 +1180,7 @@ function VideoJobStatusBanner({
   if (!status || status === 'succeeded' || status === 'failed' || status === 'canceled') {
     if (status === 'succeeded' && result?.url) {
       // Cloudinary video URL → derive a jpg poster from it
-      const posterUrl = result.thumbnailUrl || result.url?.replace(/\.mp4[\w]*(\?.*)?$/, '.jpg');
+      const posterUrl = result.thumbnailUrl || result.url?.replace(/\.mp4\w*(\?.*)?$/, '.jpg');
       return (
         <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-2">
           <div className="mb-1 flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
@@ -1114,7 +1194,9 @@ function VideoJobStatusBanner({
             preload="metadata"
             className="w-full rounded object-cover"
             style={{ maxHeight: 360 }}
-          />
+          >
+            <track kind="captions" />
+          </video>
         </div>
       );
     }

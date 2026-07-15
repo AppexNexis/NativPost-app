@@ -164,11 +164,11 @@ function InfluencerCard({ item }: { item: Influencer }) {
               />
             )
           : (
-              <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+              <div className="flex size-full items-center justify-center text-muted-foreground">
                 <UserRound size={48} />
               </div>
             )}
-        <LoraStatusBadge status={item.loraStatus} />
+        <TrainingStatusBadge status={item.loraStatus} />
       </div>
       <div className="p-3">
         <div className="truncate text-sm font-medium">{item.name}</div>
@@ -186,8 +186,10 @@ function InfluencerCard({ item }: { item: Influencer }) {
   );
 }
 
-function LoraStatusBadge({ status }: { status: string | null }) {
-  if (!status || status === 'pending') return null;
+function TrainingStatusBadge({ status }: { status: string | null }) {
+  if (!status || status === 'pending') {
+    return null;
+  }
   if (status === 'training') {
     return (
       <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-amber-500/90 px-2 py-0.5 text-xs font-medium text-white">

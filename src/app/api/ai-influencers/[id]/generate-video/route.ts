@@ -16,12 +16,11 @@ type RouteParams = { params: Promise<{ id: string }> };
 const FAL_FLUX_LORA = 'fal-ai/flux-lora';
 
 const VALID_ASPECTS = ['9:16', '1:1', '16:9'] as const;
-const VALID_DURATIONS = [5, 8, 10] as const;
+const VALID_DURATIONS = [5, 10] as const;
 
 // Default i2v model for the chained talking-head pipeline.
-// Seedance (bytedance) rejects Flux-generated faces as content_policy_violation.
-// Pixverse doesn't have the same restriction and runs at 720p.
-const DEFAULT_I2V_MODEL = 'pixverse-v6-i2v';
+// Kling Turbo Pro — 1080p, no AI-face restrictions, $0.35/video.
+const DEFAULT_I2V_MODEL = 'kling-v3-turbo-pro-i2v';
 const FACE_STILL_PROMPT = 'Professional headshot, soft studio lighting, looking directly at camera, neutral expression, sharp focus on face, clean background.';
 
 // -----------------------------------------------------------
@@ -29,9 +28,10 @@ const FACE_STILL_PROMPT = 'Professional headshot, soft studio lighting, looking 
 // Orchestrate a face-locked talking-head video from an influencer.
 //
 // Pipeline:
-//   1. TTS via ElevenLabs → audio URL
-//   2. Face-consistent still via Flux+LoRA → image URL
-//   3. Chained i2v→lipsync via existing AI Studio pipeline
+//   1. Reserve credits upfront (before any paid API calls)
+//   2. TTS via text-to-speech → audio URL
+//   3. Face-consistent still via identity model → image URL
+//   4. Chained i2v→lipsync via existing AI Studio pipeline
 // -----------------------------------------------------------
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
@@ -66,13 +66,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   // ── Gates ───────────────────────────────────────────────────────
   if (influencer.loraStatus !== 'ready') {
     return NextResponse.json(
-      { error: 'LoRA must be ready before generating video', currentStatus: influencer.loraStatus },
+      { error: 'Identity training must be complete before generating video', currentStatus: influencer.loraStatus },
       { status: 400 },
     );
   }
   if (!influencer.loraModelId) {
     return NextResponse.json(
-      { error: 'No LoRA model available. Train the face lock first.' },
+      { error: 'Identity model not available. Complete training first.' },
       { status: 400 },
     );
   }
@@ -113,77 +113,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 
-  // ── Step 1: TTS ─────────────────────────────────────────────────
-  let audioUrl: string;
-  try {
-    const tts = await textToSpeech({
-      text: script,
-      voiceId: influencer.voiceId,
-      orgId: orgId!,
-      prefix: `influencer_${id}`,
-    });
-    audioUrl = tts.audioUrl;
-  } catch (err) {
-    console.error('[Influencer] TTS failed:', err);
-    return NextResponse.json(
-      { error: `TTS generation failed: ${err instanceof Error ? err.message : String(err)}` },
-      { status: 502 },
-    );
-  }
-
-  // ── Step 2: Face-consistent still (Flux + LoRA) ─────────────────
-  let faceImageUrl: string;
-  try {
-    const facePrompt = `${FACE_STILL_PROMPT} A ${influencer.gender || ''} ${influencer.ethnicity || ''} person, ${influencer.ageRange || 'adult'} age range.`;
-    const faceInput = {
-      prompt: facePrompt,
-      image_size: falImageSizeFor(aspect),
-      num_images: 1,
-      loras: [{ path: influencer.loraModelId, scale: 0.9 }],
-      enable_safety_checker: true,
-    };
-    const faceJob = await submitFalJob({
-      falModel: FAL_FLUX_LORA,
-      input: faceInput,
-      webhookUrl: buildWebhookUrl(), // unused since we poll
-    });
-
-    // Poll for completion — Flux+LoRA takes 2-15s typically, Vercel 300s limit
-    const FACE_POLL_MS = 1500;
-    const FACE_MAX_POLLS = 60; // 90s max
-    let faceStatus: string | undefined;
-    for (let i = 0; i < FACE_MAX_POLLS; i++) {
-      const status = await getFalStatus(FAL_FLUX_LORA, faceJob.request_id);
-      if (status.status === 'COMPLETED') {
-        faceStatus = 'COMPLETED'; break;
-      }
-      if (status.status === 'FAILED') {
-        faceStatus = 'FAILED'; break;
-      }
-      await new Promise(r => setTimeout(r, FACE_POLL_MS));
-    }
-    if (faceStatus !== 'COMPLETED') {
-      throw new Error(`Face still ${faceStatus || 'timed out'} after ${FACE_MAX_POLLS * FACE_POLL_MS / 1000}s`);
-    }
-
-    const faceResult = await getFalResult<Record<string, unknown>>(FAL_FLUX_LORA, faceJob.request_id);
-    const media = extractMediaFromFalPayload(faceResult);
-    if (!media.imageUrl) {
-      return NextResponse.json(
-        { error: 'Face still generation produced no image' },
-        { status: 502 },
-      );
-    }
-    faceImageUrl = media.imageUrl;
-  } catch (err) {
-    console.error('[Influencer] Face still failed:', err);
-    return NextResponse.json(
-      { error: `Face generation failed: ${err instanceof Error ? err.message : String(err)}` },
-      { status: 502 },
-    );
-  }
-
-  // ── Step 3: Chained i2v → lipsync ───────────────────────────────
   const lipsyncModel = getModel('veed-lipsync');
   if (!lipsyncModel) {
     return NextResponse.json(
@@ -192,8 +121,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 
-  const motionPrompt = `A person speaking naturally, slight head movement, looking at camera. Professional lighting, smooth motion.`;
+  // ── Step 0: Reserve credits BEFORE any paid API calls ──────────
   const credits = estimateCredits(i2vModel, { seconds: duration }) + estimateCredits(lipsyncModel);
+  const motionPrompt = 'A person speaking naturally, slight head movement, looking at camera. Professional lighting, smooth motion.';
 
   const [job] = await db
     .insert(aiStudioJobSchema)
@@ -207,8 +137,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       input: {
         prompt: motionPrompt,
         aspect,
-        referenceImageUrl: faceImageUrl,
-        audioUrl,
         seconds: duration,
         chain: ['i2v', 'lipsync'],
         lipsyncModelId: lipsyncModel.id,
@@ -230,6 +158,103 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       { status: 402 },
     );
   }
+
+  // ── Step 1: TTS ─────────────────────────────────────────────────
+  let audioUrl: string;
+  try {
+    const tts = await textToSpeech({
+      text: script,
+      voiceId: influencer.voiceId,
+      orgId: orgId!,
+      prefix: `influencer_${id}`,
+    });
+    audioUrl = tts.audioUrl;
+  } catch (err) {
+    console.error('[Influencer] TTS failed:', err);
+    try {
+      await db.delete(aiStudioJobSchema).where(eq(aiStudioJobSchema.id, job.id));
+    } catch { /* best effort */ }
+    return NextResponse.json(
+      { error: `TTS generation failed: ${err instanceof Error ? err.message : String(err)}` },
+      { status: 502 },
+    );
+  }
+
+  // ── Step 2: Face-consistent still (identity model) ──────────────
+  let faceImageUrl: string;
+  try {
+    const facePrompt = `${FACE_STILL_PROMPT} A ${influencer.gender || ''} ${influencer.ethnicity || ''} person, ${influencer.ageRange || 'adult'} age range.`;
+    const faceInput = {
+      prompt: facePrompt,
+      image_size: falImageSizeFor(aspect),
+      num_images: 1,
+      loras: [{ path: influencer.loraModelId, scale: 0.9 }],
+      enable_safety_checker: true,
+    };
+    const faceJob = await submitFalJob({
+      falModel: FAL_FLUX_LORA,
+      input: faceInput,
+      webhookUrl: buildWebhookUrl(), // unused since we poll
+    });
+
+    // Poll for completion — identity model still takes 2-15s typically
+    const FACE_POLL_MS = 1500;
+    const FACE_MAX_POLLS = 60; // 90s max
+    let faceStatus: string | undefined;
+    for (let i = 0; i < FACE_MAX_POLLS; i++) {
+      const status = await getFalStatus(FAL_FLUX_LORA, faceJob.request_id);
+      if (status.status === 'COMPLETED') {
+        faceStatus = 'COMPLETED'; break;
+      }
+      if (status.status === 'FAILED') {
+        faceStatus = 'FAILED'; break;
+      }
+      await new Promise(r => setTimeout(r, FACE_POLL_MS));
+    }
+    if (faceStatus !== 'COMPLETED') {
+      throw new Error(`Face still ${faceStatus || 'timed out'} after ${FACE_MAX_POLLS * FACE_POLL_MS / 1000}s`);
+    }
+
+    const faceResult = await getFalResult<Record<string, unknown>>(FAL_FLUX_LORA, faceJob.request_id);
+    const media = extractMediaFromFalPayload(faceResult);
+    if (!media.imageUrl) {
+      try {
+        await db.delete(aiStudioJobSchema).where(eq(aiStudioJobSchema.id, job.id));
+      } catch { /* best effort */ }
+      return NextResponse.json(
+        { error: 'Face still generation produced no image' },
+        { status: 502 },
+      );
+    }
+    faceImageUrl = media.imageUrl;
+  } catch (err) {
+    console.error('[Influencer] Face still failed:', err);
+    try {
+      await db.delete(aiStudioJobSchema).where(eq(aiStudioJobSchema.id, job.id));
+    } catch { /* best effort */ }
+    return NextResponse.json(
+      { error: `Face generation failed: ${err instanceof Error ? err.message : String(err)}` },
+      { status: 502 },
+    );
+  }
+
+  // Update job input with generated media URLs
+  await db
+    .update(aiStudioJobSchema)
+    .set({
+      input: {
+        prompt: motionPrompt,
+        aspect,
+        referenceImageUrl: faceImageUrl,
+        audioUrl,
+        seconds: duration,
+        chain: ['i2v', 'lipsync'],
+        lipsyncModelId: lipsyncModel.id,
+        influencerId: id,
+        script: script.slice(0, 500),
+      },
+    })
+    .where(eq(aiStudioJobSchema.id, job.id));
 
   try {
     const i2vInput = buildFalInput(i2vModel, {

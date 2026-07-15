@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -13,12 +13,14 @@ type RouteParams = { params: Promise<{ id: string }> };
 
 // -----------------------------------------------------------
 // GET /api/ai-influencers/[id]/lora-status
-// Poll the status of a LoRA training job. Caches result to DB.
+// Poll the status of an identity training job. Caches result to DB.
 // -----------------------------------------------------------
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 
@@ -52,7 +54,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const engineRes = await fetch(`${IMAGE_ENGINE_URL}/render/lora-status?requestId=${encodeURIComponent(jobId)}`, {
       signal: AbortSignal.timeout(30_000),
       headers: {
-        'Authorization': `Bearer ${ENGINE_API_KEY}`,
+        Authorization: `Bearer ${ENGINE_API_KEY}`,
       },
     });
 

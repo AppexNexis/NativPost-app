@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+import { refundCredits, reserveCredits } from '@/lib/ai-studio/server';
 import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { aiInfluencerSchema } from '@/models/Schema';
@@ -12,24 +13,31 @@ const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 type RouteParams = { params: Promise<{ id: string }> };
 
 const MIN_REFERENCE_IMAGES = 5;
+const TRAINING_CREDITS = 250;
 
 function sanitizeTriggerWord(name: string | null): string {
-  if (!name) return 'persona';
+  if (!name) {
+    return 'persona';
+  }
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 20);
   return base || 'persona';
 }
 
 // -----------------------------------------------------------
 // POST /api/ai-influencers/[id]/train-lora
-// Submit a face-lock LoRA training job via the image engine.
+// Submit a face-lock identity training job via the image engine.
+// Reserves 250 credits; committed on webhook OK, refunded on error.
 // -----------------------------------------------------------
 export async function POST(_request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 
+  const reservationId = `influencer-train-${id}`;
   try {
     const [influencer] = await db
       .select()
@@ -51,12 +59,22 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     const refs = (influencer.referenceImageUrls as string[]) || [];
     if (refs.length < MIN_REFERENCE_IMAGES) {
       return NextResponse.json(
-        { error: `At least ${MIN_REFERENCE_IMAGES} reference images required to train LoRA`, count: refs.length },
+        { error: `At least ${MIN_REFERENCE_IMAGES} reference images required to start training`, count: refs.length },
         { status: 400 },
       );
     }
 
     const triggerWord = sanitizeTriggerWord(influencer.name);
+
+    // Reserve credits before submitting to engine
+    try {
+      await reserveCredits(orgId!, reservationId, TRAINING_CREDITS);
+    } catch {
+      return NextResponse.json(
+        { error: 'Insufficient AI credits', code: 'INSUFFICIENT_CREDITS' },
+        { status: 402 },
+      );
+    }
 
     console.log(`[TrainLoRA] Submitting via engine for ${influencer.name} with ${refs.length} images`);
 
@@ -73,8 +91,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     if (!engineRes.ok) {
       const errText = await engineRes.text();
       console.error('[TrainLoRA] Engine error:', engineRes.status, errText);
+      await refundCredits(orgId!, reservationId, TRAINING_CREDITS, 'Engine submission failed');
       return NextResponse.json(
-        { error: 'LoRA training submission failed', detail: errText },
+        { error: 'Identity training submission failed', detail: errText },
         { status: 502 },
       );
     }
@@ -95,8 +114,11 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ success: true, jobId: requestId }, { status: 202 });
   } catch (err) {
     console.error('[TrainLoRA] Failed:', err);
+    try {
+      await refundCredits(orgId!, reservationId, TRAINING_CREDITS, `Unexpected error: ${String(err)}`);
+    } catch { /* best effort */ }
     return NextResponse.json(
-      { error: `LoRA training kickoff failed: ${String(err)}` },
+      { error: `Identity training kickoff failed: ${String(err)}` },
       { status: 500 },
     );
   }
@@ -109,7 +131,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 

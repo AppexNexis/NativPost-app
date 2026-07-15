@@ -11,12 +11,14 @@ type RouteParams = { params: Promise<{ id: string }> };
 // -----------------------------------------------------------
 // POST /api/ai-influencers/[id]/clone
 // Clone a system (library) influencer into the caller's org.
-// Resets LoRA state so the user can train their own face lock.
+// Resets identity training state so the user can train their own face lock.
 // -----------------------------------------------------------
 export async function POST(_request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 
