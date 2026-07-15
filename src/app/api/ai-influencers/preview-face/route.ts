@@ -19,7 +19,9 @@ const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 export async function POST(request: NextRequest) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   let body: { traits?: InfluencerTraits; regenerationInstructions?: string };
   try {
@@ -99,14 +101,16 @@ export async function POST(request: NextRequest) {
     }
 
     const renderData = await renderRes.json() as {
-      square?: string;
-      vertical?: string;
+      square?: string | { url: string };
+      vertical?: string | { url: string };
       promptUsed?: string;
       modelUsed?: string;
       totalMs?: number;
     };
 
-    const imageUrl = renderData.square || renderData.vertical;
+    const rawUrl = renderData.square || renderData.vertical;
+    // /render/scene returns the full CloudinaryUploadResult object per format
+    const imageUrl = typeof rawUrl === 'string' ? rawUrl : rawUrl?.url;
 
     if (!imageUrl) {
       return NextResponse.json({ error: 'Image engine returned no image' }, { status: 502 });
