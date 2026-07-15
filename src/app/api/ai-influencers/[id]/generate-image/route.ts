@@ -31,6 +31,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
 
   const reservationId = `influencer-image-${id}-${Date.now()}`;
+  let genCreditsFallback = GENERATE_IMAGE_CREDITS_LORA;
   try {
     // Fetch influencer
     const [influencer] = await db
@@ -62,6 +63,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
     const isNano = influencer.trainingMode === 'nano_banana';
     const genCredits = isNano ? GENERATE_IMAGE_CREDITS_NANO : GENERATE_IMAGE_CREDITS_LORA;
+    genCreditsFallback = genCredits;
 
     // Reserve credits before calling the engine
     try {
@@ -256,7 +258,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
   } catch (err) {
     console.error('[Influencer] generate-image failed:', err);
     try {
-      await refundCredits(orgId!, reservationId, genCredits, String(err));
+      await refundCredits(orgId!, reservationId, genCreditsFallback, String(err));
     } catch { /* best effort */ }
     return NextResponse.json({ error: `Image generation failed: ${String(err)}` }, { status: 500 });
   }
