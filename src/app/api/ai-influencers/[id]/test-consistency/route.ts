@@ -80,6 +80,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
         const prompt = `${baseDescription}. ${variant.pose} in ${variant.setting}. ${variant.background}. Same exact person, same facial features, same skin tone, same hair, consistent identity across all shots. Photorealistic, high detail, professional photography.`;
 
         const payload = {
+          caption: prompt,
           scenePrompt: prompt,
           formats: ['square'],
           imageStyle: 'professional',
