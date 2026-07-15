@@ -51,7 +51,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     trainingMode = 'flux_lora';
   }
 
-  if (!['flux_lora', 'nano_banana'].includes(trainingMode)) {
+  if (trainingMode !== 'flux_lora' && trainingMode !== 'nano_banana') {
     return NextResponse.json({ error: `Invalid trainingMode: ${trainingMode}` }, { status: 400 });
   }
 
