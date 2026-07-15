@@ -127,7 +127,7 @@ export default function InfluencerDetailPage() {
     let cancelled = false;
     async function poll() {
       try {
-        const res = await fetch(`/api/ai-influencers/${id}/train-lora`, { cache: 'no-store' });
+        const res = await fetch(`/api/ai-influencers/${id}/lora-status`, { cache: 'no-store' });
         if (!res.ok) {
           return;
         }
@@ -135,7 +135,7 @@ export default function InfluencerDetailPage() {
         if (cancelled) {
           return;
         }
-        if (data.loraStatus && data.loraStatus !== 'training') {
+        if (data.status === 'ready' || data.status === 'failed') {
           load();
           return;
         }

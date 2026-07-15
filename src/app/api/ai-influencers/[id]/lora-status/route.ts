@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+import { commitCredits, refundCredits } from '@/lib/ai-studio/server';
 import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { aiInfluencerSchema } from '@/models/Schema';
@@ -78,6 +79,22 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     // Persist terminal states
     if (status.status === 'COMPLETED' && status.loraUrl) {
+      // Re-check to avoid racing with the webhook
+      const [fresh] = await db
+        .select({ loraStatus: aiInfluencerSchema.loraStatus })
+        .from(aiInfluencerSchema)
+        .where(and(eq(aiInfluencerSchema.id, id), eq(aiInfluencerSchema.orgId, orgId!)))
+        .limit(1);
+
+      if (fresh?.loraStatus === 'ready' || fresh?.loraStatus === 'failed') {
+        return NextResponse.json({
+          status: fresh.loraStatus,
+          loraModelId: influencer.loraModelId,
+        });
+      }
+
+      await commitCredits(orgId!, `influencer-train-${id}`, 250, 'Identity training completed');
+
       await db
         .update(aiInfluencerSchema)
         .set({
@@ -94,6 +111,24 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     }
 
     if (status.status === 'FAILED') {
+      // Re-check to avoid racing with the webhook
+      const [fresh] = await db
+        .select({ loraStatus: aiInfluencerSchema.loraStatus })
+        .from(aiInfluencerSchema)
+        .where(and(eq(aiInfluencerSchema.id, id), eq(aiInfluencerSchema.orgId, orgId!)))
+        .limit(1);
+
+      if (fresh?.loraStatus === 'ready' || fresh?.loraStatus === 'failed') {
+        return NextResponse.json({
+          status: fresh.loraStatus,
+          loraModelId: influencer.loraModelId,
+        });
+      }
+
+      try {
+        await refundCredits(orgId!, `influencer-train-${id}`, 250, `Training failed: ${status.error || 'unknown'}`);
+      } catch { /* best effort */ }
+
       await db
         .update(aiInfluencerSchema)
         .set({
