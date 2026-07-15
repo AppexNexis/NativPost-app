@@ -13,7 +13,7 @@ import { aiInfluencerSchema, aiStudioJobSchema } from '@/models/Schema';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-const FAL_FLUX_LORA = 'fal-ai/flux-lora';
+const FAL_FLUX_LORA = 'fal-ai/flux-2/lora';
 
 const VALID_ASPECTS = ['9:16', '1:1', '16:9'] as const;
 const VALID_DURATIONS = [5, 10] as const;

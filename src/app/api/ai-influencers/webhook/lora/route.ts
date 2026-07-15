@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (payload.status === 'OK') {
-    // fal-ai/flux-lora-fast-training payload:
+    // fal-ai/flux-2-trainer payload:
     //   { diffusers_lora_file: { url }, config_file: { url } }
     const output = payload.payload as
       | { diffusers_lora_file?: { url?: string }; config_file?: { url?: string } }

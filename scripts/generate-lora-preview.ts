@@ -14,11 +14,8 @@ const IMAGE_ENGINE_URL = process.env.NATIVPOST_IMAGE_URL || 'http://localhost:40
 const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 
 const id = process.argv[2];
-if (!id) { console.error('Usage: npx tsx scripts/generate-lora-preview.ts <influencer-id>'); process.exit(1); }
-
-function slug(name: string | null): string {
-  if (!name) return 'nativpost';
-  return name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
+if (!id) {
+  console.error('Usage: npx tsx scripts/generate-lora-preview.ts <influencer-id>'); process.exit(1);
 }
 
 async function main() {
@@ -36,7 +33,9 @@ async function main() {
     [id],
   );
 
-  if (rows.length === 0) { console.error('Not found:', id); pool.end(); process.exit(1); }
+  if (rows.length === 0) {
+    console.error('Not found:', id); pool.end(); process.exit(1);
+  }
 
   const row = rows[0]!;
 
@@ -50,19 +49,34 @@ async function main() {
 
   // Build prompt from traits
   const traits: string[] = ['A photorealistic portrait photograph of the same person'];
-  if (row.gender) traits.push(row.gender);
-  if (row.age_range) traits.push(`aged ${row.age_range}`);
-  if (row.ethnicity) traits.push(`of ${row.ethnicity} ethnicity`);
-  if (row.body_type) traits.push(`with a ${row.body_type} build`);
-  if (row.hair_color && row.hair_style) traits.push(`${row.hair_color} ${row.hair_style}`);
-  else if (row.hair_color || row.hair_style) traits.push(row.hair_style || row.hair_color || '');
-  if (row.fashion_style) traits.push(`wearing ${row.fashion_style}`);
-  if (row.pose_style) traits.push(`in a ${row.pose_style} pose`);
-  if (row.background_preference) traits.push(`with a ${row.background_preference} background`);
+  if (row.gender) {
+    traits.push(row.gender);
+  }
+  if (row.age_range) {
+    traits.push(`aged ${row.age_range}`);
+  }
+  if (row.ethnicity) {
+    traits.push(`of ${row.ethnicity} ethnicity`);
+  }
+  if (row.body_type) {
+    traits.push(`with a ${row.body_type} build`);
+  }
+  if (row.hair_color && row.hair_style) {
+    traits.push(`${row.hair_color} ${row.hair_style}`);
+  } else if (row.hair_color || row.hair_style) {
+    traits.push(row.hair_style || row.hair_color || '');
+  }
+  if (row.fashion_style) {
+    traits.push(`wearing ${row.fashion_style}`);
+  }
+  if (row.pose_style) {
+    traits.push(`in a ${row.pose_style} pose`);
+  }
+  if (row.background_preference) {
+    traits.push(`with a ${row.background_preference} background`);
+  }
   traits.push('Front-facing, clear face, professional photography, neutral background, no text, no watermarks');
   const prompt = traits.filter(Boolean).join('. ');
-
-  const trigger = slug(row.name);
 
   const res = await fetch(`${IMAGE_ENGINE_URL}/render/lora-inference`, {
     method: 'POST',
@@ -71,7 +85,7 @@ async function main() {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${ENGINE_API_KEY}`,
     },
-    body: JSON.stringify({ loraUrl: row.lora_model_id, triggerWord: trigger, prompt, uploadToCloudinary: true }),
+    body: JSON.stringify({ loraUrl: row.lora_model_id, prompt, uploadToCloudinary: true }),
   });
 
   if (!res.ok) {
@@ -92,4 +106,6 @@ async function main() {
   process.exit(0);
 }
 
-main().catch((err) => { console.error('Fatal:', err); process.exit(1); });
+main().catch((err) => {
+  console.error('Fatal:', err); process.exit(1);
+});

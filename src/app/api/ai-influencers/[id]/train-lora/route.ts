@@ -15,17 +15,16 @@ type RouteParams = { params: Promise<{ id: string }> };
 const MIN_REFERENCE_IMAGES = 5;
 const TRAINING_CREDITS = 250;
 
-function sanitizeTriggerWord(name: string | null): string {
+function buildDefaultCaption(name: string | null): string {
   if (!name) {
-    return 'persona';
+    return 'a photo of a person';
   }
-  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 20);
-  return base || 'persona';
+  return `a photo of ${name.trim()}`;
 }
 
 // -----------------------------------------------------------
 // POST /api/ai-influencers/[id]/train-lora
-// Submit a face-lock identity training job via the image engine.
+// Submit a face-lock identity training job via the image engine (flux-2-trainer).
 // Reserves 250 credits; committed on webhook OK, refunded on error.
 // -----------------------------------------------------------
 export async function POST(_request: NextRequest, { params }: RouteParams) {
@@ -64,7 +63,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const triggerWord = sanitizeTriggerWord(influencer.name);
+    const defaultCaption = buildDefaultCaption(influencer.name);
 
     // Reserve credits before submitting to engine
     try {
@@ -85,7 +84,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${ENGINE_API_KEY}`,
       },
-      body: JSON.stringify({ referenceImageUrls: refs, triggerWord }),
+      body: JSON.stringify({ referenceImageUrls: refs, defaultCaption }),
     });
 
     if (!engineRes.ok) {

@@ -13,16 +13,6 @@ const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 
 const GENERATE_IMAGE_CREDITS = 3;
 
-function sanitizeTriggerWord(name: string | null): string {
-  if (!name) {
-    return 'nativpost';
-  }
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
-    .slice(0, 20);
-}
-
 type RouteParams = { params: Promise<{ id: string }> };
 
 // -----------------------------------------------------------
@@ -82,7 +72,6 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     // ── Identity path (face-locked, consistent) ──
     if (influencer.loraStatus === 'ready' && influencer.loraModelId) {
       console.log('[Influencer] Generating with identity model for:', id, '| name:', influencer.name);
-      const triggerWord = sanitizeTriggerWord(influencer.name);
 
       try {
         const loraRes = await fetch(`${IMAGE_ENGINE_URL}/render/lora-inference`, {
@@ -94,7 +83,6 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
           },
           body: JSON.stringify({
             loraUrl: influencer.loraModelId,
-            triggerWord,
             prompt,
             uploadToCloudinary: true,
           }),

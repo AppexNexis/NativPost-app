@@ -73,11 +73,11 @@ function parseArgs(): {
   };
 }
 
-function sanitizeTriggerWord(name: string | null): string {
+function buildDefaultCaption(name: string | null): string {
   if (!name) {
-    return 'nativpost';
+    return 'a photo of a person';
   }
-  return name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
+  return `a photo of ${name.trim()}`;
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -151,7 +151,7 @@ async function generateReferenceImages(
 
 async function submitLoraTraining(
   refUrls: string[],
-  triggerWord: string,
+  defaultCaption: string,
 ): Promise<string> {
   const res = await fetch(`${IMAGE_ENGINE_URL}/render/lora-train`, {
     method: 'POST',
@@ -160,7 +160,7 @@ async function submitLoraTraining(
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${ENGINE_API_KEY}`,
     },
-    body: JSON.stringify({ referenceImageUrls: refUrls, triggerWord }),
+    body: JSON.stringify({ referenceImageUrls: refUrls, defaultCaption }),
   });
 
   if (!res.ok) {
@@ -213,7 +213,6 @@ async function trainAndWait(requestId: string): Promise<string> {
 
 async function generateFacePreview(
   loraUrl: string,
-  triggerWord: string,
   prompt: string,
 ): Promise<string> {
   const res = await fetch(`${IMAGE_ENGINE_URL}/render/lora-inference`, {
@@ -223,7 +222,7 @@ async function generateFacePreview(
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${ENGINE_API_KEY}`,
     },
-    body: JSON.stringify({ loraUrl, triggerWord, prompt, uploadToCloudinary: true }),
+    body: JSON.stringify({ loraUrl, prompt, uploadToCloudinary: true }),
   });
 
   if (!res.ok) {
@@ -297,7 +296,7 @@ async function main() {
       console.log(`\n${batchLabel} ${label} ────────────────────────────────`);
 
       try {
-        const triggerWord = sanitizeTriggerWord(row.name);
+        const defaultCaption = buildDefaultCaption(row.name);
         const prompt = buildInfluencerPrompt({
           name: row.name,
           gender: row.gender,
@@ -349,7 +348,7 @@ async function main() {
             if (refUrls.length < 5) {
               throw new Error(`Only ${refUrls.length} reference images available, need 5+`);
             }
-            const requestId = await submitLoraTraining(refUrls, triggerWord);
+            const requestId = await submitLoraTraining(refUrls, defaultCaption);
             console.log(`  requestId: ${requestId}`);
 
             await db
@@ -373,7 +372,7 @@ async function main() {
             // Phase 3: Generate face preview via LoRA inference
             console.log('  Phase 3: Generating face-locked preview...');
             try {
-              const previewUrl = await generateFacePreview(loraUrl, triggerWord, prompt);
+              const previewUrl = await generateFacePreview(loraUrl, prompt);
               await db
                 .update(aiInfluencerSchema)
                 .set({ baseImageUrl: previewUrl, updatedAt: new Date() })
