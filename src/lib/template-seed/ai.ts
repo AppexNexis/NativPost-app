@@ -21,6 +21,9 @@ const VALID_NICHES: NicheTag[] = [
   'food',
   'travel',
   'fashion',
+  'gaming',
+  'tech',
+  'ai',
 ];
 
 function estimateEngagementScore(template: RawTemplate): number {
@@ -34,11 +37,93 @@ function estimateEngagementScore(template: RawTemplate): number {
   return 0.72;
 }
 
+/**
+ * Try each LLM provider in order until one succeeds.
+ */
+async function callLLM(prompt: string): Promise<string> {
+  // 1. Claude
+  if (process.env.ANTHROPIC_API_KEY) {
+    try {
+      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const response = await client.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1024,
+        temperature: 0.5,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      return response.content
+        .filter(c => c.type === 'text')
+        .map(c => c.text)
+        .join('\n');
+    } catch (err) {
+      console.warn('[AI Enrichment] Claude failed, trying DeepSeek:', (err as Error).message);
+    }
+  }
+
+  // 2. DeepSeek (OpenAI-compatible)
+  if (process.env.DEEPSEEK_API_KEY) {
+    try {
+      const baseURL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
+      const model = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+      const res = await fetch(`${baseURL}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 1024,
+          temperature: 0.5,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`DeepSeek ${res.status}: ${text}`);
+      }
+      const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+      return data.choices?.[0]?.message?.content?.trim() || '';
+    } catch (err) {
+      console.warn('[AI Enrichment] DeepSeek failed, trying OpenAI:', (err as Error).message);
+    }
+  }
+
+  // 3. OpenAI
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const model = process.env.OPENAI_FALLBACK_MODEL || 'gpt-4o-mini';
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 1024,
+          temperature: 0.5,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`OpenAI ${res.status}: ${text}`);
+      }
+      const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+      return data.choices?.[0]?.message?.content?.trim() || '';
+    } catch (err) {
+      console.error('[AI Enrichment] All providers failed:', (err as Error).message);
+    }
+  }
+
+  throw new Error('No LLM provider available (set ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, or OPENAI_API_KEY)');
+}
+
 export async function enrichTemplateWithAI(
   template: RawTemplate,
-  apiKey: string,
+  _apiKey: string,
 ): Promise<EnrichedTemplate> {
-  const client = new Anthropic({ apiKey });
 
   const slideCount = Array.isArray(template.thumbnailUrls)
     ? template.thumbnailUrls.length
@@ -83,19 +168,7 @@ Rules:
   let structure: TemplateStructure = {};
 
   try {
-    const response = await client.messages.create({
-      // FIXED: Swapped the deprecated hardcoded snapshot for the auto-updating pointer
-      model: 'claude-sonnet-4-6',
-      // model: 'claude-3-5-haiku-latest',
-      max_tokens: 1024,
-      temperature: 0.5,
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const text = response.content
-      .filter(c => c.type === 'text')
-      .map(c => c.text)
-      .join('\n');
+    const text = await callLLM(prompt);
 
     // Extract JSON from possible markdown code block.
     const jsonMatch = text.match(/```json([\s\S]*?)```/) || text.match(/\{[\s\S]*\}/);
