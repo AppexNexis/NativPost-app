@@ -253,6 +253,13 @@
       "when": 1784195807306,
       "tag": "0035_round_jean_grey",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1784200643948,
+      "tag": "0036_crazy_mulholland_black",
+      "breakpoints": true
     }
   ]
 }

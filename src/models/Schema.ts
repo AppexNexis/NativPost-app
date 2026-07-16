@@ -924,3 +924,27 @@ export const aiStudioJobSchema = pgTable('ai_studio_job', {
     .notNull(),
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
 });
+
+// ── Long-Form Video Projects ──
+export const longFormProjectSchema = pgTable('long_form_project', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: text('org_id').references(() => organizationSchema.id, { onDelete: 'cascade' }).notNull(),
+  userId: text('user_id'),
+  title: text('title'),
+  topic: text('topic').notNull(),
+  script: text('script'),
+  narrationText: text('narration_text'),
+  scenes: jsonb('scenes').default([]),
+  // Each scene: { id, order, description, visualPrompt, cameraDirection,
+  //   durationSec, transition, keyframeUrl?, videoClipUrl?,
+  //   videoClipAssetId?, status }
+  status: text('status').default('draft'),
+  // draft | script_ready | generating | clips_ready | assembling | completed | failed
+  creditsReserved: integer('credits_reserved').default(0),
+  creditsCharged: integer('credits_charged'),
+  assembledVideoUrl: text('assembled_video_url'),
+  assembledVideoAssetId: uuid('assembled_video_asset_id'),
+  errorMessage: text('error_message'),
+  updatedAt: timestamp('updated_at', { mode: 'date' }).defaultNow().$onUpdate(() => new Date()).notNull(),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});

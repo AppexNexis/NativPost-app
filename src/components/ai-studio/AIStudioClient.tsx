@@ -26,6 +26,7 @@ const DEFAULT_MODEL_BY_KIND: Record<AiStudioKind, string> = {
   'image-edit': 'gpt-image-2-edit',
   'video': 'pixverse-v6-i2v',
   'video-lipsync': 'veed-lipsync',
+  'longform': 'kling-v3-turbo-pro-i2v',
 };
 
 type InsufficientState = {

@@ -2,7 +2,7 @@
 // Consumed by API routes AND UI. Every generation path picks a model id
 // from this registry so we can never render options the backend cannot handle.
 
-export type AiStudioKind = 'image' | 'image-edit' | 'video' | 'video-lipsync';
+export type AiStudioKind = 'image' | 'image-edit' | 'video' | 'video-lipsync' | 'longform';
 
 export type AiStudioModel = {
   id: string;
