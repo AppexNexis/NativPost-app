@@ -15,6 +15,8 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { cn } from '@/utils/Helpers';
+import { estimateCredits, getModel } from '@/lib/ai-studio/models';
+import type { AiCreditWallet } from '@/lib/ai-studio/server';
 
 import type { LongFormProject, LongFormScene } from '@/types/longform';
 
@@ -56,6 +58,7 @@ export function LongFormStudio() {
   const [expandedScene, setExpandedScene] = useState<string | null>(null);
   const [previewScene, setPreviewScene] = useState<LongFormScene | null>(null);
   const [projects, setProjects] = useState<LongFormProject[]>([]);
+  const [wallet, setWallet] = useState<AiCreditWallet | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load existing projects
@@ -73,6 +76,11 @@ export function LongFormStudio() {
 
   useEffect(() => {
     fetchProjects();
+    // Fetch wallet for credit estimates
+    fetch('/api/ai-studio/credits')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d?.wallet ? setWallet(d.wallet) : null)
+      .catch(() => { /* silent */ });
   }, [fetchProjects]);
 
   // Poll project status when generating or assembling
@@ -223,6 +231,27 @@ export function LongFormStudio() {
   const doneCount = project?.scenes.filter(s => s.status === 'done').length ?? 0;
   const totalScenes = project?.scenes.length ?? 0;
 
+  // Credit estimation
+  const imageModel = getModel('flux-dev');
+  const videoModel = getModel('kling-v3-turbo-pro-i2v');
+  const perSceneImage = imageModel ? estimateCredits(imageModel) : 0;
+  const avgSceneDuration = project?.scenes.length
+    ? Math.round(project.scenes.reduce((a, s) => a + s.durationSec, 0) / project.scenes.length)
+    : 8;
+  const perSceneVideo = videoModel ? estimateCredits(videoModel, { seconds: avgSceneDuration }) : 0;
+  const creditsPerScene = perSceneImage + perSceneVideo;
+  const estimatedTotalCredits = creditsPerScene * pendingCount;
+
+  function spendable(): number {
+    if (!wallet) return 0;
+    const monthly = Math.max(0, wallet.monthly.limit - wallet.monthly.used);
+    const addon = wallet.addon.remaining ?? 0;
+    const reserved = wallet.reservedCredits ?? 0;
+    return Math.max(0, monthly + addon - reserved);
+  }
+
+  const canAfford = spendable() >= estimatedTotalCredits;
+
   // Shared input classes
   const inputClasses = 'w-full rounded-lg border bg-muted text-foreground text-sm p-2 focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary disabled:opacity-50';
 
@@ -239,6 +268,13 @@ export function LongFormStudio() {
           <p className="text-xs text-muted-foreground -mt-2">
             AI-powered 2-5 minute video composer
           </p>
+
+          {/* How it works */}
+          <div className="text-[10px] text-muted-foreground leading-relaxed flex gap-3">
+            <span>1. Script →</span>
+            <span>2. Clips →</span>
+            <span>3. Assembly</span>
+          </div>
 
           {/* Progress Stepper */}
           {project && (
@@ -328,16 +364,28 @@ export function LongFormStudio() {
           {/* Action Buttons (post-script) */}
           {project && project.status === 'script_ready' && (
             <button
-              className="flex items-center justify-center gap-2 w-full py-3 rounded-lg font-semibold text-sm transition-all bg-accent text-accent-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={generateClips}
-              disabled={generating}
-            >
-              {generating ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Film className="h-4 w-4" />
+              className={cn(
+                'flex flex-col items-center justify-center w-full py-3 rounded-lg font-semibold text-sm transition-all',
+                canAfford ? 'bg-accent text-accent-foreground hover:opacity-90' : 'bg-muted text-muted-foreground cursor-not-allowed',
+                'disabled:opacity-50 disabled:cursor-not-allowed',
               )}
-              Generate {pendingCount} Scene Clip{pendingCount !== 1 ? 's' : ''}
+              onClick={generateClips}
+              disabled={generating || (!canAfford && wallet !== null)}
+            >
+              <span className="flex items-center gap-2">
+                {generating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Film className="h-4 w-4" />
+                )}
+                {generating ? 'Generating Clips...' : `Generate ${pendingCount} Scene Clip${pendingCount !== 1 ? 's' : ''}`}
+              </span>
+              {!generating && (
+                <span className="text-[10px] opacity-75 mt-0.5">
+                  ~{estimatedTotalCredits} credits ({creditsPerScene}/scene)
+                  {wallet && !canAfford && ` · insufficient`}
+                </span>
+              )}
             </button>
           )}
 
