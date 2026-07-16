@@ -19,7 +19,7 @@ const IMAGE_ENGINE_URL = process.env.NATIVPOST_IMAGE_URL || 'http://localhost:40
 const ENGINE_API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 
 const VALID_ASPECTS = ['9:16', '1:1', '16:9'] as const;
-const VALID_DURATIONS = [5, 10] as const;
+const VALID_DURATIONS = [5, 10, 15] as const;
 
 // Default i2v model for the chained talking-head pipeline.
 // Kling Turbo Pro — 1080p, no AI-face restrictions, $0.35/video.

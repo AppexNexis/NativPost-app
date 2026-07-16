@@ -4,7 +4,7 @@
 
 export type AiStudioKind = 'image' | 'image-edit' | 'video' | 'video-lipsync';
 
-export interface AiStudioModel {
+export type AiStudioModel = {
   id: string;
   label: string;
   kind: AiStudioKind;
@@ -24,7 +24,7 @@ export interface AiStudioModel {
   /** Approximate USD cost captured for admin reconciliation. */
   costUsd?: number;
   description?: string;
-}
+};
 
 export const AI_STUDIO_MODELS: AiStudioModel[] = [
   {
@@ -97,12 +97,12 @@ export const AI_STUDIO_MODELS: AiStudioModel[] = [
     label: 'Kling V3 Turbo Pro',
     kind: 'video',
     falModel: 'fal-ai/kling-video/v3/turbo/pro/image-to-video',
-    credits: 80,
-    perSecond: false,
+    credits: 16,
+    perSecond: true,
     aspects: ['9:16', '1:1', '16:9'],
-    durations: [5, 10],
+    durations: [5, 10, 15],
     requiresImage: true,
-    costUsd: 0.70,
+    costUsd: 0.14,
     description: 'Cinematic mid-tier image-to-video.',
   },
   {
@@ -177,14 +177,14 @@ export function estimateCredits(model: AiStudioModel, opts: { seconds?: number }
 
 // ── Templates (prompt presets, NOT hidden generation modes) ─────────────────
 
-export interface AiStudioTemplate {
+export type AiStudioTemplate = {
   id: string;
   label: string;
   kind: AiStudioKind;
   prompt: string;
   defaultModelId: AiStudioModelId;
   defaultAspect: '1:1' | '9:16' | '16:9' | '4:5';
-}
+};
 
 export const AI_STUDIO_TEMPLATES: AiStudioTemplate[] = [
   {

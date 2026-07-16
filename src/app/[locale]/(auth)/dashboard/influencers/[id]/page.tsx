@@ -20,11 +20,12 @@ import {
 import Image from 'next/image';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
 import { LoadingState } from '@/features/dashboard/LoadingState';
 import { PageHeader } from '@/features/dashboard/PageHeader';
+import { estimateCredits, getModel } from '@/lib/ai-studio/models';
 
 type Influencer = {
   id: string;
@@ -90,6 +91,14 @@ export default function InfluencerDetailPage() {
   const [availableAngles, setAvailableAngles] = useState<Array<{ id: string; name: string; description: string | null; color: string | null }>>([]);
 
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const videoCredits = useMemo(() => {
+    const klingModel = getModel('kling-v3-turbo-pro-i2v');
+    const lipsyncModel = getModel('veed-lipsync');
+    const klingCredits = klingModel ? estimateCredits(klingModel, { seconds: videoDuration }) : 80;
+    const lipsyncCredits = lipsyncModel ? estimateCredits(lipsyncModel) : 30;
+    return klingCredits + lipsyncCredits;
+  }, [videoDuration]);
 
   const load = useCallback(async () => {
     if (!id) {
@@ -896,6 +905,7 @@ export default function InfluencerDetailPage() {
                       >
                         <option value={5}>5s</option>
                         <option value={10}>10s</option>
+                        <option value={15}>15s</option>
                       </select>
                       <div className="flex items-center gap-1">
                         {(['9:16', '1:1', '16:9'] as const).map(a => (
@@ -924,7 +934,7 @@ export default function InfluencerDetailPage() {
                       {videoGenerating && !videoJobId
                         ? <Loader2 size={14} className="animate-spin" />
                         : <Play size={14} />}
-                      {videoGenerating && !videoJobId ? 'Generating…' : 'Generate talking-head video (110 credits)'}
+                      {videoGenerating && !videoJobId ? 'Generating…' : `Generate talking-head video (${videoCredits} credits)`}
                     </button>
                     {videoJobId && (
                       <VideoJobStatusBanner
