@@ -16,39 +16,22 @@ const STYLE_LABELS: Record<string, string> = {
   educational: 'Educational — clear visuals, instructional tone, step-by-step structure',
 };
 
-export async function POST(request: NextRequest) {
-  const { error, orgId, userId } = await getAuthContext();
-  if (error) return error;
+// ── Struct shared across providers ──
 
-  let body: Record<string, unknown> = {};
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
-  }
+type ParsedScript = {
+  title?: string;
+  narrationText?: string;
+  scenes?: Array<{
+    description?: string;
+    visualPrompt?: string;
+    cameraDirection?: string;
+    durationSec?: number;
+    transition?: string;
+  }>;
+};
 
-  const topic = String(body.topic || '').trim();
-  if (!topic || topic.length < 10) {
-    return NextResponse.json({ error: 'Topic must be at least 10 characters' }, { status: 400 });
-  }
-  if (topic.length > 500) {
-    return NextResponse.json({ error: 'Topic must be under 500 characters' }, { status: 400 });
-  }
-
-  const style = (String(body.style || 'cinematic')).trim();
-  const styleDesc = STYLE_LABELS[style] || STYLE_LABELS.cinematic;
-  const targetDurationMin = Number(body.targetDurationMin) || 2;
-  const clampedDuration = Math.max(1, Math.min(5, targetDurationMin));
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not configured' }, { status: 500 });
-  }
-
-  const client = new Anthropic({ apiKey });
-  const targetWords = clampedDuration * 150;
-
-  const systemPrompt = `You are a professional video director and scriptwriter. Create a detailed video script and scene breakdown for the given topic.
+function buildSystemPrompt(clampedDuration: number, targetWords: number, styleDesc: string): string {
+  return `You are a professional video director and scriptwriter. Create a detailed video script and scene breakdown for the given topic.
 
 RULES:
 - The final video should be approximately ${clampedDuration} minutes long.
@@ -73,111 +56,258 @@ Return ONLY valid JSON (no markdown wrapping) with exactly this structure:
     }
   ]
 }`;
+}
 
-  try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+function parseTextResponse(raw: string): ParsedScript {
+  const jsonStr = raw
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  return JSON.parse(jsonStr);
+}
+
+// ── Provider helpers ──
+
+async function callClaude(systemPrompt: string, userPrompt: string): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured');
+  const client = new Anthropic({ apiKey });
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 4096,
+    temperature: 0.7,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+
+  return response.content
+    .filter(c => c.type === 'text')
+    .map(c => (c as { text: string }).text)
+    .join(' ')
+    .trim();
+}
+
+async function callDeepSeek(systemPrompt: string, userPrompt: string): Promise<string> {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new Error('DEEPSEEK_API_KEY is not configured');
+  const baseURL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
+  const model = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+
+  const res = await fetch(`${baseURL}/v1/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
       max_tokens: 4096,
       temperature: 0.7,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: `Create a ${clampedDuration}-minute video script about: ${topic}` }],
-    });
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    }),
+  });
 
-    const text = response.content
-      .filter(c => c.type === 'text')
-      .map(c => (c as { text: string }).text)
-      .join(' ')
-      .trim();
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`DeepSeek API error (${res.status}): ${text}`);
+  }
 
-    const jsonStr = text
-      .replace(/^```(?:json)?\s*/i, '')
-      .replace(/\s*```$/i, '')
-      .trim();
+  const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+  return data.choices?.[0]?.message?.content?.trim() || '';
+}
 
-    let parsed: {
-      title?: string;
-      narrationText?: string;
-      scenes?: Array<{
-        description?: string;
-        visualPrompt?: string;
-        cameraDirection?: string;
-        durationSec?: number;
-        transition?: string;
-      }>;
-    };
+async function callOpenAI(systemPrompt: string, userPrompt: string): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY is not configured');
+  const model = process.env.OPENAI_FALLBACK_MODEL || 'gpt-4o-mini';
 
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 4096,
+      temperature: 0.7,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`OpenAI API error (${res.status}): ${text}`);
+  }
+
+  const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+  return data.choices?.[0]?.message?.content?.trim() || '';
+}
+
+// ── Post-processing (same for every provider) ──
+
+function processParsedScript(parsed: ParsedScript) {
+  if (!parsed.scenes || !Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
+    throw new Error('AI did not return any scenes. Please try again with a more specific topic.');
+  }
+
+  const validCameraDirections = ['static', 'pan_left', 'pan_right', 'zoom_in', 'zoom_out', 'dolly'];
+  const validTransitions = ['cut', 'fade', 'dissolve'];
+
+  return parsed.scenes.map((s, i) => ({
+    id: crypto.randomUUID(),
+    order: i,
+    description: (s.description || `Scene ${i + 1}`).trim(),
+    visualPrompt: (s.visualPrompt || s.description || `Scene ${i + 1}`).trim(),
+    cameraDirection: validCameraDirections.includes(String(s.cameraDirection || ''))
+      ? String(s.cameraDirection)
+      : 'static',
+    durationSec: Math.max(5, Math.min(15, Number(s.durationSec) || 8)),
+    transition: validTransitions.includes(String(s.transition || ''))
+      ? String(s.transition)
+      : 'cut',
+    status: 'pending' as const,
+  }));
+}
+
+// ── Route ──
+
+export async function POST(request: NextRequest) {
+  const { error, orgId, userId } = await getAuthContext();
+  if (error) return error;
+
+  let body: Record<string, unknown> = {};
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  const topic = String(body.topic || '').trim();
+  if (!topic || topic.length < 10) {
+    return NextResponse.json({ error: 'Topic must be at least 10 characters' }, { status: 400 });
+  }
+  if (topic.length > 500) {
+    return NextResponse.json({ error: 'Topic must be under 500 characters' }, { status: 400 });
+  }
+
+  const style = (String(body.style || 'cinematic')).trim();
+  const styleDesc = STYLE_LABELS[style] ?? 'Cinematic — dramatic lighting, film-like composition, slow camera movements';
+  const targetDurationMin = Number(body.targetDurationMin) || 2;
+  const clampedDuration = Math.max(1, Math.min(5, targetDurationMin));
+  const targetWords = clampedDuration * 150;
+
+  const systemPrompt = buildSystemPrompt(clampedDuration, targetWords, styleDesc);
+  const userPrompt = `Create a ${clampedDuration}-minute video script about: ${topic}`;
+
+  // Try providers in order: Claude → DeepSeek → OpenAI
+  const errors: string[] = [];
+  let rawText = '';
+
+  // 1. Claude
+  if (process.env.ANTHROPIC_API_KEY) {
     try {
-      parsed = JSON.parse(jsonStr);
-    } catch {
-      return NextResponse.json(
-        { error: 'Failed to parse script from AI. Please try again.' },
-        { status: 500 },
-      );
+      rawText = await callClaude(systemPrompt, userPrompt);
+    } catch (claudeErr) {
+      const msg = claudeErr instanceof Error ? claudeErr.message : String(claudeErr);
+      errors.push(`Claude: ${msg}`);
+      console.warn('[LongForm Script] Claude failed, trying DeepSeek fallback:', msg);
     }
+  } else {
+    errors.push('Claude: ANTHROPIC_API_KEY not set');
+  }
 
-    if (!parsed.scenes || !Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
-      return NextResponse.json(
-        { error: 'AI did not return any scenes. Please try again with a more specific topic.' },
-        { status: 500 },
-      );
+  // 2. DeepSeek
+  if (!rawText && process.env.DEEPSEEK_API_KEY) {
+    try {
+      rawText = await callDeepSeek(systemPrompt, userPrompt);
+      console.info('[LongForm Script] Using DeepSeek fallback');
+    } catch (dsErr) {
+      const msg = dsErr instanceof Error ? dsErr.message : String(dsErr);
+      errors.push(`DeepSeek: ${msg}`);
+      console.warn('[LongForm Script] DeepSeek failed, trying OpenAI fallback:', msg);
     }
+  }
 
-    const validCameraDirections = ['static', 'pan_left', 'pan_right', 'zoom_in', 'zoom_out', 'dolly'];
-    const validTransitions = ['cut', 'fade', 'dissolve'];
-
-    const scenes = parsed.scenes.map((s, i) => ({
-      id: crypto.randomUUID(),
-      order: i,
-      description: (s.description || `Scene ${i + 1}`).trim(),
-      visualPrompt: (s.visualPrompt || s.description || `Scene ${i + 1}`).trim(),
-      cameraDirection: validCameraDirections.includes(String(s.cameraDirection || ''))
-        ? String(s.cameraDirection)
-        : 'static',
-      durationSec: Math.max(5, Math.min(15, Number(s.durationSec) || 8)),
-      transition: validTransitions.includes(String(s.transition || ''))
-        ? String(s.transition)
-        : 'cut',
-      status: 'pending' as const,
-    }));
-
-    const db = await getDb();
-    const [project] = await db
-      .insert(longFormProjectSchema)
-      .values({
-        orgId: orgId!,
-        userId: userId ?? null,
-        title: parsed.title || topic.slice(0, 80),
-        topic,
-        script: text,
-        narrationText: parsed.narrationText || '',
-        scenes,
-        status: 'script_ready',
-      })
-      .returning();
-
-    if (!project) {
-      return NextResponse.json({ error: 'Failed to create project' }, { status: 500 });
+  // 3. OpenAI
+  if (!rawText && process.env.OPENAI_API_KEY) {
+    try {
+      rawText = await callOpenAI(systemPrompt, userPrompt);
+      console.info('[LongForm Script] Using OpenAI fallback');
+    } catch (oaErr) {
+      const msg = oaErr instanceof Error ? oaErr.message : String(oaErr);
+      errors.push(`OpenAI: ${msg}`);
+      console.error('[LongForm Script] All providers failed:', msg);
     }
+  }
 
-    return NextResponse.json({
-      project: {
-        id: project.id,
-        orgId: project.orgId,
-        title: project.title,
-        topic: project.topic,
-        narrationText: project.narrationText,
-        scenes,
-        status: project.status,
-        creditsReserved: project.creditsReserved,
-        createdAt: project.createdAt,
-        updatedAt: project.updatedAt,
-      },
-    });
-  } catch (err) {
-    console.error('[LongForm Script] Claude generation failed:', err);
+  if (!rawText) {
+    const detail = errors.join(' | ');
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Script generation failed' },
+      { error: `Script generation failed. ${detail}` },
       { status: 500 },
     );
   }
+
+  // Parse response
+  let parsed: ParsedScript;
+  try {
+    parsed = parseTextResponse(rawText);
+  } catch {
+    return NextResponse.json(
+      { error: 'Failed to parse script from AI. Please try again.' },
+      { status: 500 },
+    );
+  }
+
+  let scenes: ReturnType<typeof processParsedScript>;
+  try {
+    scenes = processParsedScript(parsed);
+  } catch (procErr) {
+    return NextResponse.json(
+      { error: procErr instanceof Error ? procErr.message : 'Invalid scene data from AI' },
+      { status: 500 },
+    );
+  }
+
+  const db = await getDb();
+  const [project] = await db
+    .insert(longFormProjectSchema)
+    .values({
+      orgId: orgId!,
+      userId: userId ?? null,
+      title: (parsed.title || topic).slice(0, 80),
+      topic,
+      script: rawText,
+      narrationText: parsed.narrationText || '',
+      scenes,
+      status: 'script_ready',
+    })
+    .returning();
+
+  if (!project) {
+    return NextResponse.json({ error: 'Failed to create project' }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    project: {
+      id: project.id,
+      orgId: project.orgId,
+      title: project.title,
+      topic: project.topic,
+      narrationText: project.narrationText,
+      scenes,
+      status: project.status,
+      creditsReserved: project.creditsReserved,
+      createdAt: project.createdAt,
+      updatedAt: project.updatedAt,
+    },
+  });
 }
