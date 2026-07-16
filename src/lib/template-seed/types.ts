@@ -25,7 +25,10 @@ export type NicheTag =
   | 'education'
   | 'food'
   | 'travel'
-  | 'fashion';
+  | 'fashion'
+  | 'gaming'
+  | 'tech'
+  | 'ai';
 
 export type RawTemplate = {
   sourceUrl: string;
@@ -41,6 +44,7 @@ export type RawTemplate = {
   contentType: ContentType;
   viewCount: number | null;
   likeCount: number | null;
+  commentCount?: number | null;
   title?: string;
   description?: string;
 };

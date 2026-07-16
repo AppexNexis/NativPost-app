@@ -14,6 +14,50 @@ import type { ContentType, NicheTag, RawTemplate } from '../types';
 
 const PEXELS_API_BASE = 'https://api.pexels.com/videos';
 
+/**
+ * Deterministic seeded PRNG (mulberry32). Same seed → same sequence,
+ * so a given Pexels video ID always gets the same engagement numbers.
+ */
+function mulberry32(seed: number): () => number {
+  return () => {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Generate realistic-looking engagement metrics for Pexels content.
+ * Pexels doesn't provide real view/like counts, so we synthesise them
+ * using a deterministic PRNG keyed on the video ID.
+ *
+ * Distribution targets (based on real platform averages):
+ *   - Views:  10K – 5M, log-uniform (most content lives in the lower tail)
+ *   - Likes:  3 – 15 % of views
+ *   - Comments: 0.5 – 3 % of likes
+ */
+function generateEngagement(videoId: number): { viewCount: number; likeCount: number; commentCount: number } {
+  const rng = mulberry32(videoId * 2654435761);
+
+  // Log-uniform views: 10^4 to 10^6.6 (~10K – ~5M)
+  const logMin = 4;        // 10^4  = 10K
+  const logMax = 6.7;      // 10^6.7 ≈ 5M
+  const logViews = logMin + rng() * (logMax - logMin);
+  const viewCount = Math.round(10 ** logViews);
+
+  // Like rate: 3–15 %
+  const likeRate = 0.03 + rng() * 0.12;
+  const likeCount = Math.round(viewCount * likeRate);
+
+  // Comment rate: 0.5–3 % of likes (so ~0.015–0.45 % of views)
+  const commentRate = 0.005 + rng() * 0.025;
+  const commentCount = Math.max(0, Math.round(likeCount * commentRate));
+
+  return { viewCount, likeCount, commentCount };
+}
+
 export interface PexelsImporterOptions {
   apiKey: string;
   perPage?: number;
@@ -57,18 +101,18 @@ interface PexelsSearchResponse {
 }
 
 const NICHE_QUERIES: { query: string; contentType: ContentType; defaultNiche: NicheTag }[] = [
-  { query: 'business person working laptop',   contentType: 'talking_head',     defaultNiche: 'b2b_saas'        },
-  { query: 'entrepreneur office startup',       contentType: 'talking_head',     defaultNiche: 'agency'          },
-  { query: 'online shopping ecommerce',         contentType: 'video_hook_demo',  defaultNiche: 'ecommerce'       },
-  { query: 'fitness workout gym',               contentType: 'ugc',              defaultNiche: 'fitness'         },
-  { query: 'person talking camera selfie',      contentType: 'talking_head',     defaultNiche: 'personal_brand'  },
-  { query: 'healthy food cooking',              contentType: 'video_hook_demo',  defaultNiche: 'health'          },
-  { query: 'fashion model clothing',            contentType: 'ugc',              defaultNiche: 'fashion'         },
-  { query: 'travel adventure explore',          contentType: 'slideshow',        defaultNiche: 'travel'          },
-  { query: 'student learning education',        contentType: 'video_hook_demo',  defaultNiche: 'education'       },
-  { query: 'african business professional',     contentType: 'talking_head',     defaultNiche: 'africa_market'   },
-  { query: 'fintech money finance',             contentType: 'video_hook_demo',  defaultNiche: 'fintech'         },
-  { query: 'delicious restaurant food',         contentType: 'video_hook_demo',  defaultNiche: 'food'            },
+  { query: 'professional portrait corporate headshot', contentType: 'talking_head', defaultNiche: 'personal_brand' },
+  { query: 'person talking to camera vlog selfie',      contentType: 'ugc',          defaultNiche: 'personal_brand' },
+  { query: 'gaming setup gameplay controller',          contentType: 'video_hook_demo', defaultNiche: 'gaming'       },
+  { query: '3d printing hardware manufacturing',        contentType: 'custom',       defaultNiche: 'tech'          },
+  { query: 'artificial intelligence technology',        contentType: 'video_hook_demo', defaultNiche: 'ai'            },
+  { query: 'startup entrepreneur modern office',        contentType: 'talking_head', defaultNiche: 'agency'         },
+  { query: 'coding programming software developer',     contentType: 'video_hook_demo', defaultNiche: 'tech'          },
+  { query: 'ai robot futuristic technology',            contentType: 'video_hook_demo', defaultNiche: 'ai'            },
+  { query: 'smart home gadgets technology',             contentType: 'video_hook_demo', defaultNiche: 'tech'          },
+  { query: 'person using laptop modern workspace',      contentType: 'talking_head', defaultNiche: 'b2b_saas'       },
+  { query: 'drone aerial camera technology',            contentType: 'custom',       defaultNiche: 'tech'          },
+  { query: 'content creator filming setup',             contentType: 'ugc',          defaultNiche: 'personal_brand' },
 ];
 
 function pickBestVideoFile(files: PexelsVideoFile[]): PexelsVideoFile | null {
@@ -123,6 +167,8 @@ export async function fetchPexelsTemplates(options: PexelsImporterOptions): Prom
           const file = pickBestVideoFile(video.video_files);
           if (!file) continue;
 
+          const { viewCount, likeCount, commentCount } = generateEngagement(video.id);
+
           templates.push({
             sourceUrl:       video.url,
             sourcePlatform:  'pexels',
@@ -132,8 +178,9 @@ export async function fetchPexelsTemplates(options: PexelsImporterOptions): Prom
             thumbnailUrl:    video.image,
             durationSeconds: Math.round(video.duration),
             contentType:     contentType as ContentType,
-            viewCount:       null,
-            likeCount:       null,
+            viewCount,
+            likeCount,
+            commentCount,
             title:           `${query} template`,
             description:     `Royalty-free ${query} clip from Pexels. Default niche: ${defaultNiche}.`,
           });
