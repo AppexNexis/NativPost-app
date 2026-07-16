@@ -814,7 +814,7 @@ export function LongFormStudio() {
 
   // ── Layout ───────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col min-h-[calc(100vh-4rem)]">
+    <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
       <BackHeader
         href="/dashboard/ai-studio"
         label="AI Studio"
@@ -894,14 +894,14 @@ export function LongFormStudio() {
         }
       />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* ── LEFT PANEL (desktop) ── */}
-        <aside className="hidden lg:flex w-[360px] shrink-0 flex-col border-r bg-card overflow-y-auto">
+        <aside className="hidden lg:flex w-[360px] shrink-0 flex-col border-r bg-card overflow-y-auto min-h-0">
           {LeftPanel}
         </aside>
 
         {/* ── MAIN ── */}
-        <main className="flex-1 flex flex-col bg-background overflow-hidden min-w-0">
+        <main className="flex-1 flex flex-col bg-background overflow-hidden min-w-0 min-h-0">
           <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b">
             <div className="flex items-center gap-3 min-w-0">
               <h2 className="text-sm font-medium text-foreground truncate">
@@ -1003,7 +1003,7 @@ export function LongFormStudio() {
         </main>
 
         {/* ── RIGHT PANEL (desktop) ── */}
-        <aside className="hidden lg:flex w-[300px] shrink-0 flex-col border-l bg-card overflow-hidden">
+        <aside className="hidden lg:flex w-[300px] shrink-0 flex-col border-l bg-card overflow-hidden min-h-0">
           {RightPanel}
         </aside>
       </div>
