@@ -15,6 +15,7 @@ interface Props {
     color?: string;
     backgroundColor?: string;
     align?: 'left' | 'center' | 'right';
+    backgroundDimming?: number;
   };
   mediaSlots?: {
     slides?: Array<{ url: string }>;
@@ -27,6 +28,9 @@ interface Props {
 
 export function DataStoryComposition({ script, style, mediaSlots, audioTrack }: Props) {
   const { width, height, fps } = useVideoConfig();
+
+  // Background dim: scrim between source media and text overlay.
+  const dimming = Math.max(0, Math.min(0.8, style.backgroundDimming ?? 0.3));
 
   const fontFamily = style.fontFamily || 'Inter';
   const fontSize = style.fontSize || 48;
@@ -72,6 +76,18 @@ export function DataStoryComposition({ script, style, mediaSlots, audioTrack }: 
                   position: 'absolute',
                 }}
               />
+              {/* Dimming scrim */}
+              {dimming > 0 && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    width,
+                    height,
+                    backgroundColor: `rgba(0, 0, 0, ${dimming})`,
+                    zIndex: 5,
+                  }}
+                />
+              )}
               {copyText && (
                 <AbsoluteFill
                   style={{

@@ -19,6 +19,7 @@ interface Props {
     italic?: boolean;
     underline?: boolean;
     noAnimation?: boolean;
+    backgroundDimming?: number;
   };
   mediaSlots?: {
     hookVideo?: { url: string };
@@ -160,6 +161,19 @@ function TextOverlay({ script, style }: { script: Props['script']; style: Props[
 export function VideoHookComposition({ script, style, mediaSlots, audioTrack }: Props) {
   const { width, height, fps } = useVideoConfig();
 
+  // Background dim: scrim between source media and text overlay.
+  const dimming = Math.max(0, Math.min(0.8, style.backgroundDimming ?? 0.3));
+  const DimScrim = dimming > 0
+    ? ({ children, ...rest }: { children?: React.ReactNode; style?: React.CSSProperties }) => (
+        <AbsoluteFill {...rest}>
+          {children}
+          <AbsoluteFill style={{ backgroundColor: `rgba(0, 0, 0, ${dimming})`, zIndex: 5 }} />
+        </AbsoluteFill>
+      )
+    : ({ children, ...rest }: { children?: React.ReactNode; style?: React.CSSProperties }) => (
+        <AbsoluteFill {...rest}>{children}</AbsoluteFill>
+      );
+
   // Frame budget: EDITOR_TOTAL_FRAMES = 8s * 30fps = 240. Sequences must fit
   // inside 240 or the tail Sequence never enters the Player window.
   const hookFrames = 2 * fps;
@@ -176,7 +190,7 @@ export function VideoHookComposition({ script, style, mediaSlots, audioTrack }: 
       )}
       {/* Hook video */}
       <Sequence from={0} durationInFrames={hookFrames}>
-        <AbsoluteFill>
+        <DimScrim>
           {mediaSlots?.hookVideo?.url ? (
             <Video
               src={mediaSlots.hookVideo.url}
@@ -188,12 +202,12 @@ export function VideoHookComposition({ script, style, mediaSlots, audioTrack }: 
             <div style={{ width, height, backgroundColor: '#1a1a2e' }} />
           )}
           <TextOverlay script={script} style={style} />
-        </AbsoluteFill>
+        </DimScrim>
       </Sequence>
 
       {/* Body with demo video */}
       <Sequence from={hookFrames} durationInFrames={bodyFrames}>
-        <AbsoluteFill>
+        <DimScrim>
           {mediaSlots?.demoVideo?.url ? (
             <Video
               src={mediaSlots.demoVideo.url}
@@ -204,7 +218,7 @@ export function VideoHookComposition({ script, style, mediaSlots, audioTrack }: 
             <div style={{ width, height, backgroundColor: '#16213e' }} />
           )}
           <TextOverlay script={script} style={style} />
-        </AbsoluteFill>
+        </DimScrim>
       </Sequence>
 
       {/* CTA — solid brand background beneath the same overlay */}

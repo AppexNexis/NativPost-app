@@ -19,6 +19,7 @@ interface Props {
     italic?: boolean;
     underline?: boolean;
     noAnimation?: boolean;
+    backgroundDimming?: number;
   };
   mediaSlots?: {
     background?: { url: string };
@@ -32,6 +33,10 @@ interface Props {
 export function GreenScreenComposition({ script, style, mediaSlots, audioTrack }: Props) {
   const { width, height } = useVideoConfig();
   const frame = useCurrentFrame();
+
+  // Background dim: scrim between source media and text overlay.
+  const dimming = Math.max(0, Math.min(0.8, style.backgroundDimming ?? 0.3));
+  const showDimming = Boolean(mediaSlots?.background?.url) && dimming > 0;
 
   const fontFamily = style.fontFamily || 'Inter';
   const base = style.fontSize || 48;
@@ -76,6 +81,11 @@ export function GreenScreenComposition({ script, style, mediaSlots, audioTrack }
             position: 'absolute',
           }}
         />
+      )}
+
+      {/* Dimming scrim */}
+      {showDimming && (
+        <AbsoluteFill style={{ backgroundColor: `rgba(0, 0, 0, ${dimming})`, zIndex: 5 }} />
       )}
 
       <AbsoluteFill

@@ -706,9 +706,16 @@ function CalendarView({
   }
 
   const getItems = (day: Date) =>
-    contentItems.filter(
-      it => it.scheduledDate && isSameDay(parseISO(it.scheduledDate), day),
-    );
+    contentItems.filter(it => {
+      if (!it.scheduledDate) return false;
+      try {
+        const d = parseISO(it.scheduledDate);
+        if (!isValidDate(d)) return false;
+        return isSameDay(d, day);
+      } catch {
+        return false;
+      }
+    });
 
   return (
     <div className="space-y-4">
