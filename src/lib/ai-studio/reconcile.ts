@@ -4,7 +4,7 @@
 // commits reserved credits, and flips job status.
 
 import type { InferSelectModel } from 'drizzle-orm';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { getDb } from '@/libs/DB';
 import { aiInfluencerSchema, aiStudioJobSchema } from '@/models/Schema';
@@ -145,13 +145,23 @@ export async function reconcileFalJob(args: {
     // sourceMediaSlots.faceVideo without re-rendering. Non-fatal on failure.
     if (job.kind === 'video-lipsync' && (input as { influencerId?: string }).influencerId) {
       const influencerId = String((input as { influencerId?: string }).influencerId);
+      const newEntry = {
+        url: stored.url,
+        thumbnailUrl: stored.thumbnailUrl ?? null,
+        durationSec: stored.durationSeconds ?? null,
+        createdAt: new Date().toISOString(),
+      };
       try {
         await db
           .update(aiInfluencerSchema)
-          .set({ latestVideoUrl: stored.url, updatedAt: new Date() })
+          .set({
+            latestVideoUrl: stored.url,
+            latestVideoUrls: sql`COALESCE(${aiInfluencerSchema.latestVideoUrls}, '[]'::jsonb) || ${JSON.stringify([newEntry])}::jsonb`,
+            updatedAt: new Date(),
+          })
           .where(eq(aiInfluencerSchema.id, influencerId));
       } catch (err) {
-        console.warn('[reconcile] Failed to bump influencer latestVideoUrl:', err);
+        console.warn('[reconcile] Failed to append influencer video:', err);
       }
     }
 

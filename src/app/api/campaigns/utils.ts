@@ -68,10 +68,16 @@ function pickInfluencerForPost(
   postIndex: number,
 ): string | null {
   const ids = Array.isArray(enabledIds) ? enabledIds : [];
-  if (ids.length === 0) return null;
+  if (ids.length === 0) {
+    return null;
+  }
   const freq = typeof frequency === 'number' ? frequency : 0;
-  if (freq <= 0) return null;
-  if (freq < 100 && Math.random() * 100 >= freq) return null;
+  if (freq <= 0) {
+    return null;
+  }
+  if (freq < 100 && Math.random() * 100 >= freq) {
+    return null;
+  }
   return ids[postIndex % ids.length] ?? null;
 }
 
@@ -135,32 +141,42 @@ export function getMediaGenerator(contentType: string): string | null {
 
 // ── Weighted random selection ────────────────────────────────────────────────
 
-export interface WeightedItem {
+export type WeightedItem = {
   weight: number;
-}
+};
 
 export function pickWeighted<T extends WeightedItem>(items: T[]): T | undefined {
-  if (!items || items.length === 0) return undefined;
+  if (!items || items.length === 0) {
+    return undefined;
+  }
   const total = items.reduce((sum, i) => sum + (i.weight || 0), 0);
-  if (total <= 0) return items[0];
+  if (total <= 0) {
+    return items[0];
+  }
   let random = Math.random() * total;
   for (const item of items) {
     random -= (item.weight || 0);
-    if (random <= 0) return item;
+    if (random <= 0) {
+      return item;
+    }
   }
   return items[items.length - 1];
 }
 
 export function pickContentType(contentMix: Record<string, number>): string {
   const entries = Object.entries(contentMix).filter(([, v]) => (v || 0) > 0);
-  if (entries.length === 0) return 'reel';
+  if (entries.length === 0) {
+    return 'reel';
+  }
   const weighted = entries.map(([key, value]) => ({ key, weight: value || 0 }));
   const picked = pickWeighted(weighted);
   return mapMixKeyToContentType(picked?.key || 'reel');
 }
 
 export function pickAngle(angles: { angleId: string; weight: number }[]): string | undefined {
-  if (!angles || angles.length === 0) return undefined;
+  if (!angles || angles.length === 0) {
+    return undefined;
+  }
   return pickWeighted(angles)?.angleId;
 }
 
@@ -306,7 +322,9 @@ export async function generateMediaForContentItem(
   orgId?: string,
 ) {
   const generator = getMediaGenerator(contentType);
-  if (!generator) return null;
+  if (!generator) {
+    return null;
+  }
   return callInternalApi(`/api/content/${contentItemId}/${generator}`, 'POST', {}, orgId);
 }
 
@@ -318,7 +336,9 @@ export async function pickTemplate(
   contentType: string,
   angleId?: string,
 ): Promise<string | undefined> {
-  if (!angleId) return undefined;
+  if (!angleId) {
+    return undefined;
+  }
 
   try {
     const [angle] = await db
@@ -332,7 +352,9 @@ export async function pickTemplate(
       )
       .limit(1);
 
-    if (!angle) return undefined;
+    if (!angle) {
+      return undefined;
+    }
 
     const templates = await db
       .select()
@@ -351,7 +373,9 @@ export async function pickTemplate(
       return tAngles.includes(angle.name) || tAngles.includes(angleId);
     });
 
-    if (matching.length === 0) return undefined;
+    if (matching.length === 0) {
+      return undefined;
+    }
 
     const idx = Math.floor(Math.random() * matching.length);
     return matching[idx].id;
@@ -363,31 +387,31 @@ export async function pickTemplate(
 
 // ── Progress types ───────────────────────────────────────────────────────────
 
-export interface GenerationProgress {
+export type GenerationProgress = {
   postIndex: number;
   total: number;
   status: string;
   percent: number;
-}
+};
 
-export interface PostCompleteEvent {
+export type PostCompleteEvent = {
   postIndex: number;
   contentItemId: string;
   contentType: string;
   scheduledDate: string;
-}
+};
 
-export interface PostErrorEvent {
+export type PostErrorEvent = {
   postIndex: number;
   detail: string;
-}
+};
 
-export interface GenerationResult {
+export type GenerationResult = {
   totalPosts: number;
   completedPosts: number;
   failedPosts: number;
   contentItemIds: string[];
-}
+};
 
 // ── Engine campaign request builder ───────────────────────────────────────────
 
@@ -629,7 +653,7 @@ function mapTemplateToEngine(t: CampaignTemplateRow): Record<string, any> {
 
 async function fetchCampaignTemplates(
   db: any,
-  _orgId: string,                    // prefix with _ to suppress unused warning
+  _orgId: string, // prefix with _ to suppress unused warning
   contentMix: Record<string, number>,
   niche?: string | null,
 ): Promise<CampaignTemplateRow[]> {
@@ -641,11 +665,13 @@ async function fetchCampaignTemplates(
   // Using mapMixKeyToContentType here is WRONG — that converts to engine-level
   // types like 'reel' which don't match DB content_type values.
   const templateTypes = mixKeys
-    .map((k) => MIX_KEY_TO_TEMPLATE_CONTENT_TYPE[k])
+    .map(k => MIX_KEY_TO_TEMPLATE_CONTENT_TYPE[k])
     .filter(Boolean) as string[];
   const uniqueTypes = Array.from(new Set(templateTypes));
 
-  if (uniqueTypes.length === 0) return [];
+  if (uniqueTypes.length === 0) {
+    return [];
+  }
 
   // Shared column selector to avoid repetition
   const templateColumns = {
@@ -689,7 +715,7 @@ async function fetchCampaignTemplates(
   // templates (green_screen, video_hook, etc.) haven't been niche-tagged yet.
   if (niche) {
     const foundTypes = new Set((templates as any[]).map((t: any) => t.contentType));
-    const missingTypes = uniqueTypes.filter((t) => !foundTypes.has(t));
+    const missingTypes = uniqueTypes.filter(t => !foundTypes.has(t));
     if (missingTypes.length > 0) {
       console.log(
         `[Campaign] Niche "${niche}" missing templates for [${missingTypes.join(', ')}] — fetching without niche filter`,
@@ -714,12 +740,22 @@ async function fetchCampaignTemplates(
       // OR a sourceUrl (video-type templates — video_hook, green_screen,
       // talking_head, video_hook_demo — are imported with sourceUrl as the
       // backing video but may not have a separate processed mediaUrl/thumbnailUrl).
-      if (t.mediaUrl) return true;
-      if (t.sourceUrl) return true;
-      if (t.thumbnailUrl) return true;
+      if (t.mediaUrl) {
+        return true;
+      }
+      if (t.sourceUrl) {
+        return true;
+      }
+      if (t.thumbnailUrl) {
+        return true;
+      }
       const tu = t.thumbnailUrls;
-      if (Array.isArray(tu) && tu.length > 0) return true;
-      if (tu && typeof tu === 'object' && Object.keys(tu).length > 0) return true;
+      if (Array.isArray(tu) && tu.length > 0) {
+        return true;
+      }
+      if (tu && typeof tu === 'object' && Object.keys(tu).length > 0) {
+        return true;
+      }
       return false;
     })
     .map((t: any) => ({
@@ -793,7 +829,7 @@ export async function generateCampaignPosts(
     // Intersect override with connected so callers can't publish to
     // platforms the org hasn't connected.
     const connectedSet = new Set(connected);
-    targetPlatforms = targetPlatformsOverride.filter((p) => connectedSet.has(p));
+    targetPlatforms = targetPlatformsOverride.filter(p => connectedSet.has(p));
   } else {
     targetPlatforms = connected;
   }
@@ -840,7 +876,9 @@ export async function generateCampaignPosts(
     templates = await fetchCampaignTemplates(db, orgId, contentMix, null);
   }
   const templatesById = new Map<string, CampaignTemplateRow>();
-  for (const t of templates) templatesById.set(t.id, t);
+  for (const t of templates) {
+    templatesById.set(t.id, t);
+  }
 
   // ── Phase 1: Template-first allocation ──
   // Content library templates are the PRIMARY source for Blitz cards.
@@ -869,7 +907,9 @@ export async function generateCampaignPosts(
 
   let typeIdx = 0;
   function nextType(): string {
-    if (uniqueMixTypes.length === 0) return 'reel';
+    if (uniqueMixTypes.length === 0) {
+      return 'reel';
+    }
     const t = uniqueMixTypes[typeIdx % uniqueMixTypes.length]!;
     typeIdx++;
     return t;
@@ -907,7 +947,9 @@ export async function generateCampaignPosts(
     const tid = row.templateId
       || ((row.enrichmentData as Record<string, any>)?.templateId as string | undefined)
       || null;
-    if (tid) usedTemplateIds.add(tid);
+    if (tid) {
+      usedTemplateIds.add(tid);
+    }
     // Also seed usedHooks from existing items' editorScript.hookText so
     // the re-gen doesn't produce cards with the same hook text.
     const ed = row.enrichmentData as Record<string, any> | undefined;
@@ -954,38 +996,65 @@ export async function generateCampaignPosts(
         break;
       }
     }
-    if (found) continue;
+    if (found) {
+      continue;
+    }
 
     // All content-type pools exhausted — try any unused template (cross-grade).
     const all = templates.filter(t => !usedTemplateIds.has(t.id));
-    if (all.length === 0) break; // no templates left — engine will fill
+    if (all.length === 0) {
+      break;
+    } // no templates left — engine will fill
     const t = all[Math.floor(Math.random() * all.length)]!;
     usedTemplateIds.add(t.id);
     templatePosts.push({ template: t, hookText: pickUniqueHook(t.contentType) });
   }
 
   console.log(
-    `[Campaign] Phase 1: allocated ${templatePosts.length} template posts ` +
-    `(target=${postsToCreate}, available=${templates.length})`,
+    `[Campaign] Phase 1: allocated ${templatePosts.length} template posts `
+    + `(target=${postsToCreate}, available=${templates.length})`,
   );
 
-  // Preload latestVideoUrl + baseImageUrl for every enabled influencer once
+  // Preload video pool + baseImageUrl for every enabled influencer once
   // before ANY insertion path so all three sites (template posts, engine
   // supplement, fallback) can hydrate sourceMediaSlots without N+1 queries.
+  // Videos are round-robined from the pool so consecutive talking_head posts
+  // assigned to the same influencer get different face videos.
   const enabledInfluencerIds = Array.isArray(campaign.enabledInfluencerIds)
     ? (campaign.enabledInfluencerIds as string[])
     : [];
-  const influencerVideoMap = new Map<string, string>();
+  const influencerVideoMap = new Map<string, string[]>();
   const influencerBaseImageMap = new Map<string, string>();
   if (enabledInfluencerIds.length > 0) {
     try {
       const influencerRows = await db
-        .select({ id: aiInfluencerSchema.id, latestVideoUrl: aiInfluencerSchema.latestVideoUrl, baseImageUrl: aiInfluencerSchema.baseImageUrl })
+        .select({
+          id: aiInfluencerSchema.id,
+          latestVideoUrl: aiInfluencerSchema.latestVideoUrl,
+          latestVideoUrls: aiInfluencerSchema.latestVideoUrls,
+          baseImageUrl: aiInfluencerSchema.baseImageUrl,
+        })
         .from(aiInfluencerSchema)
         .where(inArray(aiInfluencerSchema.id, enabledInfluencerIds));
       for (const r of influencerRows) {
-        if (r.latestVideoUrl) influencerVideoMap.set(r.id, r.latestVideoUrl);
-        if (r.baseImageUrl) influencerBaseImageMap.set(r.id, r.baseImageUrl);
+        const urls: string[] = [];
+        if (Array.isArray(r.latestVideoUrls)) {
+          for (const entry of r.latestVideoUrls) {
+            if (entry?.url) {
+              urls.push(entry.url);
+            }
+          }
+        }
+        // Fallback: if pool is empty but legacy single URL exists, use it
+        if (urls.length === 0 && r.latestVideoUrl) {
+          urls.push(r.latestVideoUrl);
+        }
+        if (urls.length > 0) {
+          influencerVideoMap.set(r.id, urls);
+        }
+        if (r.baseImageUrl) {
+          influencerBaseImageMap.set(r.id, r.baseImageUrl);
+        }
       }
     } catch (err) {
       console.warn('[Campaign] Failed to load influencer video map:', err);
@@ -1023,7 +1092,9 @@ export async function generateCampaignPosts(
       } catch { /* keep original slots — Set substitution is best-effort */ }
 
       const resolvedContentType = template.contentType;
-      if (!RENDERABLE_CONTENT_TYPES.has(resolvedContentType)) continue;
+      if (!RENDERABLE_CONTENT_TYPES.has(resolvedContentType)) {
+        continue;
+      }
 
       // Build a proper editor script from the template's caption data so the
       // Blitz card shows per-slide text (slideshows), bodyText (video hooks),
@@ -1090,9 +1161,10 @@ export async function generateCampaignPosts(
         && resolvedContentType === 'talking_head'
         && influencerVideoMap.has(pickedInfluencerId)
       ) {
+        const videos = influencerVideoMap.get(pickedInfluencerId)!;
         sourceMediaSlots = {
           ...sourceMediaSlots,
-          faceVideo: { url: influencerVideoMap.get(pickedInfluencerId)! },
+          faceVideo: { url: videos[inserted % videos.length]! },
         };
       }
       if (
@@ -1167,8 +1239,8 @@ export async function generateCampaignPosts(
       // re-renders when enrichmentData.editorScript.slideCopy fills in.
       const isSlideshowType
         = resolvedContentType === 'slideshow'
-        || resolvedContentType === 'carousel'
-        || resolvedContentType === 'data_story';
+          || resolvedContentType === 'carousel'
+          || resolvedContentType === 'data_story';
       const slideUrls: string[] = Array.isArray((sourceMediaSlots as any)?.slides)
         ? ((sourceMediaSlots as any).slides as { url: string }[])
             .map(s => s?.url)
@@ -1176,8 +1248,8 @@ export async function generateCampaignPosts(
         : [];
       const hasUniquePerSlide
         = Array.isArray(editorScript.slideCopy)
-        && editorScript.slideCopy.length === slideUrls.length
-        && new Set(editorScript.slideCopy.filter(Boolean)).size === slideUrls.length;
+          && editorScript.slideCopy.length === slideUrls.length
+          && new Set(editorScript.slideCopy.filter(Boolean)).size === slideUrls.length;
       if (isSlideshowType && slideUrls.length > 1 && !hasUniquePerSlide) {
         try {
           waitUntil(
@@ -1247,384 +1319,384 @@ export async function generateCampaignPosts(
     // Phase 1 already inserted what it could — the template fallback
     // section after this block fills remaining slots.
     do {
-  const payload = {
-    brand_profile: buildEngineBrandProfile(profile),
-    campaign_name: campaign.name || 'Campaign',
-    content_mix: mapContentMixToEngine(contentMix),
-    remix_ratio: campaign.remixRatio ?? 0,
-    angles: anglesWithNames,
-    mention_frequency: campaign.mentionFrequency || 'sometimes',
-    gender_preference: campaign.genderPreference || 'all',
-    own_media_mix: campaign.ownMediaMix ?? 50,
-    influencer_frequency: campaign.influencerFrequency ?? 0,
-    target_accounts: (campaign.targetAccounts as { accountId: string; platform: string }[] || []).map((a) => ({
-      account_id: a.accountId,
-      platform: a.platform,
-    })),
-    posts_per_day: postsPerDay,
-    campaign_length_days: campaignLengthDays,
-    start_date: campaign.startDate
-      ? new Date(campaign.startDate).toISOString().slice(0, 10)
-      : new Date(Date.now() + 86400000).toISOString().slice(0, 10),
-    quality_threshold: campaign.qualityThreshold ?? 0.7,
-    target_platforms: targetPlatforms,
-    content_mode: 'normal',
-    templates: templates.map(mapTemplateToEngine),
-  };
-
-  onProgress?.({
-    postIndex: 0,
-    total: totalPosts,
-    status: 'generating_text',
-    percent: 5,
-  });
-
-  // Call engine — bound the wait so a hung engine surfaces as a real error
-  // instead of silently consuming Vercel's 300s budget and leaving the job
-  // stuck in 'processing'. 240s leaves ~60s headroom for post-insert work.
-  const engineController = new AbortController();
-  const engineTimeout = setTimeout(() => engineController.abort(), 240 * 1000);
-  let res: Response;
-  try {
-    res = await fetch(`${ENGINE_URL}/api/campaign/generate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`,
-      },
-      body: JSON.stringify(payload),
-      signal: engineController.signal,
-    });
-  } catch (fetchErr: any) {
-    clearTimeout(engineTimeout);
-    if (fetchErr?.name === 'AbortError') {
-      console.error(`[Campaign] Engine timed out after 240s at ${ENGINE_URL}.`);
-    } else {
-      console.error(`[Campaign] Engine unreachable at ${ENGINE_URL}: ${fetchErr?.message || fetchErr}`);
-    }
-    break; // exit do-while → template fallback
-  }
-  clearTimeout(engineTimeout);
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => 'Unknown error');
-    console.error(`[Campaign] Engine failed: ${res.status} ${text}`);
-    break; // exit do-while → template fallback
-  }
-
-  engineResult = await res.json() as {
-    campaign_name: string;
-    total_posts: number;
-    posts: Array<{
-      index: number;
-      caption: string;
-      hashtags: string[];
-      platform_specific: Record<string, unknown>;
-      content_type: string;
-      content_format: string;
-      angle_id?: string;
-      angle_name?: string;
-      is_remixed: boolean;
-      template_id?: string;
-      scheduled_date?: string;
-      scheduled_time?: string;
-      anti_slop_score?: number;
-      quality_flags: string[];
-      title?: string;
-    }>;
-  };
-
-  let failedPosts = 0;
-  const contentItemIds: string[] = [];
-
-  // Guarantee exactly postsPerDay cards reach the Blitz queue. The engine
-  // may return more posts than needed (buffer) or some posts may reference
-  // unresolvable template_ids. We stop once we've successfully inserted
-  // postsPerDay cards.
-  let inserted = 0;
-  // Use the Phase 1 `usedTemplateIds` set. The engine-supplement loop
-  // must NOT re-insert templates already used in the template-first pass.
-  for (const [i, post] of engineResult.posts.entries()) {
-    if (inserted >= postsToCreate) {
-      break;
-    }
-    try {
-      onProgress?.({
-        postIndex: i,
-        total: engineResult.total_posts,
-        status: 'saving_post',
-        percent: Math.round(((i + 1) / engineResult.total_posts) * 50) + 45,
-      });
-
-      // Look up the engine-suggested template. If not found, assign a
-      // random fallback from the fetched pool so every Blitz card has
-      // renderable source media. Skip-by-no-template silently starves the
-      // queue — user gets fewer cards than postsPerDay.
-      // ── Template selection with content-type cycling ──
-      // Round-robin through the mix's content types so the Blitz queue
-      // always shows visually diverse cards. Content type diversity
-      // matters more than matching the engine's suggested template.
-      const targetContentType = nextType();
-
-      let template: CampaignTemplateRow | undefined = post.template_id
-        ? templatesById.get(post.template_id)
-        : undefined;
-
-      // If the engine-suggested template was already used OR it doesn't
-      // match the round-robin target type, try to find a better one.
-      const needsSwap = !template
-        || usedTemplateIds.has(template.id)
-        || (uniqueMixTypes.length > 1 && template.contentType !== targetContentType);
-
-      if (needsSwap && templates.length > 0) {
-        // Try 1: unused template of the round-robin target type
-        const pool1 = (byType.get(targetContentType) || [])
-          .filter((t) => !usedTemplateIds.has(t.id));
-        if (pool1.length > 0) {
-          template = pool1[Math.floor(Math.random() * pool1.length)]!;
-        } else {
-          // Try 2: any unused template of a different content type
-          // (cross-grade to maintain visual diversity across cards)
-          const otherTypes = templates.filter(
-            (t) => !usedTemplateIds.has(t.id) && t.contentType !== template?.contentType,
-          );
-          if (otherTypes.length > 0) {
-            template = otherTypes[Math.floor(Math.random() * otherTypes.length)]!;
-            console.warn(
-              `[Campaign] Post ${i}: type "${targetContentType}" pool exhausted, ` +
-              `cross-grading to "${template.contentType}"`,
-            );
-          } else {
-            // Try 3: any unused template (even same type — last resort)
-            const anyUnused = templates.filter((t) => !usedTemplateIds.has(t.id));
-            if (anyUnused.length > 0) {
-              template = anyUnused[Math.floor(Math.random() * anyUnused.length)]!;
-            }
-            // If all unused templates are exhausted, keep the
-            // engine-suggested template (even if it's a duplicate).
-            // Better to show a repeat card than produce a dead slot.
-          }
-        }
-        if (template && !post.template_id) {
-          console.warn(
-            `[Campaign] Post ${i}: no engine-suggested template_id, ` +
-            `assigned ${template.id} (${template.contentType})`,
-          );
-        }
-      }
-
-      if (template) {
-        usedTemplateIds.add(template.id);
-      }
-
-      if (!template) {
-        // Zero templates in the fetched set — can't produce any card.
-        const detail = 'No templates available.';
-        console.warn(`[Campaign] Post ${i} skipped:`, detail);
-        onPostError?.({ postIndex: i, detail });
-        failedPosts++;
-        continue;
-      }
-
-      // Content type from the resolved template, not the engine.
-      const resolvedContentType = template.contentType;
-
-      // Build sourceMediaSlots from the template row.
-      let sourceMediaSlots: Record<string, any> = buildSourceMediaSlots(template);
-
-      // Attempt Media Set substitution for safe-swap content types.
-      try {
-        const set = await pickDefaultSet(db, orgId, resolvedContentType);
-        if (set) {
-          sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, resolvedContentType, inserted);
-        }
-      } catch (setErr: any) {
-        console.warn(`[Campaign] Set substitution failed for post ${i}:`, setErr?.message || setErr);
-      }
-
-      // Content type must be one the Remotion preview pipeline supports,
-      // otherwise the Blitz swipe card can't render it.
-      if (!RENDERABLE_CONTENT_TYPES.has(resolvedContentType)) {
-        const detail = `Content type '${resolvedContentType}' has no Remotion composition`;
-        console.warn(`[Campaign] Post ${i} skipped:`, detail);
-        onPostError?.({ postIndex: i, detail });
-        failedPosts++;
-        continue;
-      }
-
-      const editorScript = buildEditorScript(
-        { caption: post.caption, content_type: post.content_type, template_id: post.template_id },
-        { contentType: resolvedContentType, slideCaptions: template.slideCaptions, thumbnailUrls: template.thumbnailUrls },
-      );
-
-      // Blitz "Remixed From" panel + Why popover need full source
-      // attribution (mediaUrl for the mini preview, creator/platform for
-      // the popover, engagement metrics for chips).
-      const topicLabel = deriveTopicLabel(template);
-      const reasoning = buildReasoning(
-        { angle_name: post.angle_name, topic_label: topicLabel || undefined },
-        {
-          contentType: resolvedContentType,
-          sourcePlatform: template.sourcePlatform,
-          sourceCreator: template.sourceCreator,
-          viewCount: template.viewCount,
-          likeCount: template.likeCount,
-          commentCount: template.commentCount,
-        },
-      );
-
-      const sourceTemplateSnapshot = {
-        mediaUrl: template.mediaUrl,
-        thumbnailUrl: template.thumbnailUrl,
-        thumbnailUrls: template.thumbnailUrls,
-        sourceUrl: template.sourceUrl,
-        sourcePlatform: template.sourcePlatform,
-        sourceCreator: template.sourceCreator,
-        slideCaptions: template.slideCaptions,
-        viewCount: template.viewCount,
-        likeCount: template.likeCount,
-        commentCount: template.commentCount,
+      const payload = {
+        brand_profile: buildEngineBrandProfile(profile),
+        campaign_name: campaign.name || 'Campaign',
+        content_mix: mapContentMixToEngine(contentMix),
+        remix_ratio: campaign.remixRatio ?? 0,
+        angles: anglesWithNames,
+        mention_frequency: campaign.mentionFrequency || 'sometimes',
+        gender_preference: campaign.genderPreference || 'all',
+        own_media_mix: campaign.ownMediaMix ?? 50,
+        influencer_frequency: campaign.influencerFrequency ?? 0,
+        target_accounts: (campaign.targetAccounts as { accountId: string; platform: string }[] || []).map(a => ({
+          account_id: a.accountId,
+          platform: a.platform,
+        })),
+        posts_per_day: postsPerDay,
+        campaign_length_days: campaignLengthDays,
+        start_date: campaign.startDate
+          ? new Date(campaign.startDate).toISOString().slice(0, 10)
+          : new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+        quality_threshold: campaign.qualityThreshold ?? 0.7,
+        target_platforms: targetPlatforms,
+        content_mode: 'normal',
+        templates: templates.map(mapTemplateToEngine),
       };
 
-      // Preserve raw source media in graphicUrls[0] so compile can find
-      // the untouched original (team memory: preserve-raw-source-in-compile-pipeline).
-      const rawSource = template.mediaUrl || template.thumbnailUrl || template.sourceUrl || null;
-
-      // Pick the influencer for this post once (Phase I6 rotation). If the
-      // pick lands on an influencer with a cached talking-head render, use
-      // it to hydrate mediaSlots.faceVideo so the TalkingHead composition
-      // stops rendering black in the PiP window.
-      const pickedInfluencerId = pickInfluencerForPost(
-        campaign.enabledInfluencerIds as string[] | null,
-        campaign.influencerFrequency as number | null,
-        i,
-      );
-      if (
-        pickedInfluencerId
-        && resolvedContentType === 'talking_head'
-        && influencerVideoMap.has(pickedInfluencerId)
-      ) {
-        sourceMediaSlots = {
-          ...sourceMediaSlots,
-          faceVideo: { url: influencerVideoMap.get(pickedInfluencerId)! },
-        };
-      }
-      if (
-        pickedInfluencerId
-        && (!sourceMediaSlots.background || !sourceMediaSlots.background.url)
-        && influencerBaseImageMap.has(pickedInfluencerId)
-      ) {
-        sourceMediaSlots = {
-          ...sourceMediaSlots,
-          background: { url: influencerBaseImageMap.get(pickedInfluencerId)!, assetType: 'image' as const },
-        };
-      }
-
-      // Insert content item — populates templateId FK column AND full
-      // enrichmentData so downstream previews (Blitz swipe, detail page,
-      // editor rehydrate) find everything they need without extra fetches.
-      const [contentItem] = await db
-        .insert(contentItemSchema)
-        .values({
-          orgId,
-          brandProfileId: profile.id,
-          caption: post.caption,
-          hashtags: post.hashtags || [],
-          contentType: resolvedContentType,
-          topic: post.angle_name || campaign.name || null,
-          graphicUrls: rawSource
-            ? [rawSource]
-            : Array.isArray(sourceMediaSlots?.slides) && sourceMediaSlots.slides.length > 0
-              ? [sourceMediaSlots.slides[0]?.url || '']
-              : [],
-          variantGroupId: null,
-          variantNumber: 1,
-          isSelectedVariant: true,
-          templateId: post.template_id || null,
-          targetPlatforms,
-          platformSpecific: post.platform_specific || {},
-          status: 'pending_review',
-          antiSlopScore: post.anti_slop_score ?? null,
-          qualityFlags: post.quality_flags || [],
-          contentMode: 'normal',
-          enrichmentData: {
-            sourceMediaSlots,
-            editorScript,
-            editorStyle: {},
-            editorLayout: 'centered',
-            isCompiled: false,
-            ...(sourceTemplateSnapshot ? { sourceTemplateSnapshot } : {}),
-            ...(reasoning ? { reasoning } : {}),
-            ...(topicLabel ? { topicLabel } : {}),
-          },
-          enrichmentApplied: [],
-          campaignId: campaign.id,
-          angleId: post.angle_id || null,
-          influencerId: pickedInfluencerId,
-          generationParams: {
-            campaignId: campaign.id,
-            angleId: post.angle_id,
-            contentFormat: post.content_format,
-            remixSource: post.is_remixed ? post.template_id : undefined,
-            templateId: post.template_id,
-            aiModelUsed: 'campaign-engine',
-          },
-          contentFormat: post.content_format,
-          aspectRatio: post.content_format === 'carousel' ? '1:1' : '9:16',
-          durationSeconds: null,
-          aiModelUsed: 'campaign-engine',
-        })
-        .returning();
-
-      contentItemIds.push(contentItem.id);
-
-      if (pickedInfluencerId) {
-        db.update(aiInfluencerSchema)
-          .set({ usageCount: sql`usage_count + 1`, updatedAt: new Date() })
-          .where(eq(aiInfluencerSchema.id, pickedInfluencerId))
-          .execute().catch((err: unknown) => console.warn('[Campaign] Failed to bump usageCount:', err));
-      }
-
-      // Link to campaign
-      const scheduledDate = post.scheduled_date
-        ? new Date(`${post.scheduled_date}T00:00:00Z`)
-        : calculateSchedule(campaign.startDate, postsPerDay, i).scheduledDate;
-      const scheduledTime = post.scheduled_time || calculateSchedule(campaign.startDate, postsPerDay, i).scheduledTime;
-
-      await db.insert(campaignContentSchema).values({
-        campaignId: campaign.id,
-        contentItemId: contentItem.id,
-        sequenceIndex: i,
-        scheduledDate,
-        scheduledTime,
-      });
-
-      // Media already populated from the cloned template. Every Blitz
-      // post has a template at this point (fallback assigned if needed).
       onProgress?.({
-        postIndex: i,
-        total: engineResult.total_posts,
-        status: 'finalizing_post',
-        percent: Math.round(((i + 1) / engineResult.total_posts) * 100),
+        postIndex: 0,
+        total: totalPosts,
+        status: 'generating_text',
+        percent: 5,
       });
 
-      inserted++;
+      // Call engine — bound the wait so a hung engine surfaces as a real error
+      // instead of silently consuming Vercel's 300s budget and leaving the job
+      // stuck in 'processing'. 240s leaves ~60s headroom for post-insert work.
+      const engineController = new AbortController();
+      const engineTimeout = setTimeout(() => engineController.abort(), 240 * 1000);
+      let res: Response;
+      try {
+        res = await fetch(`${ENGINE_URL}/api/campaign/generate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${API_KEY}`,
+          },
+          body: JSON.stringify(payload),
+          signal: engineController.signal,
+        });
+      } catch (fetchErr: any) {
+        clearTimeout(engineTimeout);
+        if (fetchErr?.name === 'AbortError') {
+          console.error(`[Campaign] Engine timed out after 240s at ${ENGINE_URL}.`);
+        } else {
+          console.error(`[Campaign] Engine unreachable at ${ENGINE_URL}: ${fetchErr?.message || fetchErr}`);
+        }
+        break; // exit do-while → template fallback
+      }
+      clearTimeout(engineTimeout);
 
-      onPostComplete?.({
-        postIndex: i,
-        contentItemId: contentItem.id,
-        contentType: resolvedContentType,
-        scheduledDate: scheduledDate.toISOString().slice(0, 10),
-      });
-    } catch (err: any) {
-      const detail = err instanceof Error ? err.message : String(err);
-      console.error(`[Campaign] Post ${i} failed:`, detail);
-      onPostError?.({ postIndex: i, detail });
-      failedPosts++;
-    }
-  }
-  } while (false);
+      if (!res.ok) {
+        const text = await res.text().catch(() => 'Unknown error');
+        console.error(`[Campaign] Engine failed: ${res.status} ${text}`);
+        break; // exit do-while → template fallback
+      }
 
+      engineResult = await res.json() as {
+        campaign_name: string;
+        total_posts: number;
+        posts: Array<{
+          index: number;
+          caption: string;
+          hashtags: string[];
+          platform_specific: Record<string, unknown>;
+          content_type: string;
+          content_format: string;
+          angle_id?: string;
+          angle_name?: string;
+          is_remixed: boolean;
+          template_id?: string;
+          scheduled_date?: string;
+          scheduled_time?: string;
+          anti_slop_score?: number;
+          quality_flags: string[];
+          title?: string;
+        }>;
+      };
+
+      let failedPosts = 0;
+      const contentItemIds: string[] = [];
+
+      // Guarantee exactly postsPerDay cards reach the Blitz queue. The engine
+      // may return more posts than needed (buffer) or some posts may reference
+      // unresolvable template_ids. We stop once we've successfully inserted
+      // postsPerDay cards.
+      let inserted = 0;
+      // Use the Phase 1 `usedTemplateIds` set. The engine-supplement loop
+      // must NOT re-insert templates already used in the template-first pass.
+      for (const [i, post] of engineResult.posts.entries()) {
+        if (inserted >= postsToCreate) {
+          break;
+        }
+        try {
+          onProgress?.({
+            postIndex: i,
+            total: engineResult.total_posts,
+            status: 'saving_post',
+            percent: Math.round(((i + 1) / engineResult.total_posts) * 50) + 45,
+          });
+
+          // Look up the engine-suggested template. If not found, assign a
+          // random fallback from the fetched pool so every Blitz card has
+          // renderable source media. Skip-by-no-template silently starves the
+          // queue — user gets fewer cards than postsPerDay.
+          // ── Template selection with content-type cycling ──
+          // Round-robin through the mix's content types so the Blitz queue
+          // always shows visually diverse cards. Content type diversity
+          // matters more than matching the engine's suggested template.
+          const targetContentType = nextType();
+
+          let template: CampaignTemplateRow | undefined = post.template_id
+            ? templatesById.get(post.template_id)
+            : undefined;
+
+          // If the engine-suggested template was already used OR it doesn't
+          // match the round-robin target type, try to find a better one.
+          const needsSwap = !template
+            || usedTemplateIds.has(template.id)
+            || (uniqueMixTypes.length > 1 && template.contentType !== targetContentType);
+
+          if (needsSwap && templates.length > 0) {
+            // Try 1: unused template of the round-robin target type
+            const pool1 = (byType.get(targetContentType) || [])
+              .filter(t => !usedTemplateIds.has(t.id));
+            if (pool1.length > 0) {
+              template = pool1[Math.floor(Math.random() * pool1.length)]!;
+            } else {
+              // Try 2: any unused template of a different content type
+              // (cross-grade to maintain visual diversity across cards)
+              const otherTypes = templates.filter(
+                t => !usedTemplateIds.has(t.id) && t.contentType !== template?.contentType,
+              );
+              if (otherTypes.length > 0) {
+                template = otherTypes[Math.floor(Math.random() * otherTypes.length)]!;
+                console.warn(
+                  `[Campaign] Post ${i}: type "${targetContentType}" pool exhausted, `
+                  + `cross-grading to "${template.contentType}"`,
+                );
+              } else {
+                // Try 3: any unused template (even same type — last resort)
+                const anyUnused = templates.filter(t => !usedTemplateIds.has(t.id));
+                if (anyUnused.length > 0) {
+                  template = anyUnused[Math.floor(Math.random() * anyUnused.length)]!;
+                }
+                // If all unused templates are exhausted, keep the
+                // engine-suggested template (even if it's a duplicate).
+                // Better to show a repeat card than produce a dead slot.
+              }
+            }
+            if (template && !post.template_id) {
+              console.warn(
+                `[Campaign] Post ${i}: no engine-suggested template_id, `
+                + `assigned ${template.id} (${template.contentType})`,
+              );
+            }
+          }
+
+          if (template) {
+            usedTemplateIds.add(template.id);
+          }
+
+          if (!template) {
+            // Zero templates in the fetched set — can't produce any card.
+            const detail = 'No templates available.';
+            console.warn(`[Campaign] Post ${i} skipped:`, detail);
+            onPostError?.({ postIndex: i, detail });
+            failedPosts++;
+            continue;
+          }
+
+          // Content type from the resolved template, not the engine.
+          const resolvedContentType = template.contentType;
+
+          // Build sourceMediaSlots from the template row.
+          let sourceMediaSlots: Record<string, any> = buildSourceMediaSlots(template);
+
+          // Attempt Media Set substitution for safe-swap content types.
+          try {
+            const set = await pickDefaultSet(db, orgId, resolvedContentType);
+            if (set) {
+              sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, resolvedContentType, inserted);
+            }
+          } catch (setErr: any) {
+            console.warn(`[Campaign] Set substitution failed for post ${i}:`, setErr?.message || setErr);
+          }
+
+          // Content type must be one the Remotion preview pipeline supports,
+          // otherwise the Blitz swipe card can't render it.
+          if (!RENDERABLE_CONTENT_TYPES.has(resolvedContentType)) {
+            const detail = `Content type '${resolvedContentType}' has no Remotion composition`;
+            console.warn(`[Campaign] Post ${i} skipped:`, detail);
+            onPostError?.({ postIndex: i, detail });
+            failedPosts++;
+            continue;
+          }
+
+          const editorScript = buildEditorScript(
+            { caption: post.caption, content_type: post.content_type, template_id: post.template_id },
+            { contentType: resolvedContentType, slideCaptions: template.slideCaptions, thumbnailUrls: template.thumbnailUrls },
+          );
+
+          // Blitz "Remixed From" panel + Why popover need full source
+          // attribution (mediaUrl for the mini preview, creator/platform for
+          // the popover, engagement metrics for chips).
+          const topicLabel = deriveTopicLabel(template);
+          const reasoning = buildReasoning(
+            { angle_name: post.angle_name, topic_label: topicLabel || undefined },
+            {
+              contentType: resolvedContentType,
+              sourcePlatform: template.sourcePlatform,
+              sourceCreator: template.sourceCreator,
+              viewCount: template.viewCount,
+              likeCount: template.likeCount,
+              commentCount: template.commentCount,
+            },
+          );
+
+          const sourceTemplateSnapshot = {
+            mediaUrl: template.mediaUrl,
+            thumbnailUrl: template.thumbnailUrl,
+            thumbnailUrls: template.thumbnailUrls,
+            sourceUrl: template.sourceUrl,
+            sourcePlatform: template.sourcePlatform,
+            sourceCreator: template.sourceCreator,
+            slideCaptions: template.slideCaptions,
+            viewCount: template.viewCount,
+            likeCount: template.likeCount,
+            commentCount: template.commentCount,
+          };
+
+          // Preserve raw source media in graphicUrls[0] so compile can find
+          // the untouched original (team memory: preserve-raw-source-in-compile-pipeline).
+          const rawSource = template.mediaUrl || template.thumbnailUrl || template.sourceUrl || null;
+
+          // Pick the influencer for this post once (Phase I6 rotation). If the
+          // pick lands on an influencer with a cached talking-head render, use
+          // it to hydrate mediaSlots.faceVideo so the TalkingHead composition
+          // stops rendering black in the PiP window.
+          const pickedInfluencerId = pickInfluencerForPost(
+            campaign.enabledInfluencerIds as string[] | null,
+            campaign.influencerFrequency as number | null,
+            i,
+          );
+          if (
+            pickedInfluencerId
+            && resolvedContentType === 'talking_head'
+            && influencerVideoMap.has(pickedInfluencerId)
+          ) {
+            const videos = influencerVideoMap.get(pickedInfluencerId)!;
+            sourceMediaSlots = {
+              ...sourceMediaSlots,
+              faceVideo: { url: videos[inserted % videos.length]! },
+            };
+          }
+          if (
+            pickedInfluencerId
+            && (!sourceMediaSlots.background || !sourceMediaSlots.background.url)
+            && influencerBaseImageMap.has(pickedInfluencerId)
+          ) {
+            sourceMediaSlots = {
+              ...sourceMediaSlots,
+              background: { url: influencerBaseImageMap.get(pickedInfluencerId)!, assetType: 'image' as const },
+            };
+          }
+
+          // Insert content item — populates templateId FK column AND full
+          // enrichmentData so downstream previews (Blitz swipe, detail page,
+          // editor rehydrate) find everything they need without extra fetches.
+          const [contentItem] = await db
+            .insert(contentItemSchema)
+            .values({
+              orgId,
+              brandProfileId: profile.id,
+              caption: post.caption,
+              hashtags: post.hashtags || [],
+              contentType: resolvedContentType,
+              topic: post.angle_name || campaign.name || null,
+              graphicUrls: rawSource
+                ? [rawSource]
+                : Array.isArray(sourceMediaSlots?.slides) && sourceMediaSlots.slides.length > 0
+                  ? [sourceMediaSlots.slides[0]?.url || '']
+                  : [],
+              variantGroupId: null,
+              variantNumber: 1,
+              isSelectedVariant: true,
+              templateId: post.template_id || null,
+              targetPlatforms,
+              platformSpecific: post.platform_specific || {},
+              status: 'pending_review',
+              antiSlopScore: post.anti_slop_score ?? null,
+              qualityFlags: post.quality_flags || [],
+              contentMode: 'normal',
+              enrichmentData: {
+                sourceMediaSlots,
+                editorScript,
+                editorStyle: {},
+                editorLayout: 'centered',
+                isCompiled: false,
+                ...(sourceTemplateSnapshot ? { sourceTemplateSnapshot } : {}),
+                ...(reasoning ? { reasoning } : {}),
+                ...(topicLabel ? { topicLabel } : {}),
+              },
+              enrichmentApplied: [],
+              campaignId: campaign.id,
+              angleId: post.angle_id || null,
+              influencerId: pickedInfluencerId,
+              generationParams: {
+                campaignId: campaign.id,
+                angleId: post.angle_id,
+                contentFormat: post.content_format,
+                remixSource: post.is_remixed ? post.template_id : undefined,
+                templateId: post.template_id,
+                aiModelUsed: 'campaign-engine',
+              },
+              contentFormat: post.content_format,
+              aspectRatio: post.content_format === 'carousel' ? '1:1' : '9:16',
+              durationSeconds: null,
+              aiModelUsed: 'campaign-engine',
+            })
+            .returning();
+
+          contentItemIds.push(contentItem.id);
+
+          if (pickedInfluencerId) {
+            db.update(aiInfluencerSchema)
+              .set({ usageCount: sql`usage_count + 1`, updatedAt: new Date() })
+              .where(eq(aiInfluencerSchema.id, pickedInfluencerId))
+              .execute().catch((err: unknown) => console.warn('[Campaign] Failed to bump usageCount:', err));
+          }
+
+          // Link to campaign
+          const scheduledDate = post.scheduled_date
+            ? new Date(`${post.scheduled_date}T00:00:00Z`)
+            : calculateSchedule(campaign.startDate, postsPerDay, i).scheduledDate;
+          const scheduledTime = post.scheduled_time || calculateSchedule(campaign.startDate, postsPerDay, i).scheduledTime;
+
+          await db.insert(campaignContentSchema).values({
+            campaignId: campaign.id,
+            contentItemId: contentItem.id,
+            sequenceIndex: i,
+            scheduledDate,
+            scheduledTime,
+          });
+
+          // Media already populated from the cloned template. Every Blitz
+          // post has a template at this point (fallback assigned if needed).
+          onProgress?.({
+            postIndex: i,
+            total: engineResult.total_posts,
+            status: 'finalizing_post',
+            percent: Math.round(((i + 1) / engineResult.total_posts) * 100),
+          });
+
+          inserted++;
+
+          onPostComplete?.({
+            postIndex: i,
+            contentItemId: contentItem.id,
+            contentType: resolvedContentType,
+            scheduledDate: scheduledDate.toISOString().slice(0, 10),
+          });
+        } catch (err: any) {
+          const detail = err instanceof Error ? err.message : String(err);
+          console.error(`[Campaign] Post ${i} failed:`, detail);
+          onPostError?.({ postIndex: i, detail });
+          failedPosts++;
+        }
+      }
+    } while (false);
   } // end engine supplement else block
 
   // ── Template fallback: fill remaining quota from unused templates ──
@@ -1644,8 +1716,12 @@ export async function generateCampaignPosts(
     // Build per-type pools of unused templates for round-robin cycling.
     const unusedByType = new Map<string, CampaignTemplateRow[]>();
     for (const t of templates) {
-      if (usedTemplateIds.has(t.id)) continue;
-      if (!RENDERABLE_CONTENT_TYPES.has(t.contentType)) continue;
+      if (usedTemplateIds.has(t.id)) {
+        continue;
+      }
+      if (!RENDERABLE_CONTENT_TYPES.has(t.contentType)) {
+        continue;
+      }
       const list = unusedByType.get(t.contentType) || [];
       list.push(t);
       unusedByType.set(t.contentType, list);
@@ -1678,17 +1754,21 @@ export async function generateCampaignPosts(
 
     if (fillTemplates.length > 0) {
       console.warn(
-        `[Campaign] Engine produced ${inserted} unique posts (${failedPosts} failed). ` +
-        `Filling ${fillTemplates.length} slots with content-type-cycled templates.`,
+        `[Campaign] Engine produced ${inserted} unique posts (${failedPosts} failed). `
+        + `Filling ${fillTemplates.length} slots with content-type-cycled templates.`,
       );
     }
 
     for (const template of fillTemplates) {
-      if (inserted >= postsToCreate) break;
+      if (inserted >= postsToCreate) {
+        break;
+      }
 
       try {
         const resolvedContentType = template.contentType;
-        if (!RENDERABLE_CONTENT_TYPES.has(resolvedContentType)) continue;
+        if (!RENDERABLE_CONTENT_TYPES.has(resolvedContentType)) {
+          continue;
+        }
 
         let sourceMediaSlots = buildSourceMediaSlots(template);
 
@@ -1746,9 +1826,10 @@ export async function generateCampaignPosts(
           && resolvedContentType === 'talking_head'
           && influencerVideoMap.has(pickedInfluencerId)
         ) {
+          const videos = influencerVideoMap.get(pickedInfluencerId)!;
           sourceMediaSlots = {
             ...sourceMediaSlots,
-            faceVideo: { url: influencerVideoMap.get(pickedInfluencerId)! },
+            faceVideo: { url: videos[inserted % videos.length]! },
           };
         }
         if (
@@ -1831,8 +1912,8 @@ export async function generateCampaignPosts(
   const totalEnginePosts = engineResult?.total_posts ?? inserted;
 
   console.log(
-    `[Campaign] Generation complete: requested=${postsToCreate} inserted=${inserted} failed=${failedPosts} ` +
-    `enginePosts=${totalEnginePosts} itemIds=${contentItemIds.length}`,
+    `[Campaign] Generation complete: requested=${postsToCreate} inserted=${inserted} failed=${failedPosts} `
+    + `enginePosts=${totalEnginePosts} itemIds=${contentItemIds.length}`,
   );
 
   return {
@@ -1967,7 +2048,9 @@ export async function scheduleCampaignPosts(
   for (const row of items) {
     const contentItem = row.ci;
     const cc = row.cc;
-    if (!contentItem) continue;
+    if (!contentItem) {
+      continue;
+    }
 
     // Only schedule approved posts
     if (contentItem.status !== 'approved') {
@@ -1979,7 +2062,9 @@ export async function scheduleCampaignPosts(
 
     for (const platform of platforms) {
       const account = accounts.find((a: any) => a.platform === platform);
-      if (!account) continue;
+      if (!account) {
+        continue;
+      }
 
       const scheduledFor = cc.scheduledDate
         ? combineDateAndTime(cc.scheduledDate, cc.scheduledTime || '09:00')
@@ -2049,7 +2134,9 @@ export async function getCampaignCalendar(
     const date = row.cc.scheduledDate
       ? new Date(row.cc.scheduledDate).toISOString().slice(0, 10)
       : 'unscheduled';
-    if (!grouped[date]) grouped[date] = [];
+    if (!grouped[date]) {
+      grouped[date] = [];
+    }
     grouped[date].push({
       ...row.cc,
       contentItem: row.ci,

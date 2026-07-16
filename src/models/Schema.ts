@@ -714,6 +714,11 @@ export const aiInfluencerSchema = pgTable('ai_influencer', {
   // sets this on lipsync success. Consumer: campaign engine hydrates
   // sourceMediaSlots.faceVideo for talking_head posts.
   latestVideoUrl: text('latest_video_url'),
+  // Pool of talking-head video URLs (one entry per successful lipsync render).
+  // Producer: reconcile.ts appends on each success. Consumer: campaign engine
+  // round-robins through the pool so posts get varied face videos.
+  // Each entry: { url, thumbnailUrl?, durationSec?, createdAt }
+  latestVideoUrls: jsonb('latest_video_urls').default([]),
   isActive: boolean('is_active').default(true),
   updatedAt: timestamp('updated_at', { mode: 'date' })
     .defaultNow()
