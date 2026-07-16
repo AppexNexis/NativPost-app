@@ -937,7 +937,10 @@ export const longFormProjectSchema = pgTable('long_form_project', {
   scenes: jsonb('scenes').default([]),
   // Each scene: { id, order, description, visualPrompt, cameraDirection,
   //   durationSec, transition, keyframeUrl?, videoClipUrl?,
-  //   videoClipAssetId?, status }
+  //   videoClipAssetId?, status, locked?, userProvided?, keyframeSource? }
+  metadata: jsonb('metadata').default({}),
+  // Project-level knobs: { voiceId?, voiceName?, bgMusicUrl?, bgMusicName?,
+  //   referenceImageUrl?, aspectRatio?, imageModelId?, videoModelId? }
   status: text('status').default('draft'),
   // draft | script_ready | generating | clips_ready | assembling | completed | failed
   creditsReserved: integer('credits_reserved').default(0),

@@ -199,10 +199,19 @@ export async function POST(request: NextRequest) {
   }
 
   const style = (String(body.style || 'cinematic')).trim();
-  const styleDesc = STYLE_LABELS[style] ?? 'Cinematic — dramatic lighting, film-like composition, slow camera movements';
+  const styleDesc = STYLE_LABELS[style] ?? 'Cinematic dramatic lighting, film-like composition, slow camera movements';
   const targetDurationMin = Number(body.targetDurationMin) || 2;
-  const clampedDuration = Math.max(1, Math.min(5, targetDurationMin));
+  const clampedDuration = Math.max(1, Math.min(10, targetDurationMin));
   const targetWords = clampedDuration * 150;
+
+  // Optional initial metadata (aspect / models / reference image / voice).
+  const rawAspect = String(body.aspectRatio || '9:16');
+  const aspectRatio = (rawAspect === '9:16' || rawAspect === '16:9' || rawAspect === '1:1') ? rawAspect : '9:16';
+  const initialMetadata: Record<string, unknown> = { aspectRatio };
+  if (typeof body.imageModelId === 'string' && body.imageModelId.trim()) initialMetadata.imageModelId = body.imageModelId.trim();
+  if (typeof body.videoModelId === 'string' && body.videoModelId.trim()) initialMetadata.videoModelId = body.videoModelId.trim();
+  if (typeof body.voiceId === 'string' && body.voiceId.trim()) initialMetadata.voiceId = body.voiceId.trim();
+  if (typeof body.referenceImageUrl === 'string' && body.referenceImageUrl.trim()) initialMetadata.referenceImageUrl = body.referenceImageUrl.trim();
 
   const systemPrompt = buildSystemPrompt(clampedDuration, targetWords, styleDesc);
   const userPrompt = `Create a ${clampedDuration}-minute video script about: ${topic}`;
@@ -289,6 +298,7 @@ export async function POST(request: NextRequest) {
       narrationText: parsed.narrationText || '',
       scenes,
       status: 'script_ready',
+      metadata: initialMetadata,
     })
     .returning();
 
@@ -306,6 +316,7 @@ export async function POST(request: NextRequest) {
       scenes,
       status: project.status,
       creditsReserved: project.creditsReserved,
+      metadata: project.metadata,
       createdAt: project.createdAt,
       updatedAt: project.updatedAt,
     },

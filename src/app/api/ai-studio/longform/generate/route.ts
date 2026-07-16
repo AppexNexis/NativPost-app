@@ -17,7 +17,7 @@ import { getDb } from '@/libs/DB';
 import { longFormProjectSchema } from '@/models/Schema';
 import { eq } from 'drizzle-orm';
 
-import type { LongFormScene } from '@/types/longform';
+import type { LongFormProjectMetadata, LongFormScene } from '@/types/longform';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,19 +45,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'projectId is required' }, { status: 400 });
   }
 
-  const imageModelId = String(body.imageModelId || DEFAULT_IMAGE_MODEL_ID);
-  const videoModelId = String(body.videoModelId || DEFAULT_VIDEO_MODEL_ID);
-  const aspect = String(body.aspect || '9:16');
-
-  const imageModel = getModel(imageModelId);
-  const videoModel = getModel(videoModelId);
-
-  if (!imageModel || imageModel.kind !== 'image') {
-    return NextResponse.json({ error: `Invalid image model: ${imageModelId}` }, { status: 400 });
-  }
-  if (!videoModel || videoModel.kind !== 'video') {
-    return NextResponse.json({ error: `Invalid video model: ${videoModelId}` }, { status: 400 });
-  }
+  // Body wins; else pull from project metadata (persisted via PATCH); else defaults.
+  const bodyImageModel = typeof body.imageModelId === 'string' ? body.imageModelId : '';
+  const bodyVideoModel = typeof body.videoModelId === 'string' ? body.videoModelId : '';
+  const bodyAspect = typeof body.aspect === 'string' ? body.aspect : '';
 
   const db = await getDb();
 
@@ -70,7 +61,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Project not found' }, { status: 404 });
   }
 
-  if (project.status !== 'script_ready' && project.status !== 'generating') {
+  const projectMeta = (project.metadata as LongFormProjectMetadata | null) ?? {};
+  const imageModelId = bodyImageModel || projectMeta.imageModelId || DEFAULT_IMAGE_MODEL_ID;
+  const videoModelId = bodyVideoModel || projectMeta.videoModelId || DEFAULT_VIDEO_MODEL_ID;
+  const aspect = bodyAspect || projectMeta.aspectRatio || '9:16';
+
+  const imageModel = getModel(imageModelId);
+  const videoModel = getModel(videoModelId);
+
+  if (!imageModel || imageModel.kind !== 'image') {
+    return NextResponse.json({ error: `Invalid image model: ${imageModelId}` }, { status: 400 });
+  }
+  if (!videoModel || videoModel.kind !== 'video') {
+    return NextResponse.json({ error: `Invalid video model: ${videoModelId}` }, { status: 400 });
+  }
+
+  if (project.status !== 'script_ready' && project.status !== 'generating' && project.status !== 'clips_ready') {
     return NextResponse.json(
       { error: `Project must be in script_ready status, current: ${project.status}` },
       { status: 400 },
@@ -102,7 +108,12 @@ export async function POST(request: NextRequest) {
       .where(eq(longFormProjectSchema.id, projectId));
   }
 
-  const pendingScenes = scenes.filter(s => s.status === 'pending');
+  // Skip scenes the user has locked, provided directly, or already generated.
+  const pendingScenes = scenes.filter(s =>
+    s.status === 'pending'
+    && !s.locked
+    && !s.userProvided,
+  );
   if (pendingScenes.length === 0 && project.status === 'script_ready') {
     return NextResponse.json({ error: 'No pending scenes to generate' }, { status: 400 });
   }
@@ -139,6 +150,7 @@ export async function POST(request: NextRequest) {
     imageModelId,
     videoModelId,
     aspect,
+    referenceImageUrl: projectMeta.referenceImageUrl,
     totalCredits,
   }).catch(err => {
     console.error('[LongForm Generate] Background generation failed:', err);
@@ -159,9 +171,10 @@ async function generateScenesBackground(opts: {
   imageModelId: string;
   videoModelId: string;
   aspect: string;
+  referenceImageUrl?: string;
   totalCredits: number;
 }) {
-  const { projectId, orgId, scenes, imageModelId, videoModelId, aspect, totalCredits } = opts;
+  const { projectId, orgId, scenes, imageModelId, videoModelId, aspect, referenceImageUrl, totalCredits } = opts;
   const db = await getDb();
   const imageModel = getModel(imageModelId)!;
   const videoModel = getModel(videoModelId)!;
@@ -179,6 +192,7 @@ async function generateScenesBackground(opts: {
       const imageInput = buildFalInput(imageModel, {
         prompt: scene.visualPrompt,
         aspect,
+        ...(referenceImageUrl ? { imageUrl: referenceImageUrl } : {}),
       });
 
       const imageJob = await submitFalJob({

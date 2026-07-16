@@ -9,7 +9,7 @@ import { getDb } from '@/libs/DB';
 import { longFormProjectSchema } from '@/models/Schema';
 import { eq } from 'drizzle-orm';
 
-import type { LongFormScene } from '@/types/longform';
+import type { LongFormProjectMetadata, LongFormScene } from '@/types/longform';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,9 +32,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const voiceId = String(body.voiceId || DEFAULT_VOICE_ID);
-  const bgMusicUrl = String(body.bgMusicUrl || '').trim() || undefined;
-
   const db = await getDb();
   const [project] = await db
     .select()
@@ -44,6 +41,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   if (!project || project.orgId !== orgId) {
     return NextResponse.json({ error: 'Project not found' }, { status: 404 });
   }
+
+  const meta = (project.metadata as LongFormProjectMetadata | null) ?? {};
+  const voiceId = String(body.voiceId || meta.voiceId || DEFAULT_VOICE_ID);
+  const bgMusicUrl = (typeof body.bgMusicUrl === 'string' && body.bgMusicUrl.trim())
+    ? body.bgMusicUrl.trim()
+    : (meta.bgMusicUrl || undefined);
 
   if (project.status !== 'clips_ready') {
     return NextResponse.json(

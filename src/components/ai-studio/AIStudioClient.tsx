@@ -12,6 +12,7 @@ import {
 import type { AiCreditWallet } from '@/lib/ai-studio/server';
 
 import type { AspectRatio } from './AspectRatioPicker';
+import { BackHeader } from './BackHeader';
 import { CreditBadge } from './CreditBadge';
 import { InsufficientCreditsAlert } from './InsufficientCreditsAlert';
 import type { AiStudioJobView } from './JobCard';
@@ -20,6 +21,8 @@ import { KindTabs } from './KindTabs';
 import { PromptComposer } from './PromptComposer';
 import { TalkingHeadComposer } from './TalkingHeadComposer';
 import { TemplatePresets } from './TemplatePresets';
+import Link from 'next/link';
+import { Clapperboard } from 'lucide-react';
 
 const DEFAULT_MODEL_BY_KIND: Record<AiStudioKind, string> = {
   'image': 'flux-dev',
@@ -280,17 +283,27 @@ export function AIStudioClient() {
   );
 
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">AI Studio</h1>
-          <p className="text-sm text-muted-foreground">
-            Generate images, video, and Talking Head clips. Every asset syncs to your Media Library.
-          </p>
-        </div>
-        <CreditBadge wallet={wallet} onWallet={setWallet} />
-      </header>
+    <div className="flex min-h-[calc(100vh-4rem)] flex-col">
+      <BackHeader
+        href="/dashboard"
+        label="Dashboard"
+        title="AI Studio"
+        subtitle="Images, video, and Talking Head clips. Every asset syncs to your Media Library."
+        right={
+          <>
+            <Link
+              href="/dashboard/ai-studio/longform"
+              className="inline-flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              <Clapperboard className="h-3.5 w-3.5" />
+              Long Form
+            </Link>
+            <CreditBadge wallet={wallet} onWallet={setWallet} />
+          </>
+        }
+      />
 
+      <div className="flex flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
       <section className="flex flex-col gap-3">
         <KindTabs value={kind} onChange={setKind} />
         <TemplatePresets kind={kind} onSelect={handleTemplateSelect} />
@@ -334,6 +347,7 @@ export function AIStudioClient() {
             submitting={submitting}
           />
         )}
+      </div>
       </div>
     </div>
   );
