@@ -223,24 +223,27 @@ export function LongFormStudio() {
   const doneCount = project?.scenes.filter(s => s.status === 'done').length ?? 0;
   const totalScenes = project?.scenes.length ?? 0;
 
+  // Shared input classes
+  const inputClasses = 'w-full rounded-lg border bg-muted text-foreground text-sm p-2 focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary disabled:opacity-50';
+
   return (
     <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
       {/* ── LEFT PANEL: Controls ── */}
-      <aside className="w-[340px] shrink-0 flex flex-col border-r border-border bg-[#1e1e1e] overflow-y-auto">
+      <aside className="w-[340px] shrink-0 flex flex-col border-r bg-card overflow-y-auto">
         <div className="p-5 flex flex-col gap-4">
           {/* Header */}
           <div className="flex items-center gap-2">
-            <Clapperboard className="h-5 w-5 text-[#f5c518]" />
-            <h1 className="text-lg font-semibold text-[#e8e8e8]">Long Form Video</h1>
+            <Clapperboard className="h-5 w-5 text-primary" />
+            <h1 className="text-lg font-semibold text-foreground">Long Form Video</h1>
           </div>
-          <p className="text-xs text-[#9b9b9b] -mt-2">
+          <p className="text-xs text-muted-foreground -mt-2">
             AI-powered 2-5 minute video composer
           </p>
 
           {/* Progress Stepper */}
           {project && (
             <div className="flex flex-col gap-1">
-              <span className="text-xs text-[#9b9b9b] uppercase tracking-wider">Progress</span>
+              <span className="text-xs text-muted-foreground uppercase tracking-wider">Progress</span>
               <div className="flex items-center gap-1">
                 {STEPS.map((step, i) => {
                   const done = currentStep > i;
@@ -250,13 +253,13 @@ export function LongFormStudio() {
                     <div key={step.key} className="flex items-center gap-1">
                       <div className={cn(
                         'h-2 w-2 rounded-full',
-                        done && 'bg-[#f5c518]',
-                        active && !failed && 'bg-[#f5c518] animate-pulse',
-                        failed && 'bg-red-500',
-                        !done && !active && !failed && 'bg-[#3a3a3a]',
+                        done && 'bg-primary',
+                        active && !failed && 'bg-primary animate-pulse',
+                        failed && 'bg-destructive',
+                        !done && !active && !failed && 'bg-muted-foreground/30',
                       )} />
                       {i < STEPS.length - 1 && (
-                        <div className={cn('h-px w-4', done ? 'bg-[#f5c518]' : 'bg-[#3a3a3a]')} />
+                        <div className={cn('h-px w-4', done ? 'bg-primary' : 'bg-muted-foreground/30')} />
                       )}
                     </div>
                   );
@@ -267,9 +270,9 @@ export function LongFormStudio() {
 
           {/* Topic Input */}
           <div className="flex flex-col gap-2">
-            <label className="text-xs text-[#9b9b9b] uppercase tracking-wider">Topic / Prompt</label>
+            <label className="text-xs text-muted-foreground uppercase tracking-wider">Topic / Prompt</label>
             <textarea
-              className="w-full rounded-lg border border-[#3a3a3a] bg-[#282828] text-[#e8e8e8] text-sm p-3 resize-none focus:outline-none focus:border-[#f5c518] placeholder:text-[#6b6b6b]"
+              className="w-full rounded-lg border bg-muted text-foreground text-sm p-3 resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary placeholder:text-muted-foreground/50 disabled:opacity-50"
               rows={4}
               placeholder="Describe your video topic in detail...&#10;&#10;e.g. The rise of AI in healthcare — from diagnosis to personalized treatment plans"
               value={topic}
@@ -281,9 +284,9 @@ export function LongFormStudio() {
           {/* Style + Duration */}
           <div className="flex gap-3">
             <div className="flex-1 flex flex-col gap-1.5">
-              <label className="text-xs text-[#9b9b9b] uppercase tracking-wider">Style</label>
+              <label className="text-xs text-muted-foreground uppercase tracking-wider">Style</label>
               <select
-                className="w-full rounded-lg border border-[#3a3a3a] bg-[#282828] text-[#e8e8e8] text-sm p-2 focus:outline-none focus:border-[#f5c518]"
+                className={inputClasses}
                 value={style}
                 onChange={e => setStyle(e.target.value)}
                 disabled={loading || generating}
@@ -294,9 +297,9 @@ export function LongFormStudio() {
               </select>
             </div>
             <div className="w-24 flex flex-col gap-1.5">
-              <label className="text-xs text-[#9b9b9b] uppercase tracking-wider">Duration</label>
+              <label className="text-xs text-muted-foreground uppercase tracking-wider">Duration</label>
               <select
-                className="w-full rounded-lg border border-[#3a3a3a] bg-[#282828] text-[#e8e8e8] text-sm p-2 focus:outline-none focus:border-[#f5c518]"
+                className={inputClasses}
                 value={targetDuration}
                 onChange={e => setTargetDuration(Number(e.target.value))}
                 disabled={loading || generating}
@@ -310,7 +313,7 @@ export function LongFormStudio() {
 
           {/* Generate Script Button */}
           <button
-            className="flex items-center justify-center gap-2 w-full py-3 rounded-lg font-semibold text-sm transition-all bg-[#f5c518] text-[#1a1605] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center justify-center gap-2 w-full py-3 rounded-lg font-semibold text-sm transition-all bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             onClick={generateScript}
             disabled={loading || generating || !topic.trim()}
           >
@@ -325,7 +328,7 @@ export function LongFormStudio() {
           {/* Action Buttons (post-script) */}
           {project && project.status === 'script_ready' && (
             <button
-              className="flex items-center justify-center gap-2 w-full py-3 rounded-lg font-semibold text-sm transition-all bg-[#ff8a3d] text-[#2b1304] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center justify-center gap-2 w-full py-3 rounded-lg font-semibold text-sm transition-all bg-accent text-accent-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={generateClips}
               disabled={generating}
             >
@@ -340,7 +343,7 @@ export function LongFormStudio() {
 
           {(project?.status === 'clips_ready' || (project?.status === 'generating' && allClipsDone)) && (
             <button
-              className="flex items-center justify-center gap-2 w-full py-3 rounded-lg font-semibold text-sm transition-all bg-[#f5c518] text-[#1a1605] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center justify-center gap-2 w-full py-3 rounded-lg font-semibold text-sm transition-all bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={assembleVideo}
               disabled={assembling}
             >
@@ -358,7 +361,7 @@ export function LongFormStudio() {
               href={project.assembledVideoUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 w-full py-3 rounded-lg font-semibold text-sm transition-all bg-green-600 text-white hover:brightness-110"
+              className="flex items-center justify-center gap-2 w-full py-3 rounded-lg font-semibold text-sm transition-all bg-emerald-600 text-white hover:bg-emerald-700"
             >
               <Download className="h-4 w-4" />
               Download Final Video
@@ -367,9 +370,9 @@ export function LongFormStudio() {
 
           {/* Error */}
           {error && (
-            <div className="p-3 rounded-lg bg-[#2a1518] border border-red-500/30 text-[#ff8a8a] text-sm">
+            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm">
               {error}
-              <button className="ml-2 underline text-[#ff8a8a] hover:text-red-300" onClick={() => setError(null)}>
+              <button className="ml-2 underline hover:opacity-80" onClick={() => setError(null)}>
                 Dismiss
               </button>
             </div>
@@ -377,7 +380,7 @@ export function LongFormStudio() {
 
           {/* Progress stats */}
           {project && project.scenes.length > 0 && (
-            <div className="flex items-center gap-4 text-xs text-[#9b9b9b] pt-2 border-t border-[#3a3a3a]">
+            <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2 border-t">
               <span>{doneCount}/{totalScenes} clips ready</span>
               {project.creditsCharged != null && (
                 <span>{project.creditsCharged} credits used</span>
@@ -388,20 +391,20 @@ export function LongFormStudio() {
       </aside>
 
       {/* ── CENTER PANEL: Scene Gallery ── */}
-      <main className="flex-1 flex flex-col bg-black overflow-hidden min-w-0">
+      <main className="flex-1 flex flex-col bg-background overflow-hidden min-w-0">
         {/* Gallery header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#3a3a3a]">
+        <div className="flex items-center justify-between px-6 py-4 border-b">
           <div className="flex items-center gap-3">
-            <h2 className="text-sm font-medium text-[#e8e8e8]">
+            <h2 className="text-sm font-medium text-foreground">
               {project ? project.title || 'Untitled Project' : 'Scene Gallery'}
             </h2>
             {project && (
-              <span className="text-xs text-[#9b9b9b]">{project.scenes.length} scenes</span>
+              <span className="text-xs text-muted-foreground">{project.scenes.length} scenes</span>
             )}
           </div>
           {project && (
             <button
-              className="text-xs text-[#9b9b9b] hover:text-red-400 transition-colors"
+              className="text-xs text-muted-foreground hover:text-destructive transition-colors"
               onClick={() => {
                 setProject(null);
                 setTopic('');
@@ -417,15 +420,15 @@ export function LongFormStudio() {
         <div className="flex-1 overflow-y-auto p-6">
           {!project ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
-              <Clapperboard className="h-12 w-12 text-[#3a3a3a] mb-4" />
-              <p className="text-[#9b9b9b] text-sm max-w-md">
-                Enter a topic in the left panel and click <strong>Generate Script</strong> to create your first long-form video.
+              <Clapperboard className="h-12 w-12 text-muted-foreground/30 mb-4" />
+              <p className="text-muted-foreground text-sm max-w-md">
+                Enter a topic in the left panel and click <strong className="text-foreground">Generate Script</strong> to create your first long-form video.
               </p>
             </div>
           ) : project.scenes.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full">
-              <Loader2 className="h-8 w-8 text-[#f5c518] animate-spin mb-3" />
-              <p className="text-[#9b9b9b] text-sm">Generating script...</p>
+              <Loader2 className="h-8 w-8 text-primary animate-spin mb-3" />
+              <p className="text-muted-foreground text-sm">Generating script...</p>
             </div>
           ) : (
             <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}>
@@ -433,15 +436,15 @@ export function LongFormStudio() {
                 <div
                   key={scene.id}
                   className={cn(
-                    'group relative rounded-lg border bg-[#1e1e1e] overflow-hidden transition-all',
-                    scene.status === 'failed' && 'border-red-500/50',
-                    scene.status === 'done' && 'border-[#3a3a3a]',
-                    scene.status === 'pending' && 'border-[#3a3a3a]',
-                    (scene.status === 'keyframe_generating' || scene.status === 'video_generating') && 'border-[#f5c518]/30',
+                    'group relative rounded-lg border bg-card overflow-hidden transition-all',
+                    scene.status === 'failed' && 'border-destructive/50',
+                    scene.status === 'done' && 'border-border',
+                    scene.status === 'pending' && 'border-border',
+                    (scene.status === 'keyframe_generating' || scene.status === 'video_generating') && 'border-primary/30',
                   )}
                 >
                   {/* Thumbnail */}
-                  <div className="aspect-[9/16] bg-[#282828] relative overflow-hidden">
+                  <div className="aspect-[9/16] bg-muted relative overflow-hidden">
                     {scene.videoClipUrl ? (
                       <video
                         src={scene.videoClipUrl}
@@ -462,24 +465,24 @@ export function LongFormStudio() {
                       <div className="flex items-center justify-center h-full">
                         {(scene.status === 'keyframe_generating' || scene.status === 'video_generating') ? (
                           <div className="flex flex-col items-center gap-2">
-                            <Loader2 className="h-6 w-6 text-[#f5c518] animate-spin" />
-                            <span className="text-xs text-[#9b9b9b]">
+                            <Loader2 className="h-6 w-6 text-primary animate-spin" />
+                            <span className="text-xs text-muted-foreground">
                               {scene.status === 'keyframe_generating' ? 'Generating keyframe...' : 'Generating video...'}
                             </span>
                           </div>
                         ) : scene.status === 'failed' ? (
                           <div className="flex flex-col items-center gap-2 p-4 text-center">
-                            <X className="h-6 w-6 text-red-400" />
-                            <span className="text-xs text-red-400">{scene.errorMessage || 'Generation failed'}</span>
+                            <X className="h-6 w-6 text-destructive" />
+                            <span className="text-xs text-destructive">{scene.errorMessage || 'Generation failed'}</span>
                           </div>
                         ) : (
-                          <span className="text-xs text-[#9b9b9b]">Pending</span>
+                          <span className="text-xs text-muted-foreground">Pending</span>
                         )}
                       </div>
                     )}
 
                     {/* Scene number badge */}
-                    <div className="absolute top-2 left-2 bg-[#f5c518] text-[#1a1605] text-xs font-bold px-2 py-0.5 rounded">
+                    <div className="absolute top-2 left-2 bg-primary text-primary-foreground text-xs font-bold px-2 py-0.5 rounded">
                       {scene.order + 1}
                     </div>
 
@@ -497,10 +500,10 @@ export function LongFormStudio() {
                     <div className="absolute top-2 right-2">
                       <span className={cn(
                         'text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded',
-                        scene.status === 'done' && 'bg-green-600/80 text-white',
-                        scene.status === 'failed' && 'bg-red-600/80 text-white',
-                        (scene.status === 'keyframe_generating' || scene.status === 'video_generating') && 'bg-[#f5c518]/80 text-[#1a1605]',
-                        scene.status === 'pending' && 'bg-[#3a3a3a]/80 text-[#9b9b9b]',
+                        scene.status === 'done' && 'bg-emerald-600/80 text-white',
+                        scene.status === 'failed' && 'bg-destructive/80 text-destructive-foreground',
+                        (scene.status === 'keyframe_generating' || scene.status === 'video_generating') && 'bg-primary/80 text-primary-foreground',
+                        scene.status === 'pending' && 'bg-muted-foreground/30 text-muted-foreground',
                       )}>
                         {scene.status === 'keyframe_generating' ? 'Keyframe' :
                          scene.status === 'video_generating' ? 'Video' :
@@ -512,13 +515,13 @@ export function LongFormStudio() {
                   {/* Meta */}
                   <div className="p-3 flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="text-xs text-[#e8e8e8] leading-relaxed line-clamp-2">{scene.description}</p>
-                      <p className="text-[10px] text-[#6b6b6b] mt-1">
+                      <p className="text-xs text-foreground leading-relaxed line-clamp-2">{scene.description}</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">
                         {scene.durationSec}s &middot; {scene.cameraDirection} &middot; {scene.transition}
                       </p>
                     </div>
                     <button
-                      className="shrink-0 text-[#6b6b6b] hover:text-[#e8e8e8] transition-colors"
+                      className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
                       onClick={() => setExpandedScene(expandedScene === scene.id ? null : scene.id)}
                     >
                       {expandedScene === scene.id ? (
@@ -531,11 +534,11 @@ export function LongFormStudio() {
 
                   {/* Expanded editor */}
                   {expandedScene === scene.id && (
-                    <div className="px-3 pb-3 space-y-2 border-t border-[#3a3a3a] pt-3">
+                    <div className="px-3 pb-3 space-y-2 border-t pt-3">
                       <div className="flex flex-col gap-1">
-                        <label className="text-[10px] text-[#9b9b9b] uppercase">Visual Prompt</label>
+                        <label className="text-[10px] text-muted-foreground uppercase">Visual Prompt</label>
                         <textarea
-                          className="w-full rounded border border-[#3a3a3a] bg-[#282828] text-[#e8e8e8] text-xs p-2 resize-none focus:outline-none focus:border-[#f5c518]"
+                          className="w-full rounded border bg-muted text-foreground text-xs p-2 resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary"
                           rows={3}
                           value={scene.visualPrompt}
                           onChange={e => updateScene(scene.id, { visualPrompt: e.target.value })}
@@ -543,9 +546,9 @@ export function LongFormStudio() {
                       </div>
                       <div className="flex gap-2">
                         <div className="flex-1 flex flex-col gap-1">
-                          <label className="text-[10px] text-[#9b9b9b] uppercase">Camera</label>
+                          <label className="text-[10px] text-muted-foreground uppercase">Camera</label>
                           <select
-                            className="w-full rounded border border-[#3a3a3a] bg-[#282828] text-[#e8e8e8] text-xs p-1.5"
+                            className="w-full rounded border bg-muted text-foreground text-xs p-1.5"
                             value={scene.cameraDirection}
                             onChange={e => updateScene(scene.id, { cameraDirection: e.target.value as LongFormScene['cameraDirection'] })}
                           >
@@ -558,10 +561,10 @@ export function LongFormStudio() {
                           </select>
                         </div>
                         <div className="w-20 flex flex-col gap-1">
-                          <label className="text-[10px] text-[#9b9b9b] uppercase">Sec</label>
+                          <label className="text-[10px] text-muted-foreground uppercase">Sec</label>
                           <input
                             type="number"
-                            className="w-full rounded border border-[#3a3a3a] bg-[#282828] text-[#e8e8e8] text-xs p-1.5"
+                            className="w-full rounded border bg-muted text-foreground text-xs p-1.5"
                             min={5}
                             max={15}
                             value={scene.durationSec}
@@ -569,9 +572,9 @@ export function LongFormStudio() {
                           />
                         </div>
                         <div className="flex-1 flex flex-col gap-1">
-                          <label className="text-[10px] text-[#9b9b9b] uppercase">Transition</label>
+                          <label className="text-[10px] text-muted-foreground uppercase">Transition</label>
                           <select
-                            className="w-full rounded border border-[#3a3a3a] bg-[#282828] text-[#e8e8e8] text-xs p-1.5"
+                            className="w-full rounded border bg-muted text-foreground text-xs p-1.5"
                             value={scene.transition}
                             onChange={e => updateScene(scene.id, { transition: e.target.value as LongFormScene['transition'] })}
                           >
@@ -586,11 +589,11 @@ export function LongFormStudio() {
                 </div>
               ))}
 
-              {/* Shimmer placeholder for pending */}
+              {/* Placeholder for pending state */}
               {project.status === 'script_ready' && project.scenes.length > 0 && (
-                <div className="rounded-lg border border-[#3a3a3a] bg-[#1e1e1e] overflow-hidden">
-                  <div className="aspect-[9/16] bg-[#282828] animate-pulse flex items-center justify-center">
-                    <p className="text-sm text-[#9b9b9b]">{project.scenes.length} scenes ready</p>
+                <div className="rounded-lg border bg-card overflow-hidden">
+                  <div className="aspect-[9/16] bg-muted animate-pulse flex items-center justify-center">
+                    <p className="text-sm text-muted-foreground">{project.scenes.length} scenes ready</p>
                   </div>
                 </div>
               )}
@@ -600,17 +603,17 @@ export function LongFormStudio() {
       </main>
 
       {/* ── RIGHT PANEL: Storyboard Timeline ── */}
-      <aside className="w-[280px] shrink-0 flex flex-col border-l border-[#3a3a3a] bg-[#1e1e1e] overflow-hidden">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-[#3a3a3a]">
-          <span className="text-xs text-[#9b9b9b] uppercase tracking-wider">Storyboard</span>
+      <aside className="w-[280px] shrink-0 flex flex-col border-l bg-card overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3 border-b">
+          <span className="text-xs text-muted-foreground uppercase tracking-wider">Storyboard</span>
           {project && (
-            <span className="text-xs text-[#9b9b9b] ml-auto">{project.scenes.length}</span>
+            <span className="text-xs text-muted-foreground ml-auto">{project.scenes.length}</span>
           )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-3">
           {!project || project.scenes.length === 0 ? (
-            <p className="text-xs text-[#9b9b9b] text-center mt-8">
+            <p className="text-xs text-muted-foreground text-center mt-8">
               Scenes will appear here after script generation.
             </p>
           ) : (
@@ -620,29 +623,29 @@ export function LongFormStudio() {
                   key={scene.id}
                   className={cn(
                     'flex items-start gap-2 p-2 rounded-lg border transition-all cursor-pointer',
-                    scene.status === 'done' && 'border-green-500/30 bg-[#282828]',
-                    scene.status === 'failed' && 'border-red-500/30 bg-[#2a1518]',
-                    scene.status === 'pending' && 'border-[#3a3a3a] bg-[#282828]',
-                    (scene.status === 'keyframe_generating' || scene.status === 'video_generating') && 'border-[#f5c518]/30 bg-[#282828]',
-                    expandedScene === scene.id && 'border-[#f5c518]/50',
+                    scene.status === 'done' && 'border-emerald-500/30 bg-muted',
+                    scene.status === 'failed' && 'border-destructive/30 bg-destructive/10',
+                    scene.status === 'pending' && 'border-border bg-muted',
+                    (scene.status === 'keyframe_generating' || scene.status === 'video_generating') && 'border-primary/30 bg-muted',
+                    expandedScene === scene.id && 'border-primary/50',
                   )}
                   onClick={() => setExpandedScene(expandedScene === scene.id ? null : scene.id)}
                 >
-                  <GripVertical className="h-4 w-4 text-[#6b6b6b] shrink-0 mt-0.5 cursor-grab" />
+                  <GripVertical className="h-4 w-4 text-muted-foreground/50 shrink-0 mt-0.5 cursor-grab" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-[#f5c518]">{i + 1}</span>
+                      <span className="text-xs font-bold text-primary">{i + 1}</span>
                       <span className={cn(
                         'w-1.5 h-1.5 rounded-full shrink-0',
-                        scene.status === 'done' && 'bg-green-500',
-                        scene.status === 'failed' && 'bg-red-500',
-                        (scene.status === 'keyframe_generating' || scene.status === 'video_generating') && 'bg-[#f5c518] animate-pulse',
-                        scene.status === 'pending' && 'bg-[#3a3a3a]',
+                        scene.status === 'done' && 'bg-emerald-500',
+                        scene.status === 'failed' && 'bg-destructive',
+                        (scene.status === 'keyframe_generating' || scene.status === 'video_generating') && 'bg-primary animate-pulse',
+                        scene.status === 'pending' && 'bg-muted-foreground/30',
                       )} />
-                      <span className="text-[10px] text-[#6b6b6b] ml-auto">{scene.durationSec}s</span>
+                      <span className="text-[10px] text-muted-foreground ml-auto">{scene.durationSec}s</span>
                     </div>
-                    <p className="text-xs text-[#e8e8e8] line-clamp-2 mt-1">{scene.description}</p>
-                    <p className="text-[10px] text-[#6b6b6b] mt-0.5 truncate">{scene.visualPrompt.slice(0, 60)}...</p>
+                    <p className="text-xs text-foreground line-clamp-2 mt-1">{scene.description}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{scene.visualPrompt.slice(0, 60)}...</p>
                   </div>
                 </div>
               ))}
@@ -652,9 +655,9 @@ export function LongFormStudio() {
 
         {/* Narration preview */}
         {project?.narrationText && (
-          <div className="border-t border-[#3a3a3a] p-3 max-h-32 overflow-y-auto">
-            <p className="text-[10px] text-[#6b6b6b] uppercase mb-1">Narration</p>
-            <p className="text-[11px] text-[#9b9b9b] leading-relaxed line-clamp-4">{project.narrationText}</p>
+          <div className="border-t p-3 max-h-32 overflow-y-auto">
+            <p className="text-[10px] text-muted-foreground uppercase mb-1">Narration</p>
+            <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-4">{project.narrationText}</p>
           </div>
         )}
       </aside>
@@ -662,15 +665,15 @@ export function LongFormStudio() {
       {/* ── Preview Dialog ── */}
       {previewScene && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
           onClick={() => setPreviewScene(null)}
         >
           <div
-            className="relative max-w-[400px] w-full rounded-lg overflow-hidden"
+            className="relative max-w-[400px] w-full rounded-lg overflow-hidden shadow-xl"
             onClick={e => e.stopPropagation()}
           >
             <button
-              className="absolute top-3 right-3 z-10 bg-black/60 text-white rounded-full p-1 hover:bg-black/80"
+              className="absolute top-3 right-3 z-10 bg-background/60 text-foreground rounded-full p-1 hover:bg-background/80"
               onClick={() => setPreviewScene(null)}
             >
               <X className="h-5 w-5" />
@@ -684,11 +687,11 @@ export function LongFormStudio() {
                 playsInline
               />
             )}
-            <div className="bg-[#1e1e1e] p-4">
-              <p className="text-sm text-[#e8e8e8] font-medium">
+            <div className="bg-card p-4">
+              <p className="text-sm text-foreground font-medium">
                 Scene {previewScene.order + 1}
               </p>
-              <p className="text-xs text-[#9b9b9b] mt-1">{previewScene.description}</p>
+              <p className="text-xs text-muted-foreground mt-1">{previewScene.description}</p>
             </div>
           </div>
         </div>
@@ -696,13 +699,13 @@ export function LongFormStudio() {
 
       {/* ── Project List (bottom of left panel) ── */}
       {!project && projects.length > 0 && (
-        <div className="border-t border-[#3a3a3a] p-4">
-          <h3 className="text-xs text-[#9b9b9b] uppercase tracking-wider mb-2">Recent Projects</h3>
+        <div className="border-t p-4">
+          <h3 className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Recent Projects</h3>
           <div className="flex flex-col gap-1">
             {projects.slice(0, 5).map(p => (
               <button
                 key={p.id}
-                className="flex items-center gap-2 text-left p-2 rounded hover:bg-[#282828] transition-colors"
+                className="flex items-center gap-2 text-left p-2 rounded hover:bg-muted transition-colors"
                 onClick={async () => {
                   try {
                     const res = await fetch(`/api/ai-studio/longform/${p.id}`);
@@ -716,14 +719,14 @@ export function LongFormStudio() {
               >
                 <span className={cn(
                   'w-1.5 h-1.5 rounded-full',
-                  p.status === 'completed' && 'bg-green-500',
-                  p.status === 'failed' && 'bg-red-500',
-                  p.status === 'generating' && 'bg-[#f5c518] animate-pulse',
-                  'bg-[#3a3a3a]',
+                  p.status === 'completed' && 'bg-emerald-500',
+                  p.status === 'failed' && 'bg-destructive',
+                  p.status === 'generating' && 'bg-primary animate-pulse',
+                  'bg-muted-foreground/30',
                 )} />
                 <div className="min-w-0">
-                  <p className="text-xs text-[#e8e8e8] truncate">{p.title || 'Untitled'}</p>
-                  <p className="text-[10px] text-[#6b6b6b]">{p.status.replace('_', ' ')}</p>
+                  <p className="text-xs text-foreground truncate">{p.title || 'Untitled'}</p>
+                  <p className="text-[10px] text-muted-foreground">{p.status.replace('_', ' ')}</p>
                 </div>
               </button>
             ))}
