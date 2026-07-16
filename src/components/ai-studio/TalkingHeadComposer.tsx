@@ -6,13 +6,13 @@ import { useState } from 'react';
 import { AudioSelectModal } from '@/components/media/AudioSelectModal';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { AI_STUDIO_MODELS, getModel } from '@/lib/ai-studio/models';
+import { AI_STUDIO_MODELS, estimateCredits, getModel } from '@/lib/ai-studio/models';
 
-import { AspectRatioPicker, type AspectRatio } from './AspectRatioPicker';
+import { type AspectRatio, AspectRatioPicker } from './AspectRatioPicker';
 import { DurationSlider } from './DurationSlider';
 import { ReferenceImageSlot } from './ReferenceImageSlot';
 
-interface TalkingHeadComposerProps {
+type TalkingHeadComposerProps = {
   onSubmit: (payload: {
     prompt: string;
     imageUrl: string;
@@ -22,7 +22,7 @@ interface TalkingHeadComposerProps {
     duration: number;
   }) => void;
   submitting: boolean;
-}
+};
 
 export function TalkingHeadComposer({ onSubmit, submitting }: TalkingHeadComposerProps) {
   const [prompt, setPrompt] = useState('');
@@ -33,12 +33,13 @@ export function TalkingHeadComposer({ onSubmit, submitting }: TalkingHeadCompose
   const [duration, setDuration] = useState(5);
   const [audioPickerOpen, setAudioPickerOpen] = useState(false);
 
-  const videoModels = AI_STUDIO_MODELS.filter((m) => m.kind === 'video');
+  const videoModels = AI_STUDIO_MODELS.filter(m => m.kind === 'video');
   const model = getModel(i2vModelId);
   const lipsync = getModel('veed-lipsync');
   const durations = model?.durations ?? [5];
   const aspects = (model?.aspects ?? ['9:16', '1:1', '16:9']) as AspectRatio[];
-  const credits = (model?.credits ?? 0) + (lipsync?.credits ?? 0);
+  const credits = (model ? estimateCredits(model, { seconds: duration }) : 0)
+    + (lipsync ? estimateCredits(lipsync) : 0);
   const disabled = submitting || !prompt.trim() || !imageUrl || !audioUrl;
 
   return (
@@ -46,7 +47,7 @@ export function TalkingHeadComposer({ onSubmit, submitting }: TalkingHeadCompose
       <div className="flex flex-col gap-3">
         <Textarea
           value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
+          onChange={e => setPrompt(e.target.value)}
           placeholder="Describe the motion for the source frame..."
           rows={3}
           className="resize-none bg-background"
@@ -62,7 +63,7 @@ export function TalkingHeadComposer({ onSubmit, submitting }: TalkingHeadCompose
             <span className="text-xs text-muted-foreground">Audio track</span>
             {audioUrl ? (
               <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1 text-xs">
-                <Music className="h-3 w-3" />
+                <Music className="size-3" />
                 <span className="max-w-[160px] truncate">{audioUrl.split('/').pop()}</span>
                 <button
                   type="button"
@@ -79,7 +80,9 @@ export function TalkingHeadComposer({ onSubmit, submitting }: TalkingHeadCompose
                 variant="secondary"
                 onClick={() => setAudioPickerOpen(true)}
               >
-                <Music className="mr-1 h-3 w-3" /> Pick audio
+                <Music className="mr-1 size-3" />
+                {' '}
+                Pick audio
               </Button>
             )}
           </div>
@@ -88,12 +91,18 @@ export function TalkingHeadComposer({ onSubmit, submitting }: TalkingHeadCompose
         <div className="flex flex-wrap items-center gap-3">
           <select
             value={i2vModelId}
-            onChange={(e) => setI2vModelId(e.target.value)}
+            onChange={e => setI2vModelId(e.target.value)}
             className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground"
           >
-            {videoModels.map((m) => (
+            {videoModels.map(m => (
               <option key={m.id} value={m.id}>
-                {m.label} ({m.credits} credits)
+                {m.label}
+                {' '}
+                (
+                {m.credits}
+                {m.perSecond ? '/sec' : ''}
+                {' '}
+                credits)
               </option>
             ))}
           </select>
@@ -102,18 +111,23 @@ export function TalkingHeadComposer({ onSubmit, submitting }: TalkingHeadCompose
           <div className="ml-auto">
             <Button
               onClick={() => {
-                if (!imageUrl || !audioUrl) return;
+                if (!imageUrl || !audioUrl) {
+                  return;
+                }
                 onSubmit({ prompt, imageUrl, audioUrl, i2vModelId, aspect, duration });
               }}
               disabled={disabled}
               size="lg"
             >
               {submitting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 size-4 animate-spin" />
               ) : (
-                <Sparkles className="mr-2 h-4 w-4" />
+                <Sparkles className="mr-2 size-4" />
               )}
-              Generate ({credits} credits)
+              Generate (
+              {credits}
+              {' '}
+              credits)
             </Button>
           </div>
         </div>
