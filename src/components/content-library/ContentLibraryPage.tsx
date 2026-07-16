@@ -59,7 +59,16 @@ export function ContentLibraryPage() {
           hasMore: boolean;
         };
 
-        setTemplates((prev) => (append ? [...prev, ...data.templates] : data.templates));
+        setTemplates((prev) => {
+          const incoming = data.templates;
+          if (append) {
+            // Deduplicate by id so tied-score pagination doesn't create duplicates
+            const seen = new Set(prev.map(t => t.id));
+            const deduped = incoming.filter(t => !seen.has(t.id));
+            return [...prev, ...deduped];
+          }
+          return incoming;
+        });
         setTotal(data.total);
         setHasMore(data.hasMore);
         setPage(data.page);

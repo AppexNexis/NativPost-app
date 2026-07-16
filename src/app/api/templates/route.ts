@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, eq, ilike, or, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -86,17 +86,13 @@ export async function GET(request: NextRequest) {
 
   const where = and(...conditions);
 
-  let orderBy;
-  switch (sort) {
-    case 'remixes':
-      orderBy = desc(contentTemplateSchema.remixCount);
-      break;
-    case 'newest':
-      orderBy = desc(contentTemplateSchema.createdAt);
-      break;
-    default:
-      orderBy = desc(contentTemplateSchema.engagementScore);
-  }
+  // Tiebreaker: add `id` as secondary sort so paginated results with tied
+  // scores (e.g. many templates at the default 0.72) return deterministically.
+  const orderBy = sort === 'remixes'
+    ? sql`remix_count DESC, created_at DESC, id ASC`
+    : sort === 'newest'
+      ? sql`created_at DESC, id ASC`
+      : sql`engagement_score DESC, created_at DESC, id ASC`;
 
   try {
     const [countResult, items] = await Promise.all([
