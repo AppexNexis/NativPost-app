@@ -1,6 +1,8 @@
 // @ts-nocheck
 import React from 'react';
-import { AbsoluteFill, Audio, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
+import { AbsoluteFill, Audio, Img, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
+
+const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v)(\?|$)/i;
 
 interface Props {
   script: {
@@ -61,12 +63,19 @@ export function UGCAdComposition({ script, style, mediaSlots, audioTrack }: Prop
         />
       )}
       {mediaSlots?.background?.url && (
-        <Video
-          src={mediaSlots.background.url}
-          style={{ width, height, objectFit: 'cover', position: 'absolute' }}
-          muted
-          loop
-        />
+        VIDEO_EXT_RE.test(mediaSlots.background.url) ? (
+          <Video
+            src={mediaSlots.background.url}
+            style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+            muted
+            loop
+          />
+        ) : (
+          <Img
+            src={mediaSlots.background.url}
+            style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+          />
+        )
       )}
 
       <AbsoluteFill

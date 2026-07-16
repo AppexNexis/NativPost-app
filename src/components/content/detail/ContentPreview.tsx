@@ -58,7 +58,8 @@ export function ContentPreview({
   const mediaSlots = useMemo(() => resolveMediaSlots(item), [item]);
   const anyMedia = useMemo(() => hasAnyMedia(item), [item]);
 
-  const aspectRatio = item.aspectRatio || (useVideoBranch ? '9:16' : '1:1');
+  const SLIDE_TYPES = new Set(['slideshow', 'carousel', 'data_story']);
+  const aspectRatio = item.aspectRatio || (useVideoBranch ? '9:16' : SLIDE_TYPES.has(item.contentType) ? '9:16' : '1:1');
   const aspectCss = aspectRatio.replace(':', '/');
 
   const headerIcon = useVideoBranch ? Video : ImageIcon;
@@ -176,8 +177,8 @@ export function ContentPreview({
                   <GalleryPreview
                     slides={gallerySlides}
                     slideCopy={slideCopy as any}
-                    aspectRatio={item.aspectRatio || null}
-                    layout={enrichment.editorLayout as string | undefined}
+                    aspectRatio={aspectRatio}
+                    layout={(enrichment.editorLayout as string) || (SLIDE_TYPES.has(item.contentType) ? 'centered' : undefined)}
                     align={(enrichment.editorStyle as any)?.align as 'left' | 'center' | 'right' | undefined}
                     backgroundDimming={(enrichment.editorStyle as any)?.backgroundDimming as number | undefined}
                   />
