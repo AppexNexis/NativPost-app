@@ -49,7 +49,7 @@ export function buildSourceMediaSlots(template: TemplateRow): SourceMediaSlots {
   const multiSlide = isMultiSlideTemplate(template.contentType, slideUrls);
 
   if (multiSlide && slideUrls.length > 0) {
-    slots.slides = slideUrls.map((url) => ({ url, assetType: 'image' as const }));
+    slots.slides = slideUrls.map(url => ({ url, assetType: 'image' as const }));
     // A slideshow template can still ship a background if mediaUrl/sourceUrl is
     // set — some compositions layer text over a bg. Keep it optional.
     const bgUrl = template.mediaUrl || template.sourceUrl || null;
@@ -80,6 +80,12 @@ export function buildSourceMediaSlots(template: TemplateRow): SourceMediaSlots {
     }
     if (template.contentType === 'ugc' || template.contentType === 'talking_head') {
       slots.demoVideo = { url: slots.background.url, assetType: 'video' };
+    }
+    // TalkingHead composition reads mediaSlots.faceVideo; when no
+    // influencer is enabled the preview would render blank without an
+    // alias. Mirror the background so the face slot always has a source.
+    if (template.contentType === 'talking_head') {
+      slots.faceVideo = { url: slots.background.url, assetType: 'video' };
     }
   }
 

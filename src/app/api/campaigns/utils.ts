@@ -5,7 +5,8 @@
 import { waitUntil } from '@vercel/functions';
 import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 
-import { applySetToSlots } from '@/lib/blitz/apply-set-to-slots';
+import { applyBrandVoice } from '@/lib/blitz/apply-brand-voice';
+import { applySetToSlots, InsufficientAssetsError } from '@/lib/blitz/apply-set-to-slots';
 import { buildEditorScript, buildReasoning, deriveTopicLabel } from '@/lib/blitz/build-editor-script';
 import { buildSourceMediaSlots } from '@/lib/blitz/build-source-media-slots';
 import { generateBlitzSlideCaptions } from '@/lib/blitz/generate-slide-captions';
@@ -112,10 +113,11 @@ const MIX_KEY_TO_TEMPLATE_CONTENT_TYPE: Record<string, string> = {
   ugc: 'ugc',
   dataStory: 'data_story',
   wallOfText: 'wall_of_text',
-  scene: 'scene',
-  textMotion: 'text_motion',
-  aiGraphic: 'ai_graphic',
-  thumbnail: 'thumbnail',
+  // NOTE: scene / text_motion / ai_graphic / thumbnail intentionally
+  // omitted. Their template rows exist in the DB but no Remotion
+  // composition renders them yet — they would silently fall back to
+  // EditorComposition and render as a black-video with plain text on the
+  // Blitz swipe card. Re-add when compositions ship.
 };
 
 export function mapMixKeyToContentType(mixKey: string): string {
@@ -411,6 +413,11 @@ export type GenerationResult = {
   completedPosts: number;
   failedPosts: number;
   contentItemIds: string[];
+  // Count of posts skipped because a Media Set had fewer distinct
+  // assets than the slideshow template's required slides.
+  skippedInsufficientAssets?: number;
+  // Set when the org has already hit its per-day cap for this campaign.
+  dailyLimitReached?: boolean;
 };
 
 // ── Engine campaign request builder ───────────────────────────────────────────
@@ -802,7 +809,9 @@ export async function generateCampaignPosts(
   // Blitz's per-day generation model (which this code was cloned from)
   // relies on subsequent auto-refill calls, but Campaigns need the whole
   // schedule up-front so the Review grid and Calendar can show every slot.
-  const postsToCreate = totalPosts;
+  // NOTE: The daily-cap gate later in this function may lower this to
+  // (dailyLimit - existingTodayCount). See `enforcedPostsToCreate` below.
+  let postsToCreate = totalPosts;
 
   const contentMix = (campaign.contentMix as Record<string, number>) || {};
   const campaignAngles = (campaign.angles as { angleId: string; weight: number }[]) || [];
@@ -816,6 +825,56 @@ export async function generateCampaignPosts(
 
   if (!profile) {
     throw new Error('No Brand Profile found. Complete your Brand Profile first.');
+  }
+
+  // ── Daily-cap gate (Blitz-critical) ────────────────────────────────────
+  // The generic campaign generator was cloned from the Blitz per-day model
+  // and never got a "how many did we already insert today" check. Concurrent
+  // /generate kicks + auto-refill effects + stale-sweep flipping items to
+  // 'failed' let the queue overshoot the user's postsPerDay setting — the
+  // "You've seen 15 of 10 posts" bug. Compute the shortfall vs today's cap
+  // BEFORE touching templates so we never insert past it.
+  //
+  // "Today" is the calendar day in server local time; failed items are
+  // re-attemptable and don't consume the cap.
+  const dailyLimit = postsPerDay;
+  const _now = new Date();
+  const _startOfDay = new Date(
+    _now.getFullYear(),
+    _now.getMonth(),
+    _now.getDate(),
+  );
+  const todayCountRows = await db
+    .select({ contentItemId: campaignContentSchema.contentItemId })
+    .from(campaignContentSchema)
+    .innerJoin(
+      contentItemSchema,
+      eq(campaignContentSchema.contentItemId, contentItemSchema.id),
+    )
+    .where(
+      and(
+        eq(campaignContentSchema.campaignId, campaign.id),
+        eq(contentItemSchema.orgId, orgId),
+        gte(contentItemSchema.createdAt, _startOfDay),
+        inArray(contentItemSchema.status, ['pending_review', 'approved', 'skipped']),
+      ),
+    );
+  const existingTodayCount = todayCountRows.length;
+  const remainingToday = Math.max(0, dailyLimit - existingTodayCount);
+  postsToCreate = Math.min(totalPosts, remainingToday);
+  if (postsToCreate === 0) {
+    console.log(
+      `[Campaign] Daily cap reached: existing=${existingTodayCount} `
+      + `limit=${dailyLimit} — skipping generation.`,
+    );
+    return {
+      totalPosts: 0,
+      completedPosts: 0,
+      failedPosts: 0,
+      contentItemIds: [],
+      skippedInsufficientAssets: 0,
+      dailyLimitReached: true,
+    };
   }
 
   // Resolve target platforms — hard-gated to connected FB / IG / TikTok / YouTube.
@@ -867,13 +926,28 @@ export async function generateCampaignPosts(
   // (or swapped for a matching Set on safe-swap content types).
   // If contentMix asks for types with no matching approved templates,
   // the engine will fall back to text-only generation for those posts.
-  let templates = await fetchCampaignTemplates(db, orgId, contentMix, niche);
-  // Fallback: if niche filtering produced zero templates, retry without
-  // the filter. This prevents users whose brand profile niche has no
-  // matching content from getting empty Blitz cards.
-  if (templates.length === 0 && niche) {
-    console.log(`[Campaign] No templates matched niche "${niche}", retrying without filter.`);
-    templates = await fetchCampaignTemplates(db, orgId, contentMix, null);
+  const templates = await fetchCampaignTemplates(db, orgId, contentMix, niche);
+  // Pad with off-niche templates when the niche pool is thin. Old logic
+  // only re-fetched on ZERO matches, so a "Startup" niche with 3 approved
+  // templates gave a monotonous Blitz even when the library had 493.
+  // We now widen whenever the niche pool is smaller than ~3× the requested
+  // post count, dedup by id, and prepend the on-niche results so ranking
+  // still favours them.
+  if (templates.length < postsToCreate * 3) {
+    const wider = await fetchCampaignTemplates(db, orgId, contentMix, null);
+    const seen = new Set(templates.map((t: any) => t.id));
+    for (const t of wider) {
+      if (!seen.has(t.id)) {
+        templates.push(t);
+        seen.add(t.id);
+      }
+    }
+    if (niche) {
+      console.log(
+        `[Campaign] Niche "${niche}" pool small (${templates.length - wider.length + templates.length}) — `
+        + `padded with ${wider.length} off-niche templates, ${templates.length} total.`,
+      );
+    }
   }
   const templatesById = new Map<string, CampaignTemplateRow>();
   for (const t of templates) {
@@ -1065,6 +1139,10 @@ export async function generateCampaignPosts(
   let inserted = 0;
   const contentItemIds: string[] = [];
   let failedPosts = 0;
+  // Counts posts skipped because the selected Media Set has fewer distinct
+  // assets than the template's slide count. Surfaced in the /generate
+  // response so the client can show a "your set is too small" hint.
+  let skippedInsufficientAssets = 0;
 
   // Seed the progress record with the total up-front so the client sees
   // "0 of 14" the moment the drain claims the job, not "0 of 0". The
@@ -1082,6 +1160,7 @@ export async function generateCampaignPosts(
   for (const { template, hookText } of templatePosts) {
     try {
       let sourceMediaSlots = buildSourceMediaSlots(template);
+      let _insufficientAssets = false;
       try {
         const set = await pickDefaultSet(db, orgId, template.contentType);
         if (set) {
@@ -1089,7 +1168,19 @@ export async function generateCampaignPosts(
           // leading images even when the same media set applies to every post.
           sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, template.contentType, inserted);
         }
-      } catch { /* keep original slots — Set substitution is best-effort */ }
+      } catch (err) {
+        if (err instanceof InsufficientAssetsError) {
+          _insufficientAssets = true;
+        }
+        // Non-insufficient errors: keep original slots (best-effort).
+      }
+      if (_insufficientAssets) {
+        skippedInsufficientAssets++;
+        console.log(
+          `[Campaign] Skipping ${template.id} — media set too small for ${template.contentType} template.`,
+        );
+        continue;
+      }
 
       const resolvedContentType = template.contentType;
       if (!RENDERABLE_CONTENT_TYPES.has(resolvedContentType)) {
@@ -1101,11 +1192,26 @@ export async function generateCampaignPosts(
       // etc. Only fall back to pickUniqueHook when no caption is available.
       // Content-template rows store the original caption as structure.caption
       // or slideCaptions — neither is guaranteed, so fall back gracefully.
-      const templateCaption = template.structure?.caption
+      const rawTemplateCaption = template.structure?.caption
         || (Array.isArray(template.slideCaptions) ? template.slideCaptions.join('\n') : '')
         || (typeof template.slideCaptions === 'object' && template.slideCaptions !== null
           ? Object.values(template.slideCaptions).join('\n') : '')
         || '';
+
+      // Rewrite the source caption in the brand voice + roll for a
+      // brand-name mention per campaign.mentionFrequency. Cached by
+      // (templateId, brandUpdatedAt, platform) so repeat generations
+      // don't re-pay. Falls back to raw on any error.
+      const _voice = await applyBrandVoice({
+        profile,
+        sourceCaption: rawTemplateCaption,
+        contentType: resolvedContentType,
+        platform: Array.isArray(targetPlatforms) ? targetPlatforms[0] : null,
+        templateId: template.id,
+        mentionFrequency: campaign.mentionFrequency as any,
+      });
+      const templateCaption = _voice.caption || rawTemplateCaption;
+
       let editorScript = buildEditorScript(
         { caption: templateCaption, content_type: resolvedContentType, template_id: template.id },
         { contentType: resolvedContentType, slideCaptions: template.slideCaptions, thumbnailUrls: template.thumbnailUrls },
@@ -1406,14 +1512,16 @@ export async function generateCampaignPosts(
         }>;
       };
 
-      let failedPosts = 0;
-      const contentItemIds: string[] = [];
+      // NOTE: Do NOT redeclare `failedPosts`, `contentItemIds`, or
+      // `inserted` here — they exist in the outer scope (declared before
+      // Phase 1) and MUST be reused so Phase-2 respects Phase-1's counters.
+      // Redeclaring them silently doubled the daily cap and dropped
+      // Phase-1 failures from the summary. Reassign only.
 
       // Guarantee exactly postsPerDay cards reach the Blitz queue. The engine
       // may return more posts than needed (buffer) or some posts may reference
       // unresolvable template_ids. We stop once we've successfully inserted
       // postsPerDay cards.
-      let inserted = 0;
       // Use the Phase 1 `usedTemplateIds` set. The engine-supplement loop
       // must NOT re-insert templates already used in the template-first pass.
       for (const [i, post] of engineResult.posts.entries()) {
@@ -1505,13 +1613,25 @@ export async function generateCampaignPosts(
           let sourceMediaSlots: Record<string, any> = buildSourceMediaSlots(template);
 
           // Attempt Media Set substitution for safe-swap content types.
+          let _insufficientAssets = false;
           try {
             const set = await pickDefaultSet(db, orgId, resolvedContentType);
             if (set) {
               sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, resolvedContentType, inserted);
             }
           } catch (setErr: any) {
-            console.warn(`[Campaign] Set substitution failed for post ${i}:`, setErr?.message || setErr);
+            if (setErr instanceof InsufficientAssetsError) {
+              _insufficientAssets = true;
+            } else {
+              console.warn(`[Campaign] Set substitution failed for post ${i}:`, setErr?.message || setErr);
+            }
+          }
+          if (_insufficientAssets) {
+            skippedInsufficientAssets++;
+            console.log(
+              `[Campaign] Phase-2 skipping post ${i} — set too small for ${resolvedContentType}.`,
+            );
+            continue;
           }
 
           // Content type must be one the Remotion preview pipeline supports,
@@ -1524,8 +1644,19 @@ export async function generateCampaignPosts(
             continue;
           }
 
+          // Rewrite engine-generated caption in brand voice + mention roll.
+          const _voice2 = await applyBrandVoice({
+            profile,
+            sourceCaption: post.caption || '',
+            contentType: resolvedContentType,
+            platform: Array.isArray(targetPlatforms) ? targetPlatforms[0] : null,
+            templateId: post.template_id || template.id,
+            mentionFrequency: campaign.mentionFrequency as any,
+          });
+          const brandedCaption = _voice2.caption || post.caption || '';
+
           const editorScript = buildEditorScript(
-            { caption: post.caption, content_type: post.content_type, template_id: post.template_id },
+            { caption: brandedCaption, content_type: post.content_type, template_id: post.template_id },
             { contentType: resolvedContentType, slideCaptions: template.slideCaptions, thumbnailUrls: template.thumbnailUrls },
           );
 
@@ -1773,12 +1904,22 @@ export async function generateCampaignPosts(
         let sourceMediaSlots = buildSourceMediaSlots(template);
 
         // Apply media set substitution (same logic as engine posts)
+        let _insufficientAssets = false;
         try {
           const set = await pickDefaultSet(db, orgId, resolvedContentType);
           if (set) {
             sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, resolvedContentType, inserted);
           }
-        } catch { /* keep original slots */ }
+        } catch (err) {
+          if (err instanceof InsufficientAssetsError) {
+            _insufficientAssets = true;
+          }
+          // Non-insufficient: silent (fallback path is best-effort).
+        }
+        if (_insufficientAssets) {
+          skippedInsufficientAssets++;
+          continue;
+        }
 
         // Randomised caption pool so fallback Blitz posts don't all
         // show the same generic hook text on the card preview.
@@ -1791,9 +1932,23 @@ export async function generateCampaignPosts(
           : slideCaptions && typeof slideCaptions === 'object'
             ? Object.values(slideCaptions)[0]
             : undefined;
-        const caption = firstSlideCaption
+        const rawCaption = firstSlideCaption
           || randomHook
           || `Hook text for ${resolvedContentType.replace(/_/g, ' ')}`;
+
+        // Fallback-pool captions are the highest duplicate-risk path
+        // (small pool of FALLBACK_HOOKS repeated across posts). Rewriting
+        // in brand voice + optional mention breaks the collision AND
+        // keeps the fallback aligned with the brand.
+        const _voice3 = await applyBrandVoice({
+          profile,
+          sourceCaption: rawCaption,
+          contentType: resolvedContentType,
+          platform: Array.isArray(targetPlatforms) ? targetPlatforms[0] : null,
+          templateId: template.id,
+          mentionFrequency: campaign.mentionFrequency as any,
+        });
+        const caption = _voice3.caption || rawCaption;
 
         const editorScript = buildEditorScript(
           { caption, content_type: resolvedContentType, template_id: template.id },
@@ -1921,6 +2076,11 @@ export async function generateCampaignPosts(
     completedPosts: totalEnginePosts - failedPosts,
     failedPosts,
     contentItemIds,
+    // Surface the count of posts skipped because a Media Set didn't have
+    // enough distinct assets for the slideshow it was substituting into.
+    // Consumed by the /generate route response so the UI can explain why
+    // fewer posts landed than requested (per Ingestion loop counter discipline).
+    skippedInsufficientAssets,
   };
 }
 

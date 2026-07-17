@@ -31,6 +31,7 @@ export type PlanFeatures = {
   monthlyPlanTopics: number; // 0 = not available, >0 = topics per month
   monthlyPlanRegenerations: number; // how many regenerations per month allowed
   monthlyAiCredits: number; // AI Studio monthly credit allocation
+  blitzPostsPerDay: number; // -1 = unlimited; hard cap on Blitz daily queue
 };
 
 export type PlanConfig = {
@@ -78,6 +79,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       monthlyPlanTopics: 15,
       monthlyPlanRegenerations: 2,
       monthlyAiCredits: 250,
+      blitzPostsPerDay: 3,
     },
     stripePriceId: { dev: 'price_STARTER_DEV_REPLACE', prod: 'price_1TLfHe8UA4orc9zNIcmWwP1d' },
     stripeAnnualPriceId: { dev: 'price_STARTER_ANNUAL_DEV_REPLACE', prod: 'price_STARTER_ANNUAL_PROD_REPLACE' },
@@ -113,6 +115,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       monthlyPlanTopics: 20,
       monthlyPlanRegenerations: 3,
       monthlyAiCredits: 500,
+      blitzPostsPerDay: 5,
     },
     stripePriceId: { dev: 'price_GROWTH_DEV_REPLACE', prod: 'price_1TLfIW8UA4orc9zN5SvYEWkD' },
     stripeAnnualPriceId: { dev: 'price_GROWTH_ANNUAL_DEV_REPLACE', prod: 'price_GROWTH_ANNUAL_PROD_REPLACE' },
@@ -148,6 +151,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       monthlyPlanTopics: 25,
       monthlyPlanRegenerations: 3,
       monthlyAiCredits: 1250,
+      blitzPostsPerDay: 10,
     },
     stripePriceId: { dev: 'price_PRO_DEV_REPLACE', prod: 'price_1TLfJ08UA4orc9zNrNzFnRr7' },
     stripeAnnualPriceId: { dev: 'price_PRO_ANNUAL_DEV_REPLACE', prod: 'price_PRO_ANNUAL_PROD_REPLACE' },
@@ -183,6 +187,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       monthlyPlanTopics: 30,
       monthlyPlanRegenerations: -1, // unlimited
       monthlyAiCredits: 2000,
+      blitzPostsPerDay: 20,
     },
     stripePriceId: { dev: 'price_AGENCY_DEV_REPLACE', prod: 'price_1TLfKa8UA4orc9zNw27oyVak' },
     stripeAnnualPriceId: { dev: 'price_AGENCY_ANNUAL_DEV_REPLACE', prod: 'price_AGENCY_ANNUAL_PROD_REPLACE' },
@@ -218,6 +223,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       monthlyPlanTopics: -1,
       monthlyPlanRegenerations: -1,
       monthlyAiCredits: 2000,
+      blitzPostsPerDay: -1,
     },
     stripePriceId: { dev: '', prod: '' },
     stripeAnnualPriceId: { dev: '', prod: '' },
@@ -259,6 +265,7 @@ export const TRIAL_FEATURES: PlanFeatures = {
   monthlyPlanTopics: 0, // not available during trial
   monthlyPlanRegenerations: 0,
   monthlyAiCredits: 50,
+  blitzPostsPerDay: 2,
 };
 
 function getEnv(): 'dev' | 'prod' {

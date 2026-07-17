@@ -167,6 +167,11 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
   const [postsPerDay, setPostsPerDay] = useState(initial.postsPerDay);
   const [qualityThreshold, setQualityThreshold] = useState(initial.qualityThreshold);
 
+  // Plan-tier daily cap (fetched from billing status)
+  // -1 = unlimited. When null, we haven't loaded yet — don't clamp.
+  const [blitzCap, setBlitzCap] = useState<number | null>(null);
+  const [planName, setPlanName] = useState<string | null>(null);
+
   // Connected accounts (for readiness check)
   const [connectedAccounts, setConnectedAccounts] = useState<SocialAccount[]>([]);
 
@@ -194,6 +199,20 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
     fetch('/api/social-accounts')
       .then(r => r.json())
       .then(d => setConnectedAccounts(d.items || d || []))
+      .catch(() => {});
+
+    // Fetch plan tier so we can clamp posts/day to the plan cap
+    fetch('/api/billing/status')
+      .then(r => r.json())
+      .then((d) => {
+        const cap = d?.features?.blitzPostsPerDay;
+        if (typeof cap === 'number') {
+          setBlitzCap(cap);
+        }
+        if (d?.plan) {
+          setPlanName(d.plan);
+        }
+      })
       .catch(() => {});
   }, [open]);
 
@@ -731,11 +750,33 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                 <Input
                   type="number"
                   min={1}
-                  max={20}
+                  max={blitzCap === null || blitzCap === -1 ? 999 : blitzCap}
                   value={postsPerDay}
-                  onChange={e => setPostsPerDay(Number.parseInt(e.target.value, 10) || 1)}
+                  onChange={(e) => {
+                    const raw = Number.parseInt(e.target.value, 10) || 1;
+                    const capped = blitzCap !== null && blitzCap !== -1
+                      ? Math.min(raw, blitzCap)
+                      : raw;
+                    setPostsPerDay(Math.max(1, capped));
+                  }}
                   className="mt-1"
                 />
+                {blitzCap !== null && blitzCap !== -1 && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Your
+                    {' '}
+                    {planName ?? 'current'}
+                    {' '}
+                    plan allows up to
+                    {' '}
+                    {blitzCap}
+                    /day.
+                    {' '}
+                    <a href="/dashboard/billing" className="text-primary hover:underline">
+                      Upgrade for more
+                    </a>
+                  </p>
+                )}
               </div>
               <div className="rounded-xl border bg-muted/30 p-4">
                 <Label className="text-sm font-medium">Quality threshold</Label>

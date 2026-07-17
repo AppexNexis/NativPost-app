@@ -37,6 +37,16 @@ const CONTENT_TYPE_TO_SET_TYPE: Record<string, string | undefined> = {
   slideshow: 'slideshow',
   carousel: 'slideshow',
   wall_of_text: 'slideshow',
+  // Video content types map to 'video' Sets (e.g. "studio 2 hook"). When
+  // the org has no 'video' Set we fall back to null and the caller
+  // preserves template media. See applySetToSlots for slot routing.
+  talking_head: 'video',
+  video_hook: 'video',
+  video_hook_demo: 'video',
+  ugc: 'video',
+  green_screen: 'video',
+  scene: 'video',
+  reel: 'video',
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -44,15 +54,21 @@ const VIDEO_EXT = /\.(mp4|webm|mov|m4v)(\?|$)/i;
 
 function buildCloudinaryUrl(publicId: string, resourceType: 'image' | 'video'): string {
   const cloud = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-  if (!cloud) return '';
+  if (!cloud) {
+    return '';
+  }
   // `publicId` from the sets API already includes any folder prefix
   // (e.g. `nativpost/user-uploads/xyz`) so no extra folder handling here.
   return `https://res.cloudinary.com/${cloud}/${resourceType}/upload/${publicId}`;
 }
 
 function inferAssetType(publicIdOrUrl: string, setType: string): 'image' | 'video' {
-  if (VIDEO_EXT.test(publicIdOrUrl)) return 'video';
-  if (setType === 'video') return 'video';
+  if (VIDEO_EXT.test(publicIdOrUrl)) {
+    return 'video';
+  }
+  if (setType === 'video') {
+    return 'video';
+  }
   return 'image';
 }
 
@@ -62,7 +78,9 @@ export async function pickDefaultSet(
   contentType: string,
 ): Promise<ResolvedSet | null> {
   const setType = CONTENT_TYPE_TO_SET_TYPE[contentType];
-  if (!setType) return null;
+  if (!setType) {
+    return null;
+  }
 
   const [set] = await db
     .select()
@@ -71,7 +89,9 @@ export async function pickDefaultSet(
     .orderBy(desc(mediaSetSchema.updatedAt))
     .limit(1);
 
-  if (!set) return null;
+  if (!set) {
+    return null;
+  }
 
   // `assetUuids` column can hold either a jsonb array or a stringified array
   // depending on when the row was written. Normalize both shapes.
@@ -81,20 +101,27 @@ export async function pickDefaultSet(
   } else if (typeof set.assetUuids === 'string') {
     try {
       const parsed = JSON.parse(set.assetUuids);
-      if (Array.isArray(parsed)) stored = parsed.filter(Boolean);
+      if (Array.isArray(parsed)) {
+        stored = parsed.filter(Boolean);
+      }
     } catch {
       stored = [];
     }
   }
 
-  if (stored.length === 0) return null;
+  if (stored.length === 0) {
+    return null;
+  }
 
   // Split entries into UUIDs (legacy media_asset rows) and Cloudinary public_ids.
   const uuids: string[] = [];
   const publicIds: string[] = [];
   for (const entry of stored) {
-    if (UUID_RE.test(entry)) uuids.push(entry);
-    else publicIds.push(entry);
+    if (UUID_RE.test(entry)) {
+      uuids.push(entry);
+    } else {
+      publicIds.push(entry);
+    }
   }
 
   // Resolve any legacy uuids from the media_asset table.
@@ -115,7 +142,9 @@ export async function pickDefaultSet(
           ),
         );
       for (const r of rows as any[]) {
-        if (r?.id && r?.url) dbAssets.set(r.id, { url: r.url, assetType: r.assetType });
+        if (r?.id && r?.url) {
+          dbAssets.set(r.id, { url: r.url, assetType: r.assetType });
+        }
       }
     } catch (err) {
       // Legacy path is best-effort — never fail Set resolution because
@@ -140,10 +169,14 @@ export async function pickDefaultSet(
     // Cloudinary public_id
     const assetType = inferAssetType(entry, set.type);
     const url = buildCloudinaryUrl(entry, assetType);
-    if (url) resolved.push({ url, assetType });
+    if (url) {
+      resolved.push({ url, assetType });
+    }
   }
 
-  if (resolved.length === 0) return null;
+  if (resolved.length === 0) {
+    return null;
+  }
 
   return {
     id: set.id,

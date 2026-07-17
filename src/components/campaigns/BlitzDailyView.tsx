@@ -72,9 +72,15 @@ function getTodayKey(): string {
 
 // Compact number formatting (101K, 8.4M) for engagement metric chips.
 function formatCompactNumber(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return '0';
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+  if (n == null || !Number.isFinite(n)) {
+    return '0';
+  }
+  if (n >= 1_000_000) {
+    return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  }
+  if (n >= 1_000) {
+    return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+  }
   return String(n);
 }
 
@@ -84,8 +90,37 @@ function formatCompactNumber(n: number | null | undefined): string {
 // carry the suffix — strip it at render time so users never see "(20)".
 // Matches optional trailing space + parenthesized integer at end of string.
 function stripCollisionSuffix(s: string | null | undefined): string {
-  if (!s) return '';
+  if (!s) {
+    return '';
+  }
   return String(s).replace(/\s*\(\d+\)\s*$/, '').trim();
+}
+
+// Human-readable label for a content_type slug. The default
+// Title_Case_With_Underscores that came from `replace(/_/g, ' ')` renders
+// as "Ugc" or "Personal_brand" on the pill — replace with proper cased
+// names ("UGC", "Personal Brand", "Text Post") and fall back to the
+// generic title-case for unknown types.
+const CONTENT_TYPE_LABELS: Record<string, string> = {
+  ugc: 'UGC',
+  wall_of_text: 'Text Post',
+  personal_brand: 'Personal Brand',
+  video_hook: 'Video Hook',
+  video_hook_demo: 'Video Hook Demo',
+  talking_head: 'Talking Head',
+  green_screen: 'Green Screen',
+  slideshow: 'Slideshow',
+  carousel: 'Carousel',
+  data_story: 'Data Story',
+  reel: 'Reel',
+  scene: 'Scene',
+};
+function formatContentTypeLabel(ct: string): string {
+  const key = ct.toLowerCase();
+  if (CONTENT_TYPE_LABELS[key]) {
+    return CONTENT_TYPE_LABELS[key];
+  }
+  return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 // Structured reasoning payload written by lib/blitz/build-editor-script.ts.
@@ -111,11 +146,17 @@ function readSnapshot(enrichment: any): any {
 function readSessionDailyLimit(campaignId: string): { count: number; limit: number; nextResetAt: string } | null {
   try {
     const raw = sessionStorage.getItem(`${SESSION_KEY_DAILY_LIMIT}_${campaignId}`);
-    if (!raw) return null;
+    if (!raw) {
+      return null;
+    }
     const parsed = JSON.parse(raw);
     // Only honor the stored limit if it's from today.
-    if (parsed.dateKey !== getTodayKey()) return null;
-    if (parsed.nextResetAt && new Date(parsed.nextResetAt) <= new Date()) return null;
+    if (parsed.dateKey !== getTodayKey()) {
+      return null;
+    }
+    if (parsed.nextResetAt && new Date(parsed.nextResetAt) <= new Date()) {
+      return null;
+    }
     return { count: parsed.count, limit: parsed.limit, nextResetAt: parsed.nextResetAt };
   } catch {
     return null;
@@ -142,10 +183,12 @@ function getNextResetTime(): string {
 type BlitzDailyViewProps = {
   campaign: Campaign;
   initialContentItems: BlitzItem[];
-  /** Server-side daily-limit check so the client gets the truth
+  /**
+   * Server-side daily-limit check so the client gets the truth
    *  synchronously on mount. Without this the auto-gen effect fires
    *  before the client-side count effect, causing a spurious generation
-   *  request. */
+   *  request.
+   */
   dailyLimitReached?: boolean;
   dailyLimitCount?: number;
   dailyLimit?: number;
@@ -197,7 +240,9 @@ export function BlitzDailyView({
     }
     // 2. SessionStorage safety net — survives page refresh.
     const stored = readSessionDailyLimit(campaign.id);
-    if (stored && stored.count >= stored.limit) return stored;
+    if (stored && stored.count >= stored.limit) {
+      return stored;
+    }
     // 3. In-session fallback — count items in the current state.
     if (totalToday >= dailyLimit && queue.length === 0) {
       return { count: totalToday, limit: dailyLimit, nextResetAt: getNextResetTime() };
@@ -462,10 +507,10 @@ export function BlitzDailyView({
     const compiledUrl = (current.graphicUrls || [])[0] || null;
     const hasMedia
       = Boolean(slots.background?.url)
-      || Boolean(slots.hookVideo?.url)
-      || Boolean(slots.demoVideo?.url)
-      || (Array.isArray(slots.slides) && slots.slides.length > 0)
-      || Boolean(compiledUrl);
+        || Boolean(slots.hookVideo?.url)
+        || Boolean(slots.demoVideo?.url)
+        || (Array.isArray(slots.slides) && slots.slides.length > 0)
+        || Boolean(compiledUrl);
 
     // Slideshows also need to keep polling while per-slide captions are
     // still generating in the background. Detect the "not yet filled"
@@ -479,8 +524,8 @@ export function BlitzDailyView({
     const nonEmptyCopy = slideCopy.filter(Boolean);
     const slideCopyStillFilling
       = isSlideshow
-      && slideCount > 1
-      && (nonEmptyCopy.length < slideCount || new Set(nonEmptyCopy).size < slideCount);
+        && slideCount > 1
+        && (nonEmptyCopy.length < slideCount || new Set(nonEmptyCopy).size < slideCount);
 
     if (hasMedia && !slideCopyStillFilling) {
       return;
@@ -515,21 +560,53 @@ export function BlitzDailyView({
   // totalToday guard prevent generating past postsPerDay — skipped items
   // consume the daily allowance alongside pending and approved.
   const refillRef = useRef(false);
+  // Session-scoped block: once /generate returns dailyLimitReached the
+  // refill effect must NOT re-fire this session, even if outcome resets
+  // (e.g. after user dismisses a banner). Prevents infinite POST loop
+  // when the server has already told us we're capped for today.
+  const refillBlockedRef = useRef(false);
   useEffect(() => {
-    if (refillRef.current) return;
-    if (isGenerating) return;
-    if (actionPending) return;
-    if (error) return;
-    if (outcome.kind !== 'none') return;
-    if (dailyLimitReached) return;
-    if (queue.length >= 2) return;
-    if (totalToday >= dailyLimit) return;
+    if (refillRef.current) {
+      return;
+    }
+    if (refillBlockedRef.current) {
+      return;
+    }
+    if (isGenerating) {
+      return;
+    }
+    if (actionPending) {
+      return;
+    }
+    if (error) {
+      return;
+    }
+    if (outcome.kind !== 'none') {
+      return;
+    }
+    if (dailyLimitReached) {
+      return;
+    }
+    if (queue.length >= 2) {
+      return;
+    }
+    if (totalToday >= dailyLimit) {
+      return;
+    }
     refillRef.current = true;
     void runGenerate().finally(() => {
       refillRef.current = false;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queue.length, isGenerating, actionPending, outcome.kind, totalToday, error, dailyLimitReached, dailyLimit]);
+
+  // If any generate call ever reports dailyLimitReached, latch the block
+  // so subsequent effect runs can't kick off another /generate cycle.
+  useEffect(() => {
+    if (outcome.kind === 'dailyLimit') {
+      refillBlockedRef.current = true;
+    }
+  }, [outcome.kind]);
 
   // Keyboard shortcuts.
   useEffect(() => {
@@ -727,7 +804,7 @@ function CardPair({
             disabled={actionPending}
             title="Reject"
             aria-label="Reject"
-            className="flex size-14 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-colors hover:bg-red-600 disabled:opacity-50 disabled:cursor-default"
+            className="flex size-14 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-colors hover:bg-red-600 disabled:cursor-default disabled:opacity-50"
           >
             <X className="size-6" />
           </button>
@@ -740,7 +817,7 @@ function CardPair({
             type="button"
             onClick={onEdit}
             disabled={actionPending}
-            className="inline-flex h-12 items-center gap-2 rounded-full border-2 border-border bg-background px-6 text-sm font-medium text-foreground shadow-md transition-colors hover:bg-muted disabled:opacity-60 disabled:cursor-default"
+            className="inline-flex h-12 items-center gap-2 rounded-full border-2 border-border bg-background px-6 text-sm font-medium text-foreground shadow-md transition-colors hover:bg-muted disabled:cursor-default disabled:opacity-60"
           >
             <Pencil className="size-4" />
             Edit
@@ -754,7 +831,7 @@ function CardPair({
             disabled={actionPending}
             title="Approve"
             aria-label="Approve"
-            className="flex size-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg transition-colors hover:bg-emerald-600 disabled:opacity-60 disabled:cursor-default"
+            className="flex size-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg transition-colors hover:bg-emerald-600 disabled:cursor-default disabled:opacity-60"
           >
             {actionPending ? (
               <Loader2 className="size-6 animate-spin" />
@@ -782,9 +859,7 @@ function CardHeader({
   enrichment: any;
   snapshot: any;
 }) {
-  const typeLabel = item.contentType
-    ? String(item.contentType).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-    : null;
+  const typeLabel = item.contentType ? formatContentTypeLabel(String(item.contentType)) : null;
   // Prefer the per-post topic label written at insert. Fall back to angleName
   // for legacy rows so older items still get a second pill when one exists.
   const topicLabel: string | null = enrichment.topicLabel || item.angleName || null;
@@ -820,7 +895,9 @@ function WhyTooltip({ enrichment, snapshot }: { enrichment: any; snapshot: any }
   // Delay-close so cursor can travel between the trigger and the panel
   // without the panel disappearing.
   const scheduleClose = () => {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+    }
     closeTimer.current = setTimeout(() => setOpen(false), 120);
   };
   const cancelClose = () => {
@@ -831,7 +908,9 @@ function WhyTooltip({ enrichment, snapshot }: { enrichment: any; snapshot: any }
   };
 
   useEffect(() => () => {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+    }
   }, []);
 
   // Reasoning can be either the new structured object or a legacy string.
@@ -843,17 +922,21 @@ function WhyTooltip({ enrichment, snapshot }: { enrichment: any; snapshot: any }
   const views = reasoning.sourceMetrics?.views ?? snapshot?.viewCount ?? null;
   const likes = reasoning.sourceMetrics?.likes ?? snapshot?.likeCount ?? null;
   const comments = reasoning.sourceMetrics?.comments ?? snapshot?.commentCount ?? null;
-  const hasMetrics = [views, likes, comments].some((n) => typeof n === 'number' && n > 0);
+  const hasMetrics = [views, likes, comments].some(n => typeof n === 'number' && n > 0);
 
   return (
     <div className="relative">
       <button
         type="button"
-        onMouseEnter={() => { cancelClose(); setOpen(true); }}
+        onMouseEnter={() => {
+          cancelClose(); setOpen(true);
+        }}
         onMouseLeave={scheduleClose}
-        onFocus={() => { cancelClose(); setOpen(true); }}
+        onFocus={() => {
+          cancelClose(); setOpen(true);
+        }}
         onBlur={scheduleClose}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(v => !v)}
         aria-describedby="why-this-content-tooltip"
         aria-expanded={open}
         className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-background px-3 py-0.5 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-muted"
@@ -909,7 +992,9 @@ function WhyTooltip({ enrichment, snapshot }: { enrichment: any; snapshot: any }
 
 function RemixedFromPanel({ snapshot }: { snapshot: any }) {
   const mediaUrl: string | null = snapshot?.mediaUrl || snapshot?.thumbnailUrl || null;
-  if (!mediaUrl) return null;
+  if (!mediaUrl) {
+    return null;
+  }
 
   const isVideo = /\.(mp4|webm|mov)(\?|$)/i.test(mediaUrl);
 
@@ -922,7 +1007,9 @@ function RemixedFromPanel({ snapshot }: { snapshot: any }) {
     originalHook = String(slideCaptions[0]).slice(0, 80);
   } else if (slideCaptions && typeof slideCaptions === 'object') {
     const first = Object.values(slideCaptions)[0];
-    if (typeof first === 'string') originalHook = first.slice(0, 80);
+    if (typeof first === 'string') {
+      originalHook = first.slice(0, 80);
+    }
   }
 
   const views = typeof snapshot?.viewCount === 'number' ? snapshot.viewCount : null;
@@ -994,7 +1081,7 @@ function CardDeck({
   );
 
   return (
-    <div className="relative mx-auto aspect-[9/16] w-[min(70vw,260px)] max-h-[min(58vh,460px)] md:w-[min(38vw,300px)] md:max-h-[min(62vh,500px)]">
+    <div className="relative mx-auto aspect-[9/16] max-h-[min(58vh,460px)] w-[min(70vw,260px)] md:max-h-[min(62vh,500px)] md:w-[min(38vw,300px)]">
       {stack.map((card, idx) => {
         const isTop = idx === 0;
         // Alternating tilt for the ghost cards so the stack looks like a
@@ -1083,6 +1170,7 @@ function BlitzSwipeCard({
   // text never renders on a blank dark box.
   const fallbackMediaUrl = compiledUrl
     || (enrichment.templateSnapshot?.mediaUrl as string | undefined)
+    || (enrichment.sourceTemplateSnapshot?.mediaUrl as string | undefined)
     || (enrichment.sourceMediaSlots?.background?.url as string | undefined)
     || null;
   // Check if fallbackMediaUrl is a video — separate from isCompiledVideo
@@ -1183,7 +1271,7 @@ function BlitzSwipeCard({
             }}
             onClick={(e) => {
               e.stopPropagation();
-              setMuted((v) => !v);
+              setMuted(v => !v);
             }}
             aria-label={muted ? 'Unmute' : 'Mute'}
             className="pointer-events-auto absolute left-3 top-3 z-30 flex size-8 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80"
@@ -1199,7 +1287,6 @@ function BlitzSwipeCard({
           the motion.div's native drag handlers intact. Slideshow arrow
           buttons use pointer-events-auto + onPointerDown+stopPropagation
           which is safe. */}
-
 
       {/* ── Content-type-aware card preview ──
        * Priority:
@@ -1251,7 +1338,7 @@ function BlitzSwipeCard({
                     onPointerDown={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
-                      setSlideIdx((p) => (p - 1 + slides.length) % slides.length);
+                      setSlideIdx(p => (p - 1 + slides.length) % slides.length);
                     }}
                     aria-label="Previous slide"
                   >
@@ -1263,7 +1350,7 @@ function BlitzSwipeCard({
                     onPointerDown={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
-                      setSlideIdx((p) => (p + 1) % slides.length);
+                      setSlideIdx(p => (p + 1) % slides.length);
                     }}
                     aria-label="Next slide"
                   >
@@ -1301,11 +1388,16 @@ function BlitzSwipeCard({
           {/* Per-slide caption text — each slide gets its own caption from
               editorScript.slideCopy, matching the Image Editor behavior.
               Falls back to hookText (brand message) when slideCopy is empty.
-              Anchored to the bottom (above slide dots at bottom-3) so the
-              caption never covers the vertically-centered nav arrows. */}
+              Vertically centered on the slide (user preference 2026-07-17).
+              Kept to max-w-[75%] so left/right nav arrows still show through
+              the padding; caption itself is pointer-events-none so the
+              arrow buttons underneath stay clickable. */}
           {slides.length > 0 && (slideCopy[slideIdx] || hookText) && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-9 z-20 px-10">
-              <div className="mx-auto w-fit max-w-full rounded-lg bg-black/65 px-3 py-2 text-center text-sm leading-snug text-white backdrop-blur-sm">
+            <div className="pointer-events-none absolute inset-x-0 top-1/2 z-20 -translate-y-1/2 px-3">
+              <div
+                className="mx-auto w-fit max-w-[75%] overflow-hidden rounded-lg bg-black/65 px-3 py-2 text-center text-sm leading-snug text-white backdrop-blur-sm"
+                style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}
+              >
                 {slideCopy[slideIdx] || hookText}
               </div>
             </div>

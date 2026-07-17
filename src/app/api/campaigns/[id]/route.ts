@@ -1,10 +1,11 @@
-import { eq, and } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { getOrgBillingState } from '@/lib/billing';
 import { getDb } from '@/libs/DB';
-import { campaignSchema, campaignContentSchema, contentAngleSchema, contentItemSchema } from '@/models/Schema';
+import { campaignContentSchema, campaignSchema, contentAngleSchema, contentItemSchema } from '@/models/Schema';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -15,7 +16,9 @@ type RouteParams = { params: Promise<{ id: string }> };
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 
@@ -64,7 +67,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 
@@ -72,28 +77,87 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
 
     const updates: Record<string, any> = {};
-    if (body.name !== undefined) updates.name = body.name;
-    if (body.description !== undefined) updates.description = body.description;
-    if (body.status !== undefined) updates.status = body.status;
-    if (body.contentMix !== undefined) updates.contentMix = body.contentMix;
-    if (body.remixRatio !== undefined) updates.remixRatio = body.remixRatio;
-    if (body.angles !== undefined) updates.angles = body.angles;
-    if (body.mentionFrequency !== undefined) updates.mentionFrequency = body.mentionFrequency;
-    if (body.genderPreference !== undefined) updates.genderPreference = body.genderPreference;
-    if (body.ownMediaMix !== undefined) updates.ownMediaMix = body.ownMediaMix;
-    if (body.influencerFrequency !== undefined) updates.influencerFrequency = body.influencerFrequency;
-    if (body.targetAccounts !== undefined) updates.targetAccounts = body.targetAccounts;
-    if (body.postsPerDay !== undefined) updates.postsPerDay = body.postsPerDay;
-    if (body.campaignLengthDays !== undefined) updates.campaignLengthDays = body.campaignLengthDays;
-    if (body.startDate !== undefined) updates.startDate = new Date(body.startDate);
-    if (body.totalPosts !== undefined) updates.totalPosts = body.totalPosts;
-    if (body.generatedPosts !== undefined) updates.generatedPosts = body.generatedPosts;
-    if (body.reRollsRemaining !== undefined) updates.reRollsRemaining = body.reRollsRemaining;
-    if (body.qualityThreshold !== undefined) updates.qualityThreshold = body.qualityThreshold;
-    if (body.pinterestPercent !== undefined) updates.pinterestPercent = body.pinterestPercent;
-    if (body.enabledInfluencerIds !== undefined) updates.enabledInfluencerIds = body.enabledInfluencerIds;
-    if (body.totalEngagement !== undefined) updates.totalEngagement = body.totalEngagement;
-    if (body.avgEngagementRate !== undefined) updates.avgEngagementRate = body.avgEngagementRate;
+    if (body.name !== undefined) {
+      updates.name = body.name;
+    }
+    if (body.description !== undefined) {
+      updates.description = body.description;
+    }
+    if (body.status !== undefined) {
+      updates.status = body.status;
+    }
+    if (body.contentMix !== undefined) {
+      updates.contentMix = body.contentMix;
+    }
+    if (body.remixRatio !== undefined) {
+      updates.remixRatio = body.remixRatio;
+    }
+    if (body.angles !== undefined) {
+      updates.angles = body.angles;
+    }
+    if (body.mentionFrequency !== undefined) {
+      updates.mentionFrequency = body.mentionFrequency;
+    }
+    if (body.genderPreference !== undefined) {
+      updates.genderPreference = body.genderPreference;
+    }
+    if (body.ownMediaMix !== undefined) {
+      updates.ownMediaMix = body.ownMediaMix;
+    }
+    if (body.influencerFrequency !== undefined) {
+      updates.influencerFrequency = body.influencerFrequency;
+    }
+    if (body.targetAccounts !== undefined) {
+      updates.targetAccounts = body.targetAccounts;
+    }
+    if (body.postsPerDay !== undefined) {
+      // Enforce plan-tier hard cap on daily Blitz volume. Grandfather
+      // existing higher values (only clamp on write attempts that would
+      // exceed the cap; don't retroactively fail users whose stored
+      // value predates this gate).
+      const requested = Math.max(1, Number(body.postsPerDay) || 1);
+      const billing = await getOrgBillingState(orgId!);
+      const cap = billing?.features?.blitzPostsPerDay ?? -1;
+      if (cap !== -1 && requested > cap) {
+        return NextResponse.json({
+          error: 'plan_cap',
+          message: `Your ${billing?.plan ?? 'current'} plan allows up to ${cap} Blitz posts per day. Upgrade to raise this.`,
+          cap,
+          plan: billing?.plan ?? null,
+        }, { status: 400 });
+      }
+      updates.postsPerDay = requested;
+    }
+    if (body.campaignLengthDays !== undefined) {
+      updates.campaignLengthDays = body.campaignLengthDays;
+    }
+    if (body.startDate !== undefined) {
+      updates.startDate = new Date(body.startDate);
+    }
+    if (body.totalPosts !== undefined) {
+      updates.totalPosts = body.totalPosts;
+    }
+    if (body.generatedPosts !== undefined) {
+      updates.generatedPosts = body.generatedPosts;
+    }
+    if (body.reRollsRemaining !== undefined) {
+      updates.reRollsRemaining = body.reRollsRemaining;
+    }
+    if (body.qualityThreshold !== undefined) {
+      updates.qualityThreshold = body.qualityThreshold;
+    }
+    if (body.pinterestPercent !== undefined) {
+      updates.pinterestPercent = body.pinterestPercent;
+    }
+    if (body.enabledInfluencerIds !== undefined) {
+      updates.enabledInfluencerIds = body.enabledInfluencerIds;
+    }
+    if (body.totalEngagement !== undefined) {
+      updates.totalEngagement = body.totalEngagement;
+    }
+    if (body.avgEngagementRate !== undefined) {
+      updates.avgEngagementRate = body.avgEngagementRate;
+    }
     updates.updatedAt = new Date();
 
     const [updated] = await db
@@ -120,7 +184,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { id } = await params;
 
