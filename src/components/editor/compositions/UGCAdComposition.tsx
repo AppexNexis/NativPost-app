@@ -2,7 +2,7 @@
 import React from 'react';
 import { AbsoluteFill, Audio, Img, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
 
-const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v)(\?|$)/i;
+import { isVideoUrl } from './media-detect';
 
 interface Props {
   script: {
@@ -68,7 +68,7 @@ export function UGCAdComposition({ script, style, mediaSlots, audioTrack }: Prop
         />
       )}
       {mediaSlots?.background?.url && (
-        VIDEO_EXT_RE.test(mediaSlots.background.url) ? (
+        isVideoUrl(mediaSlots.background.url) ? (
           <Video
             src={mediaSlots.background.url}
             style={{ width, height, objectFit: 'cover', position: 'absolute' }}

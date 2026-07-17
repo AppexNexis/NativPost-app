@@ -1,6 +1,8 @@
 // @ts-nocheck
 import React from 'react';
-import { AbsoluteFill, Audio, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
+import { AbsoluteFill, Audio, Img, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
+
+import { isVideoUrl } from './media-detect';
 
 interface Props {
   script: {
@@ -61,12 +63,19 @@ export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
       {mediaSlots?.background?.url && (
-        <Video
-          src={mediaSlots.background.url}
-          style={{ width, height, objectFit: 'cover', position: 'absolute' }}
-          muted
-          loop
-        />
+        isVideoUrl(mediaSlots.background.url) ? (
+          <Video
+            src={mediaSlots.background.url}
+            style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+            muted
+            loop
+          />
+        ) : (
+          <Img
+            src={mediaSlots.background.url}
+            style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+          />
+        )
       )}
 
       {/* Dimming scrim */}
@@ -89,12 +98,19 @@ export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }
             zIndex: 10,
           }}
         >
-          <Video
-            src={mediaSlots.faceVideo.url}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            muted
-            loop
-          />
+          {isVideoUrl(mediaSlots.faceVideo.url) ? (
+            <Video
+              src={mediaSlots.faceVideo.url}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              muted
+              loop
+            />
+          ) : (
+            <Img
+              src={mediaSlots.faceVideo.url}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+          )}
         </div>
       )}
 

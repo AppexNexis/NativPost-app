@@ -30,7 +30,14 @@ export type ResolvedSet = {
   id: string;
   name: string;
   type: string;
-  assets: Array<{ url: string; assetType: 'image' | 'video' }>;
+  /**
+   * publicId is the Cloudinary public_id for direct Cloudinary entries and
+   * the media_asset.id (UUID) for legacy DB-resolved entries. It is the
+   * consumption-tracking key used by blitz_media_usage — always populated
+   * so downstream applySetToSlots can report consumedPublicIds back to the
+   * generator loop.
+   */
+  assets: Array<{ publicId: string; url: string; assetType: 'image' | 'video' }>;
 };
 
 const CONTENT_TYPE_TO_SET_TYPE: Record<string, string | undefined> = {
@@ -76,6 +83,12 @@ export async function pickDefaultSet(
   db: any,
   orgId: string,
   contentType: string,
+  /**
+   * Optional set of Cloudinary public_ids (or legacy media_asset UUIDs) to
+   * exclude from the returned assets. Blitz passes the sliding-window
+   * `blitz_media_usage` set here so exhausted media is never re-served.
+   */
+  usedPublicIds?: Set<string>,
 ): Promise<ResolvedSet | null> {
   const setType = CONTENT_TYPE_TO_SET_TYPE[contentType];
   if (!setType) {
@@ -154,12 +167,13 @@ export async function pickDefaultSet(
   }
 
   // Preserve the ordering the user configured on the set.
-  const resolved: Array<{ url: string; assetType: 'image' | 'video' }> = [];
+  const resolved: Array<{ publicId: string; url: string; assetType: 'image' | 'video' }> = [];
   for (const entry of stored) {
     if (UUID_RE.test(entry)) {
       const hit = dbAssets.get(entry);
       if (hit?.url) {
         resolved.push({
+          publicId: entry,
           url: hit.url,
           assetType: (hit.assetType === 'video' ? 'video' : 'image'),
         });
@@ -170,11 +184,15 @@ export async function pickDefaultSet(
     const assetType = inferAssetType(entry, set.type);
     const url = buildCloudinaryUrl(entry, assetType);
     if (url) {
-      resolved.push({ url, assetType });
+      resolved.push({ publicId: entry, url, assetType });
     }
   }
 
-  if (resolved.length === 0) {
+  const filtered = usedPublicIds && usedPublicIds.size > 0
+    ? resolved.filter(a => !usedPublicIds.has(a.publicId))
+    : resolved;
+
+  if (filtered.length === 0) {
     return null;
   }
 
@@ -182,6 +200,6 @@ export async function pickDefaultSet(
     id: set.id,
     name: set.name,
     type: set.type,
-    assets: resolved,
+    assets: filtered,
   };
 }

@@ -1,6 +1,8 @@
 // @ts-nocheck
 import React from 'react';
-import { AbsoluteFill, Audio, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
+import { AbsoluteFill, Audio, Img, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
+
+import { isVideoUrl } from './media-detect';
 
 interface Props {
   script: {
@@ -66,12 +68,19 @@ export function GreenScreenComposition({ script, style, mediaSlots, audioTrack }
         />
       )}
       {mediaSlots?.background?.url ? (
-        <Video
-          src={mediaSlots.background.url}
-          style={{ width, height, objectFit: 'cover', position: 'absolute' }}
-          muted
-          loop
-        />
+        isVideoUrl(mediaSlots.background.url) ? (
+          <Video
+            src={mediaSlots.background.url}
+            style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+            muted
+            loop
+          />
+        ) : (
+          <Img
+            src={mediaSlots.background.url}
+            style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+          />
+        )
       ) : (
         <div
           style={{

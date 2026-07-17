@@ -17,6 +17,8 @@ import {
 } from '@/lib/social/connected-platforms';
 import {
   aiInfluencerSchema,
+  blitzMediaUsageSchema,
+  blitzTemplateUsageSchema,
   brandProfileSchema,
   campaignContentSchema,
   campaignSchema,
@@ -26,6 +28,7 @@ import {
   publishingQueueSchema,
   socialAccountSchema,
 } from '@/models/Schema';
+import { inventoryMediaSet, type MediaInventory } from '@/lib/blitz/inventory-media-set';
 
 export const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 export const ENGINE_URL = process.env.NATIVPOST_ENGINE_URL || 'http://localhost:8000';
@@ -122,6 +125,164 @@ const MIX_KEY_TO_TEMPLATE_CONTENT_TYPE: Record<string, string> = {
 
 export function mapMixKeyToContentType(mixKey: string): string {
   return MIX_KEY_TO_CONTENT_TYPE[mixKey] || mixKey;
+}
+
+// ── Batch content-mix planner ────────────────────────────────────────────────
+//
+// Given a target post count, the campaign's requested content mix, a media
+// inventory summary, and the available template pool per content type, decide
+// how many posts of each content type the batch will attempt.
+//
+// Rules:
+//   1. Raw target per type = round(targetCount * pct / 100).
+//   2. Feasibility per type:
+//      - slideshow / carousel  → images eligible >= 4 OR template count >= 1
+//      - wall_of_text          → images eligible >= 1 OR template count >= 1
+//      - ugc / video types     → videos eligible >= 1 OR template count >= 1
+//      - other                 → template count >= 1
+//   3. Types with feasible=false are dropped into `skipped[]` and their share
+//      is redistributed proportionally to feasible types.
+//   4. Rounding drift is absorbed by the largest remaining type so
+//      Σ plan[type] === targetCount (within ±1).
+//
+// The planner never invents work: if NO types are feasible it returns an
+// empty plan and the caller reports an empty batch to the user, rather
+// than silently emitting duplicated content.
+export type BatchPlanResult = {
+  plan: Record<string, number>;
+  skipped: string[];
+  reasons: Record<string, string>;
+};
+
+function isTypeFeasibleForPlanner(
+  templateContentType: string,
+  inventory: MediaInventory | null,
+  templateCount: number,
+): { feasible: boolean; reason: string } {
+  // No inventory information available → allow anything with a template.
+  if (!inventory) {
+    return templateCount > 0
+      ? { feasible: true, reason: 'template-only (no inventory)' }
+      : { feasible: false, reason: 'no template and no inventory' };
+  }
+  const imgs = inventory.eligibleCounts.images;
+  const vids = inventory.eligibleCounts.videos;
+  if (templateContentType === 'slideshow' || templateContentType === 'carousel') {
+    if (imgs >= 4) {
+      return { feasible: true, reason: `4+ eligible images (${imgs})` };
+    }
+    if (templateCount > 0) {
+      return { feasible: true, reason: `template fallback (${templateCount})` };
+    }
+    return { feasible: false, reason: `only ${imgs} images and 0 templates` };
+  }
+  if (templateContentType === 'wall_of_text') {
+    if (imgs >= 1 || templateCount > 0) {
+      return { feasible: true, reason: `images=${imgs} templates=${templateCount}` };
+    }
+    return { feasible: false, reason: 'no images and no templates' };
+  }
+  const videoTypes = new Set([
+    'ugc', 'talking_head', 'video_hook', 'video_hook_demo', 'green_screen', 'reel', 'scene',
+  ]);
+  if (videoTypes.has(templateContentType)) {
+    if (vids >= 1 || templateCount > 0) {
+      return { feasible: true, reason: `videos=${vids} templates=${templateCount}` };
+    }
+    return { feasible: false, reason: 'no videos and no templates' };
+  }
+  // Other types (data_story, single_image, etc.) — require a template.
+  return templateCount > 0
+    ? { feasible: true, reason: `templates=${templateCount}` }
+    : { feasible: false, reason: 'no templates for this type' };
+}
+
+export function planBatchContentMix(args: {
+  targetCount: number;
+  contentMix: Record<string, number>;
+  inventory: MediaInventory | null;
+  templateCountByType: Record<string, number>;
+}): BatchPlanResult {
+  const { targetCount, contentMix, inventory, templateCountByType } = args;
+  const plan: Record<string, number> = {};
+  const skipped: string[] = [];
+  const reasons: Record<string, string> = {};
+
+  if (targetCount <= 0) {
+    return { plan, skipped, reasons };
+  }
+
+  // Normalize contentMix entries → template content types with % weight.
+  const entries: Array<{ type: string; pct: number }> = [];
+  const totalPct = Object.values(contentMix).reduce((s, v) => s + (v || 0), 0);
+  if (totalPct <= 0) {
+    return { plan, skipped, reasons };
+  }
+  for (const [mixKey, rawPct] of Object.entries(contentMix)) {
+    const pct = rawPct || 0;
+    if (pct <= 0) {
+      continue;
+    }
+    const type = MIX_KEY_TO_TEMPLATE_CONTENT_TYPE[mixKey];
+    if (!type) {
+      continue;
+    }
+    // Normalize to percent-of-total so mixes that don't sum to 100 still work.
+    entries.push({ type, pct: (pct / totalPct) * 100 });
+  }
+  if (entries.length === 0) {
+    return { plan, skipped, reasons };
+  }
+
+  // Classify feasibility BEFORE distributing shares.
+  const feasibleEntries: Array<{ type: string; pct: number }> = [];
+  for (const e of entries) {
+    const tplCount = templateCountByType[e.type] || 0;
+    const { feasible, reason } = isTypeFeasibleForPlanner(e.type, inventory, tplCount);
+    reasons[e.type] = reason;
+    if (feasible) {
+      feasibleEntries.push(e);
+    } else {
+      skipped.push(e.type);
+      plan[e.type] = 0;
+    }
+  }
+
+  if (feasibleEntries.length === 0) {
+    return { plan, skipped, reasons };
+  }
+
+  // Redistribute skipped share proportionally across feasible entries.
+  const feasibleTotalPct = feasibleEntries.reduce((s, e) => s + e.pct, 0);
+  const normalized = feasibleEntries.map(e => ({
+    type: e.type,
+    share: e.pct / feasibleTotalPct,
+  }));
+
+  // Initial allocation using floor + fractional-remainder distribution
+  // (largest-remainder method) so Σ plan = targetCount exactly.
+  const raw = normalized.map(n => ({
+    type: n.type,
+    exact: n.share * targetCount,
+    floor: Math.floor(n.share * targetCount),
+    frac: (n.share * targetCount) - Math.floor(n.share * targetCount),
+  }));
+  let allocated = raw.reduce((s, r) => s + r.floor, 0);
+  let leftover = targetCount - allocated;
+  raw.sort((a, b) => b.frac - a.frac);
+  for (const r of raw) {
+    if (leftover <= 0) {
+      break;
+    }
+    r.floor += 1;
+    leftover -= 1;
+    allocated += 1;
+  }
+  for (const r of raw) {
+    plan[r.type] = r.floor;
+  }
+
+  return { plan, skipped, reasons };
 }
 
 const CONTENT_TYPE_TO_MEDIA_GENERATOR: Record<string, string | null> = {
@@ -660,9 +821,11 @@ function mapTemplateToEngine(t: CampaignTemplateRow): Record<string, any> {
 
 async function fetchCampaignTemplates(
   db: any,
-  _orgId: string, // prefix with _ to suppress unused warning
+  orgId: string,
   contentMix: Record<string, number>,
   niche?: string | null,
+  /** Sliding window (days) for cross-batch template dedup. Default 90. */
+  templateDedupWindowDays: number = 90,
 ): Promise<CampaignTemplateRow[]> {
   const mixKeys = Object.entries(contentMix)
     .filter(([, v]) => (v || 0) > 0)
@@ -679,6 +842,13 @@ async function fetchCampaignTemplates(
   if (uniqueTypes.length === 0) {
     return [];
   }
+
+  // Compute the 90-day cutoff for cross-batch template dedup. Blitz refuses
+  // to reuse a template within this window per org so consecutive batches
+  // never duplicate content (spec §5, §6).
+  const dedupCutoff = new Date(
+    Date.now() - templateDedupWindowDays * 24 * 60 * 60 * 1000,
+  );
 
   // Shared column selector to avoid repetition
   const templateColumns = {
@@ -710,10 +880,56 @@ async function fetchCampaignTemplates(
     whereClauses.push(sql`${contentTemplateSchema.niches} ? ${niche}`);
   }
 
+  // Cross-batch template dedup: exclude templates this org has consumed in
+  // the sliding window. NOT EXISTS beats LEFT JOIN + WHERE NULL for query
+  // planner clarity and avoids row-multiplication on duplicate usage rows.
+  whereClauses.push(sql`NOT EXISTS (
+    SELECT 1 FROM ${blitzTemplateUsageSchema}
+    WHERE ${blitzTemplateUsageSchema.templateId} = ${contentTemplateSchema.id}
+      AND ${blitzTemplateUsageSchema.orgId} = ${orgId}
+      AND ${blitzTemplateUsageSchema.usedAt} >= ${dedupCutoff}
+  )`);
+
+  // For video content types (video_hook / video_hook_demo), Blitz demands
+  // the underlying source is actually a video — the compositions defensively
+  // render <Img> for image URLs (see media-detect.ts), but the intended
+  // remix is a video. Filter by sourceMediaType if populated, otherwise fall
+  // back to URL heuristics (Cloudinary `/video/upload/` OR video extension).
+  const videoOnlyTypes = uniqueTypes.filter(
+    t => t === 'video_hook' || t === 'video_hook_demo',
+  );
+  if (videoOnlyTypes.length > 0) {
+    whereClauses.push(sql`(
+      ${contentTemplateSchema.contentType} NOT IN (${sql.join(
+        videoOnlyTypes.map(t => sql`${t}`),
+        sql`, `,
+      )})
+      OR ${contentTemplateSchema.sourceMediaType} = 'video'
+      OR ${contentTemplateSchema.mediaUrl} ~* '/video/upload/'
+      OR ${contentTemplateSchema.mediaUrl} ~* '\\.(mp4|mov|webm|m4v)($|\\?)'
+      OR ${contentTemplateSchema.sourceUrl} ~* '/video/upload/'
+      OR ${contentTemplateSchema.sourceUrl} ~* '\\.(mp4|mov|webm|m4v)($|\\?)'
+    )`);
+  }
+
   let templates = await db
     .select(templateColumns)
     .from(contentTemplateSchema)
-    .where(and(...whereClauses));
+    .where(and(...whereClauses))
+    // Slideshow prefer-4 ordering: templates with exactly 4 thumbnails come
+    // first so the Blitz spec's 4-slide invariant is honored without pad/
+    // truncate whenever possible. Other content types are unaffected.
+    .orderBy(sql`CASE
+      WHEN ${contentTemplateSchema.contentType} = 'slideshow'
+        AND jsonb_typeof(${contentTemplateSchema.thumbnailUrls}) = 'object'
+        AND (SELECT COUNT(*) FROM jsonb_object_keys(${contentTemplateSchema.thumbnailUrls})) = 4
+      THEN 0
+      WHEN ${contentTemplateSchema.contentType} = 'slideshow'
+        AND jsonb_typeof(${contentTemplateSchema.thumbnailUrls}) = 'array'
+        AND jsonb_array_length(${contentTemplateSchema.thumbnailUrls}) = 4
+      THEN 0
+      ELSE 1
+    END`);
 
   // ── Per-type niche fallback ─────────────────────────────────────────────
   // If niche filtering left some content types with zero templates, fetch
@@ -727,14 +943,40 @@ async function fetchCampaignTemplates(
       console.log(
         `[Campaign] Niche "${niche}" missing templates for [${missingTypes.join(', ')}] — fetching without niche filter`,
       );
+      // Niche fallback must still honor cross-batch dedup and video-source
+      // filters, otherwise recently-used or wrong-typed templates leak
+      // back in through the niche-relaxation path.
+      const fallbackWhere: any[] = [
+        eq(contentTemplateSchema.curationStatus, 'approved'),
+        eq(contentTemplateSchema.isActive, true),
+        inArray(contentTemplateSchema.contentType, missingTypes),
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${blitzTemplateUsageSchema}
+          WHERE ${blitzTemplateUsageSchema.templateId} = ${contentTemplateSchema.id}
+            AND ${blitzTemplateUsageSchema.orgId} = ${orgId}
+            AND ${blitzTemplateUsageSchema.usedAt} >= ${dedupCutoff}
+        )`,
+      ];
+      const fallbackVideoOnly = missingTypes.filter(
+        t => t === 'video_hook' || t === 'video_hook_demo',
+      );
+      if (fallbackVideoOnly.length > 0) {
+        fallbackWhere.push(sql`(
+          ${contentTemplateSchema.contentType} NOT IN (${sql.join(
+            fallbackVideoOnly.map(t => sql`${t}`),
+            sql`, `,
+          )})
+          OR ${contentTemplateSchema.sourceMediaType} = 'video'
+          OR ${contentTemplateSchema.mediaUrl} ~* '/video/upload/'
+          OR ${contentTemplateSchema.mediaUrl} ~* '\\.(mp4|mov|webm|m4v)($|\\?)'
+          OR ${contentTemplateSchema.sourceUrl} ~* '/video/upload/'
+          OR ${contentTemplateSchema.sourceUrl} ~* '\\.(mp4|mov|webm|m4v)($|\\?)'
+        )`);
+      }
       const fallback = await db
         .select(templateColumns)
         .from(contentTemplateSchema)
-        .where(and(
-          eq(contentTemplateSchema.curationStatus, 'approved'),
-          eq(contentTemplateSchema.isActive, true),
-          inArray(contentTemplateSchema.contentType, missingTypes),
-        ));
+        .where(and(...fallbackWhere));
       templates = [...(templates as any[]), ...(fallback as any[])];
     }
   }
@@ -1007,6 +1249,44 @@ export async function generateCampaignPosts(
     templatesById.set(t.id, t);
   }
 
+  // ── Media-set inventory + batch content mix planner ──────────────────
+  // Compute per-content-type feasibility ONCE up front. Types that have
+  // neither eligible user media (within the 90-day sliding dedup window)
+  // nor a viable template pool are skipped from Phase 1 rotation instead
+  // of producing duplicate content. `usedPublicIds` is threaded to
+  // pickDefaultSet so already-consumed assets are filtered out mid-loop.
+  const mixTemplateTypesForPlan = Array.from(new Set(
+    Object.entries(contentMix)
+      .filter(([, v]) => (v || 0) > 0)
+      .map(([k]) => MIX_KEY_TO_TEMPLATE_CONTENT_TYPE[k])
+      .filter(Boolean) as string[],
+  ));
+  let inventory: MediaInventory | null = null;
+  try {
+    inventory = await inventoryMediaSet(db, orgId, mixTemplateTypesForPlan);
+  } catch (err) {
+    console.warn('[Campaign] inventoryMediaSet failed, proceeding without inventory:', err);
+    inventory = null;
+  }
+  const usedPublicIds: Set<string> = inventory?.usedPublicIds ?? new Set<string>();
+
+  const templateCountByType: Record<string, number> = {};
+  for (const t of templates) {
+    templateCountByType[t.contentType] = (templateCountByType[t.contentType] || 0) + 1;
+  }
+  const batchPlan = planBatchContentMix({
+    targetCount: postsToCreate,
+    contentMix,
+    inventory,
+    templateCountByType,
+  });
+  if (batchPlan.skipped.length > 0) {
+    console.log(
+      `[Campaign] Batch plan skipped types [${batchPlan.skipped.join(', ')}] — `
+      + `reasons: ${JSON.stringify(batchPlan.reasons)}`,
+    );
+  }
+
   // ── Phase 1: Template-first allocation ──
   // Content library templates are the PRIMARY source for Blitz cards.
   // Each post gets a unique template with media-set substitution and
@@ -1025,19 +1305,35 @@ export async function generateCampaignPosts(
     byType.set(t.contentType, list);
   }
 
-  // Content-type rotation schedule from the campaign mix
+  // Content-type rotation schedule from the campaign mix — filtered by the
+  // batch planner so infeasible types (no media + no template) are dropped
+  // from rotation instead of falling back to duplicate content.
+  const skippedTypeSet = new Set(batchPlan.skipped);
   const mixTypes = Object.entries(contentMix)
     .filter(([, v]) => (v || 0) > 0)
     .map(([k]) => MIX_KEY_TO_TEMPLATE_CONTENT_TYPE[k])
     .filter(Boolean) as string[];
-  const uniqueMixTypes = Array.from(new Set(mixTypes));
+  const uniqueMixTypes = Array.from(new Set(mixTypes)).filter(t => !skippedTypeSet.has(t));
+
+  // Remaining plan quota per type — decremented as Phase 1 picks. When
+  // a type hits 0 it's dropped from the rotation.
+  const planQuota: Record<string, number> = { ...batchPlan.plan };
 
   let typeIdx = 0;
   function nextType(): string {
     if (uniqueMixTypes.length === 0) {
       return 'reel';
     }
-    const t = uniqueMixTypes[typeIdx % uniqueMixTypes.length]!;
+    // Prefer the next type in rotation that still has quota. If the whole
+    // rotation is drained (all quotas at 0), fall through to plain
+    // round-robin so the loop never stalls.
+    const eligible = uniqueMixTypes.filter(t => (planQuota[t] ?? 0) > 0);
+    if (eligible.length === 0) {
+      const t = uniqueMixTypes[typeIdx % uniqueMixTypes.length]!;
+      typeIdx++;
+      return t;
+    }
+    const t = eligible[typeIdx % eligible.length]!;
     typeIdx++;
     return t;
   }
@@ -1119,6 +1415,11 @@ export async function generateCampaignPosts(
         const t = picked[Math.floor(Math.random() * picked.length)]!;
         usedTemplateIds.add(t.id);
         templatePosts.push({ template: t, hookText: pickUniqueHook(t.contentType) });
+        // Consume one from the batch plan quota for this type. When quota
+        // hits 0, nextType() will skip it on the next iteration.
+        if (planQuota[target] !== undefined && planQuota[target] > 0) {
+          planQuota[target] -= 1;
+        }
         found = true;
         break;
       }
@@ -1227,12 +1528,15 @@ export async function generateCampaignPosts(
     try {
       let sourceMediaSlots = buildSourceMediaSlots(template);
       let _insufficientAssets = false;
+      let consumedPublicIds: string[] = [];
       try {
-        const set = await pickDefaultSet(db, orgId, template.contentType);
+        const set = await pickDefaultSet(db, orgId, template.contentType, usedPublicIds);
         if (set) {
           // Rotate the starting asset index so consecutive posts show different
           // leading images even when the same media set applies to every post.
-          sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, template.contentType, inserted);
+          const applyResult = applySetToSlots(sourceMediaSlots as any, set, template.contentType, inserted);
+          sourceMediaSlots = applyResult.slots as any;
+          consumedPublicIds = applyResult.consumedPublicIds;
         }
       } catch (err) {
         if (err instanceof InsufficientAssetsError) {
@@ -1382,6 +1686,38 @@ export async function generateCampaignPosts(
 
       contentItemIds.push(contentItem.id);
       inserted++;
+
+      // ── Blitz usage bookkeeping (90-day sliding-window dedup) ─────────
+      // Log every consumed asset + the template into blitz_media_usage /
+      // blitz_template_usage. These rows are what fetchCampaignTemplates
+      // and inventoryMediaSet consult for cross-batch dedup on the NEXT
+      // generation, so a repeat within 90 days is impossible unless the
+      // pool is fully exhausted. Best-effort — never blocks the post.
+      try {
+        if (consumedPublicIds.length > 0) {
+          const usageRows = consumedPublicIds.map(pid => ({
+            orgId,
+            assetPublicId: pid,
+            assetType: (sourceMediaSlots as any)?.slides ? 'image' : 'video',
+            contentItemId: contentItem.id,
+            campaignId: campaign.id,
+          }));
+          await db.insert(blitzMediaUsageSchema).values(usageRows);
+          // Add to in-memory dedup Set so later posts in THIS batch also
+          // avoid the same asset (protects against same-batch dup).
+          for (const pid of consumedPublicIds) {
+            usedPublicIds.add(pid);
+          }
+        }
+        await db.insert(blitzTemplateUsageSchema).values({
+          orgId,
+          templateId: template.id,
+          contentItemId: contentItem.id,
+          campaignId: campaign.id,
+        });
+      } catch (err) {
+        console.warn('[Campaign] Failed to log blitz usage:', err);
+      }
 
       if (pickedInfluencerId) {
         db.update(aiInfluencerSchema)
@@ -1680,10 +2016,13 @@ export async function generateCampaignPosts(
 
           // Attempt Media Set substitution for safe-swap content types.
           let _insufficientAssets = false;
+          let consumedPublicIds: string[] = [];
           try {
-            const set = await pickDefaultSet(db, orgId, resolvedContentType);
+            const set = await pickDefaultSet(db, orgId, resolvedContentType, usedPublicIds);
             if (set) {
-              sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, resolvedContentType, inserted);
+              const applyResult = applySetToSlots(sourceMediaSlots as any, set, resolvedContentType, inserted);
+              sourceMediaSlots = applyResult.slots as any;
+              consumedPublicIds = applyResult.consumedPublicIds;
             }
           } catch (setErr: any) {
             if (setErr instanceof InsufficientAssetsError) {
@@ -1848,6 +2187,31 @@ export async function generateCampaignPosts(
 
           contentItemIds.push(contentItem.id);
 
+          // Blitz usage bookkeeping — see Phase 1 for rationale.
+          try {
+            if (consumedPublicIds.length > 0) {
+              const usageRows = consumedPublicIds.map(pid => ({
+                orgId,
+                assetPublicId: pid,
+                assetType: (sourceMediaSlots as any)?.slides ? 'image' : 'video',
+                contentItemId: contentItem.id,
+                campaignId: campaign.id,
+              }));
+              await db.insert(blitzMediaUsageSchema).values(usageRows);
+              for (const pid of consumedPublicIds) {
+                usedPublicIds.add(pid);
+              }
+            }
+            await db.insert(blitzTemplateUsageSchema).values({
+              orgId,
+              templateId: template.id,
+              contentItemId: contentItem.id,
+              campaignId: campaign.id,
+            });
+          } catch (err) {
+            console.warn('[Campaign] Failed to log blitz usage (phase 2):', err);
+          }
+
           if (pickedInfluencerId) {
             db.update(aiInfluencerSchema)
               .set({ usageCount: sql`usage_count + 1`, updatedAt: new Date() })
@@ -1971,10 +2335,13 @@ export async function generateCampaignPosts(
 
         // Apply media set substitution (same logic as engine posts)
         let _insufficientAssets = false;
+        let consumedPublicIds: string[] = [];
         try {
-          const set = await pickDefaultSet(db, orgId, resolvedContentType);
+          const set = await pickDefaultSet(db, orgId, resolvedContentType, usedPublicIds);
           if (set) {
-            sourceMediaSlots = applySetToSlots(sourceMediaSlots as any, set, resolvedContentType, inserted);
+            const applyResult = applySetToSlots(sourceMediaSlots as any, set, resolvedContentType, inserted);
+            sourceMediaSlots = applyResult.slots as any;
+            consumedPublicIds = applyResult.consumedPublicIds;
           }
         } catch (err) {
           if (err instanceof InsufficientAssetsError) {
@@ -2105,6 +2472,31 @@ export async function generateCampaignPosts(
           .returning();
 
         contentItemIds.push(contentItem.id);
+
+        // Blitz usage bookkeeping — see Phase 1 for rationale.
+        try {
+          if (consumedPublicIds.length > 0) {
+            const usageRows = consumedPublicIds.map(pid => ({
+              orgId,
+              assetPublicId: pid,
+              assetType: (sourceMediaSlots as any)?.slides ? 'image' : 'video',
+              contentItemId: contentItem.id,
+              campaignId: campaign.id,
+            }));
+            await db.insert(blitzMediaUsageSchema).values(usageRows);
+            for (const pid of consumedPublicIds) {
+              usedPublicIds.add(pid);
+            }
+          }
+          await db.insert(blitzTemplateUsageSchema).values({
+            orgId,
+            templateId: template.id,
+            contentItemId: contentItem.id,
+            campaignId: campaign.id,
+          });
+        } catch (err) {
+          console.warn('[Campaign] Failed to log blitz usage (fallback):', err);
+        }
 
         if (pickedInfluencerId) {
           db.update(aiInfluencerSchema)

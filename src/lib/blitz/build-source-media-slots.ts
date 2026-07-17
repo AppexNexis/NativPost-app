@@ -36,10 +36,18 @@ type TemplateRow = {
   thumbnailUrls?: Record<string, string> | string[] | null;
 };
 
-const VIDEO_EXT = /\.(mp4|webm|mov|m4v)(\?|$)/i;
+// Video detection covers both file-extension URLs and Cloudinary transformer
+// paths (`/video/upload/`), which many templates use without a trailing ext.
+// Previously only checked ext, so Cloudinary video templates fell through to
+// image aliases → composition rendered black frame.
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v|mkv)(\?|#|$)/i;
+const VIDEO_URL_PATH = /\/video\/upload\//i;
 
 function isVideoUrl(url?: string | null): boolean {
-  return !!url && VIDEO_EXT.test(url);
+  if (!url) {
+    return false;
+  }
+  return VIDEO_URL_PATH.test(url) || VIDEO_EXT.test(url);
 }
 
 export function buildSourceMediaSlots(template: TemplateRow): SourceMediaSlots {
@@ -49,7 +57,16 @@ export function buildSourceMediaSlots(template: TemplateRow): SourceMediaSlots {
   const multiSlide = isMultiSlideTemplate(template.contentType, slideUrls);
 
   if (multiSlide && slideUrls.length > 0) {
-    slots.slides = slideUrls.map(url => ({ url, assetType: 'image' as const }));
+    // Blitz slideshow invariant: exactly 4 slides. Templates that ship fewer
+    // (3) or more (5–7) are normalized here so preview + generation always
+    // agree. applySetToSlots re-normalizes downstream when user media is
+    // spliced in.
+    const TARGET = 4;
+    const capped = slideUrls.slice(0, TARGET);
+    while (capped.length < TARGET) {
+      capped.push(slideUrls[capped.length % slideUrls.length]!);
+    }
+    slots.slides = capped.map(url => ({ url, assetType: 'image' as const }));
     // A slideshow template can still ship a background if mediaUrl/sourceUrl is
     // set — some compositions layer text over a bg. Keep it optional.
     const bgUrl = template.mediaUrl || template.sourceUrl || null;
@@ -83,18 +100,27 @@ export function buildSourceMediaSlots(template: TemplateRow): SourceMediaSlots {
   }
 
   // Composition-specific aliases so per-type compositions can find the media.
-  if (slots.background?.assetType === 'video') {
+  // We route the background URL to type-specific slots regardless of whether
+  // it's video or image — the compositions now auto-detect and render <Img>
+  // vs <Video> via the shared `isVideoUrl` helper. Previously this alias
+  // block was gated on `assetType === 'video'`, so image-source templates
+  // for video content types left hook/demo/face slots empty, producing the
+  // signature black-frame + text-overlay bug.
+  if (slots.background?.url) {
+    const bgUrl = slots.background.url;
+    const bgKind: 'image' | 'video' = slots.background.assetType === 'video' ? 'video' : 'image';
+    // Cast preserves the existing slot shape (assetType is typed 'video'
+    // there) — compositions gracefully handle image URLs regardless.
     if (template.contentType === 'video_hook' || template.contentType === 'video_hook_demo') {
-      slots.hookVideo = { url: slots.background.url, assetType: 'video' };
+      slots.hookVideo = { url: bgUrl, assetType: bgKind as 'video' };
     }
     if (template.contentType === 'ugc' || template.contentType === 'talking_head') {
-      slots.demoVideo = { url: slots.background.url, assetType: 'video' };
+      slots.demoVideo = { url: bgUrl, assetType: bgKind as 'video' };
     }
-    // TalkingHead composition reads mediaSlots.faceVideo; when no
-    // influencer is enabled the preview would render blank without an
-    // alias. Mirror the background so the face slot always has a source.
+    // TalkingHead reads mediaSlots.faceVideo; mirror the background so the
+    // face slot always has a source when no influencer is enabled.
     if (template.contentType === 'talking_head') {
-      slots.faceVideo = { url: slots.background.url, assetType: 'video' };
+      slots.faceVideo = { url: bgUrl, assetType: bgKind as 'video' };
     }
   }
 

@@ -1,5 +1,6 @@
 import {
   boolean,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -546,6 +547,10 @@ export const contentTemplateSchema = pgTable(
     // flips to isActive=true once approvedIds ⊇ publicIds and no rejection
     // has been recorded.
     moderationApprovedIds: jsonb('moderation_approved_ids').$type<string[]>().default([]).notNull(),
+    // Source media kind for the underlying template asset — 'image' | 'video' | 'mixed'.
+    // Used by Blitz to filter video-only content types (video_hook / video_hook_demo)
+    // to templates whose source is actually a video. Backfill from mediaUrl extension.
+    sourceMediaType: text('source_media_type'),
     remixCount: integer('remix_count').default(0),
     publishCount: integer('publish_count').default(0),
     avgRemixPerformance: real('avg_remix_performance'),
@@ -952,3 +957,71 @@ export const longFormProjectSchema = pgTable('long_form_project', {
   updatedAt: timestamp('updated_at', { mode: 'date' }).defaultNow().$onUpdate(() => new Date()).notNull(),
   createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
 });
+
+// -----------------------------------------------------------
+// BLITZ MEDIA USAGE — per-asset consumption log used by Blitz for
+// cross-batch dedup. An asset is ineligible for another Blitz post
+// while a row exists within the 90-day sliding window.
+// -----------------------------------------------------------
+export const blitzMediaUsageSchema = pgTable(
+  'blitz_media_usage',
+  {
+    id: serial('id').primaryKey(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    // Cloudinary public_id (or media_asset.id UUID for legacy rows).
+    assetPublicId: text('asset_public_id').notNull(),
+    assetType: text('asset_type').notNull(), // 'image' | 'video'
+    // eslint-disable-next-line ts/no-use-before-define
+    contentItemId: uuid('content_item_id').references(() => contentItemSchema.id, {
+      onDelete: 'set null',
+    }),
+    campaignId: uuid('campaign_id').references(() => campaignSchema.id, {
+      onDelete: 'set null',
+    }),
+    usedAt: timestamp('used_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  (t) => ({
+    orgAssetIdx: index('blitz_media_usage_org_asset_idx').on(
+      t.orgId,
+      t.assetPublicId,
+      t.usedAt,
+    ),
+    orgUsedIdx: index('blitz_media_usage_org_used_idx').on(t.orgId, t.usedAt),
+  }),
+);
+
+// -----------------------------------------------------------
+// BLITZ TEMPLATE USAGE — per-org content_template consumption log.
+// Used to prevent the same template being remixed twice by the same
+// org within the 90-day window.
+// -----------------------------------------------------------
+export const blitzTemplateUsageSchema = pgTable(
+  'blitz_template_usage',
+  {
+    id: serial('id').primaryKey(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    templateId: uuid('template_id')
+      .references(() => contentTemplateSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    // eslint-disable-next-line ts/no-use-before-define
+    contentItemId: uuid('content_item_id').references(() => contentItemSchema.id, {
+      onDelete: 'set null',
+    }),
+    campaignId: uuid('campaign_id').references(() => campaignSchema.id, {
+      onDelete: 'set null',
+    }),
+    usedAt: timestamp('used_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  (t) => ({
+    orgTplIdx: index('blitz_template_usage_org_tpl_idx').on(
+      t.orgId,
+      t.templateId,
+      t.usedAt,
+    ),
+    orgUsedIdx: index('blitz_template_usage_org_used_idx').on(t.orgId, t.usedAt),
+  }),
+);

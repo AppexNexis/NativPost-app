@@ -1,6 +1,8 @@
 // @ts-nocheck
 import React from 'react';
-import { AbsoluteFill, Audio, Sequence, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
+import { AbsoluteFill, Audio, Img, Sequence, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
+
+import { isVideoUrl } from './media-detect';
 
 interface Props {
   script: {
@@ -192,12 +194,19 @@ export function VideoHookComposition({ script, style, mediaSlots, audioTrack }: 
       <Sequence from={0} durationInFrames={hookFrames}>
         <DimScrim>
           {mediaSlots?.hookVideo?.url ? (
-            <Video
-              src={mediaSlots.hookVideo.url}
-              style={{ width, height, objectFit: 'cover', position: 'absolute' }}
-              muted
-              loop
-            />
+            isVideoUrl(mediaSlots.hookVideo.url) ? (
+              <Video
+                src={mediaSlots.hookVideo.url}
+                style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+                muted
+                loop
+              />
+            ) : (
+              <Img
+                src={mediaSlots.hookVideo.url}
+                style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+              />
+            )
           ) : (
             <div style={{ width, height, backgroundColor: '#1a1a2e' }} />
           )}
@@ -209,12 +218,19 @@ export function VideoHookComposition({ script, style, mediaSlots, audioTrack }: 
       <Sequence from={hookFrames} durationInFrames={bodyFrames}>
         <DimScrim>
           {mediaSlots?.demoVideo?.url ? (
-            <Video
-              src={mediaSlots.demoVideo.url}
-              style={{ width, height, objectFit: 'cover', position: 'absolute' }}
-              muted
-              loop
-            />
+            isVideoUrl(mediaSlots.demoVideo.url) ? (
+              <Video
+                src={mediaSlots.demoVideo.url}
+                style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+                muted
+                loop
+              />
+            ) : (
+              <Img
+                src={mediaSlots.demoVideo.url}
+                style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+              />
+            )
           ) : (
             <div style={{ width, height, backgroundColor: '#16213e' }} />
           )}

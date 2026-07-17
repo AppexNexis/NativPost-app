@@ -19,6 +19,8 @@ import { loadFont as loadPlayfair } from '@remotion/google-fonts/PlayfairDisplay
 
 import { EDITOR_FIXED_DURATION_SECONDS } from '@/lib/editor-constants';
 
+import { isVideoUrl } from './media-detect';
+
 const FONT_REGISTRY: Record<string, { fontFamily: string }> = {
   'Inter': loadInter(),
   'Roboto': loadRoboto(),
@@ -210,7 +212,7 @@ export function EditorComposition({
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
       {/* Background media */}
       {backgroundUrl ? (
-        backgroundUrl.match(/\.(mp4|mov|webm)(\?|#|$)/i) ? (
+        isVideoUrl(backgroundUrl) ? (
           <Sequence from={0} durationInFrames={totalFrames}>
             <Video src={backgroundUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted loop />
           </Sequence>
@@ -284,7 +286,7 @@ export function EditorComposition({
             width: hookInsetWidth, height: hookInsetHeight,
             borderRadius: 12, overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.3)', zIndex: 10,
           }}>
-            {hookVideoUrl.match(/\.(mp4|mov|webm)(\?|#|$)/i) ? (
+            {isVideoUrl(hookVideoUrl) ? (
               <Video src={hookVideoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted loop />
             ) : (
               <Img src={hookVideoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
