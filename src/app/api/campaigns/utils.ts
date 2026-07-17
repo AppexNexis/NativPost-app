@@ -1132,6 +1132,13 @@ export async function generateCampaignPosts(
   //
   // "Today" is the calendar day in server local time; failed items are
   // re-attemptable and don't consume the cap.
+  //
+  // Bug 1 fix (Blitz 2× overshoot): 'rejected' MUST be included. Without
+  // it, when a Pro user rejects Blitz cards, auto-refill sees a lower
+  // `existingTodayCount`, fires another /generate, and produces a second
+  // full batch — postsPerDay=10 → 20 cards. Rejecting is an explicit "no",
+  // not a request to regenerate. Only 'failed' stays excluded because it
+  // represents an actual pipeline error worth retrying.
   const dailyLimit = postsPerDay;
   const _now = new Date();
   const _startOfDay = new Date(
@@ -1151,7 +1158,7 @@ export async function generateCampaignPosts(
         eq(campaignContentSchema.campaignId, campaign.id),
         eq(contentItemSchema.orgId, orgId),
         gte(contentItemSchema.createdAt, _startOfDay),
-        inArray(contentItemSchema.status, ['pending_review', 'approved', 'skipped']),
+        inArray(contentItemSchema.status, ['pending_review', 'approved', 'skipped', 'rejected']),
       ),
     );
   const existingTodayCount = todayCountRows.length;

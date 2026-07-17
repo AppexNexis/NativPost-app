@@ -2,6 +2,8 @@
 import React from 'react';
 import { AbsoluteFill, Audio, Sequence, useVideoConfig } from 'remotion';
 
+import { limitHook } from './text-limits';
+
 interface Props {
   script: {
     hookText?: string;
@@ -160,7 +162,7 @@ export function SlideshowComposition({ script, style, layout, mediaSlots, slides
       })}
 
       {/* Hook overlay at start if no slides */}
-      {slides.length === 0 && script.hookText && (
+      {slides.length === 0 && limitHook(script.hookText) && (
         <Sequence from={0} durationInFrames={fps * 3}>
           <AbsoluteFill
             style={{
@@ -183,7 +185,7 @@ export function SlideshowComposition({ script, style, layout, mediaSlots, slides
                 textAlign: align,
               }}
             >
-              {script.hookText}
+              {limitHook(script.hookText)}
             </p>
           </AbsoluteFill>
         </Sequence>

@@ -3,6 +3,7 @@ import React from 'react';
 import { AbsoluteFill, Audio, Img, Sequence, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
 
 import { isVideoUrl } from './media-detect';
+import { limitBody, limitCta, limitHook } from './text-limits';
 
 interface Props {
   script: {
@@ -37,6 +38,11 @@ interface Props {
 // column so the viewer sees hook + body + cta together on every background
 // clip. Fade-in stagger honors style.noAnimation.
 function TextOverlay({ script, style }: { script: Props['script']; style: Props['style'] }) {
+  // Bug 2 — truncate overlay text at render limits with "…" so long
+  // Blitz-generated hook/body/cta don't overflow the frame.
+  const hookText = limitHook(script.hookText);
+  const bodyText = limitBody(script.bodyText);
+  const ctaText = limitCta(script.ctaText);
   const frame = useCurrentFrame();
   const fontFamily = style.fontFamily || 'Inter';
   const base = style.fontSize || 48;
@@ -68,7 +74,7 @@ function TextOverlay({ script, style }: { script: Props['script']; style: Props[
         gap: 16,
       }}
     >
-      {script.hookText && (
+      {hookText && (
         <div
           style={{
             backgroundColor: bgColor,
@@ -93,12 +99,12 @@ function TextOverlay({ script, style }: { script: Props['script']; style: Props[
               textShadow: '0 2px 4px rgba(0,0,0,0.35)',
             }}
           >
-            {script.hookText}
+            {hookText}
           </p>
         </div>
       )}
 
-      {script.bodyText && (
+      {bodyText && (
         <div
           style={{
             backgroundColor: bgColor,
@@ -123,12 +129,12 @@ function TextOverlay({ script, style }: { script: Props['script']; style: Props[
               textShadow: '0 2px 4px rgba(0,0,0,0.35)',
             }}
           >
-            {script.bodyText}
+            {bodyText}
           </p>
         </div>
       )}
 
-      {script.ctaText && (
+      {ctaText && (
         <div
           style={{
             backgroundColor: ctaBg,
@@ -152,7 +158,7 @@ function TextOverlay({ script, style }: { script: Props['script']; style: Props[
               textShadow: '0 2px 4px rgba(0,0,0,0.35)',
             }}
           >
-            {script.ctaText}
+            {ctaText}
           </p>
         </div>
       )}

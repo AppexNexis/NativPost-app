@@ -27,6 +27,7 @@ export type ResolvedMediaSlots = {
   background?: Slot;
   hookVideo?: Slot;
   demoVideo?: Slot;
+  faceVideo?: Slot;
   slides?: Slide[];
 };
 
@@ -72,11 +73,21 @@ export function resolveMediaSlots(item: ContentItem): ResolvedMediaSlots {
     if (stashed.background) out.background = stashed.background;
     if (stashed.hookVideo) out.hookVideo = stashed.hookVideo;
     if (stashed.demoVideo) out.demoVideo = stashed.demoVideo;
+    if ((stashed as any).faceVideo) (out as any).faceVideo = (stashed as any).faceVideo;
     if (Array.isArray(stashed.slides) && stashed.slides.length > 0) out.slides = stashed.slides;
-    // If any slot was populated, return — even if we only found e.g. background
-    // and the composition wants hookVideo, this stash is what the user saved
-    // and we should respect it.
-    if (out.background || out.hookVideo || out.demoVideo || out.slides) return out;
+
+    // Alias background into the content-type-specific slot when the target
+    // slot is missing. Older Blitz posts (pre-aliasing) stashed only
+    // `background`, but per-type Remotion compositions destructure
+    // `hookVideo` / `demoVideo` / `faceVideo` — without this fallback the
+    // detail page renders a black frame with only the text overlay
+    // (matches Bug 3 report).
+    const targetSlot = slotForContentType(item.contentType);
+    if (targetSlot !== 'background' && !(out as any)[targetSlot] && out.background) {
+      (out as any)[targetSlot] = out.background;
+    }
+
+    if (out.background || out.hookVideo || out.demoVideo || (out as any).faceVideo || out.slides) return out;
   }
 
   // 2. Template snapshot path (Blitz + campaign).

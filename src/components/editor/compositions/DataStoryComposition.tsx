@@ -2,6 +2,8 @@
 import React from 'react';
 import { AbsoluteFill, Audio, Sequence, useVideoConfig } from 'remotion';
 
+import { limitBody, limitHook } from './text-limits';
+
 interface Props {
   script: {
     hookText?: string;
@@ -127,7 +129,7 @@ export function DataStoryComposition({ script, style, mediaSlots, audioTrack }: 
       })}
 
       {/* Fallback: hook text if no slides */}
-      {slides.length === 0 && script.hookText && (
+      {slides.length === 0 && limitHook(script.hookText) && (
         <Sequence from={0} durationInFrames={fps * 3}>
           <AbsoluteFill
             style={{
@@ -148,9 +150,9 @@ export function DataStoryComposition({ script, style, mediaSlots, audioTrack }: 
                 textAlign: 'center',
               }}
             >
-              {script.hookText}
+              {limitHook(script.hookText)}
             </p>
-            {script.bodyText && (
+            {limitBody(script.bodyText) && (
               <p
                 style={{
                   fontFamily,
@@ -161,7 +163,7 @@ export function DataStoryComposition({ script, style, mediaSlots, audioTrack }: 
                   opacity: 0.9,
                 }}
               >
-                {script.bodyText}
+                {limitBody(script.bodyText)}
               </p>
             )}
           </AbsoluteFill>

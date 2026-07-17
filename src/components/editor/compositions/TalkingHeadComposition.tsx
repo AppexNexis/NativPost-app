@@ -3,6 +3,7 @@ import React from 'react';
 import { AbsoluteFill, Audio, Img, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
 
 import { isVideoUrl } from './media-detect';
+import { limitBody, limitCta, limitHook } from './text-limits';
 
 interface Props {
   script: {
@@ -36,6 +37,12 @@ interface Props {
 export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }: Props) {
   const { width, height } = useVideoConfig();
   const frame = useCurrentFrame();
+
+  // Bug 2 — truncate overlay text so long Blitz-generated hook/body/cta
+  // don't overflow the frame.
+  const hookText = limitHook(script.hookText);
+  const bodyText = limitBody(script.bodyText);
+  const ctaText = limitCta(script.ctaText);
 
   // Background dim: scrim between source media and text overlay.
   const dimming = Math.max(0, Math.min(0.8, style.backgroundDimming ?? 0.3));
@@ -124,7 +131,7 @@ export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }
           gap: 16,
         }}
       >
-        {script.hookText && (
+        {hookText && (
           <div
             style={{
               backgroundColor: bgColor,
@@ -149,12 +156,12 @@ export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }
                 textShadow: '0 2px 4px rgba(0,0,0,0.35)',
               }}
             >
-              {script.hookText}
+              {hookText}
             </p>
           </div>
         )}
 
-        {script.bodyText && (
+        {bodyText && (
           <div
             style={{
               backgroundColor: bgColor,
@@ -179,12 +186,12 @@ export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }
                 textShadow: '0 2px 4px rgba(0,0,0,0.35)',
               }}
             >
-              {script.bodyText}
+              {bodyText}
             </p>
           </div>
         )}
 
-        {script.ctaText && (
+        {ctaText && (
           <div
             style={{
               backgroundColor: ctaBg,
@@ -208,7 +215,7 @@ export function TalkingHeadComposition({ script, style, mediaSlots, audioTrack }
                 textShadow: '0 2px 4px rgba(0,0,0,0.35)',
               }}
             >
-              {script.ctaText}
+              {ctaText}
             </p>
           </div>
         )}

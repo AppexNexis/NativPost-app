@@ -20,6 +20,7 @@ import { loadFont as loadPlayfair } from '@remotion/google-fonts/PlayfairDisplay
 import { EDITOR_FIXED_DURATION_SECONDS } from '@/lib/editor-constants';
 
 import { isVideoUrl } from './media-detect';
+import { limitBody, limitCta, limitHook } from './text-limits';
 
 const FONT_REGISTRY: Record<string, { fontFamily: string }> = {
   'Inter': loadInter(),
@@ -194,7 +195,12 @@ export function EditorComposition({
   const hookInsetRight = Math.round(width * 0.02);
   const hookInsetTop = Math.round(height * 0.05);
 
-  const activeText = script.hookText || script.bodyText || script.ctaText;
+  // Bug 2 — truncate overlay text so long Blitz-generated hook/body/cta
+  // don't overflow the frame.
+  const hookText = limitHook(script.hookText);
+  const bodyText = limitBody(script.bodyText);
+  const ctaText = limitCta(script.ctaText);
+  const activeText = hookText || bodyText || ctaText;
   const totalFrames = EDITOR_FIXED_DURATION_SECONDS * fps;
   const textStartFrame = noAnimation ? 0 : 10;
   const hookStartFrame = noAnimation ? 0 : 15;
@@ -242,27 +248,27 @@ export function EditorComposition({
           padding: pos.padding, zIndex: 10,
         }}>
           <div style={{ maxWidth: '90%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {script.hookText && (
+            {hookText && (
               <FadeInText
-                text={script.hookText}
+                text={hookText}
                 style={textBaseStyle}
                 startFrame={textStartFrame}
                 duration={totalFrames - textStartFrame}
                 noAnimation={noAnimation}
               />
             )}
-            {script.bodyText && (
+            {bodyText && (
               <FadeInText
-                text={script.bodyText}
+                text={bodyText}
                 style={{ ...textBaseStyle, fontSize: bodyFontSize }}
                 startFrame={noAnimation ? 0 : textStartFrame + 20}
                 duration={totalFrames - textStartFrame - 20}
                 noAnimation={noAnimation}
               />
             )}
-            {script.ctaText && (
+            {ctaText && (
               <FadeInText
-                text={script.ctaText}
+                text={ctaText}
                 style={{
                   ...textBaseStyle,
                   fontSize: ctaFontSize,

@@ -2,6 +2,8 @@
 import React from 'react';
 import { AbsoluteFill, useVideoConfig } from 'remotion';
 
+import { limitBody, limitCta, limitHook } from './text-limits';
+
 interface Props {
   script: {
     hookText?: string;
@@ -37,7 +39,7 @@ export function TextMotionCard({ script, style }: Props) {
         padding: 60,
       }}
     >
-      {script.hookText && (
+      {limitHook(script.hookText) && (
         <p
           style={{
             fontFamily,
@@ -48,10 +50,10 @@ export function TextMotionCard({ script, style }: Props) {
             marginBottom: 24,
           }}
         >
-          {script.hookText}
+          {limitHook(script.hookText)}
         </p>
       )}
-      {script.bodyText && (
+      {limitBody(script.bodyText) && (
         <p
           style={{
             fontFamily,
@@ -63,10 +65,10 @@ export function TextMotionCard({ script, style }: Props) {
             opacity: 0.9,
           }}
         >
-          {script.bodyText}
+          {limitBody(script.bodyText)}
         </p>
       )}
-      {script.ctaText && (
+      {limitCta(script.ctaText) && (
         <p
           style={{
             fontFamily,
@@ -77,7 +79,7 @@ export function TextMotionCard({ script, style }: Props) {
             opacity: 0.7,
           }}
         >
-          {script.ctaText}
+          {limitCta(script.ctaText)}
         </p>
       )}
     </AbsoluteFill>

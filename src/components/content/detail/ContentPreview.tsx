@@ -160,16 +160,11 @@ export function ContentPreview({
           )
         : (
             <div className="space-y-3">
-              {/* Recompile banner for uncompiled video-branch types */}
-              {useVideoBranch && !isCompiled && (
-                <RecompileBanner
-                  isRecompiling={isRecompiling}
-                  percent={recompilePercent}
-                  stage={recompileStage}
-                  error={recompileError}
-                  onRecompile={onRecompile}
-                />
-              )}
+              {/* Recompile banner intentionally hidden.
+                * Blitz posts render via the live Remotion pipeline, so the
+                * "no baked-in overlays" warning is noise for the common case.
+                * The compile action still exists on the standalone editor
+                * page for users who need a downloadable MP4. */}
 
               {/* Gallery branch */}
               {useGallery && gallerySlides.length > 0 && (
