@@ -659,6 +659,12 @@ export const campaignSchema = pgTable('campaign', {
   pinterestPercent: integer('pinterest_percent').default(0),
   enabledInfluencerIds: jsonb('enabled_influencer_ids').default([]),
   blitzAdvanced: jsonb('blitz_advanced').default({}),
+  // Blitz-only: accounts explicitly disabled from publishing. Effective
+  // publish list is derived at read time as
+  //   connectedAccounts − blitzDisabledAccountIds
+  // so newly connected accounts are opt-out (auto-included) and deleted
+  // accounts disappear for free. See memory nativpost-blitz-account-model.
+  blitzDisabledAccountIds: jsonb('blitz_disabled_account_ids').default([]),
   totalEngagement: integer('total_engagement').default(0),
   avgEngagementRate: real('avg_engagement_rate'),
   updatedAt: timestamp('updated_at', { mode: 'date' })

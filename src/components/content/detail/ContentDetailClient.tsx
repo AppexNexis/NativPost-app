@@ -19,7 +19,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 import { PageHeader } from '@/features/dashboard/PageHeader';
-import { renderEditorVideo } from '@/lib/editor/render-editor-video';
 import type { ContentItem } from '@/types/v2';
 
 import { ActionsPanel } from './ActionsPanel';
@@ -71,11 +70,6 @@ export function ContentDetailClient({ id }: Props) {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [scheduleOpenMobile, setScheduleOpenMobile] = useState(false);
-
-  const [isRecompiling, setIsRecompiling] = useState(false);
-  const [recompilePercent, setRecompilePercent] = useState(0);
-  const [recompileStage, setRecompileStage] = useState<'rendering' | 'uploading'>('rendering');
-  const [recompileError, setRecompileError] = useState<string | null>(null);
 
   const [retryingPlatform, setRetryingPlatform] = useState<string | null>(null);
 
@@ -258,46 +252,6 @@ export function ContentDetailClient({ id }: Props) {
     } finally { setRetryingPlatform(null); }
   };
 
-  const recompile = async () => {
-    const ed = (item.enrichmentData || {}) as Record<string, any>;
-    setIsRecompiling(true);
-    setRecompilePercent(0);
-    setRecompileStage('rendering');
-    setRecompileError(null);
-    try {
-      const slots = resolveMediaSlots(item);
-      const hasSlots = slots.background?.url || slots.hookVideo?.url || slots.demoVideo?.url
-        || (slots.slides && slots.slides.length > 0);
-      if (!hasSlots) {
-        throw new Error('Cannot recompile. Original source media is missing. Re-open in the editor to reselect a background.');
-      }
-      const url = await renderEditorVideo(
-        {
-          script: ed.editorScript || {},
-          style: ed.editorStyle || {},
-          layout: ed.editorLayout || 'centered',
-          aspectRatio: item.aspectRatio || '9:16',
-          contentType: item.contentType,
-          mediaSlots: slots,
-          audioTrack: ed.audioTrack ?? null,
-        },
-        (percent, stage) => {
-          setRecompilePercent(percent);
-          setRecompileStage(stage);
-        },
-      );
-      const updated = await patch({
-        graphicUrls: [url],
-        enrichmentData: { ...ed, isCompiled: true, compileError: null },
-      });
-      if (updated) setItem(updated);
-    } catch (err) {
-      setRecompileError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setIsRecompiling(false);
-    }
-  };
-
   const isRejected = item.status === 'rejected';
   const isPublished = item.status === 'published';
 
@@ -313,15 +267,7 @@ export function ContentDetailClient({ id }: Props) {
           {isRejected && <RejectionPanel feedback={item.rejectionFeedback} />}
 
           {needsMedia && (
-            <ContentPreview
-              item={item}
-              editorHref={editorHref}
-              isRecompiling={isRecompiling}
-              recompilePercent={recompilePercent}
-              recompileStage={recompileStage}
-              recompileError={recompileError}
-              onRecompile={recompile}
-            />
+            <ContentPreview item={item} editorHref={editorHref} />
           )}
 
           <CaptionPanel

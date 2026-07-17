@@ -192,6 +192,18 @@ type BlitzDailyViewProps = {
   dailyLimitReached?: boolean;
   dailyLimitCount?: number;
   dailyLimit?: number;
+  /**
+   * IDs of accounts Blitz will publish to right now, derived by
+   * resolveBlitzTargetAccounts on the server. Empty array = block
+   * generation + swipe until user connects/enables at least one.
+   */
+  effectiveTargetAccountIds?: string[];
+  /**
+   * User-disabled account IDs (persisted in
+   * campaign.blitzDisabledAccountIds). Passed so the settings toggles
+   * render in the correct state without a second fetch.
+   */
+  disabledAccountIds?: string[];
 };
 
 export function BlitzDailyView({
@@ -200,6 +212,8 @@ export function BlitzDailyView({
   dailyLimitReached: serverDailyLimitReached,
   dailyLimitCount: serverDailyLimitCount,
   dailyLimit: serverDailyLimit,
+  effectiveTargetAccountIds = [],
+  disabledAccountIds = [],
 }: BlitzDailyViewProps) {
   const router = useRouter();
 
@@ -294,6 +308,14 @@ export function BlitzDailyView({
   }, [campaign.id]);
 
   const runGenerate = useCallback(async () => {
+    // Empty-state guard — don't burn a generate call when we already know
+    // the org has no publishable accounts. Server would return
+    // NO_CONNECTED_CHANNELS anyway; short-circuiting here keeps the UI
+    // instant and avoids the loading flicker.
+    if (effectiveTargetAccountIds.length === 0) {
+      setOutcome({ kind: 'noChannels' });
+      return;
+    }
     setIsGenerating(true);
     setError(null);
     setOutcome({ kind: 'none' });
@@ -383,7 +405,7 @@ export function BlitzDailyView({
     } finally {
       setIsGenerating(false);
     }
-  }, [campaign.id, refresh]);
+  }, [campaign.id, refresh, effectiveTargetAccountIds.length]);
 
   // Auto-generate today's queue once on mount if nothing is queued,
   // OR if all existing items have no enrichable media (stale items from
@@ -410,6 +432,12 @@ export function BlitzDailyView({
       if (anyHasMedia) {
         return; // at least one item has a valid preview — don't re-gen
       }
+    }
+    // No publishable accounts — show the connect-account CTA instead of
+    // auto-generating (which would fail with NO_CONNECTED_CHANNELS).
+    if (effectiveTargetAccountIds.length === 0) {
+      setOutcome({ kind: 'noChannels' });
+      return;
     }
     // Daily limit already reached AND no items to review — show limit
     if (dailyLimitReached) {
@@ -836,6 +864,7 @@ export function BlitzDailyView({
           postsPerDay: campaign.postsPerDay ?? 3,
           qualityThreshold: campaign.qualityThreshold ?? 0.7,
           blitzAdvanced: (campaign as any).blitzAdvanced ?? {},
+          blitzDisabledAccountIds: disabledAccountIds,
         }}
       />
     </div>

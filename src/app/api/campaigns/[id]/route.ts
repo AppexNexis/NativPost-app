@@ -155,6 +155,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (body.blitzAdvanced !== undefined) {
       updates.blitzAdvanced = body.blitzAdvanced;
     }
+    if (body.blitzDisabledAccountIds !== undefined) {
+      // Persist the derive-on-read exclusion list. Must be an array of
+      // string IDs — reject anything else so we don't corrupt the JSONB
+      // column (which would make resolveBlitzTargetAccounts throw at
+      // read time on every subsequent request).
+      if (!Array.isArray(body.blitzDisabledAccountIds)
+        || !body.blitzDisabledAccountIds.every((id: unknown) => typeof id === 'string')) {
+        return NextResponse.json(
+          { error: 'blitzDisabledAccountIds must be an array of strings' },
+          { status: 400 },
+        );
+      }
+      updates.blitzDisabledAccountIds = body.blitzDisabledAccountIds;
+    }
     if (body.totalEngagement !== undefined) {
       updates.totalEngagement = body.totalEngagement;
     }

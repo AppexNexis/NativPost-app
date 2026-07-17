@@ -5,6 +5,7 @@ import type { Metadata } from 'next';
 import { BlitzDailyView } from '@/components/campaigns/BlitzDailyView';
 import { getAuthContext } from '@/lib/auth';
 import { getOrgBillingState } from '@/lib/billing';
+import { resolveBlitzTargetAccounts } from '@/lib/blitz/resolve-target-accounts';
 import { getDb } from '@/libs/DB';
 import { campaignContentSchema, campaignSchema, contentAngleSchema, contentItemSchema, socialAccountSchema } from '@/models/Schema';
 
@@ -30,7 +31,12 @@ const DEFAULT_BLITZ = {
   genderPreference: null as string | null,
   ownMediaMix: 50,
   influencerFrequency: 0,
+  // Blitz derives publish targets at read time from
+  //   connectedAccounts − blitzDisabledAccountIds
+  // so we leave targetAccounts empty for new Blitz campaigns and rely on
+  // blitzDisabledAccountIds instead. Regular campaigns are unaffected.
   targetAccounts: [] as { accountId: string; platform: string }[],
+  blitzDisabledAccountIds: [] as string[],
   postsPerDay: 10,
   campaignLengthDays: 1,
   qualityThreshold: 0.7,
@@ -68,19 +74,20 @@ export default async function Page() {
 
   let campaign = existing;
 
+  // Always load the org's connected social accounts — they're needed for
+  // the effective-targets derivation whether or not we create a fresh
+  // Blitz campaign row this request.
+  const connectedAccounts = await db
+    .select()
+    .from(socialAccountSchema)
+    .where(and(eq(socialAccountSchema.orgId, orgId), eq(socialAccountSchema.isActive, true)));
+
   if (!campaign) {
-    // Build default angles and accounts
-    const [angles, accounts] = await Promise.all([
-      db
-        .select()
-        .from(contentAngleSchema)
-        .where(and(eq(contentAngleSchema.orgId, orgId), eq(contentAngleSchema.isActive, true)))
-        .limit(5),
-      db
-        .select()
-        .from(socialAccountSchema)
-        .where(and(eq(socialAccountSchema.orgId, orgId), eq(socialAccountSchema.isActive, true))),
-    ]);
+    const angles = await db
+      .select()
+      .from(contentAngleSchema)
+      .where(and(eq(contentAngleSchema.orgId, orgId), eq(contentAngleSchema.isActive, true)))
+      .limit(5);
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() + 1);
@@ -93,7 +100,6 @@ export default async function Page() {
       ? DEFAULT_BLITZ.postsPerDay
       : Math.min(DEFAULT_BLITZ.postsPerDay, cap);
 
-    const targetAccounts = accounts.map(a => ({ accountId: a.id, platform: a.platform }));
     const campaignAngles = angles.map(a => ({ angleId: a.id, weight: Math.round(100 / Math.max(angles.length, 1)) }));
 
     // Normalize weights to sum to 100
@@ -114,7 +120,8 @@ export default async function Page() {
         ...DEFAULT_BLITZ,
         postsPerDay: initialPostsPerDay,
         angles: campaignAngles,
-        targetAccounts,
+        // targetAccounts stays empty for Blitz — publish targets are
+        // derived from connectedAccounts − blitzDisabledAccountIds.
         startDate,
         totalPosts: initialPostsPerDay * DEFAULT_BLITZ.campaignLengthDays,
       })
@@ -125,6 +132,26 @@ export default async function Page() {
 
   if (!campaign) {
     return <p className="py-8 text-sm text-muted-foreground">Could not initialize Blitz.</p>;
+  }
+
+  // ── Effective publish targets (derive-on-read) ────────────────────────
+  // Compute what accounts Blitz will publish to for THIS render. If the
+  // row still has the legacy `targetAccounts` snapshot and no
+  // `blitzDisabledAccountIds` yet, resolveBlitzTargetAccounts migrates
+  // the snapshot into an equivalent exclusion list once and returns
+  // needsPersist=true. Any subsequent connect/disconnect happens
+  // transparently because the effective list is re-derived every read.
+  const accountResolve = resolveBlitzTargetAccounts({
+    connectedAccounts: connectedAccounts as any,
+    blitzDisabledAccountIds: (campaign.blitzDisabledAccountIds as string[] | null | undefined) ?? null,
+    legacyTargetAccounts: (campaign.targetAccounts as any[]) || null,
+  });
+  if (accountResolve.needsPersist) {
+    await db
+      .update(campaignSchema)
+      .set({ blitzDisabledAccountIds: accountResolve.disabledIds })
+      .where(eq(campaignSchema.id, campaign.id));
+    (campaign as any).blitzDisabledAccountIds = accountResolve.disabledIds;
   }
 
   // Ensure content mix includes ALL available content types, not just the
@@ -183,7 +210,9 @@ export default async function Page() {
   // Count today's content items with statuses that consume the daily
   // allowance. Calculated here (not just client-side) so the limit
   // survives a full page refresh even if sessionStorage is cleared.
-  const DAILY_LIMIT_STATUSES = new Set(['pending_review', 'approved', 'skipped']);
+  // Must match the server-side filter in utils.ts — 'rejected' counts,
+  // 'failed' does not (Bug 1: rejected cards should not trigger refill).
+  const DAILY_LIMIT_STATUSES = new Set(['pending_review', 'approved', 'skipped', 'rejected']);
   const todayCount = contentItems.filter(
     (i: any) => i.status && DAILY_LIMIT_STATUSES.has(String(i.status)),
   ).length;
@@ -197,6 +226,8 @@ export default async function Page() {
       dailyLimitReached={dailyLimitReached}
       dailyLimitCount={todayCount}
       dailyLimit={postsPerDay}
+      effectiveTargetAccountIds={accountResolve.effectiveTargets.map(t => t.accountId)}
+      disabledAccountIds={accountResolve.disabledIds}
     />
   );
 }

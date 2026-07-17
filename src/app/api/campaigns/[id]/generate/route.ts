@@ -149,6 +149,36 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       throw chanErr;
     }
 
+    // 2a.1 Blitz-specific derive-on-read target check. Even when the org
+    // has connected accounts, the user may have disabled all of them for
+    // Blitz via campaign.blitzDisabledAccountIds. We compute the
+    // effective target list here so the client renders the "connect an
+    // account" CTA (via NO_CONNECTED_CHANNELS) instead of enqueuing a
+    // job that would produce posts with nowhere to publish.
+    if (campaign.name === 'Today\'s Blitz') {
+      const { resolveBlitzTargetAccounts } = await import('@/lib/blitz/resolve-target-accounts');
+      const { socialAccountSchema } = await import('@/models/Schema');
+      const socialAccounts = await db
+        .select()
+        .from(socialAccountSchema)
+        .where(and(eq(socialAccountSchema.orgId, orgId!), eq(socialAccountSchema.isActive, true)));
+      const resolve = resolveBlitzTargetAccounts({
+        connectedAccounts: socialAccounts as any,
+        blitzDisabledAccountIds: (campaign.blitzDisabledAccountIds as string[] | null | undefined) ?? null,
+        legacyTargetAccounts: (campaign.targetAccounts as any[]) || null,
+      });
+      if (resolve.effectiveTargets.length === 0) {
+        return NextResponse.json(
+          {
+            error: 'All Blitz publishing accounts are turned off. Enable at least one in Blitz settings, or connect a new account.',
+            errorCode: 'NO_CONNECTED_CHANNELS',
+            noTargets: true,
+          },
+          { status: 200 },
+        );
+      }
+    }
+
     // 2b. Stale-item sweep — deactivate pending items that have no
     // sourceMediaSlots (from failed generation runs before the template
     // content-type mapping fix). Without this sweep, stale items:

@@ -71,6 +71,12 @@ type CampaignSettings = {
   influencerFrequency: number;
   enabledInfluencerIds: string[];
   targetAccounts: { accountId: string; platform: string }[];
+  /**
+   * Account IDs the user has explicitly turned OFF for Blitz publishing.
+   * Blitz uses derive-on-read: effectiveTargets = connectedAccounts − disabledIds.
+   * Newly connected accounts don't appear here → they're enabled by default.
+   */
+  blitzDisabledAccountIds?: string[];
   genderPreference: string;
   postsPerDay: number;
   qualityThreshold: number;
@@ -179,6 +185,12 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
   // Section 5: Advanced settings
   const [blitzAdvanced, setBlitzAdvanced] = useState<BlitzAdvanced>(initial.blitzAdvanced ?? {});
 
+  // Publishing accounts — user-disabled account IDs. Derive-on-read means
+  // any connected account NOT in this set is auto-enabled for Blitz.
+  const [disabledAccountIds, setDisabledAccountIds] = useState<string[]>(
+    initial.blitzDisabledAccountIds ?? [],
+  );
+
   const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   const toggleBlackoutDay = (day: number) => {
@@ -225,10 +237,25 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
       .catch(() => {})
       .finally(() => setInfluencersLoading(false));
 
-    // Fetch connected social accounts
+    // Fetch connected social accounts. The API returns
+    // `{ accounts: [{ id, platform, platformUsername, isActive, ... }] }`.
+    // Normalize to the local SocialAccount shape so the Publishing
+    // accounts toggles render correctly and the isActive filter matches
+    // what page.tsx uses when computing effectiveTargetAccountIds.
     fetch('/api/social-accounts')
       .then(r => r.json())
-      .then(d => setConnectedAccounts(d.items || d || []))
+      .then((d) => {
+        const raw: any[] = d?.accounts || d?.items || (Array.isArray(d) ? d : []);
+        const active = raw
+          .filter(a => a?.isActive !== false)
+          .map(a => ({
+            id: a.id,
+            platform: a.platform,
+            handle: a.platformUsername ?? a.handle ?? null,
+            profileImageUrl: a.profileImageUrl ?? null,
+          }));
+        setConnectedAccounts(active);
+      })
       .catch(() => {});
 
     // Fetch plan tier so we can clamp posts/day to the plan cap
@@ -337,6 +364,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
           postsPerDay,
           qualityThreshold,
           blitzAdvanced,
+          blitzDisabledAccountIds: disabledAccountIds,
           // targetAccounts persisted separately via account connect UI
         }),
       });
@@ -825,6 +853,76 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                   %
                 </p>
               </div>
+            </div>
+          </section>
+
+          {/* Publishing accounts — per-account enable/disable for Blitz.
+              Newly connected accounts are auto-enabled (absent from the
+              disabled set). Toggling off adds the ID; toggling on removes
+              it. Effective targets are derived at publish time. */}
+          <section>
+            <h3 className="mb-1 text-sm font-semibold">Publishing accounts</h3>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Choose which connected accounts Blitz publishes to. Newly
+              connected accounts are enabled by default.
+            </p>
+            <div className="rounded-xl border bg-muted/30 p-4">
+              {connectedAccounts.length === 0 ? (
+                <div className="text-xs text-muted-foreground">
+                  No social accounts connected yet.
+                  {' '}
+                  <a href="/dashboard/social-accounts" className="text-primary hover:underline">
+                    Connect one
+                  </a>
+                  {' '}
+                  to start publishing with Blitz.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {connectedAccounts.map((acc) => {
+                    const isDisabled = disabledAccountIds.includes(acc.id);
+                    const isEnabled = !isDisabled;
+                    return (
+                      <div
+                        key={acc.id}
+                        className="flex items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium capitalize">
+                            {acc.platform}
+                          </p>
+                          {acc.handle && (
+                            <p className="truncate text-xs text-muted-foreground">
+                              {acc.handle}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDisabledAccountIds(prev =>
+                              isDisabled
+                                ? prev.filter(id => id !== acc.id)
+                                : [...prev, acc.id],
+                            );
+                          }}
+                          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+                            isEnabled ? 'bg-primary' : 'bg-muted'
+                          }`}
+                          aria-pressed={isEnabled}
+                          aria-label={`${isEnabled ? 'Disable' : 'Enable'} ${acc.platform} for Blitz`}
+                        >
+                          <span
+                            className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-transform ${
+                              isEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </section>
 

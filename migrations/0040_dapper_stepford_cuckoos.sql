@@ -1,0 +1,1 @@
+ALTER TABLE "campaign" ADD COLUMN "blitz_disabled_account_ids" jsonb DEFAULT '[]'::jsonb;

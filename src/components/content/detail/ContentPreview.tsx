@@ -13,7 +13,6 @@ import { getEditorKind } from '@/lib/editor/content-type-registry';
 import type { ContentItem } from '@/types/v2';
 
 import { VIDEO_CONTENT_TYPES } from '../preview-helpers';
-import { RecompileBanner } from './RecompileBanner';
 import { ASPECT_RATIO_LABELS, ctLabel } from './status-config';
 import {
   hasAnyMedia,
@@ -26,11 +25,6 @@ import {
 type Props = {
   item: ContentItem;
   editorHref: string;
-  isRecompiling: boolean;
-  recompilePercent: number;
-  recompileStage: 'rendering' | 'uploading';
-  recompileError: string | null;
-  onRecompile: () => void;
 };
 
 const IMAGE_KIND_TYPES = new Set(['slideshow', 'carousel', 'data_story', 'single_image', 'wall_of_text']);
@@ -42,15 +36,10 @@ function isPortrait(aspectRatio: string): boolean {
 export function ContentPreview({
   item,
   editorHref,
-  isRecompiling,
-  recompilePercent,
-  recompileStage,
-  recompileError,
-  onRecompile,
 }: Props) {
   const editorKind = getEditorKind(item.contentType);
   const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
-  const isCompiled = enrichment.isCompiled === true;
+
 
   const useGallery = editorKind === 'image' || IMAGE_KIND_TYPES.has(item.contentType);
   const useVideoBranch = VIDEO_CONTENT_TYPES.has(item.contentType) && !useGallery;

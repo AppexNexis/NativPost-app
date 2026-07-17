@@ -7,7 +7,7 @@ import { getAuthContext } from '@/lib/auth';
 import { sendPublishedNotification } from '@/lib/email';
 import { publishToplatform } from '@/lib/social-publish';
 import { getDb } from '@/libs/DB';
-import { contentItemSchema, publishingQueueSchema, socialAccountSchema } from '@/models/Schema';
+import { campaignContentSchema, campaignSchema, contentItemSchema, publishingQueueSchema, socialAccountSchema } from '@/models/Schema';
 
 type RouteParams = {
   params: Promise<{ id: string }>;
@@ -58,6 +58,39 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .from(socialAccountSchema)
       .where(and(eq(socialAccountSchema.orgId, orgId!), eq(socialAccountSchema.isActive, true)));
 
+    // ── Blitz derive-on-read: filter disabled accounts ──────────────
+    // For Blitz content, the user may have disabled specific accounts
+    // via campaign.blitzDisabledAccountIds. We honor that here at
+    // publish time so the effective account list mirrors what the UI
+    // shows in the Blitz settings drawer. Disabled accounts are
+    // silently skipped — they don't cause the post to fail.
+    let effectiveAccounts = accounts;
+    try {
+      const [link] = await db
+        .select({ campaignId: campaignContentSchema.campaignId })
+        .from(campaignContentSchema)
+        .where(eq(campaignContentSchema.contentItemId, id))
+        .limit(1);
+      if (link?.campaignId) {
+        const [campaign] = await db
+          .select({
+            name: campaignSchema.name,
+            blitzDisabledAccountIds: campaignSchema.blitzDisabledAccountIds,
+          })
+          .from(campaignSchema)
+          .where(eq(campaignSchema.id, link.campaignId))
+          .limit(1);
+        if (campaign?.name === 'Today\'s Blitz') {
+          const disabled = new Set(
+            ((campaign.blitzDisabledAccountIds as string[] | null) ?? []),
+          );
+          effectiveAccounts = accounts.filter(a => !disabled.has(a.id));
+        }
+      }
+    } catch (deriveErr) {
+      console.warn('[publish] Blitz derive-on-read failed, falling back to raw accounts:', deriveErr);
+    }
+
     const results: Array<{
       platform: string;
       success: boolean;
@@ -68,9 +101,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // 3. Publish to each platform
     for (const platform of platforms) {
-      const account = accounts.find(a => a.platform === platform);
+      const account = effectiveAccounts.find(a => a.platform === platform);
 
       if (!account) {
+        // For Blitz posts, a missing account can mean the user disabled
+        // it in the Blitz settings drawer after the post was scheduled.
+        // We silently skip — per product decision, disabled accounts
+        // must not mark a post as failed.
+        const wasDisabledForBlitz = accounts.find(a => a.platform === platform) != null;
+        if (wasDisabledForBlitz) {
+          continue;
+        }
         results.push({ platform, success: false, error: `No connected ${platform} account` });
         continue;
       }
