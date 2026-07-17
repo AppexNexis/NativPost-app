@@ -82,9 +82,9 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       blitzPostsPerDay: 3,
     },
     stripePriceId: { dev: 'price_STARTER_DEV_REPLACE', prod: 'price_1TLfHe8UA4orc9zNIcmWwP1d' },
-    stripeAnnualPriceId: { dev: 'price_STARTER_ANNUAL_DEV_REPLACE', prod: 'price_STARTER_ANNUAL_PROD_REPLACE' },
+    stripeAnnualPriceId: { dev: 'price_STARTER_ANNUAL_DEV_REPLACE', prod: 'price_1TuJun8UA4orc9zNttOr2wxC' },
     paystackPlanCode: { dev: 'PLN_jjfdqyrgr1vbsvv', prod: 'PLN_4jzn7zd6blqssag' },
-    paystackAnnualPlanCode: { dev: 'PLN_STARTER_ANNUAL_DEV_REPLACE', prod: 'PLN_STARTER_ANNUAL_PROD_REPLACE' },
+    paystackAnnualPlanCode: { dev: 'PLN_STARTER_ANNUAL_DEV_REPLACE', prod: 'PLN_unm6nqz8wcialev' },
   },
 
   growth: {
@@ -118,9 +118,9 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       blitzPostsPerDay: 5,
     },
     stripePriceId: { dev: 'price_GROWTH_DEV_REPLACE', prod: 'price_1TLfIW8UA4orc9zN5SvYEWkD' },
-    stripeAnnualPriceId: { dev: 'price_GROWTH_ANNUAL_DEV_REPLACE', prod: 'price_GROWTH_ANNUAL_PROD_REPLACE' },
+    stripeAnnualPriceId: { dev: 'price_GROWTH_ANNUAL_DEV_REPLACE', prod: 'price_1TuK1Z8UA4orc9zNsShuDFMu' },
     paystackPlanCode: { dev: 'PLN_8h1kodnrprlt3sp', prod: 'PLN_u39i4zlh6416qbb' },
-    paystackAnnualPlanCode: { dev: 'PLN_GROWTH_ANNUAL_DEV_REPLACE', prod: 'PLN_GROWTH_ANNUAL_PROD_REPLACE' },
+    paystackAnnualPlanCode: { dev: 'PLN_GROWTH_ANNUAL_DEV_REPLACE', prod: 'PLN_qya2639txqy4tm2' },
   },
 
   pro: {
@@ -154,9 +154,9 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       blitzPostsPerDay: 10,
     },
     stripePriceId: { dev: 'price_PRO_DEV_REPLACE', prod: 'price_1TLfJ08UA4orc9zNrNzFnRr7' },
-    stripeAnnualPriceId: { dev: 'price_PRO_ANNUAL_DEV_REPLACE', prod: 'price_PRO_ANNUAL_PROD_REPLACE' },
+    stripeAnnualPriceId: { dev: 'price_PRO_ANNUAL_DEV_REPLACE', prod: 'price_1TuK308UA4orc9zNdT2A3trX' },
     paystackPlanCode: { dev: 'PLN_fdwtqby00izl4ro', prod: 'PLN_o7ebuljkyw9iyaw' },
-    paystackAnnualPlanCode: { dev: 'PLN_PRO_ANNUAL_DEV_REPLACE', prod: 'PLN_PRO_ANNUAL_PROD_REPLACE' },
+    paystackAnnualPlanCode: { dev: 'PLN_PRO_ANNUAL_DEV_REPLACE', prod: 'PLN_iqo2svs8izudauv' },
   },
 
   agency: {
@@ -190,9 +190,9 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       blitzPostsPerDay: 20,
     },
     stripePriceId: { dev: 'price_AGENCY_DEV_REPLACE', prod: 'price_1TLfKa8UA4orc9zNw27oyVak' },
-    stripeAnnualPriceId: { dev: 'price_AGENCY_ANNUAL_DEV_REPLACE', prod: 'price_AGENCY_ANNUAL_PROD_REPLACE' },
+    stripeAnnualPriceId: { dev: 'price_AGENCY_ANNUAL_DEV_REPLACE', prod: 'price_1TuK9K8UA4orc9zNzhdEgB9m' },
     paystackPlanCode: { dev: 'PLN_lu1zsbqua45q58b', prod: 'PLN_uevdm7btk36wdhg' },
-    paystackAnnualPlanCode: { dev: 'PLN_AGENCY_ANNUAL_DEV_REPLACE', prod: 'PLN_AGENCY_ANNUAL_PROD_REPLACE' },
+    paystackAnnualPlanCode: { dev: 'PLN_AGENCY_ANNUAL_DEV_REPLACE', prod: 'PLN_mjoh9tddm7t6wp6' },
   },
 
   enterprise: {
