@@ -129,12 +129,58 @@ Rules:
       .join('\n')
       .trim();
 
-    if (!text) return [];
+    if (text) {
+      const angles = safeJsonParseArray(text);
+      if (angles.length > 0) return angles;
+    }
 
-    const angles = safeJsonParseArray(text);
-    return angles;
+    // Claude returned empty or unparseable — fall through to DeepSeek.
   } catch (err) {
     console.error('[generate-content-angles] Claude call failed:', err);
+    // Fall through to DeepSeek fallback below.
+  }
+
+  // ── DeepSeek fallback ──────────────────────────────────────────────
+  // When Anthropic is out of credits or otherwise unavailable, try the
+  // same prompt via DeepSeek's OpenAI-compatible endpoint.
+  const deepseekKey = process.env.DEEPSEEK_API_KEY;
+  if (!deepseekKey) {
+    console.warn('[generate-content-angles] No DEEPSEEK_API_KEY, returning empty angles');
+    return [];
+  }
+
+  try {
+    const dsRes = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${deepseekKey}`,
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        max_tokens: 1200,
+        temperature: 0.7,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!dsRes.ok) {
+      console.error(
+        '[generate-content-angles] DeepSeek fallback failed:',
+        dsRes.status,
+        await dsRes.text().catch(() => ''),
+      );
+      return [];
+    }
+
+    const dsBody = await dsRes.json();
+    const dsText = dsBody?.choices?.[0]?.message?.content?.trim();
+    if (!dsText) return [];
+
+    const angles = safeJsonParseArray(dsText);
+    return angles;
+  } catch (dsErr) {
+    console.error('[generate-content-angles] DeepSeek fallback error:', dsErr);
     return [];
   }
 }
