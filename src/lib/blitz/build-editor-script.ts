@@ -30,10 +30,12 @@ function clip(s: string | undefined, cap: number): string | undefined {
   const t = s.trim();
   if (!t) return undefined;
   if (t.length <= cap) return t;
-  // Prefer a whole word boundary near the cap.
+  // Prefer a whole word boundary near the cap. Append ellipsis so the
+  // reader knows the text continues — mid-sentence cuts look like a bug.
   const slice = t.slice(0, cap);
   const lastSpace = slice.lastIndexOf(' ');
-  return (lastSpace > cap * 0.6 ? slice.slice(0, lastSpace) : slice).trimEnd();
+  const trimmed = (lastSpace > cap * 0.6 ? slice.slice(0, lastSpace) : slice).trimEnd();
+  return `${trimmed}…`;
 }
 
 function splitLines(caption: string | undefined): string[] {

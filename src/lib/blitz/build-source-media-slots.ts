@@ -65,7 +65,16 @@ export function buildSourceMediaSlots(template: TemplateRow): SourceMediaSlots {
   // sourceUrl is the original imported video URL for video-type templates
   // (video_hook, green_screen, talking_head, video_hook_demo). These may not
   // have a processed mediaUrl/thumbnailUrl yet, so fall back to sourceUrl.
-  const primary = template.mediaUrl || template.thumbnailUrl || template.sourceUrl || null;
+  // IMPORTANT: many Apify-scraped templates store a TikTok/Instagram page URL
+  // in sourceUrl — these are NOT direct media files and will fail in <video>
+  // or <img> tags. Only use sourceUrl when it looks like a direct media URL.
+  let primary = template.mediaUrl || template.thumbnailUrl || null;
+  if (!primary && template.sourceUrl) {
+    const isDirectMedia = /\.(mp4|webm|mov|m4v|jpg|jpeg|png|webp|gif|avif)(\?|$)/i.test(template.sourceUrl);
+    if (isDirectMedia) {
+      primary = template.sourceUrl;
+    }
+  }
   if (primary) {
     slots.background = {
       url: primary,

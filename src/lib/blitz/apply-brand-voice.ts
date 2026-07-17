@@ -248,7 +248,65 @@ ${source}`;
         cachePut(cacheKey, rewritten);
       }
     } catch (err) {
-      console.warn('[applyBrandVoice] rewrite failed, using source:', err);
+      console.warn('[applyBrandVoice] Anthropic rewrite failed, trying DeepSeek:', err);
+    }
+  }
+
+  // ── DeepSeek fallback ────────────────────────────────────────────────
+  // When Anthropic is out of credits or unavailable, try DeepSeek with
+  // the same prompt. The OpenAI-compatible endpoint uses a raw fetch so
+  // we don't need an extra SDK. Cached identically to Anthropic results.
+  if (!rewritten) {
+    const deepseekKey = process.env.DEEPSEEK_API_KEY;
+    if (deepseekKey) {
+      try {
+        const deepseekPrompt = `You rewrite short-form social captions in the voice of ${brandName || 'the brand'}.
+
+Brand:
+- Name: ${brandName || 'unspecified'}
+- Industry: ${profile.industry || 'general'}
+- Tone: ${brandTone}
+- Style: ${profile.communicationStyle || 'default'}
+${vocabulary.length ? `- Preferred words: ${vocabulary.join(', ')}` : ''}
+${products.length ? `- Products/services: ${products.join(', ')}` : ''}
+${forbidden.length ? `- NEVER use these words: ${forbidden.join(', ')}` : ''}
+
+Content type: ${opts.contentType}
+${opts.platform ? `Platform: ${opts.platform}` : ''}
+${opts.hookText ? `Hook context: ${opts.hookText}` : ''}
+
+Rewrite this caption in the brand voice above. Keep it roughly the same length. Preserve the hook. Do not add hashtags. Do not add emojis unless the tone is playful or bold. Do not restate the brand name at the end — that will be appended separately if needed. Return ONLY the rewritten caption, no quotes, no preamble.
+
+Source caption:
+${source}`;
+
+        const dsRes = await fetch('https://api.deepseek.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${deepseekKey}`,
+          },
+          body: JSON.stringify({
+            model: 'deepseek-chat',
+            max_tokens: 400,
+            temperature: 0.7,
+            messages: [{ role: 'user', content: deepseekPrompt }],
+          }),
+        });
+
+        if (dsRes.ok) {
+          const dsBody = await dsRes.json();
+          const dsText = dsBody?.choices?.[0]?.message?.content?.trim();
+          if (dsText) {
+            rewritten = dsText.replace(/^["'`]+|["'`]+$/g, '').trim();
+            cachePut(cacheKey, rewritten!);
+          }
+        } else {
+          console.warn('[applyBrandVoice] DeepSeek fallback failed:', dsRes.status, await dsRes.text().catch(() => ''));
+        }
+      } catch (dsErr) {
+        console.warn('[applyBrandVoice] DeepSeek fallback error:', dsErr);
+      }
     }
   }
 

@@ -211,6 +211,9 @@ export function BlitzDailyView({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<BlitzItem | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  // Live progress from the /generate/status poll so QueueLoading shows real
+  // step + percentage instead of a static "Building today's queue" message.
+  const [generationProgress, setGenerationProgress] = useState<{ step: string; percent: number } | null>(null);
   // Mini-toast for feedback on keyboard-driven actions. Cleared by a
   // rolling timer; setting a new toast resets the timer.
   const [toast, setToast] = useState<{ id: number; text: string; kind: 'ok' | 'skip' | 'info' } | null>(null);
@@ -359,6 +362,9 @@ export function BlitzDailyView({
           continue;
         }
         const job = statusData?.job;
+        if (job && (job.step || job.progress != null)) {
+          setGenerationProgress({ step: job.step ?? 'processing', percent: job.progress ?? 0 });
+        }
         if (!job) {
           continue;
         }
@@ -735,7 +741,7 @@ export function BlitzDailyView({
       {/* Body: fills remaining viewport, centers content */}
       <div className="flex flex-1 items-center justify-center overflow-hidden px-4 py-3 sm:px-6">
         {showLoading ? (
-          <QueueLoading />
+          <QueueLoading step={generationProgress?.step} percent={generationProgress?.percent} />
         ) : outcome.kind === 'noChannels' ? (
           <NoChannelsState />
         ) : outcome.kind === 'dailyLimit' ? (
@@ -1276,10 +1282,6 @@ function BlitzSwipeCard({
     || '',
   );
 
-  // Video content types where bodyText (longer caption) should display
-  // as the primary text instead of the short hookText headline.
-  const isVideoType = ['reel', 'video_hook', 'video_hook_demo', 'talking_head', 'green_screen', 'ugc'].includes(contentType);
-
   // Slideshow/carousel: static slide rendering with prev/next arrows
   // instead of Remotion Player (which animates transitions and looks
   // like a video). The editor uses the same static slide pattern.
@@ -1505,7 +1507,6 @@ function BlitzSwipeCard({
       ) : previewProps ? (
         <RemotionPreviewSlot
           previewProps={previewProps}
-          isVideoType={isVideoType}
         />
 
       ) : compiledUrl ? (
@@ -1516,13 +1517,15 @@ function BlitzSwipeCard({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={compiledUrl} alt={item.caption?.slice(0, 60) || ''} className="size-full object-cover" />
           )}
-          {/* Text overlay for compiled videos — shows hook/body text on
-              the video so UGC and other compiled videos aren't textless.
-              Clips to 90 chars for consistent card density. */}
+          {/* Text overlay for compiled videos — shows hook text on
+              the video so cards aren't textless. Word-boundary clipped
+              with ellipsis so mid-sentence cuts don't look like bugs. */}
           {hookText && (
             <div className="pointer-events-none absolute inset-x-0 top-1/2 z-20 -translate-y-1/2 px-3">
               <div className="mx-auto w-fit max-w-[90%] rounded-lg bg-black/60 px-4 py-2.5 text-sm leading-snug text-white backdrop-blur-sm">
-                {hookText.slice(0, 90)}
+                {hookText.length > 90
+                  ? `${hookText.slice(0, 90).split(' ').slice(0, -1).join(' ').trimEnd()}…`
+                  : hookText}
               </div>
             </div>
           )}
@@ -1545,10 +1548,8 @@ function BlitzSwipeCard({
  */
 function RemotionPreviewSlot({
   previewProps,
-  isVideoType,
 }: {
   previewProps: NonNullable<ReturnType<typeof useBlitzPreviewProps>>;
-  isVideoType: boolean;
 }) {
   const finalInputProps = useMemo(() => {
     const base = previewProps.inputProps;
@@ -1557,42 +1558,25 @@ function RemotionPreviewSlot({
     // Remotion preview never renders "(20)" style suffixes baked into
     // older DB rows.
     const cleanedHook = stripCollisionSuffix(script?.hookText);
-    const cleanedBody = stripCollisionSuffix(script?.bodyText);
-    const cleanedCta = stripCollisionSuffix(script?.ctaText);
-    const cleanedWall = stripCollisionSuffix(script?.wallText);
     const cleanedSlideCopy = Array.isArray(script?.slideCopy)
       ? script.slideCopy.map((s: any) => stripCollisionSuffix(String(s || '')))
       : script?.slideCopy;
-    const clippedBody = cleanedBody && cleanedBody.length > 90
-      ? `${cleanedBody.slice(0, 90).trimEnd()}...`
-      : cleanedBody;
-    if (isVideoType && clippedBody) {
-      return {
-        ...base,
-        script: {
-          ...script,
-          hookText: clippedBody,
-          bodyText: undefined,
-          ctaText: cleanedCta || undefined,
-          wallText: cleanedWall || undefined,
-          slideCopy: cleanedSlideCopy,
-        },
-        slideIndex: 0,
-      };
-    }
+    // Blitz card preview shows ONLY hookText — bodyText, ctaText, and
+    // wallText are for the published post, not the swipe review. Showing
+    // all three clogs the card and makes previews unreadable.
     return {
       ...base,
       script: {
         ...script,
         hookText: cleanedHook || script?.hookText,
-        bodyText: cleanedBody || undefined,
-        ctaText: cleanedCta || undefined,
-        wallText: cleanedWall || undefined,
+        bodyText: undefined,
+        ctaText: undefined,
+        wallText: undefined,
         slideCopy: cleanedSlideCopy,
       },
       slideIndex: 0,
     };
-  }, [previewProps.inputProps, isVideoType]);
+  }, [previewProps.inputProps]);
 
   return (
     <div className="pointer-events-none size-full">
@@ -1606,16 +1590,40 @@ function RemotionPreviewSlot({
 
 /* ─── Empty states ─────────────────────────────────────────────────── */
 
-function QueueLoading() {
+function QueueLoading({ step, percent }: { step?: string; percent?: number }) {
+  // Map DB step keys to human-readable labels.
+  const stepLabel = step
+    ? ({
+        phase1_inserting: 'Generating text and captions…',
+        engine_generating: 'Generating with content engine…',
+        template_fallback: 'Filling remaining slots…',
+        finalizing_post: 'Finalizing posts…',
+        processing: 'Processing…',
+      }[step] ?? 'Processing…')
+    : null;
   return (
     <div className="flex max-w-md flex-col items-center rounded-2xl border border-dashed border-border bg-card p-10 text-center">
       <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-primary/10">
         <Loader2 className="size-6 animate-spin text-primary" />
       </div>
       <h3 className="text-base font-semibold text-foreground">Building today&rsquo;s queue</h3>
-      <p className="mt-1.5 text-sm text-muted-foreground">
-        Cloning trending templates and personalizing copy for your brand.
-      </p>
+      {stepLabel && (
+        <p className="mt-1 text-sm text-muted-foreground">{stepLabel}</p>
+      )}
+      {typeof percent === 'number' && percent > 0 && (
+        <div className="mt-3 flex w-full max-w-[200px] items-center gap-2">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-700"
+              style={{ width: `${Math.min(percent, 100)}%` }}
+            />
+          </div>
+          <span className="text-xs font-medium text-muted-foreground">
+            {percent}
+            %
+          </span>
+        </div>
+      )}
     </div>
   );
 }

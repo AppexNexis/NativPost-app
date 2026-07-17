@@ -784,6 +784,59 @@ async function fetchCampaignTemplates(
     }));
 }
 
+// ── Caption sanitization ─────────────────────────────────────────────────────
+//
+// Templates imported from Apify (TikTok, Instagram) often carry raw scraped
+// metadata in structure.caption: muted hashtag strings, emoji-only lines, video
+// URLs, "View on Instagram" boilerplate, or "❤️ 1234 💬 56" engagement noise.
+// These produce "nonsense" hookText on Blitz cards when the brand-voice pipeline
+// doesn't fully rewrite them. Strip known scraped patterns before Brand Voice.
+const SCRUBBED_PREFIXES = [
+  'check out my',
+  'credit to',
+  'follow me on',
+  'link in bio',
+  'link in my bio',
+  'photo by',
+  'repost from',
+  'video by',
+  'view on instagram',
+  'view on tiktok',
+  'view on twitter',
+  'view on youtube',
+];
+function sanitizeCaption(raw: string): string {
+  if (!raw) {
+    return '';
+  }
+  let s = raw.trim();
+  // Strip URLs entirely.
+  s = s.replace(/https?:\/\/\S+/gi, '');
+  // Strip lines that have no letter characters (emoji-only, digits-only, symbols)
+  // and lines that are known scraped boilerplate.
+  const lines = s.split(/\r?\n/).filter((l) => {
+    const t = l.trim();
+    if (!t) {
+      return false;
+    }
+    // Line has at least one letter (any script) — keep it.
+    if (/\p{L}/u.test(t)) {
+      // But also check for known scraped boilerplate prefixes.
+      const lower = t.toLowerCase();
+      for (const pfx of SCRUBBED_PREFIXES) {
+        if (lower.startsWith(pfx)) {
+          return false;
+        }
+      }
+      return true;
+    }
+    // No letters at all — emoji/symbol/digit-only line. Reject.
+    return false;
+  });
+  s = lines.join('\n').trim();
+  return s;
+}
+
 // ── Core generation orchestrator ─────────────────────────────────────────────
 
 export async function generateCampaignPosts(
@@ -1077,8 +1130,21 @@ export async function generateCampaignPosts(
     // All content-type pools exhausted — try any unused template (cross-grade).
     const all = templates.filter(t => !usedTemplateIds.has(t.id));
     if (all.length === 0) {
+      // All templates used — restart the pool rather than breaking.
+      // The engine fallback (Phase 2) is too slow (240s timeout) and
+      // often fails, leaving the user far short of postsPerDay.
+      // Reusing templates gives the same media with different hook text,
+      // which is far better than stalling the queue.
+      usedTemplateIds.clear();
+      const restart = templates.filter(t => t.id);
+      if (restart.length > 0) {
+        const t = restart[Math.floor(Math.random() * restart.length)]!;
+        usedTemplateIds.add(t.id);
+        templatePosts.push({ template: t, hookText: pickUniqueHook(t.contentType) });
+        continue;
+      }
       break;
-    } // no templates left — engine will fill
+    }
     const t = all[Math.floor(Math.random() * all.length)]!;
     usedTemplateIds.add(t.id);
     templatePosts.push({ template: t, hookText: pickUniqueHook(t.contentType) });
@@ -1192,11 +1258,11 @@ export async function generateCampaignPosts(
       // etc. Only fall back to pickUniqueHook when no caption is available.
       // Content-template rows store the original caption as structure.caption
       // or slideCaptions — neither is guaranteed, so fall back gracefully.
-      const rawTemplateCaption = template.structure?.caption
+      const rawTemplateCaption = sanitizeCaption(template.structure?.caption
         || (Array.isArray(template.slideCaptions) ? template.slideCaptions.join('\n') : '')
         || (typeof template.slideCaptions === 'object' && template.slideCaptions !== null
           ? Object.values(template.slideCaptions).join('\n') : '')
-        || '';
+        || '');
 
       // Rewrite the source caption in the brand voice + roll for a
       // brand-name mention per campaign.mentionFrequency. Cached by
