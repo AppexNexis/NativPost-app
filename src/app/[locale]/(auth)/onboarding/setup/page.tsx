@@ -3,17 +3,16 @@
 /**
  * OnboardingSetupPage
  *
- * New-user wizard. Middleware owns the "already done" gate now (reads
- * Clerk sessionClaims.publicMetadata.onboardedOrgs), so this file no
- * longer polls /api/onboarding-progress on mount. Draft persistence in
- * localStorage still survives accidental refreshes mid-wizard.
+ * New-user wizard. On mount, checks the DB (via GET /api/onboarding-progress)
+ * so already-onboarded users are bounced to /dashboard immediately —
+ * survives cookie clears, new browsers, and stale Clerk session tokens.
  *
- * On finish, calls POST /api/onboarding-progress/complete which:
- *   - marks post_signup completed in the DB
- *   - writes onboardedOrgs[orgId] to Clerk user publicMetadata
- *   - sets a signed np_onb_<orgId> cookie
- * Then reloads Clerk user state so the fresh session claim is available
- * before the /dashboard navigation.
+ * Draft persistence in localStorage still survives accidental refreshes
+ * mid-wizard.
+ *
+ * On finish, calls POST /api/onboarding-progress/complete which marks
+ * post_signup completed in the DB — the authoritative source of truth
+ * read by the dashboard layout gate.
  */
 
 import { useAuth, useOrganization, useUser } from '@clerk/nextjs';
@@ -237,6 +236,7 @@ export default function OnboardingSetupPage() {
   const analysisTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isFinishing, setIsFinishing] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
+  const [isCheckingOnboarding, setIsCheckingOnboarding] = useState(true);
 
   const update = (updates: Partial<WizardData>) => {
     setData((prev) => {
@@ -259,6 +259,39 @@ export default function OnboardingSetupPage() {
     setData({ ...EMPTY_DATA, ...(loadDraft(orgId) || {}) });
     setIsDraftLoaded(true);
   }, [authLoaded, orgId, router]);
+
+  // Re-entry guard: if the DB says this org already completed onboarding,
+  // redirect to dashboard immediately. This is the authoritative check —
+  // survives cookie clears, new browsers, and stale Clerk session tokens.
+  useEffect(() => {
+    if (!isDraftLoaded || !orgId) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/onboarding-progress?step=post_signup`);
+        const json = await res.json();
+        if (cancelled) {
+          return;
+        }
+        const steps: { completed: boolean }[] = json.steps ?? [];
+        const completed = steps.some((s) => s.completed === true);
+        if (completed) {
+          router.replace('/dashboard');
+          return;
+        }
+      } catch {
+        // Non-fatal — transient API error shouldn't block the wizard.
+      }
+      if (!cancelled) {
+        setIsCheckingOnboarding(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isDraftLoaded, orgId, router]);
 
   // Cycle contextual progress messages during brand extraction (15-30s).
   // Website and social flows get different first-message copy so the user
@@ -512,12 +545,12 @@ export default function OnboardingSetupPage() {
         throw new Error('Failed to mark onboarding complete');
       }
 
-      // Force a fresh Clerk session token so the middleware sees the new
-      // publicMetadata.onboardedOrgs entry on the very next request.
+      // No cookie or Clerk metadata sync needed here — the DB row written
+      // above is the authoritative source of truth for the dashboard gate.
       try {
         await user?.reload();
       } catch {
-        // Non-fatal, cookie fallback still lets user through.
+        // Non-fatal — DB row was already written, redirect still works.
       }
 
       clearDraft(orgId);
@@ -528,7 +561,7 @@ export default function OnboardingSetupPage() {
     }
   };
 
-  if (!isDraftLoaded) {
+  if (!isDraftLoaded || isCheckingOnboarding) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="size-6 animate-spin text-muted-foreground" />

@@ -1,15 +1,15 @@
 /**
  * POST /api/onboarding-progress/complete
  *
- * Called by the onboarding wizard on the final step. Records completion in
- * BOTH signals:
- *   1. onboarding_progress row (step=post_signup, completed=true) - DB source of truth.
- *   2. Clerk user publicMetadata.onboardedOrgs[orgId] - session claim used by
- *      middleware to gate /dashboard without a DB call.
+ * Called by the onboarding wizard on the final step. Writes a
+ * onboarding_progress row (step=post_signup, completed=true) in the DB.
  *
- * The response sets a signed cookie np_onb_<orgId>=1 (30 day expiry) so the
- * middleware fallback for pre-existing users has a fast path even before the
- * next session token refresh.
+ * The dashboard layout gate reads this row as its authoritative check.
+ * Clerk user metadata sync is a non-critical optimisation so the
+ * session token path is warm on subsequent requests.
+ *
+ * No cookie is set — the DB is the single source of truth that survives
+ * cookie clears, new browsers, and stale Clerk session tokens.
  */
 
 import { and, eq } from 'drizzle-orm';
@@ -62,14 +62,6 @@ export async function POST() {
     }
 
     const res = NextResponse.json({ ok: true }, { status: 200 });
-    // 30 day expiry cookie - middleware fast path for pre-existing users.
-    res.cookies.set(`np_onb_${orgId}`, '1', {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: true,
-      path: '/',
-      maxAge: 60 * 60 * 24 * 30,
-    });
     return res;
   } catch (err) {
     console.error('[onboarding/complete] Failed:', err);

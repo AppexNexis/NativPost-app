@@ -38,8 +38,8 @@ export async function syncBillingToClerk(
  * Written to Clerk USER publicMetadata as a map keyed by orgId so the same
  * user can go through onboarding again for a fresh org later.
  *
- * Middleware reads sessionClaims.publicMetadata.onboardedOrgs[orgId] to
- * gate /dashboard access with zero DB roundtrip.
+ * Non-critical optimisation: the DB onboarding_progress row is the
+ * authoritative source of truth read by the dashboard layout gate.
  */
 export async function syncOnboardingCompleteToClerkUser(
   userId: string,

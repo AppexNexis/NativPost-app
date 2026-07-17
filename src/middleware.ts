@@ -46,11 +46,6 @@ const isDashboardRoute = createRouteMatcher([
   '/:locale/dashboard(.*)',
 ]);
 
-const isOnboardingSetupRoute = createRouteMatcher([
-  '/onboarding/setup',
-  '/:locale/onboarding/setup',
-]);
-
 const isAdminRoute = createRouteMatcher([
   '/admin(.*)',
   '/:locale/admin(.*)',
@@ -140,37 +135,6 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
       return NextResponse.redirect(
         new URL('/onboarding/organization-selection', req.url),
       );
-    }
-
-    // Onboarding completion gate: block dashboard access until the current
-    // org has been marked onboarded. Reads Clerk sessionClaims.publicMetadata
-    // (zero DB call). Pre-existing users without the metadata flag fall back
-    // to a signed cookie (np_onb_<orgId>=1) set on complete or by first-hit
-    // backfill; if neither exists the middleware sends them to /onboarding/setup
-    // where the wizard's draft check + finish flow will backfill both signals.
-    if (authObj.userId && authObj.orgId && isDashboardRoute(req)) {
-      const claims = authObj.sessionClaims as any;
-      const onboardedOrgs = claims?.publicMetadata?.onboardedOrgs;
-      const orgIsOnboarded = !!(onboardedOrgs && onboardedOrgs[authObj.orgId]);
-      const cookieOk = req.cookies.get(`np_onb_${authObj.orgId}`)?.value === '1';
-      if (!orgIsOnboarded && !cookieOk) {
-        return NextResponse.redirect(
-          new URL('/onboarding/setup', req.url),
-        );
-      }
-    }
-
-    // Inverse gate: if the active org is already onboarded, bounce direct
-    // hits on /onboarding/setup straight to the dashboard so returning users
-    // cannot re-enter the wizard by typing the URL.
-    if (authObj.userId && authObj.orgId && isOnboardingSetupRoute(req)) {
-      const claims = authObj.sessionClaims as any;
-      const onboardedOrgs = claims?.publicMetadata?.onboardedOrgs;
-      const orgIsOnboarded = !!(onboardedOrgs && onboardedOrgs[authObj.orgId]);
-      const cookieOk = req.cookies.get(`np_onb_${authObj.orgId}`)?.value === '1';
-      if (orgIsOnboarded || cookieOk) {
-        return NextResponse.redirect(new URL('/dashboard', req.url));
-      }
     }
 
     return intlMiddleware(req);
