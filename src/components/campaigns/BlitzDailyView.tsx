@@ -210,6 +210,23 @@ export function BlitzDailyView({
   const [outcome, setOutcome] = useState<GenerateOutcome>({ kind: 'none' });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<BlitzItem | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  // Mini-toast for feedback on keyboard-driven actions. Cleared by a
+  // rolling timer; setting a new toast resets the timer.
+  const [toast, setToast] = useState<{ id: number; text: string; kind: 'ok' | 'skip' | 'info' } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = useCallback((text: string, kind: 'ok' | 'skip' | 'info' = 'info') => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setToast({ id: Date.now(), text, kind });
+    toastTimerRef.current = setTimeout(() => setToast(null), 1800);
+  }, []);
+  useEffect(() => () => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+  }, []);
   const autoGenAttempted = useRef(false);
 
   const dailyLimit = serverDailyLimit || campaign.postsPerDay || 3;
@@ -610,11 +627,29 @@ export function BlitzDailyView({
 
   // Keyboard shortcuts.
   useEffect(() => {
-    if (!current) {
-      return;
-    }
     const onKey = (e: KeyboardEvent) => {
-      if (settingsOpen) {
+      // Global '?' toggles help; usable even when no card is showing.
+      if (e.key === '?' && !settingsOpen) {
+        const el = document.activeElement as HTMLElement | null;
+        const tag = el?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable) {
+          return;
+        }
+        e.preventDefault();
+        setHelpOpen(v => !v);
+        return;
+      }
+      // Escape closes help panel and settings.
+      if (e.key === 'Escape') {
+        if (helpOpen) {
+          setHelpOpen(false);
+          return;
+        }
+      }
+      if (!current) {
+        return;
+      }
+      if (settingsOpen || helpOpen) {
         return;
       }
       const el = document.activeElement as HTMLElement | null;
@@ -627,16 +662,21 @@ export function BlitzDailyView({
       }
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
+        showToast('Skipped', 'skip');
         void handleReject(current);
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
+        showToast('Approved', 'ok');
         void handleApprove(current);
+      } else if (e.key === 'e' || e.key === 'E') {
+        e.preventDefault();
+        handleEdit(current);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.id, settingsOpen, actionPending]);
+  }, [current?.id, settingsOpen, helpOpen, actionPending]);
 
   // Loading OR the outcome empty states short-circuit the card view.
   const queueDone = !current && !isGenerating && outcome.kind === 'none';
@@ -644,28 +684,38 @@ export function BlitzDailyView({
 
   return (
     <div className="flex h-[calc(100dvh-var(--header-h,64px))] flex-col overflow-hidden bg-background">
-      {/* Header: minimal — approved pill (left) + Settings (right) */}
+      {/* Header: progress ring + Settings + Help */}
       <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2 sm:px-6">
         <div className="flex items-center">
-          {totalToday > 0 ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground">
-              <CheckCircle2 className="size-3 text-emerald-500" />
-              {approvedCount}
-              {' '}
-              approved
-            </span>
+          {totalToday > 0 || approvedCount > 0 ? (
+            <BlitzProgressRing
+              approved={approvedCount}
+              reviewed={totalToday}
+              limit={dailyLimit}
+            />
           ) : (
             <span aria-hidden className="h-6" />
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => setSettingsOpen(true)}
-          className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <Settings2 className="size-4" />
-          Settings
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setHelpOpen(true)}
+            title="Keyboard shortcuts (?)"
+            aria-label="Keyboard shortcuts"
+            className="inline-flex size-8 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <HelpCircle className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Settings2 className="size-4" />
+            Settings
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -701,12 +751,47 @@ export function BlitzDailyView({
             current={current}
             behind={behind.slice(0, 2)}
             actionPending={actionPending === current.id}
-            onApprove={() => handleApprove(current)}
-            onReject={() => handleReject(current)}
+            onApprove={() => {
+              showToast('Approved', 'ok');
+              void handleApprove(current);
+            }}
+            onReject={() => {
+              showToast('Skipped', 'skip');
+              void handleReject(current);
+            }}
             onEdit={() => handleEdit(current)}
           />
         ) : null}
       </div>
+
+      {/* Toast — bottom-center mini-feedback for swipe/keyboard actions */}
+      {toast && (
+        <div
+          key={toast.id}
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center"
+        >
+          <div
+            className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium shadow-lg backdrop-blur-md ${
+              toast.kind === 'ok'
+                ? 'bg-emerald-500/90 text-white'
+                : toast.kind === 'skip'
+                  ? 'bg-red-500/90 text-white'
+                  : 'bg-background/90 text-foreground border border-border'
+            }`}
+          >
+            {toast.kind === 'ok' && <CheckCircle2 className="size-4" />}
+            {toast.kind === 'skip' && <X className="size-4" />}
+            {toast.text}
+          </div>
+        </div>
+      )}
+
+      {/* Keyboard shortcuts modal */}
+      {helpOpen && (
+        <ShortcutsModal onClose={() => setHelpOpen(false)} />
+      )}
 
       {editingItem && (
         <InlineEditorOverlay
@@ -744,6 +829,7 @@ export function BlitzDailyView({
           genderPreference: campaign.genderPreference ?? 'any',
           postsPerDay: campaign.postsPerDay ?? 3,
           qualityThreshold: campaign.qualityThreshold ?? 0.7,
+          blitzAdvanced: (campaign as any).blitzAdvanced ?? {},
         }}
       />
     </div>
@@ -795,8 +881,10 @@ function CardPair({
         />
       </div>
 
-      {/* Action bar — arrows under each swipe button (usefastlane parity) */}
-      <div className="flex items-start justify-center gap-4 pt-1">
+      {/* Action bar — sticky, backdrop-blurred so it stays legible over
+          the swipe deck on short viewports; arrows under each button
+          for usefastlane parity. */}
+      <div className="sticky bottom-0 z-20 flex items-start justify-center gap-4 rounded-t-2xl bg-background/70 px-4 pb-1 pt-2 backdrop-blur-md">
         <div className="flex flex-col items-center gap-1">
           <button
             type="button"
@@ -1533,6 +1621,7 @@ function QueueLoading() {
 }
 
 function QueueDone({ total, approved }: { total: number; approved: number }) {
+  const approvalRate = total > 0 ? Math.round((approved / total) * 100) : 0;
   return (
     <div className="flex max-w-md flex-col items-center rounded-2xl border border-dashed border-border bg-card p-10 text-center">
       <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-emerald-500/10">
@@ -1541,11 +1630,11 @@ function QueueDone({ total, approved }: { total: number; approved: number }) {
       <h3 className="text-base font-semibold text-foreground">You&rsquo;re done for today</h3>
       <p className="mt-1.5 text-sm text-muted-foreground">
         {total > 0
-          ? `You reviewed ${total} post${total === 1 ? '' : 's'}. ${approved} approved.`
+          ? `You reviewed ${total} post${total === 1 ? '' : 's'} — ${approved} approved (${approvalRate}%).`
           : 'No posts left in the queue.'}
       </p>
       <p className="mt-4 text-xs text-muted-foreground">
-        New posts unlock at midnight.
+        New posts unlock at midnight in your timezone.
       </p>
     </div>
   );
@@ -1597,6 +1686,13 @@ function DailyLimitState({
         {resetDate}
         .
       </p>
+      <p className="mt-2 text-[11px] text-muted-foreground/70">
+        Tip: adjust your daily cap in
+        {' '}
+        <span className="font-medium text-foreground/70">Settings</span>
+        {' '}
+        or upgrade for more per day.
+      </p>
     </div>
   );
 }
@@ -1620,6 +1716,213 @@ function NoChannelsState() {
         <LinkIcon className="size-4" />
         Connect a channel
       </button>
+    </div>
+  );
+}
+
+/* ─── BlitzProgressRing — header widget with today's approved/limit ── */
+
+function BlitzProgressRing({
+  approved,
+  reviewed,
+  limit,
+}: {
+  approved: number;
+  reviewed: number;
+  limit: number;
+}) {
+  // SVG ring where the arc represents `reviewed/limit` and the number in
+  // the center is `approved`. Tooltip on hover explains all three fields.
+  const [open, setOpen] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleClose = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+    }
+    closeTimer.current = setTimeout(() => setOpen(false), 120);
+  };
+  const cancelClose = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  useEffect(() => () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+    }
+  }, []);
+
+  const safeLimit = Math.max(1, limit);
+  const pctReviewed = Math.min(1, reviewed / safeLimit);
+  const radius = 12;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - pctReviewed);
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={() => {
+        cancelClose(); setOpen(true);
+      }}
+      onMouseLeave={scheduleClose}
+    >
+      <button
+        type="button"
+        onFocus={() => {
+          cancelClose(); setOpen(true);
+        }}
+        onBlur={scheduleClose}
+        onClick={() => setOpen(v => !v)}
+        aria-label={`${approved} approved of ${limit} daily posts`}
+        className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted"
+      >
+        <svg width="28" height="28" viewBox="0 0 32 32" className="shrink-0">
+          <circle
+            cx="16"
+            cy="16"
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeOpacity="0.15"
+            strokeWidth="3"
+          />
+          <circle
+            cx="16"
+            cy="16"
+            r={radius}
+            fill="none"
+            stroke="rgb(16, 185, 129)"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            transform="rotate(-90 16 16)"
+          />
+          <text
+            x="16"
+            y="17"
+            textAnchor="middle"
+            dominantBaseline="middle"
+            className="fill-foreground"
+            style={{ fontSize: 10, fontWeight: 600 }}
+          >
+            {approved}
+          </text>
+        </svg>
+        <span className="hidden pr-1 sm:inline">
+          of
+          {' '}
+          {limit}
+          {' '}
+          today
+        </span>
+      </button>
+      {open && (
+        <div
+          role="tooltip"
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+          className="absolute left-0 top-full z-40 mt-2 w-56 rounded-xl border border-border bg-background p-3 text-xs shadow-xl"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Approved</span>
+            <span className="font-medium text-foreground">{approved}</span>
+          </div>
+          <div className="mt-1 flex items-center justify-between">
+            <span className="text-muted-foreground">Reviewed today</span>
+            <span className="font-medium text-foreground">
+              {reviewed}
+              {' '}
+              /
+              {' '}
+              {limit}
+            </span>
+          </div>
+          <p className="mt-2 text-[10px] leading-snug text-muted-foreground/80">
+            Daily cap resets at midnight in your timezone. Upgrade your plan for a larger daily cap.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── ShortcutsModal — help overlay listing keyboard shortcuts ─────── */
+
+function ShortcutsModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+      {/* Backdrop close button — full-viewport, transparent, click-anywhere-to-close */}
+      <button
+        type="button"
+        aria-label="Close shortcuts panel"
+        onClick={onClose}
+        className="absolute inset-0 z-0 cursor-default bg-transparent"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Keyboard shortcuts"
+        className="relative z-10 w-full max-w-sm rounded-2xl border border-border bg-background p-5 shadow-xl"
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold text-foreground">Keyboard shortcuts</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        <ul className="mt-4 space-y-2 text-sm">
+          <li className="flex items-center justify-between">
+            <span className="text-foreground">Approve</span>
+            <kbd className="inline-flex min-w-8 items-center justify-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+              {'\u2192'}
+            </kbd>
+          </li>
+          <li className="flex items-center justify-between">
+            <span className="text-foreground">Skip</span>
+            <kbd className="inline-flex min-w-8 items-center justify-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+              {'\u2190'}
+            </kbd>
+          </li>
+          <li className="flex items-center justify-between">
+            <span className="text-foreground">Edit current post</span>
+            <kbd className="inline-flex min-w-8 items-center justify-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+              E
+            </kbd>
+          </li>
+          <li className="flex items-center justify-between">
+            <span className="text-foreground">Toggle this panel</span>
+            <kbd className="inline-flex min-w-8 items-center justify-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+              ?
+            </kbd>
+          </li>
+          <li className="flex items-center justify-between">
+            <span className="text-foreground">Close overlays</span>
+            <kbd className="inline-flex min-w-8 items-center justify-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+              Esc
+            </kbd>
+          </li>
+        </ul>
+        <p className="mt-4 text-[11px] leading-snug text-muted-foreground">
+          Shortcuts pause while a text field is focused or while Settings is open.
+        </p>
+      </div>
     </div>
   );
 }

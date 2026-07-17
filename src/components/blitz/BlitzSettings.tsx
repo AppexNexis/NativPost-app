@@ -3,8 +3,10 @@
 import {
   AlertCircle,
   CheckCircle2,
+  CloudMoon,
   Loader2,
   Settings2,
+  Sun,
   XCircle,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -53,6 +55,12 @@ type InfluencerReadiness = {
   accountConnected: boolean;
 };
 
+type BlitzAdvanced = {
+  blackoutDays?: number[];        // 0=Sun..6=Sat, omit or [] for none
+  preferredTime?: string;         // 'any' | 'morning' | 'afternoon' | 'evening'
+  autoApproveThreshold?: number;  // 0 = disabled
+};
+
 type CampaignSettings = {
   contentMix: ContentMix;
   remixRatio: number;
@@ -66,6 +74,7 @@ type CampaignSettings = {
   genderPreference: string;
   postsPerDay: number;
   qualityThreshold: number;
+  blitzAdvanced?: BlitzAdvanced;
 };
 
 type BlitzSettingsProps = {
@@ -166,6 +175,27 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
 
   const [postsPerDay, setPostsPerDay] = useState(initial.postsPerDay);
   const [qualityThreshold, setQualityThreshold] = useState(initial.qualityThreshold);
+
+  // Section 5: Advanced settings
+  const [blitzAdvanced, setBlitzAdvanced] = useState<BlitzAdvanced>(initial.blitzAdvanced ?? {});
+
+  const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  const toggleBlackoutDay = (day: number) => {
+    setBlitzAdvanced(prev => {
+      const days = prev.blackoutDays ?? [];
+      const next = days.includes(day) ? days.filter(d => d !== day) : [...days, day].sort();
+      return { ...prev, blackoutDays: next };
+    });
+  };
+
+  const setPreferredTime = (t: string) => {
+    setBlitzAdvanced(prev => ({ ...prev, preferredTime: t }));
+  };
+
+  const setAutoApproveThreshold = (v: number) => {
+    setBlitzAdvanced(prev => ({ ...prev, autoApproveThreshold: Math.max(0, v) }));
+  };
 
   // Plan-tier daily cap (fetched from billing status)
   // -1 = unlimited. When null, we haven't loaded yet — don't clamp.
@@ -306,6 +336,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
           genderPreference,
           postsPerDay,
           qualityThreshold,
+          blitzAdvanced,
           // targetAccounts persisted separately via account connect UI
         }),
       });
@@ -793,6 +824,92 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                   {Math.round(qualityThreshold * 100)}
                   %
                 </p>
+              </div>
+            </div>
+          </section>
+
+          {/* Section 5: Advanced */}
+          <section>
+            <h3 className="mb-3 text-sm font-semibold">Advanced</h3>
+            <div className="space-y-3">
+              {/* Blackout days */}
+              <div className="rounded-xl border bg-muted/30 p-4">
+                <Label className="text-sm font-medium">Blackout days</Label>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Skip Blitz generation on selected days of the week.
+                </p>
+                <div className="flex gap-1.5">
+                  {DAY_LABELS.map((label, i) => {
+                    const active = (blitzAdvanced.blackoutDays ?? []).includes(i);
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => toggleBlackoutDay(i)}
+                        className={`flex h-9 w-10 items-center justify-center rounded-lg border text-xs font-medium transition-colors ${
+                          active
+                            ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                            : 'border text-muted-foreground hover:bg-muted/50'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Preferred posting time */}
+              <div className="rounded-xl border bg-muted/30 p-4">
+                <Label className="text-sm font-medium">Preferred posting time</Label>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Schedule posts for a specific part of the day.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { value: 'any', icon: null, label: 'Any time' },
+                    { value: 'morning', icon: Sun, label: 'Morning' },
+                    { value: 'afternoon', icon: Sun, label: 'Afternoon' },
+                    { value: 'evening', icon: CloudMoon, label: 'Evening' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setPreferredTime(opt.value)}
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        (blitzAdvanced.preferredTime ?? 'any') === opt.value
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border text-muted-foreground hover:bg-muted/50'
+                      }`}
+                    >
+                      {opt.icon && <opt.icon className="size-3.5" />}
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Auto-approve threshold */}
+              <div className="rounded-xl border bg-muted/30 p-4">
+                <Label className="text-sm font-medium">Auto-approve threshold</Label>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  After approving this many posts in a row from the same niche, auto-approve the
+                  remaining posts from that niche. Set to 0 to disable.
+                </p>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min={0}
+                    max={10}
+                    step={1}
+                    value={blitzAdvanced.autoApproveThreshold ?? 0}
+                    onChange={e => setAutoApproveThreshold(Number.parseInt(e.target.value, 10))}
+                    className="flex-1 accent-primary"
+                  />
+                  <span className="min-w-6 text-center text-sm text-muted-foreground">
+                    {blitzAdvanced.autoApproveThreshold ?? 0}
+                  </span>
+                </div>
               </div>
             </div>
           </section>

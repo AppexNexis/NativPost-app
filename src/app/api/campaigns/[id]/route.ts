@@ -152,6 +152,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (body.enabledInfluencerIds !== undefined) {
       updates.enabledInfluencerIds = body.enabledInfluencerIds;
     }
+    if (body.blitzAdvanced !== undefined) {
+      updates.blitzAdvanced = body.blitzAdvanced;
+    }
     if (body.totalEngagement !== undefined) {
       updates.totalEngagement = body.totalEngagement;
     }

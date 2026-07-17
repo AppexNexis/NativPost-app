@@ -653,6 +653,7 @@ export const campaignSchema = pgTable('campaign', {
   qualityThreshold: real('quality_threshold').default(0.7),
   pinterestPercent: integer('pinterest_percent').default(0),
   enabledInfluencerIds: jsonb('enabled_influencer_ids').default([]),
+  blitzAdvanced: jsonb('blitz_advanced').default({}),
   totalEngagement: integer('total_engagement').default(0),
   avgEngagementRate: real('avg_engagement_rate'),
   updatedAt: timestamp('updated_at', { mode: 'date' })
