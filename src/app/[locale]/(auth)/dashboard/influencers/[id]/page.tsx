@@ -7,6 +7,7 @@ import {
   Film,
   Loader2,
   Mic,
+  Pause,
   Play,
   Plus,
   Sparkles,
@@ -89,6 +90,9 @@ export default function InfluencerDetailPage() {
   const [angleSearchOpen, setAngleSearchOpen] = useState(false);
   const [angleSearchQ, setAngleSearchQ] = useState('');
   const [availableAngles, setAvailableAngles] = useState<Array<{ id: string; name: string; description: string | null; color: string | null }>>([]);
+  const [voices, setVoices] = useState<Array<{ id: string; name: string; gender: string | null; accent: string | null; vibe: string | null; previewUrl: string | null; isClone: boolean }>>([]);
+  const [voicePlaying, setVoicePlaying] = useState(false);
+  const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -121,7 +125,33 @@ export default function InfluencerDetailPage() {
   useEffect(() => {
     load();
     loadAngles();
+    fetch('/api/ai-influencers/voices', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.voices) {
+          setVoices(data.voices);
+        }
+      })
+      .catch(() => {});
   }, [load]);
+
+  const currentVoice = useMemo(() => voices.find(v => v.id === item?.voiceId), [voices, item?.voiceId]);
+
+  function toggleVoicePreview() {
+    if (!currentVoice?.previewUrl) {
+      return;
+    }
+    if (voicePlaying) {
+      voiceAudioRef.current?.pause();
+      setVoicePlaying(false);
+      return;
+    }
+    const a = new Audio(currentVoice.previewUrl);
+    voiceAudioRef.current = a;
+    a.onended = () => setVoicePlaying(false);
+    a.onerror = () => setVoicePlaying(false);
+    a.play().then(() => setVoicePlaying(true)).catch(() => setVoicePlaying(false));
+  }
 
   // Poll training status while it's training
   useEffect(() => {
@@ -633,9 +663,9 @@ export default function InfluencerDetailPage() {
 
       <TrainingBanner status={item.loraStatus} trainingMode={item.trainingMode} />
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Left: base image + reference grid */}
-        <div className="space-y-4 lg:col-span-2">
+      <div className="grid gap-6 lg:grid-cols-3 lg:items-start">
+        {/* Left: base image + reference grid — sticky on lg+ so long right panels don't push the identity out of view */}
+        <div className="space-y-4 lg:sticky lg:top-4 lg:col-span-2 lg:self-start">
           <section className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 text-sm font-medium">Base image</div>
             <div className="relative aspect-square w-full max-w-md overflow-hidden rounded-md bg-muted">
@@ -713,7 +743,17 @@ export default function InfluencerDetailPage() {
 
           {clips.length > 0 && (
             <section className="rounded-lg border border-border bg-card p-4">
-              <div className="mb-3 text-sm font-medium">Generated clips</div>
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-sm font-medium">
+                  Generated clips
+                  {' '}
+                  <span className="text-muted-foreground">
+                    (
+                    {clips.length}
+                    )
+                  </span>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {clips.map(clip => (
                   <div key={clip.id} className="group relative aspect-square overflow-hidden rounded-md border border-border">
@@ -731,6 +771,26 @@ export default function InfluencerDetailPage() {
                     >
                       <track kind="captions" />
                     </video>
+                    <div className="pointer-events-none absolute inset-0 flex items-end justify-end gap-1 bg-gradient-to-t from-black/60 via-transparent to-transparent p-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+                      <a
+                        href={clip.url}
+                        download
+                        target="_blank"
+                        rel="noreferrer"
+                        className="pointer-events-auto rounded-full bg-black/60 p-1.5 text-white backdrop-blur-sm hover:bg-black/80"
+                        aria-label="Download clip"
+                      >
+                        <Sparkles size={12} />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(clip.url)}
+                        className="pointer-events-auto rounded-full bg-black/60 p-1.5 text-white backdrop-blur-sm hover:bg-black/80"
+                        aria-label="Copy clip link"
+                      >
+                        <Copy size={12} />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -763,9 +823,33 @@ export default function InfluencerDetailPage() {
             </div>
             {item.voiceId
               ? (
-                  <div className="text-sm">
-                    <div className="capitalize">{item.voiceProvider || 'standard'}</div>
-                    <div className="mt-1 flex items-center gap-1 font-mono text-xs text-muted-foreground">
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium">
+                          {currentVoice?.name || 'Voice unavailable'}
+                          {currentVoice?.isClone && (
+                            <span className="ml-2 rounded-full bg-accent px-2 py-0.5 text-[10px] uppercase tracking-wide">Cloned</span>
+                          )}
+                        </div>
+                        {currentVoice && (
+                          <div className="mt-0.5 truncate text-xs capitalize text-muted-foreground">
+                            {[currentVoice.gender, currentVoice.accent, currentVoice.vibe].filter(Boolean).join(' | ')}
+                          </div>
+                        )}
+                      </div>
+                      {currentVoice?.previewUrl && (
+                        <button
+                          type="button"
+                          onClick={toggleVoicePreview}
+                          className="shrink-0 rounded-full border border-border p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          aria-label={voicePlaying ? 'Pause preview' : 'Play preview'}
+                        >
+                          {voicePlaying ? <Pause size={12} /> : <Play size={12} />}
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground">
                       <span className="truncate">{item.voiceId}</span>
                       <button
                         type="button"
@@ -773,7 +857,7 @@ export default function InfluencerDetailPage() {
                         className="shrink-0 rounded p-1 hover:bg-muted"
                         aria-label="Copy voice ID"
                       >
-                        <Copy size={12} />
+                        <Copy size={10} />
                       </button>
                     </div>
                   </div>

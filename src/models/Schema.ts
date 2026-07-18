@@ -740,6 +740,23 @@ export const aiInfluencerSchema = pgTable('ai_influencer', {
 });
 
 // -----------------------------------------------------------
+// VOICE CLONE (per-org ElevenLabs cloned voices)
+// -----------------------------------------------------------
+export const voiceCloneSchema = pgTable('voice_clone', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: text('org_id')
+    .references(() => organizationSchema.id, { onDelete: 'cascade' })
+    .notNull(),
+  name: text('name').notNull(),
+  elevenlabsVoiceId: text('elevenlabs_voice_id').notNull(),
+  sourceUrl: text('source_url'),
+  previewUrl: text('preview_url'),
+  createdBy: text('created_by'),
+  deletedAt: timestamp('deleted_at', { mode: 'date' }),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+});
+
+// -----------------------------------------------------------
 // CONTENT ANGLE
 // -----------------------------------------------------------
 export const contentAngleSchema = pgTable('content_angle', {

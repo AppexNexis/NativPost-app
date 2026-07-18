@@ -288,6 +288,13 @@
       "when": 1784321498156,
       "tag": "0040_dapper_stepford_cuckoos",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1784400000000,
+      "tag": "0041_voice_clone",
+      "breakpoints": true
     }
   ]
 }

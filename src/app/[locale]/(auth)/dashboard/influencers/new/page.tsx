@@ -1,10 +1,10 @@
 'use client';
 
-import { ArrowLeft, ArrowRight, Clock, ImagePlus, Loader2, Mic, RefreshCw, Sparkles, UserRound, Wand2, X, Zap } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, Clock, ImagePlus, Loader2, Mic, Pause, Play, RefreshCw, Sparkles, Upload, UserRound, Wand2, X, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CldImage, CldUploadWidget, type CloudinaryUploadWidgetOptions } from 'next-cloudinary';
-import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from 'react';
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from 'react';
 
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
 import { PageHeader } from '@/features/dashboard/PageHeader';
@@ -23,15 +23,16 @@ const POSE_STYLES = ['portrait', 'confident', 'candid', 'action', 'seated'];
 const BACKGROUND_PREFS = ['studio', 'office', 'outdoor', 'cafe', 'urban', 'gym', 'home'];
 const ARCHETYPES = ['journey', 'theme', 'spinoff'];
 
-// Curated stock voices — no cloning at v1 (see brainstorm §10)
-const VOICES = [
-  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', gender: 'female', accent: 'american', vibe: 'warm' },
-  { id: 'nPczCjzI2devNBz1zQrb', name: 'Brian', gender: 'male', accent: 'american', vibe: 'natural' },
-  { id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel', gender: 'male', accent: 'british', vibe: 'authoritative' },
-  { id: 'XB0fDUnXU5powFXDhCwa', name: 'Charlotte', gender: 'female', accent: 'british', vibe: 'confident' },
-  { id: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie', gender: 'male', accent: 'australian', vibe: 'chill' },
-  { id: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily', gender: 'female', accent: 'british', vibe: 'sweet' },
-];
+// Voices loaded dynamically from /api/ai-influencers/voices (see VoiceStep).
+type Voice = {
+  id: string;
+  name: string;
+  gender: string | null;
+  accent: string | null;
+  vibe: string | null;
+  previewUrl: string | null;
+  isClone: boolean;
+};
 
 const MIN_REFERENCES = 5;
 const MAX_REFERENCES = 10;
@@ -83,6 +84,31 @@ export default function NewInfluencerPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [trainingMode, setTrainingMode] = useState<'flux_lora' | 'nano_banana'>('flux_lora');
+  const [voices, setVoices] = useState<Voice[]>([]);
+  const [voicesLoading, setVoicesLoading] = useState(false);
+  const [cloneEnabled, setCloneEnabled] = useState(false);
+
+  const loadVoices = useCallback(async () => {
+    setVoicesLoading(true);
+    try {
+      const res = await fetch('/api/ai-influencers/voices', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setVoices(data.voices || []);
+      }
+    } catch {
+      // non-fatal
+    } finally {
+      setVoicesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadVoices();
+    fetch('/api/ai-influencers/voice-clone', { cache: 'no-store' })
+      .then(r => setCloneEnabled(r.ok))
+      .catch(() => setCloneEnabled(false));
+  }, [loadVoices]);
 
   const stepIndex = STEPS.indexOf(step);
   const canNext = stepGuard(step, traits, references, voiceId, personaPrompt, previewUrl);
@@ -214,7 +240,16 @@ export default function NewInfluencerPage() {
             generatePreview={generatePreview}
           />
         )}
-        {step === 'voice' && <VoiceStep voiceId={voiceId} setVoiceId={setVoiceId} />}
+        {step === 'voice' && (
+          <VoiceStep
+            voiceId={voiceId}
+            setVoiceId={setVoiceId}
+            voices={voices}
+            voicesLoading={voicesLoading}
+            cloneEnabled={cloneEnabled}
+            onVoicesRefresh={loadVoices}
+          />
+        )}
         {step === 'persona' && (
           <PersonaStep personaPrompt={personaPrompt} setPersonaPrompt={setPersonaPrompt} />
         )}
@@ -223,6 +258,7 @@ export default function NewInfluencerPage() {
             traits={traits}
             references={references}
             voiceId={voiceId}
+            voices={voices}
             personaPrompt={personaPrompt}
             previewUrl={previewUrl}
             trainingMode={trainingMode}
@@ -337,13 +373,17 @@ function TraitsStep({ traits, setTraits }: { traits: Traits; setTraits: (t: Trai
   return (
     <div className="space-y-6">
       <div>
-        <label className="mb-1 block text-sm font-medium" htmlFor="influencer-name">Name</label>
+        <label className="mb-1 block text-sm font-medium" htmlFor="influencer-name">
+          Name
+          <span className="text-destructive"> *</span>
+        </label>
         <input
           id="influencer-name"
           type="text"
           value={traits.name}
           onChange={e => set('name', e.target.value)}
-          placeholder="Sarah, Jake, Maya…"
+          placeholder="Sarah, Jake, Maya"
+          required
           className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
         />
       </div>
@@ -523,7 +563,49 @@ function ReferencesStep({
 }
 
 // ── Step 3: Voice ──────────────────────────────────────────
-function VoiceStep({ voiceId, setVoiceId }: { voiceId: string; setVoiceId: (v: string) => void }) {
+function VoiceStep({
+  voiceId,
+  setVoiceId,
+  voices,
+  voicesLoading,
+  cloneEnabled,
+  onVoicesRefresh,
+}: {
+  voiceId: string;
+  setVoiceId: (v: string) => void;
+  voices: Voice[];
+  voicesLoading: boolean;
+  cloneEnabled: boolean;
+  onVoicesRefresh: () => Promise<void>;
+}) {
+  const [voiceTab, setVoiceTab] = useState<'stock' | 'clones'>('stock');
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const stockVoices = voices.filter(v => !v.isClone);
+  const clonedVoices = voices.filter(v => v.isClone);
+
+  function togglePlay(v: Voice) {
+    if (!v.previewUrl) {
+      return;
+    }
+    if (playingId === v.id) {
+      audioRef.current?.pause();
+      setPlayingId(null);
+      return;
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+    const a = new Audio(v.previewUrl);
+    audioRef.current = a;
+    a.onended = () => setPlayingId(null);
+    a.onerror = () => setPlayingId(null);
+    a.play().then(() => setPlayingId(v.id)).catch(() => setPlayingId(null));
+  }
+
+  const activeList = voiceTab === 'stock' ? stockVoices : clonedVoices;
+
   return (
     <div className="space-y-4">
       <div>
@@ -532,38 +614,206 @@ function VoiceStep({ voiceId, setVoiceId }: { voiceId: string; setVoiceId: (v: s
           Pick a voice
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          Stock voices. This will be the voice-over for every talking-head video
-          generated from this influencer. Voice cloning ships in a later phase.
+          This becomes the voice-over for every talking-head video generated from this influencer.
+          {' '}
+          Click Play to hear a sample.
         </p>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2">
-        {VOICES.map(v => (
-          <button
-            key={v.id}
-            type="button"
-            onClick={() => setVoiceId(v.id)}
-            className={`flex items-center justify-between rounded-md border p-3 text-left text-sm transition ${
-              voiceId === v.id
-                ? 'border-primary bg-primary/5'
-                : 'border-border hover:bg-muted'
-            }`}
-          >
-            <div>
-              <div className="font-medium">{v.name}</div>
-              <div className="text-xs capitalize text-muted-foreground">
-                {v.gender}
-                {' '}
-                ·
-                {v.accent}
-                {' '}
-                ·
-                {v.vibe}
-              </div>
+      {cloneEnabled && (
+        <div className="flex items-center gap-2 border-b border-border">
+          <VoiceTabButton active={voiceTab === 'stock'} onClick={() => setVoiceTab('stock')} label={`Stock voices (${stockVoices.length})`} />
+          <VoiceTabButton active={voiceTab === 'clones'} onClick={() => setVoiceTab('clones')} label={`Your voices (${clonedVoices.length})`} />
+        </div>
+      )}
+
+      {voiceTab === 'clones' && cloneEnabled && (
+        <CloneUploader onCloned={async () => { await onVoicesRefresh(); }} />
+      )}
+
+      {voicesLoading
+        ? (
+            <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+              <Loader2 size={14} className="animate-spin" />
+              Loading voices
             </div>
-            {voiceId === v.id && <span className="text-xs font-medium text-primary">Selected</span>}
-          </button>
-        ))}
+          )
+        : activeList.length === 0
+          ? (
+              <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                {voiceTab === 'clones'
+                  ? 'No cloned voices yet. Upload a 30 second to 3 minute audio sample above.'
+                  : 'No voices available.'}
+              </div>
+            )
+          : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {activeList.map(v => (
+                  <div
+                    key={v.id}
+                    className={`flex items-center justify-between rounded-md border p-3 text-left text-sm transition ${
+                      voiceId === v.id
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:bg-muted'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setVoiceId(v.id)}
+                      className="flex-1 text-left"
+                    >
+                      <div className="font-medium">{v.name}</div>
+                      <div className="text-xs capitalize text-muted-foreground">
+                        {[v.gender, v.accent, v.vibe].filter(Boolean).join(' | ')}
+                      </div>
+                    </button>
+                    <div className="flex items-center gap-2">
+                      {v.previewUrl && (
+                        <button
+                          type="button"
+                          onClick={() => togglePlay(v)}
+                          className="rounded-full border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          aria-label={playingId === v.id ? 'Pause preview' : 'Play preview'}
+                        >
+                          {playingId === v.id ? <Pause size={12} /> : <Play size={12} />}
+                        </button>
+                      )}
+                      {voiceId === v.id && (
+                        <CheckCircle2 size={16} className="text-primary" />
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+    </div>
+  );
+}
+
+function VoiceTabButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`border-b-2 px-3 py-1.5 text-xs font-medium transition ${
+        active
+          ? 'border-primary text-primary'
+          : 'border-transparent text-muted-foreground hover:text-foreground'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function CloneUploader({ onCloned }: { onCloned: () => Promise<void> }) {
+  const [audioUrl, setAudioUrl] = useState('');
+  const [name, setName] = useState('');
+  const [consented, setConsented] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const widgetOptions: CloudinaryUploadWidgetOptions = {
+    sources: ['local'],
+    multiple: false,
+    resourceType: 'video', // Cloudinary treats audio as video
+    clientAllowedFormats: ['mp3', 'wav', 'm4a', 'ogg', 'webm'],
+    maxFileSize: 25_000_000,
+  };
+
+  async function submit() {
+    if (!name.trim() || !audioUrl || !consented || submitting) {
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/ai-influencers/voice-clone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), audioUrl, consented: true }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.error || `Clone failed (${res.status})`);
+      }
+      setName('');
+      setAudioUrl('');
+      setConsented(false);
+      await onCloned();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-border bg-muted/30 p-3 text-sm">
+      <div className="mb-2 flex items-center gap-2 font-medium">
+        <Upload size={14} />
+        Clone a voice
+      </div>
+      <p className="mb-3 text-xs text-muted-foreground">
+        Upload a clear 30 second to 3 minute audio sample. Best results with a single speaker, no background music.
+      </p>
+      <div className="space-y-2">
+        <input
+          type="text"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="Voice name (e.g. Sarah v2)"
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs"
+        />
+        <div className="flex items-center gap-2">
+          <CldUploadWidget
+            signatureEndpoint="/api/media-library/signature"
+            options={widgetOptions}
+            onSuccess={(result) => {
+              const info: any = (result as any)?.info;
+              if (info?.secure_url) {
+                setAudioUrl(info.secure_url);
+              }
+            }}
+          >
+            {({ open }) => (
+              <button
+                type="button"
+                onClick={() => open()}
+                className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-3 py-2 text-xs hover:bg-muted"
+              >
+                <Upload size={12} />
+                {audioUrl ? 'Replace audio' : 'Upload audio'}
+              </button>
+            )}
+          </CldUploadWidget>
+          {audioUrl && (
+            <span className="truncate text-xs text-muted-foreground">Sample uploaded</span>
+          )}
+        </div>
+        <label className="flex items-start gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={consented}
+            onChange={e => setConsented(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>I confirm I have the right to use this voice sample and to create an AI clone of it.</span>
+        </label>
+        {error && (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+            {error}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!name.trim() || !audioUrl || !consented || submitting}
+          className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground disabled:opacity-50"
+        >
+          {submitting ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+          {submitting ? 'Cloning' : 'Clone voice'}
+        </button>
       </div>
     </div>
   );
@@ -704,6 +954,7 @@ function ReviewStep({
   traits,
   references,
   voiceId,
+  voices,
   personaPrompt,
   previewUrl,
   trainingMode,
@@ -712,12 +963,13 @@ function ReviewStep({
   traits: Traits;
   references: string[];
   voiceId: string;
+  voices: Voice[];
   personaPrompt: string;
   previewUrl: string | null;
   trainingMode: 'flux_lora' | 'nano_banana';
   setTrainingMode: (mode: 'flux_lora' | 'nano_banana') => void;
 }) {
-  const voice = VOICES.find(v => v.id === voiceId);
+  const voice = voices.find(v => v.id === voiceId);
   const traitSummary = [
     traits.gender,
     traits.ageRange,
