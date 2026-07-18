@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useMemo } from 'react';
 
 import { GalleryPreview } from '@/components/content-library/GalleryPreview';
+import { RemotionPreviewPlayer } from '@/components/editor/RemotionPreviewPlayer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -85,8 +86,47 @@ export function ContentPreview({
     return overlay ? [overlay] : undefined;
   }, [enrichment.editorScript, mediaSlots.slides, item]);
 
+  // Video branch — reconstruct editor state fallback from caption.
+  const scriptWithFallback = useMemo(() => {
+    const ed = enrichment.editorScript as { hookText?: string; bodyText?: string; ctaText?: string } | undefined;
+    if (ed && (ed.hookText || ed.bodyText || ed.ctaText)) return ed;
+    const lines = (item.caption || '').split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) return {};
+    if (lines.length === 1) return { hookText: lines[0] };
+    if (lines.length === 2) return { hookText: lines[0], bodyText: lines[1] };
+    return {
+      hookText: lines[0],
+      bodyText: lines.slice(1, -1).join('\n'),
+      ctaText: lines[lines.length - 1],
+    };
+  }, [enrichment.editorScript, item.caption]);
+
+  const hasEditorState = Boolean(
+    (scriptWithFallback && (scriptWithFallback.hookText || scriptWithFallback.bodyText || scriptWithFallback.ctaText))
+    || enrichment.editorStyle
+    || enrichment.editorLayout,
+  );
+
   const posterUrl = useMemo(() => resolveImageUrl(item) || item.graphicUrls?.[0] || '', [item]);
 
+  const remotionInputProps = useMemo(() => {
+    const bgUrl = mediaSlots.background?.url
+      || mediaSlots.hookVideo?.url
+      || mediaSlots.demoVideo?.url
+      || resolveVideoUrl(item)
+      || item.graphicUrls?.[0]
+      || '';
+    return {
+      backgroundUrl: bgUrl,
+      mediaSlots,
+      script: scriptWithFallback,
+      style: enrichment.editorStyle || {},
+      layout: enrichment.editorLayout || 'centered',
+      aspectRatio,
+      contentType: item.contentType,
+      previewMode: true,
+    };
+  }, [mediaSlots, scriptWithFallback, enrichment.editorStyle, enrichment.editorLayout, aspectRatio, item]);
   // VIDEO_RE-guard the graphicUrls fallback so we never feed an image URL to
   // `<video src>` — that produces a silent black frame. When no real video
   // exists, we render the poster image instead (see the fallback branch below).
@@ -145,13 +185,30 @@ export function ContentPreview({
                 </div>
               )}
 
-              {/* Video branch — simple <video> + CSS overlay, identical to PostCard.
-                * No Remotion composition for single-video types. The Remotion
-                * pipeline adds unnecessary complexity (slot aliasing, composition
-                * dispatch, dark-frame fallbacks) and the posts page proves a
-                * plain <video> with WebkitTextStroke overlay works perfectly. */}
+              {/* Video branch — Remotion whenever editor state exists.
+                * `isCompiled` intentionally NOT gating here: per team memory
+                * (isCompiled-not-video-signal, wysiwyg-output), the Remotion
+                * live render is the source of truth for the preview and must
+                * match the editor exactly. The compiled MP4 in graphicUrls[0]
+                * is used for downloads / social publish only. */}
+              {useVideoBranch && hasEditorState && remotionInputProps.backgroundUrl && (
+                <div className="flex justify-center">
+                  <div
+                    className="relative overflow-hidden rounded-[2rem] border-[1.5px] border-white/[0.06] bg-neutral-900/40 shadow-2xl"
+                    style={{ width: frameWidth, aspectRatio: aspectCss }}
+                  >
+                    <RemotionPreviewPlayer
+                      contentType={item.contentType}
+                      inputProps={remotionInputProps}
+                    />
+                  </div>
+                </div>
+              )}
 
-              {useVideoBranch && videoUrl && (
+              {/* Video branch — plain <video> only for items without any
+                * editor state (legacy imports, plain publishes). Anything
+                * that went through the editor renders via Remotion above. */}
+              {useVideoBranch && !hasEditorState && videoUrl && (
                 <div className="flex justify-center">
                   <div
                     className="relative overflow-hidden rounded-[2rem] border-[1.5px] border-white/[0.06] bg-neutral-900/40 shadow-2xl"
@@ -168,23 +225,16 @@ export function ContentPreview({
                       preload="none"
                       playsInline
                     />
-                    {/* CSS overlay — matches PostCard's line-clamp + WebkitTextStroke */}
-                    {getOverlayText(item) && (
-                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
-                        <p
-                          className="line-clamp-5 text-center text-sm font-bold leading-tight text-white"
-                          style={{ WebkitTextStroke: '1px black', textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}
-                        >
-                          {getOverlayText(item)}
-                        </p>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
 
-              {/* Video branch fallback — no video URL but poster exists */}
-              {useVideoBranch && !videoUrl && posterUrl && (
+              {/* Video branch fallback — no editor state and no real video URL.
+                * Instead of rendering a black `<video>` (which happens when a
+                * poster JPG lands in `graphicUrls[0]` for a video-type post),
+                * render the poster image. Mirrors PostCard's video-or-image
+                * fallthrough pattern. */}
+              {useVideoBranch && !hasEditorState && !videoUrl && posterUrl && (
                 <div className="flex justify-center">
                   <div
                     className="relative overflow-hidden rounded-[2rem] border-[1.5px] border-white/[0.06] bg-neutral-900/40 shadow-lg"
@@ -196,16 +246,6 @@ export function ContentPreview({
                       alt="Content poster"
                       className="size-full object-cover"
                     />
-                    {getOverlayText(item) && (
-                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
-                        <p
-                          className="line-clamp-5 text-center text-sm font-bold leading-tight text-white"
-                          style={{ WebkitTextStroke: '1px black', textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}
-                        >
-                          {getOverlayText(item)}
-                        </p>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
