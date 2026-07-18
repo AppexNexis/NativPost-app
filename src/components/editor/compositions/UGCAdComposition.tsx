@@ -3,7 +3,7 @@ import React from 'react';
 import { AbsoluteFill, Audio, Img, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
 
 import { isVideoUrl } from './media-detect';
-import { limitBody, limitCta, limitHook } from './text-limits';
+import { limitBodyMaybe, limitCtaMaybe, limitHookMaybe } from './text-limits';
 
 interface Props {
   script: {
@@ -31,17 +31,18 @@ interface Props {
     url: string;
     volume?: number;
   } | null;
+  previewMode?: boolean;
 }
 
-export function UGCAdComposition({ script, style, mediaSlots, audioTrack }: Props) {
+export function UGCAdComposition({ script, style, mediaSlots, audioTrack, previewMode }: Props) {
   const { width, height } = useVideoConfig();
   const frame = useCurrentFrame();
 
   // Bug 2 — truncate overlay text so long Blitz-generated hook/body/cta
-  // don't overflow the frame.
-  const hookText = limitHook(script.hookText);
-  const bodyText = limitBody(script.bodyText);
-  const ctaText = limitCta(script.ctaText);
+  // don't overflow the frame. Skipped in live preview (CSS handles overflow).
+  const hookText = limitHookMaybe(script.hookText, previewMode);
+  const bodyText = limitBodyMaybe(script.bodyText, previewMode);
+  const ctaText = limitCtaMaybe(script.ctaText, previewMode);
 
   // Background dim: scrim between source media and text overlay.
   const dimming = Math.max(0, Math.min(0.8, style.backgroundDimming ?? 0.3));

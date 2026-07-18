@@ -20,7 +20,7 @@ import { loadFont as loadPlayfair } from '@remotion/google-fonts/PlayfairDisplay
 import { EDITOR_FIXED_DURATION_SECONDS } from '@/lib/editor-constants';
 
 import { isVideoUrl } from './media-detect';
-import { limitBody, limitCta, limitHook } from './text-limits';
+import { limitBodyMaybe, limitCtaMaybe, limitHookMaybe } from './text-limits';
 
 const FONT_REGISTRY: Record<string, { fontFamily: string }> = {
   'Inter': loadInter(),
@@ -80,6 +80,12 @@ export interface EditorInputProps {
   contentType: string;
   noAnimation?: boolean;
   audioTrack?: EditorAudioTrack | null;
+  /**
+   * When true, skip the `limitHook/Body/Cta` character chop — live browser
+   * previews rely on CSS `line-clamp`/overflow instead. Never set for
+   * compile-to-MP4 mounts (Remotion has no CSS overflow control).
+   */
+  previewMode?: boolean;
 }
 
 // ── Style helpers ──────────────────────────────────────────────────────────────
@@ -157,6 +163,7 @@ export function EditorComposition({
   contentType,
   noAnimation: noAnimationFromProps,
   audioTrack,
+  previewMode,
 }: EditorInputProps) {
   const { width, height, fps } = useVideoConfig();
 
@@ -197,9 +204,9 @@ export function EditorComposition({
 
   // Bug 2 — truncate overlay text so long Blitz-generated hook/body/cta
   // don't overflow the frame.
-  const hookText = limitHook(script.hookText);
-  const bodyText = limitBody(script.bodyText);
-  const ctaText = limitCta(script.ctaText);
+  const hookText = limitHookMaybe(script.hookText, previewMode);
+  const bodyText = limitBodyMaybe(script.bodyText, previewMode);
+  const ctaText = limitCtaMaybe(script.ctaText, previewMode);
   const activeText = hookText || bodyText || ctaText;
   const totalFrames = EDITOR_FIXED_DURATION_SECONDS * fps;
   const textStartFrame = noAnimation ? 0 : 10;

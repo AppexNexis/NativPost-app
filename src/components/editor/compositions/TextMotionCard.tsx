@@ -2,7 +2,7 @@
 import React from 'react';
 import { AbsoluteFill, useVideoConfig } from 'remotion';
 
-import { limitBody, limitCta, limitHook } from './text-limits';
+import { limitBodyMaybe, limitCtaMaybe, limitHookMaybe } from './text-limits';
 
 interface Props {
   script: {
@@ -17,9 +17,10 @@ interface Props {
     backgroundColor?: string;
     align?: 'left' | 'center' | 'right';
   };
+  previewMode?: boolean;
 }
 
-export function TextMotionCard({ script, style }: Props) {
+export function TextMotionCard({ script, style, previewMode }: Props) {
   const { width, height } = useVideoConfig();
 
   const fontFamily = style.fontFamily || 'Inter';
@@ -39,7 +40,7 @@ export function TextMotionCard({ script, style }: Props) {
         padding: 60,
       }}
     >
-      {limitHook(script.hookText) && (
+      {limitHookMaybe(script.hookText, previewMode) && (
         <p
           style={{
             fontFamily,
@@ -50,10 +51,10 @@ export function TextMotionCard({ script, style }: Props) {
             marginBottom: 24,
           }}
         >
-          {limitHook(script.hookText)}
+          {limitHookMaybe(script.hookText, previewMode)}
         </p>
       )}
-      {limitBody(script.bodyText) && (
+      {limitBodyMaybe(script.bodyText, previewMode) && (
         <p
           style={{
             fontFamily,
@@ -65,10 +66,10 @@ export function TextMotionCard({ script, style }: Props) {
             opacity: 0.9,
           }}
         >
-          {limitBody(script.bodyText)}
+          {limitBodyMaybe(script.bodyText, previewMode)}
         </p>
       )}
-      {limitCta(script.ctaText) && (
+      {limitCtaMaybe(script.ctaText, previewMode) && (
         <p
           style={{
             fontFamily,
@@ -79,7 +80,7 @@ export function TextMotionCard({ script, style }: Props) {
             opacity: 0.7,
           }}
         >
-          {limitCta(script.ctaText)}
+          {limitCtaMaybe(script.ctaText, previewMode)}
         </p>
       )}
     </AbsoluteFill>

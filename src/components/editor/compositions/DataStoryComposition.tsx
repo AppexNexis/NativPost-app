@@ -2,7 +2,7 @@
 import React from 'react';
 import { AbsoluteFill, Audio, Sequence, useVideoConfig } from 'remotion';
 
-import { limitBody, limitHook } from './text-limits';
+import { limitBodyMaybe, limitHookMaybe } from './text-limits';
 
 interface Props {
   script: {
@@ -26,9 +26,10 @@ interface Props {
     url: string;
     volume?: number;
   } | null;
+  previewMode?: boolean;
 }
 
-export function DataStoryComposition({ script, style, mediaSlots, audioTrack }: Props) {
+export function DataStoryComposition({ script, style, mediaSlots, audioTrack, previewMode }: Props) {
   const { width, height, fps } = useVideoConfig();
 
   // Background dim: scrim between source media and text overlay.
@@ -129,7 +130,7 @@ export function DataStoryComposition({ script, style, mediaSlots, audioTrack }: 
       })}
 
       {/* Fallback: hook text if no slides */}
-      {slides.length === 0 && limitHook(script.hookText) && (
+      {slides.length === 0 && limitHookMaybe(script.hookText, previewMode) && (
         <Sequence from={0} durationInFrames={fps * 3}>
           <AbsoluteFill
             style={{
@@ -150,9 +151,9 @@ export function DataStoryComposition({ script, style, mediaSlots, audioTrack }: 
                 textAlign: 'center',
               }}
             >
-              {limitHook(script.hookText)}
+              {limitHookMaybe(script.hookText, previewMode)}
             </p>
-            {limitBody(script.bodyText) && (
+            {limitBodyMaybe(script.bodyText, previewMode) && (
               <p
                 style={{
                   fontFamily,
@@ -163,7 +164,7 @@ export function DataStoryComposition({ script, style, mediaSlots, audioTrack }: 
                   opacity: 0.9,
                 }}
               >
-                {limitBody(script.bodyText)}
+                {limitBodyMaybe(script.bodyText, previewMode)}
               </p>
             )}
           </AbsoluteFill>

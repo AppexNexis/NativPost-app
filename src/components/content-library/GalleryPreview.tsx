@@ -144,28 +144,27 @@ export function GalleryPreview({ slides, slideCopy, aspectRatio, layout, align, 
           : alignKey === 'right' ? 'text-right'
           : 'text-center';
 
-        // Position + gradient direction based on layout. Wall-of-text fills
-        // the whole frame; top/bottom use directional gradients; centered
-        // uses a soft radial dim so the middle text is legible without a
-        // one-sided gradient.
+        // Position based on layout. No background gradient/scrim — legibility
+        // comes from `WebkitTextStroke` + `textShadow` on the caption itself,
+        // matching the PostCard grid overlay (source of truth: PostCard.tsx).
         let containerClass: string;
         let innerClass: string;
         switch (layout) {
           case 'top_caption':
-            containerClass = 'absolute inset-x-0 top-0 flex items-start justify-center bg-gradient-to-b from-black/70 via-black/40 to-transparent p-4 pb-10';
+            containerClass = 'absolute inset-x-0 top-0 flex items-start justify-center p-4';
             innerClass = `w-full ${textAlignClass}`;
             break;
           case 'centered':
-            containerClass = 'absolute inset-0 flex items-center justify-center bg-black/25 p-6';
+            containerClass = 'absolute inset-0 flex items-center justify-center p-6';
             innerClass = `w-full ${textAlignClass}`;
             break;
           case 'wall_of_text':
-            containerClass = 'absolute inset-0 flex items-center justify-center bg-black/45 p-4';
+            containerClass = 'absolute inset-0 flex items-center justify-center p-4';
             innerClass = `w-full ${textAlignClass}`;
             break;
           case 'bottom_caption':
           default:
-            containerClass = 'absolute inset-x-0 bottom-0 flex items-end justify-center bg-gradient-to-t from-black/70 via-black/40 to-transparent p-4 pt-10';
+            containerClass = 'absolute inset-x-0 bottom-0 flex items-end justify-center p-4';
             innerClass = `w-full ${textAlignClass}`;
             break;
         }
@@ -174,9 +173,10 @@ export function GalleryPreview({ slides, slideCopy, aspectRatio, layout, align, 
         return (
           <div className={`pointer-events-none ${containerClass}`}>
             <p
-              className={`${innerClass} font-medium leading-snug text-white drop-shadow ${
-                isWall ? 'text-xl md:text-2xl' : 'text-sm'
+              className={`${innerClass} font-bold leading-snug text-white ${
+                isWall ? 'line-clamp-none text-xl md:text-2xl' : 'line-clamp-5 text-sm'
               }`}
+              style={{ WebkitTextStroke: '1px black', textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}
             >
               {caption}
             </p>

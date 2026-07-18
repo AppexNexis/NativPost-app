@@ -46,3 +46,22 @@ export function limitBody(input: string | undefined | null): string {
 export function limitCta(input: string | undefined | null): string {
   return truncateWithEllipsis(input, TEXT_LIMITS.cta);
 }
+
+/**
+ * `previewMode`-aware variants — return the raw string when
+ * `previewMode === true` (the live browser preview uses CSS `line-clamp`
+ * / overflow to handle long text, so it doesn't need the ellipsis chop).
+ * Compile-to-MP4 mounts never set `previewMode`, so baked Remotion
+ * output still gets truncated.
+ */
+export function limitHookMaybe(input: string | undefined | null, previewMode?: boolean): string {
+  return previewMode ? (input ? String(input) : '') : limitHook(input);
+}
+
+export function limitBodyMaybe(input: string | undefined | null, previewMode?: boolean): string {
+  return previewMode ? (input ? String(input) : '') : limitBody(input);
+}
+
+export function limitCtaMaybe(input: string | undefined | null, previewMode?: boolean): string {
+  return previewMode ? (input ? String(input) : '') : limitCta(input);
+}

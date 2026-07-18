@@ -2,7 +2,7 @@
 import React from 'react';
 import { AbsoluteFill, Audio, Sequence, useVideoConfig } from 'remotion';
 
-import { limitHook } from './text-limits';
+import { limitHookMaybe } from './text-limits';
 
 interface Props {
   script: {
@@ -34,6 +34,7 @@ interface Props {
     url: string;
     volume?: number;
   } | null;
+  previewMode?: boolean;
 }
 
 /**
@@ -41,7 +42,7 @@ interface Props {
  * WYSIWYG rule: any style/layout logic added here must also live in the
  * preview component, and vice versa.
  */
-export function SlideshowComposition({ script, style, layout, mediaSlots, slides: slidesProp, audioTrack }: Props) {
+export function SlideshowComposition({ script, style, layout, mediaSlots, slides: slidesProp, audioTrack, previewMode }: Props) {
   const { width, height, fps } = useVideoConfig();
 
   const fontFamily = style.fontFamily || 'Inter';
@@ -162,7 +163,7 @@ export function SlideshowComposition({ script, style, layout, mediaSlots, slides
       })}
 
       {/* Hook overlay at start if no slides */}
-      {slides.length === 0 && limitHook(script.hookText) && (
+      {slides.length === 0 && limitHookMaybe(script.hookText, previewMode) && (
         <Sequence from={0} durationInFrames={fps * 3}>
           <AbsoluteFill
             style={{
@@ -185,7 +186,7 @@ export function SlideshowComposition({ script, style, layout, mediaSlots, slides
                 textAlign: align,
               }}
             >
-              {limitHook(script.hookText)}
+              {limitHookMaybe(script.hookText, previewMode)}
             </p>
           </AbsoluteFill>
         </Sequence>

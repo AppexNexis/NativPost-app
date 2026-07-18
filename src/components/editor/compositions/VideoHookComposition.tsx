@@ -3,7 +3,7 @@ import React from 'react';
 import { AbsoluteFill, Audio, Img, Sequence, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
 
 import { isVideoUrl } from './media-detect';
-import { limitBody, limitCta, limitHook } from './text-limits';
+import { limitBodyMaybe, limitCtaMaybe, limitHookMaybe } from './text-limits';
 
 interface Props {
   script: {
@@ -32,17 +32,19 @@ interface Props {
     url: string;
     volume?: number;
   } | null;
+  previewMode?: boolean;
 }
 
 // Shared text overlay used inside every Sequence — the same stacked+centered
 // column so the viewer sees hook + body + cta together on every background
 // clip. Fade-in stagger honors style.noAnimation.
-function TextOverlay({ script, style }: { script: Props['script']; style: Props['style'] }) {
+function TextOverlay({ script, style, previewMode }: { script: Props['script']; style: Props['style']; previewMode?: boolean }) {
   // Bug 2 — truncate overlay text at render limits with "…" so long
-  // Blitz-generated hook/body/cta don't overflow the frame.
-  const hookText = limitHook(script.hookText);
-  const bodyText = limitBody(script.bodyText);
-  const ctaText = limitCta(script.ctaText);
+  // Blitz-generated hook/body/cta don't overflow the frame. Skipped in
+  // live preview (CSS handles overflow).
+  const hookText = limitHookMaybe(script.hookText, previewMode);
+  const bodyText = limitBodyMaybe(script.bodyText, previewMode);
+  const ctaText = limitCtaMaybe(script.ctaText, previewMode);
   const frame = useCurrentFrame();
   const fontFamily = style.fontFamily || 'Inter';
   const base = style.fontSize || 48;
@@ -166,7 +168,7 @@ function TextOverlay({ script, style }: { script: Props['script']; style: Props[
   );
 }
 
-export function VideoHookComposition({ script, style, mediaSlots, audioTrack }: Props) {
+export function VideoHookComposition({ script, style, mediaSlots, audioTrack, previewMode }: Props) {
   const { width, height, fps } = useVideoConfig();
 
   // Background dim: scrim between source media and text overlay.
@@ -216,7 +218,7 @@ export function VideoHookComposition({ script, style, mediaSlots, audioTrack }: 
           ) : (
             <div style={{ width, height, backgroundColor: '#1a1a2e' }} />
           )}
-          <TextOverlay script={script} style={style} />
+          <TextOverlay script={script} style={style} previewMode={previewMode} />
         </DimScrim>
       </Sequence>
 
@@ -240,14 +242,14 @@ export function VideoHookComposition({ script, style, mediaSlots, audioTrack }: 
           ) : (
             <div style={{ width, height, backgroundColor: '#16213e' }} />
           )}
-          <TextOverlay script={script} style={style} />
+          <TextOverlay script={script} style={style} previewMode={previewMode} />
         </DimScrim>
       </Sequence>
 
       {/* CTA — solid brand background beneath the same overlay */}
       <Sequence from={hookFrames + bodyFrames} durationInFrames={ctaFrames}>
         <AbsoluteFill style={{ backgroundColor: '#1a1a2e' }}>
-          <TextOverlay script={script} style={style} />
+          <TextOverlay script={script} style={style} previewMode={previewMode} />
         </AbsoluteFill>
       </Sequence>
     </AbsoluteFill>

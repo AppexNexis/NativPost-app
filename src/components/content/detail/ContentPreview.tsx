@@ -12,7 +12,7 @@ import { Card } from '@/components/ui/card';
 import { getEditorKind } from '@/lib/editor/content-type-registry';
 import type { ContentItem } from '@/types/v2';
 
-import { VIDEO_CONTENT_TYPES } from '../preview-helpers';
+import { VIDEO_CONTENT_TYPES, VIDEO_RE } from '../preview-helpers';
 import { ASPECT_RATIO_LABELS, ctLabel } from './status-config';
 import {
   hasAnyMedia,
@@ -115,11 +115,23 @@ export function ContentPreview({
       layout: enrichment.editorLayout || 'centered',
       aspectRatio,
       contentType: item.contentType,
+      // Skip text-limits chop in the live preview — CSS handles overflow
+      // in the browser, so we don't need the ellipsis cut here. Compile-to-MP4
+      // mounts don't set this, so baked Remotion output still gets limited.
+      previewMode: true,
     };
   }, [mediaSlots, scriptWithFallback, enrichment.editorStyle, enrichment.editorLayout, aspectRatio, item]);
 
   const posterUrl = useMemo(() => resolveImageUrl(item) || item.graphicUrls?.[0] || '', [item]);
-  const videoUrl = useMemo(() => resolveVideoUrl(item) || item.graphicUrls?.[0] || '', [item]);
+  // VIDEO_RE-guard the graphicUrls fallback so we never feed an image URL to
+  // `<video src>` — that produces a silent black frame. When no real video
+  // exists, we render the poster image instead (see the fallback branch below).
+  const videoUrl = useMemo(() => {
+    const v = resolveVideoUrl(item);
+    if (v) return v;
+    const first = item.graphicUrls?.[0];
+    return first && VIDEO_RE.test(first) ? first : '';
+  }, [item]);
 
   const frameWidth = isPortrait(aspectRatio) ? 360 : 640;
 
@@ -208,6 +220,27 @@ export function ContentPreview({
                       loop
                       preload="metadata"
                       playsInline
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Video branch fallback — no editor state and no real video URL.
+                * Instead of rendering a black `<video>` (which happens when a
+                * poster JPG lands in `graphicUrls[0]` for a video-type post),
+                * render the poster image. Mirrors PostCard's video-or-image
+                * fallthrough pattern. */}
+              {useVideoBranch && !hasEditorState && !videoUrl && posterUrl && (
+                <div className="flex justify-center">
+                  <div
+                    className="relative overflow-hidden rounded-[2rem] border-[1.5px] border-white/[0.06] bg-neutral-900/40 shadow-lg"
+                    style={{ width: frameWidth, aspectRatio: aspectCss }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={posterUrl}
+                      alt="Content poster"
+                      className="size-full object-cover"
                     />
                   </div>
                 </div>
