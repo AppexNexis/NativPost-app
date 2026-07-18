@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { CampaignsPage } from '@/components/campaigns/CampaignsPage';
 import { getAuthContext } from '@/lib/auth';
+import { cleanupStaleBlitzCampaigns } from '@/lib/blitz/cleanup-stale';
 import { getDb } from '@/libs/DB';
 import { aiInfluencerSchema, campaignSchema, contentAngleSchema, socialAccountSchema } from '@/models/Schema';
 import { eq, and, desc } from 'drizzle-orm';
@@ -18,6 +19,11 @@ export default async function Page() {
   if (error || !orgId) {
     return <p className="py-8 text-sm text-muted-foreground">Please sign in to view campaigns.</p>;
   }
+
+  // Purge yesterday's Today's Blitz rows and their unapproved posts before
+  // rendering the list. Keeps the Active tab clean; approved posts survive
+  // in the general content library.
+  await cleanupStaleBlitzCampaigns(db, orgId);
 
   const [campaigns, angles, accounts, influencers] = await Promise.all([
     db

@@ -1490,10 +1490,16 @@ function BlitzSwipeCard({
                   : <img src={fallbackMediaUrl} alt="" className="absolute inset-0 size-full object-cover" />
               )}
               {hookText && (
-                <div className="pointer-events-none absolute inset-x-0 top-1/2 z-20 -translate-y-1/2 px-3">
-                  <div className="mx-auto w-fit max-w-[90%] rounded-lg bg-black/60 px-4 py-2.5 text-sm leading-snug text-white backdrop-blur-sm">
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6">
+                  <p
+                    className="line-clamp-6 text-center text-lg font-semibold leading-snug text-white"
+                    style={{
+                      textShadow:
+                        '2px 2px 0 #000, -2px 2px 0 #000, 2px -2px 0 #000, -2px -2px 0 #000, 0 0 6px rgba(0,0,0,0.6)',
+                    }}
+                  >
                     {hookText}
-                  </div>
+                  </p>
                 </div>
               )}
               {!fallbackMediaUrl && !hookText && (
@@ -1512,13 +1518,16 @@ function BlitzSwipeCard({
               the padding; caption itself is pointer-events-none so the
               arrow buttons underneath stay clickable. */}
           {slides.length > 0 && (slideCopy[slideIdx] || hookText) && (
-            <div className="pointer-events-none absolute inset-x-0 top-1/2 z-20 -translate-y-1/2 px-3">
-              <div
-                className="mx-auto w-fit max-w-[75%] overflow-hidden rounded-lg bg-black/65 px-3 py-2 text-center text-sm leading-snug text-white backdrop-blur-sm"
-                style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6">
+              <p
+                className="line-clamp-6 max-w-[85%] text-center text-lg font-semibold leading-snug text-white"
+                style={{
+                  textShadow:
+                    '2px 2px 0 #000, -2px 2px 0 #000, 2px -2px 0 #000, -2px -2px 0 #000, 0 0 6px rgba(0,0,0,0.6)',
+                }}
               >
                 {slideCopy[slideIdx] || hookText}
-              </div>
+              </p>
             </div>
           )}
         </div>
@@ -1547,15 +1556,21 @@ function BlitzSwipeCard({
             <img src={compiledUrl} alt={item.caption?.slice(0, 60) || ''} className="size-full object-cover" />
           )}
           {/* Text overlay for compiled videos — shows hook text on
-              the video so cards aren't textless. Word-boundary clipped
-              with ellipsis so mid-sentence cuts don't look like bugs. */}
+              the video so cards aren't textless. Styled to match the
+              Campaign Review card overlay: white text, 4-corner black
+              stroke via text-shadow, no background box, line-clamp for
+              graceful overflow instead of mid-sentence character chop. */}
           {hookText && (
-            <div className="pointer-events-none absolute inset-x-0 top-1/2 z-20 -translate-y-1/2 px-3">
-              <div className="mx-auto w-fit max-w-[90%] rounded-lg bg-black/60 px-4 py-2.5 text-sm leading-snug text-white backdrop-blur-sm">
-                {hookText.length > 90
-                  ? `${hookText.slice(0, 90).split(' ').slice(0, -1).join(' ').trimEnd()}…`
-                  : hookText}
-              </div>
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6">
+              <p
+                className="line-clamp-6 text-center text-lg font-semibold leading-snug text-white"
+                style={{
+                  textShadow:
+                    '2px 2px 0 #000, -2px 2px 0 #000, 2px -2px 0 #000, -2px -2px 0 #000, 0 0 6px rgba(0,0,0,0.6)',
+                }}
+              >
+                {hookText}
+              </p>
             </div>
           )}
         </div>

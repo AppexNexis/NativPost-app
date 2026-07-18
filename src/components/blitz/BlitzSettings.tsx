@@ -115,6 +115,12 @@ const GENDER_OPTIONS = [
   { value: 'female', label: 'Female' },
 ];
 
+// Blitz only publishes to these four platforms today. Non-allowlisted
+// accounts (whatsapp / linkedin / snapchat / pinterest / twitter) are
+// hidden from the Publishing accounts picker AND excluded from the
+// disabled-account state so they never leak into effective targets.
+const BLITZ_ALLOWED_PLATFORMS = new Set(['facebook', 'instagram', 'tiktok', 'youtube']);
+
 // ── Readiness check component ─────────────────────────────────────────────────
 
 function ReadinessCheck({ label, ok }: { label: string; ok: boolean }) {
@@ -248,6 +254,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
         const raw: any[] = d?.accounts || d?.items || (Array.isArray(d) ? d : []);
         const active = raw
           .filter(a => a?.isActive !== false)
+          .filter(a => BLITZ_ALLOWED_PLATFORMS.has(String(a?.platform || '').toLowerCase()))
           .map(a => ({
             id: a.id,
             platform: a.platform,
@@ -878,21 +885,21 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                   to start publishing with Blitz.
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {connectedAccounts.map((acc) => {
                     const isDisabled = disabledAccountIds.includes(acc.id);
                     const isEnabled = !isDisabled;
                     return (
                       <div
                         key={acc.id}
-                        className="flex items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2"
+                        className="flex flex-col items-start gap-2 rounded-lg border bg-card p-2.5"
                       >
-                        <div className="min-w-0 flex-1">
+                        <div className="min-w-0 w-full">
                           <p className="truncate text-sm font-medium capitalize">
                             {acc.platform}
                           </p>
                           {acc.handle && (
-                            <p className="truncate text-xs text-muted-foreground">
+                            <p className="truncate text-[11px] text-muted-foreground">
                               {acc.handle}
                             </p>
                           )}
@@ -906,15 +913,15 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                                 : [...prev, acc.id],
                             );
                           }}
-                          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+                          className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
                             isEnabled ? 'bg-primary' : 'bg-muted'
                           }`}
                           aria-pressed={isEnabled}
                           aria-label={`${isEnabled ? 'Disable' : 'Enable'} ${acc.platform} for Blitz`}
                         >
                           <span
-                            className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-transform ${
-                              isEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                            className={`absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform ${
+                              isEnabled ? 'translate-x-4' : 'translate-x-0.5'
                             }`}
                           />
                         </button>
