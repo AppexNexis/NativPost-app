@@ -87,6 +87,22 @@ export function resolveMediaSlots(item: ContentItem): ResolvedMediaSlots {
       (out as any)[targetSlot] = out.background;
     }
 
+    // HOOK types need BOTH hookVideo AND demoVideo — VideoHookComposition has
+    // hook + body Sequences that each destructure their own slot. Blitz's
+    // build-source-media-slots only writes `background + hookVideo`, so
+    // without this backfill the body Sequence renders as solid `#16213e` for
+    // 4 s of every playback. Mirrors apply-set-to-slots modulo reuse when a
+    // media set has one video.
+    if (HOOK_TYPES.has(item.contentType)) {
+      const src = out.hookVideo || out.demoVideo || out.background;
+      if (src && !out.hookVideo) out.hookVideo = src;
+      if (src && !out.demoVideo) out.demoVideo = src;
+    }
+    if (DEMO_TYPES.has(item.contentType)) {
+      const src = out.demoVideo || out.hookVideo || out.background;
+      if (src && !out.demoVideo) out.demoVideo = src;
+    }
+
     if (out.background || out.hookVideo || out.demoVideo || (out as any).faceVideo || out.slides) return out;
   }
 
@@ -127,6 +143,11 @@ export function resolveMediaSlots(item: ContentItem): ResolvedMediaSlots {
   if (thumbnailUrl) slot.thumbnailUrl = thumbnailUrl;
   if (url && VIDEO_RE.test(url)) slot.assetType = 'video';
 
+  // HOOK types: populate hookVideo AND demoVideo from the same slot so
+  // VideoHookComposition's body Sequence has real media to render.
+  if (HOOK_TYPES.has(item.contentType)) {
+    return { background: slot, hookVideo: slot, demoVideo: slot } as ResolvedMediaSlots;
+  }
   return { [targetSlot]: slot } as ResolvedMediaSlots;
 }
 

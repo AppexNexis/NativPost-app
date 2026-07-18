@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 import { Checkbox } from '@/components/ui/checkbox';
+import { useInView } from '@/hooks/useInView';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,6 +56,14 @@ export function PostCard({
   anySelected,
 }: Props) {
   const [hover, setHover] = useState(false);
+  // Gate the video mount to viewport intersection — 200+ concurrent
+  // <video autoPlay preload="metadata"> was crashing the browser at OOM
+  // (600-900 MB). Off-screen cards render the poster <img> only.
+  // `once: false` so cards scrolled far off-screen unmount their <video>
+  // element and release the decoder — bounds steady-state memory even when
+  // the user scrolls through hundreds of cards. 200px rootMargin absorbs
+  // scroll velocity so the swap happens before the card visually appears.
+  const [cardRef, inView] = useInView<HTMLDivElement>({ rootMargin: '200px', once: false });
 
   const thumb = getThumb(item);
   const videoUrl = getVideoUrl(item);
@@ -71,6 +80,7 @@ export function PostCard({
 
   return (
     <div
+      ref={cardRef}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       className={cn(
@@ -84,7 +94,7 @@ export function PostCard({
         href={`/dashboard/content/${item.id}`}
         className="relative block aspect-[9/16] overflow-hidden bg-muted"
       >
-        {isVideo && videoUrl
+        {isVideo && videoUrl && inView
           ? (
               <video
                 src={videoUrl}
@@ -100,7 +110,7 @@ export function PostCard({
           : thumb
             ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={thumb} alt="" className="size-full object-cover" />
+                <img src={thumb} alt="" loading="lazy" className="size-full object-cover" />
               )
             : (
                 <div className="flex size-full items-center justify-center bg-gradient-to-br from-zinc-100 to-zinc-200 p-4 text-center text-xs text-zinc-500 dark:from-zinc-800 dark:to-zinc-900 dark:text-zinc-400">

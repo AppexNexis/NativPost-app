@@ -33,6 +33,9 @@ interface Props {
     volume?: number;
   } | null;
   previewMode?: boolean;
+  // Poster / thumbnail shown when a media slot is empty, so we don't render a
+  // solid `#1a1a2e` / `#16213e` block. Threaded from ContentPreview.
+  posterUrl?: string;
 }
 
 // Shared text overlay used inside every Sequence — the same stacked+centered
@@ -168,7 +171,7 @@ function TextOverlay({ script, style, previewMode }: { script: Props['script']; 
   );
 }
 
-export function VideoHookComposition({ script, style, mediaSlots, audioTrack, previewMode }: Props) {
+export function VideoHookComposition({ script, style, mediaSlots, audioTrack, previewMode, posterUrl }: Props) {
   const { width, height, fps } = useVideoConfig();
 
   // Background dim: scrim between source media and text overlay.
@@ -215,6 +218,11 @@ export function VideoHookComposition({ script, style, mediaSlots, audioTrack, pr
                 style={{ width, height, objectFit: 'cover', position: 'absolute' }}
               />
             )
+          ) : posterUrl ? (
+            <Img
+              src={posterUrl}
+              style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+            />
           ) : (
             <div style={{ width, height, backgroundColor: '#1a1a2e' }} />
           )}
@@ -239,6 +247,11 @@ export function VideoHookComposition({ script, style, mediaSlots, audioTrack, pr
                 style={{ width, height, objectFit: 'cover', position: 'absolute' }}
               />
             )
+          ) : posterUrl ? (
+            <Img
+              src={posterUrl}
+              style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+            />
           ) : (
             <div style={{ width, height, backgroundColor: '#16213e' }} />
           )}

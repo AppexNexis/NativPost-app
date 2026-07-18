@@ -12,7 +12,7 @@ import { Card } from '@/components/ui/card';
 import { getEditorKind } from '@/lib/editor/content-type-registry';
 import type { ContentItem } from '@/types/v2';
 
-import { VIDEO_CONTENT_TYPES, VIDEO_RE } from '../preview-helpers';
+import { getOverlayText, VIDEO_CONTENT_TYPES, VIDEO_RE } from '../preview-helpers';
 import { ASPECT_RATIO_LABELS, ctLabel } from './status-config';
 import {
   hasAnyMedia,
@@ -72,12 +72,19 @@ export function ContentPreview({
 
   const slideCopy = useMemo(() => {
     const script = (enrichment.editorScript ?? {}) as Record<string, any>;
-    if (Array.isArray(script.slideCopy)) return script.slideCopy;
-    if (mediaSlots.slides) {
-      return mediaSlots.slides.map(s => s?.caption ?? '').filter((c): c is string => typeof c === 'string');
+    if (Array.isArray(script.slideCopy) && script.slideCopy.length > 0) return script.slideCopy;
+    if (mediaSlots.slides && mediaSlots.slides.length > 0) {
+      const captions = mediaSlots.slides
+        .map(s => s?.caption ?? '')
+        .filter((c): c is string => typeof c === 'string' && c.length > 0);
+      if (captions.length > 0) return captions;
     }
-    return undefined;
-  }, [enrichment.editorScript, mediaSlots.slides]);
+    // Fallback for single_image / wall_of_text where the overlay text lives on
+    // editorScript.hookText — mirrors PostCard's getOverlayText helper so the
+    // detail page renders the same overlay as the posts grid.
+    const overlay = getOverlayText(item);
+    return overlay ? [overlay] : undefined;
+  }, [enrichment.editorScript, mediaSlots.slides, item]);
 
   // Video branch — reconstruct editor state fallback from caption.
   const scriptWithFallback = useMemo(() => {
@@ -100,6 +107,8 @@ export function ContentPreview({
     || enrichment.editorLayout,
   );
 
+  const posterUrl = useMemo(() => resolveImageUrl(item) || item.graphicUrls?.[0] || '', [item]);
+
   const remotionInputProps = useMemo(() => {
     const bgUrl = mediaSlots.background?.url
       || mediaSlots.hookVideo?.url
@@ -119,10 +128,11 @@ export function ContentPreview({
       // in the browser, so we don't need the ellipsis cut here. Compile-to-MP4
       // mounts don't set this, so baked Remotion output still gets limited.
       previewMode: true,
+      // Fallback background when a per-type slot (hookVideo/demoVideo) is
+      // empty — avoids the solid #16213e block in VideoHookComposition.
+      posterUrl: posterUrl || item.graphicUrls?.[0] || '',
     };
-  }, [mediaSlots, scriptWithFallback, enrichment.editorStyle, enrichment.editorLayout, aspectRatio, item]);
-
-  const posterUrl = useMemo(() => resolveImageUrl(item) || item.graphicUrls?.[0] || '', [item]);
+  }, [mediaSlots, scriptWithFallback, enrichment.editorStyle, enrichment.editorLayout, aspectRatio, item, posterUrl]);
   // VIDEO_RE-guard the graphicUrls fallback so we never feed an image URL to
   // `<video src>` — that produces a silent black frame. When no real video
   // exists, we render the poster image instead (see the fallback branch below).
@@ -218,7 +228,7 @@ export function ContentPreview({
                       autoPlay
                       muted
                       loop
-                      preload="metadata"
+                      preload="none"
                       playsInline
                     />
                   </div>
