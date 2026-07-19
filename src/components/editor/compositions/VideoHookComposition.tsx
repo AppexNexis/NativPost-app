@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { AbsoluteFill, Audio, Img, Sequence, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
+import { AbsoluteFill, Audio, Img, useVideoConfig, Video, useCurrentFrame, interpolate } from 'remotion';
 
 import { isVideoUrl } from './media-detect';
 import { limitBodyMaybe, limitCtaMaybe, limitHookMaybe } from './text-limits';
@@ -25,6 +25,7 @@ interface Props {
     backgroundDimming?: number;
   };
   mediaSlots?: {
+    background?: { url: string };
     hookVideo?: { url: string };
     demoVideo?: { url: string };
   };
@@ -33,22 +34,53 @@ interface Props {
     volume?: number;
   } | null;
   previewMode?: boolean;
-  // Poster / thumbnail shown when a media slot is empty, so we don't render a
-  // solid `#1a1a2e` / `#16213e` block. Threaded from ContentPreview.
+  // Poster / thumbnail shown when no media slot resolves to a usable URL.
   posterUrl?: string;
 }
 
-// Shared text overlay used inside every Sequence — the same stacked+centered
-// column so the viewer sees hook + body + cta together on every background
-// clip. Fade-in stagger honors style.noAnimation.
-function TextOverlay({ script, style, previewMode }: { script: Props['script']; style: Props['style']; previewMode?: boolean }) {
-  // Bug 2 — truncate overlay text at render limits with "…" so long
-  // Blitz-generated hook/body/cta don't overflow the frame. Skipped in
-  // live preview (CSS handles overflow).
+/**
+ * VideoHookComposition — single top-level media element (mirrors
+ * TalkingHeadComposition) with the hook/body/cta text stacked as timed
+ * fade-in overlays.
+ *
+ * Previously this composition split the timeline into 3 `<Sequence>` blocks
+ * (Hook 2s + Body 4s + CTA 2s) each mounting its OWN `<Video>` reading its own
+ * slot (hookVideo / demoVideo). Two failure modes came out of that split:
+ *   1. Any missing per-Sequence slot (demoVideo empty, hookVideo empty) fell
+ *      back to solid #16213e — the "video hook demo shows a dark frame" bug
+ *      reported across ContentPreview / Blitz / Editor previews.
+ *   2. `loop` on the Player remounted every Sequence's `<Video>` every cycle;
+ *      when a slot URL resolved to a jpg (Cloudinary /video/upload/*.jpg
+ *      frame-extract, or an image-source Blitz template), the video decoder
+ *      retry-loop ballooned Chrome memory to 500–800 MB and crashed the tab.
+ *
+ * This rewrite renders ONE `<Video>`/`<Img>` at the top level using the first
+ * available slot (background → hookVideo → demoVideo → posterUrl). Text is
+ * overlaid with staggered `interpolate` fade-ins — no Sequence remount, no
+ * multi-decoder mount, no split-slot dependency.
+ */
+export function VideoHookComposition({ script, style, mediaSlots, audioTrack, previewMode, posterUrl }: Props) {
+  const { width, height } = useVideoConfig();
+  const frame = useCurrentFrame();
+
   const hookText = limitHookMaybe(script.hookText, previewMode);
   const bodyText = limitBodyMaybe(script.bodyText, previewMode);
   const ctaText = limitCtaMaybe(script.ctaText, previewMode);
-  const frame = useCurrentFrame();
+
+  // Resolve the single source URL. background wins because Blitz +
+  // resolveMediaSlots stash it there; hookVideo / demoVideo are legacy
+  // aliases some paths still populate; posterUrl is ContentPreview's
+  // last-resort still image.
+  const sourceUrl
+    = mediaSlots?.background?.url
+    || mediaSlots?.hookVideo?.url
+    || mediaSlots?.demoVideo?.url
+    || posterUrl
+    || '';
+
+  const dimming = Math.max(0, Math.min(0.8, style.backgroundDimming ?? 0.3));
+  const showDimming = Boolean(sourceUrl) && dimming > 0;
+
   const fontFamily = style.fontFamily || 'Inter';
   const base = style.fontSize || 48;
   const color = style.color || '#ffffff';
@@ -69,131 +101,6 @@ function TextOverlay({ script, style, previewMode }: { script: Props['script']; 
   );
 
   return (
-    <AbsoluteFill
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems,
-        padding: 40,
-        gap: 16,
-      }}
-    >
-      {hookText && (
-        <div
-          style={{
-            backgroundColor: bgColor,
-            padding: '14px 22px',
-            borderRadius: 8,
-            maxWidth: '92%',
-            opacity: fadeIn(0, 15),
-            transform: `translateY(${riseIn(0, 15)}px)`,
-          }}
-        >
-          <p
-            style={{
-              fontFamily,
-              fontSize: base * 1.15,
-              color,
-              fontWeight: 700,
-              fontStyle: italicStyle,
-              textDecoration: underlineDeco,
-              textAlign: align,
-              lineHeight: 1.3,
-              margin: 0,
-              textShadow: '0 2px 4px rgba(0,0,0,0.35)',
-            }}
-          >
-            {hookText}
-          </p>
-        </div>
-      )}
-
-      {bodyText && (
-        <div
-          style={{
-            backgroundColor: bgColor,
-            padding: '12px 20px',
-            borderRadius: 8,
-            maxWidth: '92%',
-            opacity: fadeIn(15, 30),
-            transform: `translateY(${riseIn(15, 30)}px)`,
-          }}
-        >
-          <p
-            style={{
-              fontFamily,
-              fontSize: base,
-              color,
-              fontWeight: bodyWeight,
-              fontStyle: italicStyle,
-              textDecoration: underlineDeco,
-              textAlign: align,
-              lineHeight: 1.4,
-              margin: 0,
-              textShadow: '0 2px 4px rgba(0,0,0,0.35)',
-            }}
-          >
-            {bodyText}
-          </p>
-        </div>
-      )}
-
-      {ctaText && (
-        <div
-          style={{
-            backgroundColor: ctaBg,
-            padding: '12px 22px',
-            borderRadius: 999,
-            maxWidth: '92%',
-            opacity: fadeIn(30, 45),
-            transform: `translateY(${riseIn(30, 45)}px)`,
-          }}
-        >
-          <p
-            style={{
-              fontFamily,
-              fontSize: base * 0.9,
-              color: '#ffffff',
-              fontWeight: 700,
-              fontStyle: italicStyle,
-              textDecoration: underlineDeco,
-              textAlign: align,
-              margin: 0,
-              textShadow: '0 2px 4px rgba(0,0,0,0.35)',
-            }}
-          >
-            {ctaText}
-          </p>
-        </div>
-      )}
-    </AbsoluteFill>
-  );
-}
-
-export function VideoHookComposition({ script, style, mediaSlots, audioTrack, previewMode, posterUrl }: Props) {
-  const { width, height, fps } = useVideoConfig();
-
-  // Background dim: scrim between source media and text overlay.
-  const dimming = Math.max(0, Math.min(0.8, style.backgroundDimming ?? 0.3));
-  const DimScrim = dimming > 0
-    ? ({ children, ...rest }: { children?: React.ReactNode; style?: React.CSSProperties }) => (
-        <AbsoluteFill {...rest}>
-          {children}
-          <AbsoluteFill style={{ backgroundColor: `rgba(0, 0, 0, ${dimming})`, zIndex: 5 }} />
-        </AbsoluteFill>
-      )
-    : ({ children, ...rest }: { children?: React.ReactNode; style?: React.CSSProperties }) => (
-        <AbsoluteFill {...rest}>{children}</AbsoluteFill>
-      );
-
-  // Frame budget: EDITOR_TOTAL_FRAMES = 8s * 30fps = 240. Sequences must fit
-  // inside 240 or the tail Sequence never enters the Player window.
-  const hookFrames = 2 * fps;
-  const bodyFrames = 4 * fps;
-  const ctaFrames = 2 * fps;
-
-  return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
       {audioTrack && audioTrack.url && (
         <Audio
@@ -201,98 +108,131 @@ export function VideoHookComposition({ script, style, mediaSlots, audioTrack, pr
           volume={Math.max(0, Math.min(1, (audioTrack.volume ?? 80) / 100))}
         />
       )}
-      {/* Hook video */}
-      <Sequence from={0} durationInFrames={hookFrames}>
-        <DimScrim>
-          {mediaSlots?.hookVideo?.url ? (
-            isVideoUrl(mediaSlots.hookVideo.url) ? (
-              <Video
-                src={mediaSlots.hookVideo.url}
-                style={{ width, height, objectFit: 'cover', position: 'absolute' }}
-                muted
-                loop
-              />
-            ) : (
-              <Img
-                src={mediaSlots.hookVideo.url}
-                style={{ width, height, objectFit: 'cover', position: 'absolute' }}
-              />
-            )
-          ) : mediaSlots?.background?.url ? (
-            isVideoUrl(mediaSlots.background.url) ? (
-              <Video
-                src={mediaSlots.background.url}
-                style={{ width, height, objectFit: 'cover', position: 'absolute' }}
-                muted
-                loop
-              />
-            ) : (
-              <Img
-                src={mediaSlots.background.url}
-                style={{ width, height, objectFit: 'cover', position: 'absolute' }}
-              />
-            )
-          ) : posterUrl ? (
-            <Img
-              src={posterUrl}
-              style={{ width, height, objectFit: 'cover', position: 'absolute' }}
-            />
-          ) : (
-            <div style={{ width, height, backgroundColor: '#1a1a2e' }} />
-          )}
-          <TextOverlay script={script} style={style} previewMode={previewMode} />
-        </DimScrim>
-      </Sequence>
 
-      {/* Body with demo video */}
-      <Sequence from={hookFrames} durationInFrames={bodyFrames}>
-        <DimScrim>
-          {mediaSlots?.demoVideo?.url ? (
-            isVideoUrl(mediaSlots.demoVideo.url) ? (
-              <Video
-                src={mediaSlots.demoVideo.url}
-                style={{ width, height, objectFit: 'cover', position: 'absolute' }}
-                muted
-                loop
-              />
-            ) : (
-              <Img
-                src={mediaSlots.demoVideo.url}
-                style={{ width, height, objectFit: 'cover', position: 'absolute' }}
-              />
-            )
-          ) : mediaSlots?.background?.url ? (
-            isVideoUrl(mediaSlots.background.url) ? (
-              <Video
-                src={mediaSlots.background.url}
-                style={{ width, height, objectFit: 'cover', position: 'absolute' }}
-                muted
-                loop
-              />
-            ) : (
-              <Img
-                src={mediaSlots.background.url}
-                style={{ width, height, objectFit: 'cover', position: 'absolute' }}
-              />
-            )
-          ) : posterUrl ? (
-            <Img
-              src={posterUrl}
-              style={{ width, height, objectFit: 'cover', position: 'absolute' }}
-            />
-          ) : (
-            <div style={{ width, height, backgroundColor: '#16213e' }} />
-          )}
-          <TextOverlay script={script} style={style} previewMode={previewMode} />
-        </DimScrim>
-      </Sequence>
+      {/* Single top-level media — one decoder, no Sequence remount storm. */}
+      {sourceUrl && (
+        isVideoUrl(sourceUrl) ? (
+          <Video
+            src={sourceUrl}
+            style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+            muted
+            loop
+          />
+        ) : (
+          <Img
+            src={sourceUrl}
+            style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+          />
+        )
+      )}
 
-      {/* CTA — solid brand background beneath the same overlay */}
-      <Sequence from={hookFrames + bodyFrames} durationInFrames={ctaFrames}>
-        <AbsoluteFill style={{ backgroundColor: '#1a1a2e' }}>
-          <TextOverlay script={script} style={style} previewMode={previewMode} />
-        </AbsoluteFill>
-      </Sequence>
+      {showDimming && (
+        <AbsoluteFill style={{ backgroundColor: `rgba(0, 0, 0, ${dimming})`, zIndex: 5 }} />
+      )}
+
+      {/* Text overlay — hook + body + cta stacked with staggered fade-ins.
+        * Timing matches the old Sequence order so the visual rhythm is
+        * preserved even though the background no longer switches. */}
+      <AbsoluteFill
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems,
+          padding: 40,
+          gap: 16,
+          zIndex: 10,
+        }}
+      >
+        {hookText && (
+          <div
+            style={{
+              backgroundColor: bgColor,
+              padding: '14px 22px',
+              borderRadius: 8,
+              maxWidth: '92%',
+              opacity: fadeIn(0, 15),
+              transform: `translateY(${riseIn(0, 15)}px)`,
+            }}
+          >
+            <p
+              style={{
+                fontFamily,
+                fontSize: base * 1.15,
+                color,
+                fontWeight: 700,
+                fontStyle: italicStyle,
+                textDecoration: underlineDeco,
+                textAlign: align,
+                lineHeight: 1.3,
+                margin: 0,
+                textShadow: '0 2px 4px rgba(0,0,0,0.35)',
+              }}
+            >
+              {hookText}
+            </p>
+          </div>
+        )}
+
+        {bodyText && (
+          <div
+            style={{
+              backgroundColor: bgColor,
+              padding: '12px 20px',
+              borderRadius: 8,
+              maxWidth: '92%',
+              opacity: fadeIn(15, 30),
+              transform: `translateY(${riseIn(15, 30)}px)`,
+            }}
+          >
+            <p
+              style={{
+                fontFamily,
+                fontSize: base,
+                color,
+                fontWeight: bodyWeight,
+                fontStyle: italicStyle,
+                textDecoration: underlineDeco,
+                textAlign: align,
+                lineHeight: 1.4,
+                margin: 0,
+                textShadow: '0 2px 4px rgba(0,0,0,0.35)',
+              }}
+            >
+              {bodyText}
+            </p>
+          </div>
+        )}
+
+        {ctaText && (
+          <div
+            style={{
+              backgroundColor: ctaBg,
+              padding: '12px 22px',
+              borderRadius: 999,
+              maxWidth: '92%',
+              opacity: fadeIn(30, 45),
+              transform: `translateY(${riseIn(30, 45)}px)`,
+            }}
+          >
+            <p
+              style={{
+                fontFamily,
+                fontSize: base * 0.9,
+                color: '#ffffff',
+                fontWeight: 700,
+                fontStyle: italicStyle,
+                textDecoration: underlineDeco,
+                textAlign: align,
+                margin: 0,
+                textShadow: '0 2px 4px rgba(0,0,0,0.35)',
+              }}
+            >
+              {ctaText}
+            </p>
+          </div>
+        )}
+      </AbsoluteFill>
     </AbsoluteFill>
   );
 }

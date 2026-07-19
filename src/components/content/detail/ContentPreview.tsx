@@ -125,8 +125,12 @@ export function ContentPreview({
       aspectRatio,
       contentType: item.contentType,
       previewMode: true,
+      // posterUrl is the last-resort fallback for compositions like
+      // VideoHookComposition when every mediaSlot is empty. Without this,
+      // VHD posts with no reconstructable video/image render solid black.
+      posterUrl,
     };
-  }, [mediaSlots, scriptWithFallback, enrichment.editorStyle, enrichment.editorLayout, aspectRatio, item]);
+  }, [mediaSlots, scriptWithFallback, enrichment.editorStyle, enrichment.editorLayout, aspectRatio, item, posterUrl]);
   // VIDEO_RE-guard the graphicUrls fallback so we never feed an image URL to
   // `<video src>` — that produces a silent black frame. When no real video
   // exists, we render the poster image instead (see the fallback branch below).
