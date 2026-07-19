@@ -42,7 +42,7 @@ export function isCustomer(role: UserRole): boolean {
 export type NavItem = {
   label: string;
   href: string;
-  icon: string;       // lucide icon name (must exist in ICONS map in DashboardClientLayout)
+  icon: string; // lucide icon name (must exist in ICONS map in DashboardClientLayout)
   roles: UserRole[];
   group: string;
   badge?: string;
@@ -89,6 +89,14 @@ export const NAV_ITEMS: NavItem[] = [
   },
 
   // --- Resources ---
+  {
+    label: 'Docs',
+    href: 'https://docs.nativpost.com',
+    icon: 'BookOpen',
+    roles: ['admin', 'editor', 'member'],
+    group: 'Resources',
+    external: true,
+  },
   {
     label: 'Earn 30% referral',
     href: 'https://nativpost.com/affiliates',
