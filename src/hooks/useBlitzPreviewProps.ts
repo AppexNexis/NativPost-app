@@ -40,6 +40,7 @@ export type BlitzPreviewInputProps = {
   layout: string;
   aspectRatio: string;
   contentType: string;
+  previewMode?: boolean;
 };
 
 export type BlitzPreviewItemShape = {
@@ -83,6 +84,11 @@ export function useBlitzPreviewProps(item: BlitzPreviewItemShape | null | undefi
       layout: enrichment.editorLayout || 'centered',
       aspectRatio: item.aspectRatio || enrichment.aspectRatio || '9:16',
       contentType: item.contentType,
+      // previewMode:true skips the ellipsis chop in limitHook/Body/CtaMaybe.
+      // Blitz previews are live in-browser Remotion renders — text should
+      // display in full, matching ContentPreview and PostCard behavior.
+      // Compile-to-MP4 mounts do NOT set this, so baked output still truncates.
+      previewMode: true,
     };
 
     return { contentType: item.contentType, inputProps };

@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import React, { useState } from 'react';
 
+import { useInView } from '@/hooks/useInView';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -824,6 +826,7 @@ function CalendarCard({
   onDelete: () => void;
   onScheduleChange: (date: string, time: string) => void;
 }) {
+  const [cardRef, inView] = useInView<HTMLDivElement>({ rootMargin: '200px' });
   const thumb = getThumb(item);
   const videoUrl = getVideoUrl(item);
   const isVideoType = VIDEO_CONTENT_TYPES.has(item.contentType ?? '');
@@ -833,14 +836,14 @@ function CalendarCard({
   const overlayText = getOverlayText(item);
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
+    <div ref={cardRef} className="overflow-hidden rounded-lg border bg-card shadow-sm">
       {/* Thumbnail */}
       {hasMedia && (
         <div
           className="relative aspect-[9/16] cursor-pointer overflow-hidden"
           onClick={onEdit}
         >
-          {isVideoType && videoUrl ? (
+          {isVideoType && videoUrl && inView ? (
 
             <video
               src={videoUrl}
@@ -850,7 +853,7 @@ function CalendarCard({
               muted
               loop
               playsInline
-              preload="metadata"
+              preload="none"
             />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element

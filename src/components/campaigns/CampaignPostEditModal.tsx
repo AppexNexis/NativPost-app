@@ -338,19 +338,21 @@ export function CampaignPostEditModal({
           <div className="flex flex-1 overflow-hidden">
 
             {/* ─ LEFT ─────────────────────────────────────────────────────── */}
-            {/* h-full so the ScrollArea takes the full height of the flex-row
-                parent — without it the internal viewport was unbounded and
-                the Regenerate Text button rendered below the visible area,
-                appearing to overlap the sections above. */}
-            <ScrollArea className="h-full w-80 shrink-0 border-r bg-card">
-              <div className="space-y-6 p-5 pb-16">
-
-                {/* ASSETS — slideshow mode shows slide thumbnails */}
-                {isSlideshow ? (
-                  <section>
-                    <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Slides ({slides.length})
-                    </p>
+            {/* Sidebar is a flex-col so the slides list can flex-grow and
+                scroll internally while the bottom sections (Mention,
+                Prompt, Regenerate Text) stay pinned + always visible.
+                Previously the whole sidebar was one ScrollArea — a 4-5
+                slide slideshow pushed the Regenerate button below the
+                viewport with no scroll cue, making it look like the
+                section didn't fit. */}
+            <aside className="flex h-full w-80 shrink-0 flex-col border-r bg-card">
+              {/* ASSETS — slideshow mode shows slide thumbnails */}
+              {isSlideshow ? (
+                <section className="flex min-h-0 flex-1 flex-col p-5 pb-3">
+                  <p className="mb-3 shrink-0 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Slides ({slides.length})
+                  </p>
+                  <ScrollArea className="min-h-0 flex-1 pr-1">
                     <div className="space-y-2">
                       {slides.map((slide, idx) => (
                         <div
@@ -398,60 +400,64 @@ export function CampaignPostEditModal({
                         Add slide
                       </Button>
                     </div>
-                  </section>
-                ) : (
-                  /* VIDEO mode: show video + audio swap */
-                  <section>
-                    <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Assets
-                    </p>
-                    <div className="space-y-2">
-                      {/* Video */}
-                      <div className="flex items-center gap-3 rounded-xl border bg-background p-2.5">
-                        {videoThumb ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={videoThumb} alt="" className="size-10 shrink-0 rounded-lg object-cover" />
-                        ) : (
-                          <div className="size-10 shrink-0 rounded-lg bg-muted" />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-medium">Video</p>
-                          <p className="truncate text-[11px] text-muted-foreground">Background video</p>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="shrink-0 h-7 text-xs"
-                          onClick={() => { markPickerOpen(); setShowVideoSwap(true); }}
-                        >
-                          Swap
-                        </Button>
+                  </ScrollArea>
+                </section>
+              ) : (
+                /* VIDEO mode: show video + audio swap. Fixed height section
+                   — Assets list is only 2 rows so no need to flex-grow. */
+                <section className="shrink-0 p-5 pb-3">
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Assets
+                  </p>
+                  <div className="space-y-2">
+                    {/* Video */}
+                    <div className="flex items-center gap-3 rounded-xl border bg-background p-2.5">
+                      {videoThumb ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={videoThumb} alt="" className="size-10 shrink-0 rounded-lg object-cover" />
+                      ) : (
+                        <div className="size-10 shrink-0 rounded-lg bg-muted" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium">Video</p>
+                        <p className="truncate text-[11px] text-muted-foreground">Background video</p>
                       </div>
-
-                      {/* Audio */}
-                      <div className="flex items-center gap-3 rounded-xl border bg-background p-2.5">
-                        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-                          <VolumeX className="size-4 text-muted-foreground" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-medium">Audio</p>
-                          <p className="truncate text-[11px] text-muted-foreground">{audioLabel}</p>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="shrink-0 h-7 text-xs"
-                          onClick={() => { markPickerOpen(); setShowAudioSwap(true); }}
-                        >
-                          Swap
-                        </Button>
-                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 h-7 text-xs"
+                        onClick={() => { markPickerOpen(); setShowVideoSwap(true); }}
+                      >
+                        Swap
+                      </Button>
                     </div>
-                  </section>
-                )}
 
-                <Separator />
+                    {/* Audio */}
+                    <div className="flex items-center gap-3 rounded-xl border bg-background p-2.5">
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
+                        <VolumeX className="size-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium">Audio</p>
+                        <p className="truncate text-[11px] text-muted-foreground">{audioLabel}</p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 h-7 text-xs"
+                        onClick={() => { markPickerOpen(); setShowAudioSwap(true); }}
+                      >
+                        Swap
+                      </Button>
+                    </div>
+                  </div>
+                </section>
+              )}
 
+              {/* Pinned bottom section — Mention / Prompt / Regenerate
+                  always visible regardless of how tall the slides list
+                  above grew. shrink-0 so nothing here collapses. */}
+              <div className="flex shrink-0 flex-col gap-4 border-t bg-card p-5">
                 {/* MENTION YOUR BUSINESS */}
                 <section className="flex items-center justify-between">
                   <div>
@@ -473,7 +479,7 @@ export function CampaignPostEditModal({
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
                     placeholder="Optional instructions for regeneration…"
-                    rows={4}
+                    rows={3}
                     className="resize-none text-xs"
                   />
                 </section>
@@ -494,7 +500,7 @@ export function CampaignPostEditModal({
                   <p className="text-center text-[11px] text-muted-foreground">No re-rolls remaining</p>
                 )}
               </div>
-            </ScrollArea>
+            </aside>
 
             {/* ─ CENTER — preview ─────────────────────────────────────────── */}
             <main className="flex flex-1 flex-col items-center justify-center overflow-hidden bg-muted/30 p-6 gap-4">
