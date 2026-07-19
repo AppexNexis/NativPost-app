@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 
 import { sendPublishedNotification } from '@/lib/email';
 import { publishToplatform } from '@/lib/social-publish';
+import { fireWebhook } from '@/lib/webhook-dispatcher';
 import { getDb } from '@/libs/DB';
 import {
   contentItemSchema,
@@ -246,6 +247,34 @@ export async function GET(request: NextRequest) {
         for (const failed of failedPlatforms) {
           void notifyPostFailed(item.orgId, failed.platform, failed.error ?? 'Unknown error');
         }
+
+        // ── Webhook emission ────────────────────────────────────────────────
+        // Fire ONE aggregate event per content item after the platform loop
+        // resolves. The payload includes every attempted platform so receivers
+        // can render per-platform status without a second API call.
+        if (someSucceeded) {
+          fireWebhook(item.orgId, 'content.published', {
+            content: { id: item.id, object: 'content' as const },
+            published_at: new Date().toISOString(),
+            platforms: platformResults.map(r => ({
+              platform: r.platform,
+              success: r.success,
+              platform_post_id: r.platformPostId ?? null,
+              error: r.error ?? null,
+            })),
+          });
+        } else {
+          fireWebhook(item.orgId, 'content.publish_failed', {
+            content: { id: item.id, object: 'content' as const },
+            failed_at: new Date().toISOString(),
+            platforms: platformResults.map(r => ({
+              platform: r.platform,
+              success: r.success,
+              error: r.error ?? null,
+            })),
+          });
+        }
+        // ── End webhook emission ────────────────────────────────────────────
 
         results.push({ id: item.id, success: someSucceeded, platforms: platformResults });
         console.log(`[Cron] Post ${item.id}: ${someSucceeded ? 'published' : 'failed'}`);

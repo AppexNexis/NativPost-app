@@ -92,6 +92,9 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
         || req.nextUrl.pathname.startsWith('/api/billing/paystack-webhook')
         || req.nextUrl.pathname.startsWith('/api/cron/')
         || req.nextUrl.pathname.startsWith('/api/ai-studio/webhook/')
+        // Public /api/v1 surface — authenticated via bearer API keys,
+        // NOT Clerk sessions. See src/lib/require-api-key.ts.
+        || req.nextUrl.pathname.startsWith('/api/v1/')
       ) {
         return NextResponse.next();
       }

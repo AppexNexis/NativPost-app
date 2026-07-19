@@ -1048,3 +1048,106 @@ export const blitzTemplateUsageSchema = pgTable(
     orgUsedIdx: index('blitz_template_usage_org_used_idx').on(t.orgId, t.usedAt),
   }),
 );
+
+// -----------------------------------------------------------
+// API KEY — bearer credentials for the public /api/v1 surface.
+// Pro plan and above. Full key is only shown once at creation;
+// only sha256(hashedKey) + last-4 chars are persisted for
+// display and revocation.
+// -----------------------------------------------------------
+export const apiKeySchema = pgTable(
+  'api_key',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    name: text('name').notNull(),
+    // Human-readable prefix, e.g. 'np_live' — always identifiable in logs.
+    prefix: text('prefix').default('np_live').notNull(),
+    // sha256 hex digest of the full secret. NEVER store the plaintext.
+    hashedKey: text('hashed_key').notNull(),
+    // Last 4 chars of the secret (for UI display: "np_live_...ab12").
+    lastFour: text('last_four').notNull(),
+    createdByUserId: text('created_by_user_id').notNull(),
+    lastUsedAt: timestamp('last_used_at', { mode: 'date' }),
+    lastUsedIp: text('last_used_ip'),
+    expiresAt: timestamp('expires_at', { mode: 'date' }),
+    revokedAt: timestamp('revoked_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    orgIdx: index('api_key_org_idx').on(t.orgId),
+    hashedKeyIdx: uniqueIndex('api_key_hashed_key_idx').on(t.hashedKey),
+  }),
+);
+
+// -----------------------------------------------------------
+// WEBHOOK ENDPOINT — org-scoped outgoing webhook subscriptions.
+// Deliveries are signed HMAC-SHA256 with the secret; secret is
+// generated on create and shown to the user once (they can also
+// reveal it later since it's stored as-is, unlike API keys).
+// -----------------------------------------------------------
+export const webhookEndpointSchema = pgTable(
+  'webhook_endpoint',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    url: text('url').notNull(),
+    // Plaintext HMAC secret; consumer needs it to verify signatures.
+    // Stored in place (like Stripe endpoint_secrets in test env) so
+    // the UI can reveal on demand. Rotate to invalidate.
+    secret: text('secret').notNull(),
+    // Array of event names this endpoint subscribes to. Empty = all.
+    events: jsonb('events').$type<string[]>().default([]).notNull(),
+    description: text('description'),
+    enabled: boolean('enabled').default(true).notNull(),
+    createdByUserId: text('created_by_user_id').notNull(),
+    lastDeliveryAt: timestamp('last_delivery_at', { mode: 'date' }),
+    lastDeliveryStatus: text('last_delivery_status'), // 'success' | 'failed'
+    consecutiveFailures: integer('consecutive_failures').default(0).notNull(),
+    disabledAt: timestamp('disabled_at', { mode: 'date' }),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    orgIdx: index('webhook_endpoint_org_idx').on(t.orgId),
+  }),
+);
+
+// -----------------------------------------------------------
+// WEBHOOK DELIVERY — audit log of every attempt to deliver a
+// webhook payload. Keeps the last ~N per endpoint for debugging.
+// -----------------------------------------------------------
+export const webhookDeliverySchema = pgTable(
+  'webhook_delivery',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    endpointId: uuid('endpoint_id')
+      .references(() => webhookEndpointSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    event: text('event').notNull(),
+    payload: jsonb('payload').default({}).notNull(),
+    statusCode: integer('status_code'),
+    responseBody: text('response_body'),
+    errorMessage: text('error_message'),
+    attemptCount: integer('attempt_count').default(1).notNull(),
+    durationMs: integer('duration_ms'),
+    // 'pending' | 'success' | 'failed' | 'skipped'
+    status: text('status').default('pending').notNull(),
+    deliveredAt: timestamp('delivered_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    endpointIdx: index('webhook_delivery_endpoint_idx').on(t.endpointId, t.createdAt),
+    orgIdx: index('webhook_delivery_org_idx').on(t.orgId, t.createdAt),
+  }),
+);

@@ -20,6 +20,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { eq } from 'drizzle-orm';
+import { fireWebhook } from '@/lib/webhook-dispatcher';
 import { getDb } from '@/libs/DB';
 import { socialAccountSchema } from '@/models/Schema';
 
@@ -86,10 +87,27 @@ export async function POST(request: NextRequest) {
 
     const db = await getDb();
 
-    // Delete all social account records linked to this Meta user ID
-    await db
+    // Delete all social account records linked to this Meta user ID and
+    // emit a social_account.disconnected webhook to each affected org.
+    const deleted = await db
       .delete(socialAccountSchema)
-      .where(eq(socialAccountSchema.platformUserId, metaUserId));
+      .where(eq(socialAccountSchema.platformUserId, metaUserId))
+      .returning({
+        orgId: socialAccountSchema.orgId,
+        platform: socialAccountSchema.platform,
+        platformUsername: socialAccountSchema.platformUsername,
+      });
+
+    for (const row of deleted) {
+      fireWebhook(row.orgId, 'social_account.disconnected', {
+        platform: row.platform,
+        account: {
+          platform_user_id: metaUserId,
+          platform_username: row.platformUsername,
+        },
+        reason: 'data_deletion',
+      });
+    }
 
     console.log(`[Delete] Deleted social accounts for Meta user: ${metaUserId}`);
 

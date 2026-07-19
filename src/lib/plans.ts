@@ -147,7 +147,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       analyticsSync: true,
       analyticsHistory: 365,
       supportLevel: 'live_chat',
-      apiAccess: false,
+      apiAccess: true,
       monthlyPlanTopics: 25,
       monthlyPlanRegenerations: 3,
       monthlyAiCredits: 1250,

@@ -3,8 +3,10 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+import { serializeContent } from '@/lib/api-v1';
 import { getAuthContext } from '@/lib/auth';
 import { sendScheduledNotification } from '@/lib/email';
+import { fireWebhook } from '@/lib/webhook-dispatcher';
 import { getDb } from '@/libs/DB';
 import {
   brandProfileSchema,
@@ -262,6 +264,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Content item not found' }, { status: 404 });
     }
 
+    // ── Webhook emission ─────────────────────────────────────────────────────
+    // Always fire content.updated. Additionally fire content.approved on a
+    // real status transition to 'approved' so downstream systems can react to
+    // the moderation decision without inspecting the diff.
+    fireWebhook(orgId!, 'content.updated', {
+      content: serializeContent(updated),
+    });
+    if (body.status === 'approved' && current.status !== 'approved') {
+      fireWebhook(orgId!, 'content.approved', {
+        content: serializeContent(updated),
+      });
+    }
+    // ── End webhook emission ─────────────────────────────────────────────────
+
     // ── Variant cleanup ────────────────────────────────────────────────────────
     // When one variant in a group is approved, its siblings have lost — archive
     // them instead of leaving them stuck in pending_review forever. Archived is
@@ -412,6 +428,10 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     if (!deleted) {
       return NextResponse.json({ error: 'Content item not found' }, { status: 404 });
     }
+
+    fireWebhook(orgId!, 'content.deleted', {
+      content: { id: deleted.id, object: 'content' as const },
+    });
 
     return NextResponse.json({ deleted: true }, { status: 200 });
   } catch (err) {

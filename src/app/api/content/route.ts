@@ -3,8 +3,10 @@ import { and, asc, desc, eq, gt, ilike, inArray, lt, ne, or, sql } from 'drizzle
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+import { serializeContent } from '@/lib/api-v1';
 import { getAuthContext } from '@/lib/auth';
 import { sendApprovalNotification } from '@/lib/email';
+import { fireWebhook } from '@/lib/webhook-dispatcher';
 // import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import { contentItemSchema } from '@/models/Schema';
@@ -315,6 +317,13 @@ export async function POST(request: NextRequest) {
         enrichmentApplied: Array.isArray(body.enrichmentApplied) ? body.enrichmentApplied : [],
       })
       .returning();
+
+    // Emit content.created webhook (fire-and-forget via waitUntil)
+    if (created) {
+      fireWebhook(orgId!, 'content.created', {
+        content: serializeContent(created),
+      });
+    }
 
     // Send approval notification (non-blocking — never delays the response)
     try {

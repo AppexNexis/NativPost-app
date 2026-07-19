@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { decodePlatformFromState, exchangeCodeForTokens, PLATFORM_CONFIGS, type SocialPlatform } from '@/lib/social-oauth';
+import { fireWebhook } from '@/lib/webhook-dispatcher';
 import { getDb } from '@/libs/DB';
 import { organizationSchema, socialAccountSchema } from '@/models/Schema';
 import { resolveAndSaveWhatsAppAccount } from '@/lib/whatsapp-callback';
@@ -79,6 +80,9 @@ export async function GET(request: NextRequest) {
         new URL('/dashboard/social-accounts?error=whatsapp_resolve_failed', request.url),
       );
     }
+    fireWebhook(orgId!, 'social_account.connected', {
+      platform: 'whatsapp',
+    });
     return NextResponse.redirect(
       new URL('/dashboard/social-accounts?success=whatsapp', request.url),
     );
@@ -144,6 +148,15 @@ export async function GET(request: NextRequest) {
         metadata: null,
       });
     }
+
+    fireWebhook(orgId!, 'social_account.connected', {
+      platform,
+      account: {
+        platform_user_id: profile?.id ?? null,
+        platform_username: profile?.username ?? null,
+        account_type: accountType,
+      },
+    });
 
     return NextResponse.redirect(
       new URL(`/dashboard/social-accounts?success=${platform}`, request.url),

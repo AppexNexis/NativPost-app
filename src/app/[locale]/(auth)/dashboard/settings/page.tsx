@@ -5,6 +5,7 @@ import {
   Building2,
   ChevronRight,
   Coins,
+  KeyRound,
   Layout,
   Loader2,
   Palette,
@@ -14,6 +15,7 @@ import {
 import { parseAsStringLiteral, useQueryState } from 'nuqs';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { ApiKeysPanel } from '@/components/settings/api-keys/ApiKeysPanel';
 import { CreditsPanel } from '@/components/settings/credits/CreditsPanel';
 import { PageHeader } from '@/features/dashboard/PageHeader';
 
@@ -42,7 +44,7 @@ interface UserPrefs {
   sidebarDensity: string;
 }
 
-const TAB_KEYS = ['workspace', 'notifications', 'publishing', 'content', 'appearance', 'credits'] as const;
+const TAB_KEYS = ['workspace', 'notifications', 'publishing', 'content', 'appearance', 'credits', 'api-keys'] as const;
 type TabKey = typeof TAB_KEYS[number];
 
 const TABS: { key: TabKey; label: string; icon: typeof Building2 }[] = [
@@ -51,8 +53,11 @@ const TABS: { key: TabKey; label: string; icon: typeof Building2 }[] = [
   { key: 'publishing',   label: 'Publishing',    icon: PenLine },
   { key: 'content',      label: 'Content',       icon: Layout },
   { key: 'credits',      label: 'Credits',       icon: Coins },
+  { key: 'api-keys',     label: 'API keys',      icon: KeyRound },
   { key: 'appearance',   label: 'Appearance',    icon: Palette },
 ];
+
+const PANEL_TABS: TabKey[] = ['credits', 'api-keys'];
 
 const TIMEZONES = [
   'Africa/Lagos', 'Africa/Nairobi', 'Africa/Accra', 'Africa/Johannesburg',
@@ -292,7 +297,7 @@ export default function SettingsPage() {
   };
 
   const handleSave = async () => {
-    if (activeTab === 'credits') return;
+    if (PANEL_TABS.includes(activeTab)) return;
     const isOrgTab = ['workspace', 'publishing', 'content'].includes(activeTab);
     if (isOrgTab) {
       await saveOrgSettings(orgSettings);
@@ -325,7 +330,7 @@ export default function SettingsPage() {
         title="Settings"
         description="Manage your workspace configuration and preferences."
         actions={
-          activeTab === 'credits'
+          PANEL_TABS.includes(activeTab)
             ? undefined
             : (
                 <button
@@ -369,15 +374,18 @@ export default function SettingsPage() {
 
         {/* Tab content */}
         <div className={
-          activeTab === 'credits'
+          PANEL_TABS.includes(activeTab)
             ? 'flex-1'
             : 'flex-1 rounded-xl border bg-background'
         }
         >
-          <div className={activeTab === 'credits' ? '' : 'divide-y px-6'}>
+          <div className={PANEL_TABS.includes(activeTab) ? '' : 'divide-y px-6'}>
 
             {/* ── Credits ── */}
             {activeTab === 'credits' && <CreditsPanel />}
+
+            {/* ── API keys ── */}
+            {activeTab === 'api-keys' && <ApiKeysPanel />}
 
 
             {/* ── Workspace ── */}

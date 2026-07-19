@@ -16,6 +16,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { eq } from 'drizzle-orm';
+import { fireWebhook } from '@/lib/webhook-dispatcher';
 import { getDb } from '@/libs/DB';
 import { socialAccountSchema } from '@/models/Schema';
 
@@ -76,11 +77,29 @@ export async function POST(request: NextRequest) {
 
     const db = await getDb();
 
-    // Mark matching social accounts as inactive
-    await db
+    // Mark matching social accounts as inactive AND emit one
+    // social_account.disconnected webhook per affected org. We need the org
+    // context to route the payload, so read the rows first.
+    const affected = await db
       .update(socialAccountSchema)
       .set({ isActive: false })
-      .where(eq(socialAccountSchema.platformUserId, metaUserId));
+      .where(eq(socialAccountSchema.platformUserId, metaUserId))
+      .returning({
+        orgId: socialAccountSchema.orgId,
+        platform: socialAccountSchema.platform,
+        platformUsername: socialAccountSchema.platformUsername,
+      });
+
+    for (const row of affected) {
+      fireWebhook(row.orgId, 'social_account.disconnected', {
+        platform: row.platform,
+        account: {
+          platform_user_id: metaUserId,
+          platform_username: row.platformUsername,
+        },
+        reason: 'deauthorized',
+      });
+    }
 
     console.log(`[Deauthorize] Deactivated accounts for Meta user: ${metaUserId}`);
 

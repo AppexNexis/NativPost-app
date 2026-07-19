@@ -2,7 +2,9 @@ import { eq, and } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+import { serializeCampaign } from '@/lib/api-v1';
 import { getAuthContext } from '@/lib/auth';
+import { fireWebhook } from '@/lib/webhook-dispatcher';
 import { getDb } from '@/libs/DB';
 import { campaignSchema } from '@/models/Schema';
 import { scheduleCampaignPosts } from '../../utils';
@@ -48,9 +50,19 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     const { scheduled, skipped } = await scheduleCampaignPosts(db, orgId!, id);
 
     // 3. Update campaign status to active
-    await db.update(campaignSchema)
+    const [launched] = await db.update(campaignSchema)
       .set({ status: 'active', updatedAt: new Date() })
-      .where(eq(campaignSchema.id, id));
+      .where(eq(campaignSchema.id, id))
+      .returning();
+
+    // 4. Emit campaign.launched webhook (waitUntil-backed, never blocks)
+    if (launched) {
+      fireWebhook(orgId!, 'campaign.launched', {
+        campaign: serializeCampaign(launched),
+        scheduled_posts: scheduled,
+        skipped_posts: skipped,
+      });
+    }
 
     return NextResponse.json({
       success: true,
