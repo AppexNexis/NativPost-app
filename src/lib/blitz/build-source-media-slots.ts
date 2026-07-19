@@ -113,6 +113,7 @@ export function buildSourceMediaSlots(template: TemplateRow): SourceMediaSlots {
     // there) — compositions gracefully handle image URLs regardless.
     if (template.contentType === 'video_hook' || template.contentType === 'video_hook_demo') {
       slots.hookVideo = { url: bgUrl, assetType: bgKind as 'video' };
+      slots.demoVideo = { url: bgUrl, assetType: bgKind as 'video' };
     }
     if (template.contentType === 'ugc' || template.contentType === 'talking_head') {
       slots.demoVideo = { url: bgUrl, assetType: bgKind as 'video' };

@@ -33,16 +33,23 @@ export function detectMediaKind(url: string | undefined | null): MediaKind {
   if (!url) {
     return 'unknown';
   }
-  if (VIDEO_URL_PATH_RE.test(url)) {
-    return 'video';
-  }
-  if (IMAGE_URL_PATH_RE.test(url)) {
-    return 'image';
-  }
+  // File extension is checked BEFORE the Cloudinary transformer path because
+  // Cloudinary can serve extracted video frames via `/video/upload/.../foo.jpg`
+  // — the path says "video" but the asset is a still image. Feeding that URL
+  // to Remotion `<Video>` causes a silent black frame AND a memory-leak retry
+  // storm (browser keeps trying to decode a jpg as video every loop cycle).
+  // Extension is the stronger signal: a `.jpg` is always an image regardless
+  // of transformer path.
   if (VIDEO_EXT_RE.test(url)) {
     return 'video';
   }
   if (IMAGE_EXT_RE.test(url)) {
+    return 'image';
+  }
+  if (VIDEO_URL_PATH_RE.test(url)) {
+    return 'video';
+  }
+  if (IMAGE_URL_PATH_RE.test(url)) {
     return 'image';
   }
   return 'unknown';

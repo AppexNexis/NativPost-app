@@ -218,6 +218,20 @@ export function VideoHookComposition({ script, style, mediaSlots, audioTrack, pr
                 style={{ width, height, objectFit: 'cover', position: 'absolute' }}
               />
             )
+          ) : mediaSlots?.background?.url ? (
+            isVideoUrl(mediaSlots.background.url) ? (
+              <Video
+                src={mediaSlots.background.url}
+                style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+                muted
+                loop
+              />
+            ) : (
+              <Img
+                src={mediaSlots.background.url}
+                style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+              />
+            )
           ) : posterUrl ? (
             <Img
               src={posterUrl}
@@ -244,6 +258,20 @@ export function VideoHookComposition({ script, style, mediaSlots, audioTrack, pr
             ) : (
               <Img
                 src={mediaSlots.demoVideo.url}
+                style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+              />
+            )
+          ) : mediaSlots?.background?.url ? (
+            isVideoUrl(mediaSlots.background.url) ? (
+              <Video
+                src={mediaSlots.background.url}
+                style={{ width, height, objectFit: 'cover', position: 'absolute' }}
+                muted
+                loop
+              />
+            ) : (
+              <Img
+                src={mediaSlots.background.url}
                 style={{ width, height, objectFit: 'cover', position: 'absolute' }}
               />
             )

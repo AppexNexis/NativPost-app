@@ -157,7 +157,7 @@ const REMIX_TYPE_MAP: Record<string, string> = {
   wall_of_text: 'wall_of_text',
   talking_head: 'talking_head',
   green_screen_meme: 'green_screen',
-  video_hook_demo: 'reel',
+  video_hook_demo: 'video_hook_demo',
   carousel: 'slideshow',
   ugc: 'ugc',
   custom: 'reel',
