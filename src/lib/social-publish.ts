@@ -41,6 +41,25 @@ async function fetchMediaBuffer(
 }
 
 /**
+ * Apply Cloudinary content-aware crop to match platform's recommended ratio.
+ * Only works on URLs already hosted on Cloudinary — external URLs pass through.
+ */
+function cropToAspect(url: string, targetW: number, targetH: number): string {
+  if (!url) return url;
+  // Only transform Cloudinary URLs
+  const cdnMarker = 'res.cloudinary.com/';
+  const idx = url.indexOf(cdnMarker);
+  if (idx === -1) return url;
+  const uploadMarker = '/image/upload/';
+  const uploadIdx = url.indexOf(uploadMarker, idx);
+  if (uploadIdx === -1) return url;
+  // Insert crop transform after /image/upload/ but before any version
+  const prefix = url.slice(0, uploadIdx + uploadMarker.length);
+  const suffix = url.slice(uploadIdx + uploadMarker.length);
+  return `${prefix}c_fill,g_auto,w_${targetW},h_${targetH}/${suffix}`;
+}
+
+/**
  * Ensure image URLs are publicly accessible with a clean content-type.
  * Handles Uploadcare CDN and bare CDN URLs without extension.
  */
@@ -1469,7 +1488,29 @@ export async function publishToplatform(
   const isVideo = isVideoContentType(contentType) && contentType !== 'slideshow';
   const verticalVideo = isVideo ? graphicUrls[0] : undefined;
   const squareVideo = isVideo ? (graphicUrls[1] || graphicUrls[0]) : undefined;
-  const imageUrls = isVideo ? [] : graphicUrls;
+  let imageUrls = isVideo ? [] : graphicUrls;
+
+  // ── Platform-aware aspect-ratio cropping ──────────────────────────────
+  // Feed platforms show tall images cropped to fit the timeline. We smart-
+  // crop slides to the recommended ratio using Cloudinary's g_auto (content-
+  // aware crop) so the main subject is preserved. Stories / Reels / TikTok
+  // use the original 9:16 ratio.
+  //  - IG/FB/LinkedIn feed → 4:5 (1080×1350)
+  //  - X/Twitter          → 2:3 (1080×1620)
+  //  - TikTok/YT          → 9:16 (as-is, no crop)
+  if (!isVideo && imageUrls.length > 0) {
+    const aspectTargets: Record<string, { w: number; h: number }> = {
+      instagram:   { w: 1080, h: 1350 },
+      facebook:    { w: 1080, h: 1350 },
+      linkedin:    { w: 1080, h: 1350 },
+      linkedin_page: { w: 1080, h: 1350 },
+      twitter:     { w: 1080, h: 1620 },
+    };
+    const target = aspectTargets[platform as string];
+    if (target) {
+      imageUrls = imageUrls.map(url => cropToAspect(url, target.w, target.h));
+    }
+  }
 
   const ps = platformSpecific as Record<string, unknown> | undefined;
   const youtubeObj = ps?.youtube as Record<string, string> | undefined;
