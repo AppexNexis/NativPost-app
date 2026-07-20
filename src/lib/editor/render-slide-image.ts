@@ -30,6 +30,10 @@ export type SlideRenderInput = {
   backgroundColor?: string | null;
   /** Font size in px. */
   fontSize?: number | null;
+  /** Font family name. */
+  fontFamily?: string | null;
+  /** Font color. */
+  color?: string | null;
 };
 
 export type SlideRenderResult = {
@@ -63,6 +67,8 @@ export async function renderSlideImage(input: SlideRenderInput): Promise<SlideRe
         backgroundDimming: input.backgroundDimming ?? 0,
         backgroundColor: input.backgroundColor || undefined,
         fontSize: input.fontSize || undefined,
+        fontFamily: input.fontFamily || undefined,
+        color: input.color || undefined,
       }),
     });
 
@@ -102,6 +108,8 @@ export async function renderAllSlides(
     backgroundDimming?: number | null;
     backgroundColor?: string | null;
     fontSize?: number | null;
+    fontFamily?: string | null;
+    color?: string | null;
   },
 ): Promise<string[]> {
   if (slides.length === 0) return [];
@@ -117,6 +125,8 @@ export async function renderAllSlides(
         backgroundDimming: styleOpts?.backgroundDimming,
         backgroundColor: styleOpts?.backgroundColor,
         fontSize: styleOpts?.fontSize,
+        fontFamily: styleOpts?.fontFamily,
+        color: styleOpts?.color,
       }),
     ),
   );

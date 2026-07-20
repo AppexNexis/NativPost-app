@@ -12,6 +12,7 @@ import { isVideoContentType } from '@/types/v2';
 import { renderEditorVideoServer, RenderTimeoutError } from '@/lib/editor/render-editor-video-server';
 import { reconstructRenderInput } from '@/lib/editor/reconstruct-render-input';
 import { renderAllSlides } from '@/lib/editor/render-slide-image';
+import { enhanceImage } from '@/lib/cloudinary-enhance';
 
 // Vercel Hobby cap; the compile step needs budget before publisher dispatch
 export const maxDuration = 300;
@@ -96,14 +97,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       if (slides.length > 0) {
         console.log(`[Publish] Rendering ${slides.length} slide(s) with texts:`, JSON.stringify(slideCopy));
 
+        // Enhance slide images before rendering — Cloudinary AI enhance +
+        // sharpen makes seed content (TikTok/Pexels) look crisp.
+        const enhancedSlides = slides.map(s => ({ url: enhanceImage(s.url) }));
+
         // Style params from enrichmentData — match editor preview styling
-        const renderedUrls = await renderAllSlides(slides, slideCopy, {
+        const renderedUrls = await renderAllSlides(enhancedSlides, slideCopy, {
           aspectRatio: item.aspectRatio || '9:16',
           layout: (enrichment.editorLayout as string) || null,
           align: (editorStyle?.align as string) || null,
           backgroundDimming: (editorStyle?.backgroundDimming as number) ?? null,
           backgroundColor: (editorStyle?.backgroundColor as string) || null,
           fontSize: (editorStyle?.fontSize as number) || null,
+          fontFamily: (editorStyle?.fontFamily as string) || null,
+          color: (editorStyle?.color as string) || null,
         });
 
         item.graphicUrls = renderedUrls as any;

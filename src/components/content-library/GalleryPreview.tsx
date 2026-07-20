@@ -18,6 +18,7 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
+import { enhanceImage } from '@/lib/cloudinary-enhance';
 import { SlideView } from './SlideView';
 
 type SlideCopyEntry = string | { text: string; durationSeconds?: number };
@@ -139,7 +140,7 @@ export function GalleryPreview({ slides, slideCopy, aspectRatio, layout, align, 
       style={{ width: frameWidth, aspectRatio: aspectCss }}
     >
       <SlideView
-        backgroundUrl={currentUrl}
+        backgroundUrl={enhanceImage(currentUrl)}
         text={caption}
         layout={layout}
         align={align}

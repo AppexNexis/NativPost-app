@@ -16,6 +16,7 @@ import { isVideoContentType } from '@/types/v2';
 import { renderEditorVideoServer, RenderTimeoutError } from '@/lib/editor/render-editor-video-server';
 import { reconstructRenderInput } from '@/lib/editor/reconstruct-render-input';
 import { renderAllSlides } from '@/lib/editor/render-slide-image';
+import { enhanceImage } from '@/lib/cloudinary-enhance';
 
 // Vercel Hobby cap; compile step for each video post needs budget
 export const maxDuration = 300;
@@ -159,13 +160,18 @@ export async function GET(request: NextRequest) {
           if (slides.length > 0) {
             console.log(`[Cron] Rendering ${slides.length} slide(s) with texts:`, JSON.stringify(slideCopy));
 
-            const renderedUrls = await renderAllSlides(slides, slideCopy, {
+            // Enhance slide images before rendering
+            const enhancedSlides = slides.map(s => ({ url: enhanceImage(s.url) }));
+
+            const renderedUrls = await renderAllSlides(enhancedSlides, slideCopy, {
               aspectRatio: item.aspectRatio || '9:16',
               layout: (enrichment.editorLayout as string) || null,
               align: (editorStyle?.align as string) || null,
               backgroundDimming: (editorStyle?.backgroundDimming as number) ?? null,
               backgroundColor: (editorStyle?.backgroundColor as string) || null,
               fontSize: (editorStyle?.fontSize as number) || null,
+              fontFamily: (editorStyle?.fontFamily as string) || null,
+              color: (editorStyle?.color as string) || null,
             });
 
             item.graphicUrls = renderedUrls as any;
