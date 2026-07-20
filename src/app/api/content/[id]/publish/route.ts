@@ -11,6 +11,7 @@ import { campaignContentSchema, campaignSchema, contentItemSchema, publishingQue
 import { isVideoContentType } from '@/types/v2';
 import { renderEditorVideoServer, RenderTimeoutError } from '@/lib/editor/render-editor-video-server';
 import { reconstructRenderInput } from '@/lib/editor/reconstruct-render-input';
+import { burnTextOnSlides, extractSlideCopy, extractSlideUrls } from '@/lib/editor/burn-slide-text';
 
 // Vercel Hobby cap; the compile step needs budget before publisher dispatch
 export const maxDuration = 300;
@@ -53,10 +54,33 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // ── Slideshow: expand graphicUrls + burn text onto slides ───────────────
+    // Slideshows store raw source slide URLs in graphicUrls[0] only. We need
+    // ALL slide URLs with text overlays for carousel publishing. The video
+    // compile gate below explicitly excludes slideshows; they go through this
+    // expansion + text-burning path instead.
+    if (item.contentType === 'slideshow') {
+      const enrichment = (item.enrichmentData as Record<string, unknown> | null) ?? {};
+      const slideUrls = extractSlideUrls(enrichment);
+      if (slideUrls.length > 0) {
+        const slideCopy = extractSlideCopy(enrichment);
+        const burnedUrls = burnTextOnSlides(slideUrls, slideCopy);
+        item.graphicUrls = burnedUrls as any;
+
+        // Persist so the DB has the correct URLs for downstream consumers
+        await db
+          .update(contentItemSchema)
+          .set({ graphicUrls: burnedUrls, updatedAt: new Date() })
+          .where(eq(contentItemSchema.id, id));
+      }
+    }
+    // ── End slideshow expansion ─────────────────────────────────────────────
+
     // ── Compile-on-publish gate ─────────────────────────────────────────────
-    // Video content items created outside the editor (Blitz, Campaigns, etc.)
-    // carry raw source URLs in graphicUrls[0]. If enrichmentData.isCompiled is
-    // not true, we render via the video engine before dispatching to platforms.
+    // Video & slideshow content items created outside the editor
+    // (Blitz, Campaigns, etc.) carry raw source URLs in graphicUrls[0]. If
+    // enrichmentData.isCompiled is not true, we render via the video engine
+    // before dispatching to platforms.
     if (isVideoContentType(item.contentType) && item.contentType !== 'slideshow') {
       const enrichment = (item.enrichmentData as Record<string, unknown> | null) ?? {};
 

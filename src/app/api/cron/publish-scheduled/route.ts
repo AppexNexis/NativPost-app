@@ -15,6 +15,7 @@ import { notifyPostFailed, notifyPostPublished } from '@/lib/notify-connect';
 import { isVideoContentType } from '@/types/v2';
 import { renderEditorVideoServer, RenderTimeoutError } from '@/lib/editor/render-editor-video-server';
 import { reconstructRenderInput } from '@/lib/editor/reconstruct-render-input';
+import { burnTextOnSlides, extractSlideCopy, extractSlideUrls } from '@/lib/editor/burn-slide-text';
 
 // Vercel Hobby cap; compile step for each video post needs budget
 export const maxDuration = 300;
@@ -124,10 +125,28 @@ export async function GET(request: NextRequest) {
           error?: string;
         }> = [];
 
+        // ── Slideshow: expand graphicUrls + burn text onto slides ─────────
+        if (item.contentType === 'slideshow') {
+          const enrichment = (item.enrichmentData as Record<string, unknown> | null) ?? {};
+          const slideUrls = extractSlideUrls(enrichment);
+          if (slideUrls.length > 0) {
+            const slideCopy = extractSlideCopy(enrichment);
+            const burnedUrls = burnTextOnSlides(slideUrls, slideCopy);
+            item.graphicUrls = burnedUrls as any;
+
+            await db
+              .update(contentItemSchema)
+              .set({ graphicUrls: burnedUrls, updatedAt: new Date() })
+              .where(eq(contentItemSchema.id, item.id));
+          }
+        }
+        // ── End slideshow expansion ─────────────────────────────────────────
+
         // ── Compile-on-publish gate (cron) ─────────────────────────────────
         // Same logic as the user-triggered publish route, but with retry
         // budget tracking (compileAttempts) and batch time budgeting so we
         // don't exhaust the function's 300s window across multiple items.
+        // Applies to all video content types (slideshows handled above).
         if (isVideoContentType(item.contentType) && item.contentType !== 'slideshow') {
           const enrichment = (item.enrichmentData as Record<string, unknown> | null) ?? {};
 

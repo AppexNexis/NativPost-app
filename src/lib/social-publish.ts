@@ -1465,7 +1465,8 @@ export async function publishToplatform(
   platformSpecific?: Record<string, unknown>,
   platformUsername?: string,
 ): Promise<PublishResult> {
-  const isVideo = isVideoContentType(contentType);
+  // Slideshow is a carousel, not a video — route to images/carousel path.
+  const isVideo = isVideoContentType(contentType) && contentType !== 'slideshow';
   const verticalVideo = isVideo ? graphicUrls[0] : undefined;
   const squareVideo = isVideo ? (graphicUrls[1] || graphicUrls[0]) : undefined;
   const imageUrls = isVideo ? [] : graphicUrls;
