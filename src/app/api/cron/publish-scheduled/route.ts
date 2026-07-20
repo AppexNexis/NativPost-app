@@ -144,11 +144,9 @@ export async function GET(request: NextRequest) {
 
             if (editorScript?.slideCopy && Array.isArray(editorScript.slideCopy)) {
               slideCopy = editorScript.slideCopy as (string | null | undefined)[];
-            } else if (sourceMediaSlots.slides && Array.isArray(sourceMediaSlots.slides)) {
-              slideCopy = sourceMediaSlots.slides.map((s: unknown) => {
-                if (s && typeof s === 'object') return (s as { caption?: string }).caption ?? null;
-                return null;
-              });
+            } else {
+              const fallbackText = editorScript?.hookText as string || editorScript?.bodyText as string || null;
+              slideCopy = slides.map(() => fallbackText);
             }
           } else if (item.contentType === 'single_image') {
             const bgUrl = sourceMediaSlots?.background && typeof sourceMediaSlots.background === 'object'
@@ -159,6 +157,8 @@ export async function GET(request: NextRequest) {
           }
 
           if (slides.length > 0) {
+            console.log(`[Cron] Rendering ${slides.length} slide(s) with texts:`, JSON.stringify(slideCopy));
+
             const renderedUrls = await renderAllSlides(slides, slideCopy, {
               aspectRatio: item.aspectRatio || '9:16',
               layout: (enrichment.editorLayout as string) || null,

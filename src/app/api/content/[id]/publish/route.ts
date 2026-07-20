@@ -76,14 +76,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           return { url: '' };
         }).filter(s => s.url.length > 0);
 
-        // Per-slide captions from editorScript.slideCopy
+        // Per-slide captions from editorScript.slideCopy.
+        // Fallback: use hookText (or bodyText) for every slide when per-slide
+        // captions aren't populated (e.g. async waitUntil hasn't completed).
         if (editorScript?.slideCopy && Array.isArray(editorScript.slideCopy)) {
           slideCopy = editorScript.slideCopy as (string | null | undefined)[];
-        } else if (sourceMediaSlots.slides && Array.isArray(sourceMediaSlots.slides)) {
-          slideCopy = sourceMediaSlots.slides.map((s: unknown) => {
-            if (s && typeof s === 'object') return (s as { caption?: string }).caption ?? null;
-            return null;
-          });
+        } else {
+          const fallbackText = editorScript?.hookText as string || editorScript?.bodyText as string || null;
+          slideCopy = slides.map(() => fallbackText);
         }
       } else if (item.contentType === 'single_image') {
         const bgUrl = sourceMediaSlots?.background && typeof sourceMediaSlots.background === 'object'
@@ -94,6 +94,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
 
       if (slides.length > 0) {
+        console.log(`[Publish] Rendering ${slides.length} slide(s) with texts:`, JSON.stringify(slideCopy));
+
         // Style params from enrichmentData — match GalleryPreview props
         const renderedUrls = await renderAllSlides(slides, slideCopy, {
           aspectRatio: item.aspectRatio || '9:16',
