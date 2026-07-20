@@ -16,6 +16,7 @@ const TEXT_BG_PRESETS: { label: string; value: string }[] = [
   { label: 'None',   value: 'transparent' },
   { label: 'Subtle', value: 'rgba(0,0,0,0.25)' },
   { label: 'Strong', value: 'rgba(0,0,0,0.6)' },
+  { label: 'Light',  value: 'rgba(255,255,255,0.25)' },
 ];
 
 const CTA_COLORS = [
@@ -267,6 +268,10 @@ export function TextTab() {
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
+              <span
+                className="inline-block size-3 rounded-full border border-white/20 align-middle mr-1"
+                style={{ backgroundColor: preset.value }}
+              />
               {preset.label}
             </button>
           ))}

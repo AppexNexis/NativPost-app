@@ -185,6 +185,8 @@ export function ContentPreview({
                     layout={(enrichment.editorLayout as string) || (SLIDE_TYPES.has(item.contentType) ? 'centered' : undefined)}
                     align={(enrichment.editorStyle as any)?.align as 'left' | 'center' | 'right' | undefined}
                     backgroundDimming={(enrichment.editorStyle as any)?.backgroundDimming as number | undefined}
+                    captionBackgroundColor={(enrichment.editorStyle as any)?.backgroundColor as string | undefined}
+                    fontSize={(enrichment.editorStyle as any)?.fontSize as number | undefined}
                   />
                 </div>
               )}

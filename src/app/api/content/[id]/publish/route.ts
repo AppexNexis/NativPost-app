@@ -96,12 +96,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       if (slides.length > 0) {
         console.log(`[Publish] Rendering ${slides.length} slide(s) with texts:`, JSON.stringify(slideCopy));
 
-        // Style params from enrichmentData — match GalleryPreview props
+        // Style params from enrichmentData — match editor preview styling
         const renderedUrls = await renderAllSlides(slides, slideCopy, {
           aspectRatio: item.aspectRatio || '9:16',
           layout: (enrichment.editorLayout as string) || null,
           align: (editorStyle?.align as string) || null,
           backgroundDimming: (editorStyle?.backgroundDimming as number) ?? null,
+          backgroundColor: (editorStyle?.backgroundColor as string) || null,
+          fontSize: (editorStyle?.fontSize as number) || null,
         });
 
         item.graphicUrls = renderedUrls as any;

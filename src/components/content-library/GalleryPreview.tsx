@@ -43,6 +43,18 @@ type GalleryPreviewProps = {
    * the Layout tab. Sourced from `enrichmentData.editorStyle.backgroundDimming`.
    */
   backgroundDimming?: number | null;
+  /**
+   * Caption box background color from editorStyle.backgroundColor.
+   * When set to a non-transparent value, renders a rounded box behind
+   * the caption text matching the editor preview. Default transparent
+   * means no box — stroke+shadow provide legibility.
+   */
+  captionBackgroundColor?: string | null;
+  /**
+   * Font size from editorStyle.fontSize. When not set, uses existing
+   * Tailwind text-sm (14px) / text-xl (20px) defaults.
+   */
+  fontSize?: number | null;
 };
 
 const ASPECT_TO_CSS: Record<string, string> = {
@@ -67,7 +79,7 @@ function normalizeCopy(entry: SlideCopyEntry | undefined): string {
   return entry.text ?? '';
 }
 
-export function GalleryPreview({ slides, slideCopy, aspectRatio, layout, align, backgroundDimming }: GalleryPreviewProps) {
+export function GalleryPreview({ slides, slideCopy, aspectRatio, layout, align, backgroundDimming, captionBackgroundColor, fontSize }: GalleryPreviewProps) {
   const total = slides.length;
   const [index, setIndex] = useState(0);
 
@@ -170,16 +182,41 @@ export function GalleryPreview({ slides, slideCopy, aspectRatio, layout, align, 
         }
 
         const isWall = layout === 'wall_of_text';
+        const hasBox = captionBackgroundColor && captionBackgroundColor !== 'transparent';
+        const captionFontSize = fontSize
+          ? isWall ? Math.round(fontSize * 1.15) : fontSize
+          : undefined;
         return (
           <div className={`pointer-events-none ${containerClass}`}>
-            <p
-              className={`${innerClass} font-bold leading-snug text-white ${
-                isWall ? 'line-clamp-none text-xl md:text-2xl' : 'line-clamp-5 text-sm'
-              }`}
-              style={{ WebkitTextStroke: '1px black', textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}
-            >
-              {caption}
-            </p>
+            {hasBox ? (
+              <div
+                className={`${innerClass} rounded-md leading-snug text-white`}
+                style={{
+                  backgroundColor: captionBackgroundColor,
+                  padding: '16px 24px',
+                  fontSize: captionFontSize || (isWall ? undefined : undefined),
+                  WebkitTextStroke: '1px black',
+                  textShadow: '0 1px 3px rgba(0,0,0,0.6)',
+                }}
+              >
+                <p className={`font-bold ${isWall ? '' : 'line-clamp-5'}`}>
+                  {caption}
+                </p>
+              </div>
+            ) : (
+              <p
+                className={`${innerClass} font-bold leading-snug text-white ${
+                  isWall ? 'line-clamp-none text-xl md:text-2xl' : 'line-clamp-5 text-sm'
+                }`}
+                style={{
+                  fontSize: captionFontSize || undefined,
+                  WebkitTextStroke: '1px black',
+                  textShadow: '0 1px 3px rgba(0,0,0,0.6)',
+                }}
+              >
+                {caption}
+              </p>
+            )}
           </div>
         );
       })()}

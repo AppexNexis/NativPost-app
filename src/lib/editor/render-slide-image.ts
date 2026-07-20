@@ -26,6 +26,10 @@ export type SlideRenderInput = {
   align?: string | null;
   /** 0..1 dim overlay from editorStyle.backgroundDimming. */
   backgroundDimming?: number | null;
+  /** Caption box background color (CSS color, e.g. 'transparent', 'rgba(0,0,0,0.4)'). */
+  backgroundColor?: string | null;
+  /** Font size in px. */
+  fontSize?: number | null;
 };
 
 export type SlideRenderResult = {
@@ -57,6 +61,8 @@ export async function renderSlideImage(input: SlideRenderInput): Promise<SlideRe
         layout: input.layout || 'bottom_caption',
         align: input.align || 'center',
         backgroundDimming: input.backgroundDimming ?? 0,
+        backgroundColor: input.backgroundColor || undefined,
+        fontSize: input.fontSize || undefined,
       }),
     });
 
@@ -94,6 +100,8 @@ export async function renderAllSlides(
     layout?: string | null;
     align?: string | null;
     backgroundDimming?: number | null;
+    backgroundColor?: string | null;
+    fontSize?: number | null;
   },
 ): Promise<string[]> {
   if (slides.length === 0) return [];
@@ -107,6 +115,8 @@ export async function renderAllSlides(
         layout: styleOpts?.layout,
         align: styleOpts?.align,
         backgroundDimming: styleOpts?.backgroundDimming,
+        backgroundColor: styleOpts?.backgroundColor,
+        fontSize: styleOpts?.fontSize,
       }),
     ),
   );

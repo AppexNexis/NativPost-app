@@ -164,6 +164,8 @@ export async function GET(request: NextRequest) {
               layout: (enrichment.editorLayout as string) || null,
               align: (editorStyle?.align as string) || null,
               backgroundDimming: (editorStyle?.backgroundDimming as number) ?? null,
+              backgroundColor: (editorStyle?.backgroundColor as string) || null,
+              fontSize: (editorStyle?.fontSize as number) || null,
             });
 
             item.graphicUrls = renderedUrls as any;
