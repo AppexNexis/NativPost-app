@@ -12,6 +12,12 @@ import {
   socialAccountSchema,
 } from '@/models/Schema';
 import { notifyPostFailed, notifyPostPublished } from '@/lib/notify-connect';
+import { isVideoContentType } from '@/types/v2';
+import { renderEditorVideoServer, RenderTimeoutError } from '@/lib/editor/render-editor-video-server';
+import { reconstructRenderInput } from '@/lib/editor/reconstruct-render-input';
+
+// Vercel Hobby cap; compile step for each video post needs budget
+export const maxDuration = 300;
 
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY || '';
 
@@ -68,6 +74,7 @@ export async function GET(request: NextRequest) {
   }
 
   const now = new Date();
+  const batchStartTime = Date.now();
   console.log(`[Cron] Running at ${now.toISOString()}`);
 
   try {
@@ -116,6 +123,108 @@ export async function GET(request: NextRequest) {
           platformPostId?: string;
           error?: string;
         }> = [];
+
+        // ── Compile-on-publish gate (cron) ─────────────────────────────────
+        // Same logic as the user-triggered publish route, but with retry
+        // budget tracking (compileAttempts) and batch time budgeting so we
+        // don't exhaust the function's 300s window across multiple items.
+        if (isVideoContentType(item.contentType) && item.contentType !== 'slideshow') {
+          const enrichment = (item.enrichmentData as Record<string, unknown> | null) ?? {};
+
+          if (!enrichment.isCompiled) {
+            // Track retries — after 3 failed attempts, mark as failed so the
+            // item stops churning every cron cycle.
+            const attempts = (enrichment.compileAttempts as number) ?? 0;
+            if (attempts >= 3) {
+              await db
+                .update(contentItemSchema)
+                .set({
+                  publishStatus: 'failed',
+                  failureReason: 'compile-exhausted',
+                  updatedAt: new Date(),
+                } as any)
+                .where(eq(contentItemSchema.id, item.id));
+
+              results.push({ id: item.id, success: false, error: 'Video compile exhausted after 3 attempts' });
+              continue;
+            }
+
+            // Budget check: defer if less than 60s remaining
+            const batchElapsed = Date.now() - batchStartTime;
+            const budgetRemaining = 300_000 - batchElapsed;
+            if (budgetRemaining < 60_000) {
+              console.log(`[Cron] Deferring item ${item.id} — only ${Math.round(budgetRemaining / 1000)}s budget remaining`);
+              results.push({ id: item.id, success: false, error: 'Deferred — insufficient budget' });
+              continue;
+            }
+
+            const reconstructed = reconstructRenderInput(
+              item.enrichmentData as Record<string, unknown> | null | undefined,
+              item.aspectRatio,
+              item.contentType,
+            );
+
+            if (!reconstructed.ok) {
+              console.warn(`[Cron] Cannot compile item ${item.id}: ${reconstructed.reason}`);
+              // Increment attempts but don't exhaust — legacy item may need manual editor open
+              await db
+                .update(contentItemSchema)
+                .set({
+                  enrichmentData: {
+                    ...enrichment,
+                    compileAttempts: attempts + 1,
+                    compileError: reconstructed.reason,
+                  } as any,
+                })
+                .where(eq(contentItemSchema.id, item.id));
+              continue;
+            }
+
+            let compiledUrl: string;
+            try {
+              compiledUrl = await renderEditorVideoServer(reconstructed.input, { abortMs: Math.min(240_000, budgetRemaining - 30_000) });
+            } catch (compileErr) {
+              const reason = compileErr instanceof RenderTimeoutError ? 'compile-timeout' : 'compile-failed';
+              const message = compileErr instanceof Error ? compileErr.message : String(compileErr);
+              console.warn(`[Cron] ${reason} for item ${item.id}: ${message}`);
+
+              await db
+                .update(contentItemSchema)
+                .set({
+                  enrichmentData: {
+                    ...enrichment,
+                    compileAttempts: attempts + 1,
+                    compileError: message,
+                  } as any,
+                })
+                .where(eq(contentItemSchema.id, item.id));
+
+              // Do NOT mark as failed — let retries accumulate up to the 3-attempt limit
+              continue;
+            }
+
+            // Persist the compiled URL
+            await db
+              .update(contentItemSchema)
+              .set({
+                graphicUrls: [compiledUrl],
+                enrichmentData: {
+                  ...enrichment,
+                  isCompiled: true,
+                  compiledAt: new Date().toISOString(),
+                  compileAttempts: null,
+                  compileError: null,
+                } as any,
+                updatedAt: new Date(),
+              })
+              .where(eq(contentItemSchema.id, item.id));
+
+            // Update local reference so downstream reads the compiled URL
+            item.graphicUrls = [compiledUrl] as any;
+            item.enrichmentData = { ...enrichment, isCompiled: true } as any;
+          }
+        }
+        // ── End compile gate ─────────────────────────────────────────────────
 
         const graphicUrls = (item.graphicUrls as string[]) || [];
         const platformCaptions = (item.platformSpecific as Record<string, unknown>) || {};

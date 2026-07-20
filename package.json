@@ -15,6 +15,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "prepush": "npm run check-types",
+    "audit:wrong-media": "dotenv -c production -- tsx scripts/audit-published-wrong-media.ts",
     "commit": "cz",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "dotenv -c production -- drizzle-kit migrate",

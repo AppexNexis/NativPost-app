@@ -8,6 +8,12 @@ import { sendPublishedNotification } from '@/lib/email';
 import { publishToplatform } from '@/lib/social-publish';
 import { getDb } from '@/libs/DB';
 import { campaignContentSchema, campaignSchema, contentItemSchema, publishingQueueSchema, socialAccountSchema } from '@/models/Schema';
+import { isVideoContentType } from '@/types/v2';
+import { renderEditorVideoServer, RenderTimeoutError } from '@/lib/editor/render-editor-video-server';
+import { reconstructRenderInput } from '@/lib/editor/reconstruct-render-input';
+
+// Vercel Hobby cap; the compile step needs budget before publisher dispatch
+export const maxDuration = 300;
 
 type RouteParams = {
   params: Promise<{ id: string }>;
@@ -46,6 +52,103 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { status: 400 },
       );
     }
+
+    // ── Compile-on-publish gate ─────────────────────────────────────────────
+    // Video content items created outside the editor (Blitz, Campaigns, etc.)
+    // carry raw source URLs in graphicUrls[0]. If enrichmentData.isCompiled is
+    // not true, we render via the video engine before dispatching to platforms.
+    if (isVideoContentType(item.contentType) && item.contentType !== 'slideshow') {
+      const enrichment = (item.enrichmentData as Record<string, unknown> | null) ?? {};
+
+      if (!enrichment.isCompiled) {
+        // Check for an in-flight compile (within the last 5 minutes) to avoid
+        // duplicating work on concurrent publish clicks.
+        const compileInProgress = enrichment.compileInProgress as string | undefined;
+        if (compileInProgress) {
+          const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+          if (new Date(compileInProgress).getTime() > fiveMinAgo) {
+            return NextResponse.json(
+              { error: 'COMPILE_IN_PROGRESS', message: 'Video is already being compiled. Try again in a moment.' },
+              { status: 409 },
+            );
+          }
+        }
+
+        // Mark in-progress so concurrent requests see it
+        await db
+          .update(contentItemSchema)
+          .set({
+            enrichmentData: {
+              ...enrichment,
+              compileInProgress: new Date().toISOString(),
+            },
+          } as any)
+          .where(eq(contentItemSchema.id, id));
+
+        const reconstructed = reconstructRenderInput(
+          item.enrichmentData as Record<string, unknown> | null | undefined,
+          item.aspectRatio,
+          item.contentType,
+        );
+
+        if (!reconstructed.ok) {
+          return NextResponse.json(
+            { error: 'CANNOT_COMPILE', message: reconstructed.reason },
+            { status: 400 },
+          );
+        }
+
+        let compiledUrl: string;
+        try {
+          compiledUrl = await renderEditorVideoServer(reconstructed.input, { abortMs: 240_000 });
+        } catch (compileErr) {
+          // Clear the in-progress flag so the user can retry
+          await db
+            .update(contentItemSchema)
+            .set({
+              enrichmentData: {
+                ...enrichment,
+                compileInProgress: null,
+              } as any,
+            })
+            .where(eq(contentItemSchema.id, id));
+
+          if (compileErr instanceof RenderTimeoutError) {
+            return NextResponse.json(
+              { error: 'COMPILE_TIMEOUT', message: 'Video is still compiling. Retry in a moment.' },
+              { status: 504 },
+            );
+          }
+          return NextResponse.json(
+            { error: 'COMPILE_FAILED', message: compileErr instanceof Error ? compileErr.message : String(compileErr) },
+            { status: 500 },
+          );
+        }
+
+        // Persist the compiled URL and flip the flag
+        const updatedEnrichment = {
+          ...enrichment,
+          isCompiled: true,
+          compiledAt: new Date().toISOString(),
+          compileInProgress: null,
+        };
+
+        await db
+          .update(contentItemSchema)
+          .set({
+            graphicUrls: [compiledUrl],
+            enrichmentData: updatedEnrichment as any,
+            updatedAt: new Date(),
+          })
+          .where(eq(contentItemSchema.id, id));
+
+        // Re-read so downstream L153 uses the compiled URL
+        // We update the local item object rather than a second SELECT
+        item.graphicUrls = [compiledUrl] as any;
+        item.enrichmentData = updatedEnrichment as any;
+      }
+    }
+    // ── End compile gate ─────────────────────────────────────────────────────
 
     // 2. Get connected accounts
     const platforms = (item.targetPlatforms as string[]) || [];
