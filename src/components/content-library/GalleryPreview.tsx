@@ -49,14 +49,24 @@ type GalleryPreviewProps = {
    * Caption box background color from editorStyle.backgroundColor.
    * When set to a non-transparent value, renders a rounded box behind
    * the caption text matching the editor preview. Default transparent
-   * means no box — stroke+shadow provide legibility.
+   * means no box — text-shadow provides legibility.
    */
   captionBackgroundColor?: string | null;
   /**
-   * Font size from editorStyle.fontSize. When not set, uses existing
-   * Tailwind text-sm (14px) / text-xl (20px) defaults.
+   * Font size from editorStyle.fontSize. At 1080px render width.
+   * Display scaled by 0.5 (norm) / 0.7 (wall) to match editor.
    */
   fontSize?: number | null;
+  /** Font family from editorStyle.fontFamily. */
+  fontFamily?: string | null;
+  /** Font color from editorStyle.color. */
+  color?: string | null;
+  /** Font weight from editorStyle.weight. */
+  fontWeight?: number | null;
+  fontStyle?: 'normal' | 'italic' | null;
+  textDecoration?: 'none' | 'underline' | null;
+  /** Enable text stroke for legibility. */
+  textStroke?: boolean | null;
 };
 
 const ASPECT_TO_CSS: Record<string, string> = {
@@ -81,7 +91,7 @@ function normalizeCopy(entry: SlideCopyEntry | undefined): string {
   return entry.text ?? '';
 }
 
-export function GalleryPreview({ slides, slideCopy, aspectRatio, layout, align, backgroundDimming, captionBackgroundColor, fontSize }: GalleryPreviewProps) {
+export function GalleryPreview({ slides, slideCopy, aspectRatio, layout, align, backgroundDimming, captionBackgroundColor, fontSize, fontFamily, color, fontWeight, fontStyle, textDecoration, textStroke }: GalleryPreviewProps) {
   const total = slides.length;
   const [index, setIndex] = useState(0);
 
@@ -136,6 +146,12 @@ export function GalleryPreview({ slides, slideCopy, aspectRatio, layout, align, 
         backgroundDimming={backgroundDimming}
         captionBackgroundColor={captionBackgroundColor}
         fontSize={fontSize}
+        fontFamily={fontFamily}
+        color={color}
+        fontWeight={fontWeight}
+        fontStyle={fontStyle}
+        textDecoration={textDecoration}
+        textStroke={textStroke}
       />
 
       {/* Prev / Next arrows — mirror TemplateCard styling. */}

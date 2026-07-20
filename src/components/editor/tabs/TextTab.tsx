@@ -16,7 +16,8 @@ const TEXT_BG_PRESETS: { label: string; value: string }[] = [
   { label: 'None',   value: 'transparent' },
   { label: 'Subtle', value: 'rgba(0,0,0,0.25)' },
   { label: 'Strong', value: 'rgba(0,0,0,0.6)' },
-  { label: 'Light',  value: 'rgba(255,255,255,0.25)' },
+  { label: 'Solid',  value: '#000000' },
+  { label: 'White',  value: '#ffffff' },
 ];
 
 const CTA_COLORS = [

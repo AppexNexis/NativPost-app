@@ -187,6 +187,12 @@ export function ContentPreview({
                     backgroundDimming={(enrichment.editorStyle as any)?.backgroundDimming as number | undefined}
                     captionBackgroundColor={(enrichment.editorStyle as any)?.backgroundColor as string | undefined}
                     fontSize={(enrichment.editorStyle as any)?.fontSize as number | undefined}
+                    fontFamily={(enrichment.editorStyle as any)?.fontFamily as string | undefined}
+                    color={(enrichment.editorStyle as any)?.color as string | undefined}
+                    fontWeight={(enrichment.editorStyle as any)?.weight === 'bold' ? 700 : 400}
+                    fontStyle={(enrichment.editorStyle as any)?.italic ? 'italic' : undefined}
+                    textDecoration={(enrichment.editorStyle as any)?.underline ? 'underline' : undefined}
+                    textStroke={false}
                   />
                 </div>
               )}

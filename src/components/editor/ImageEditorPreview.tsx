@@ -404,6 +404,7 @@ export function ImageEditorPreview() {
                   fontWeight={state.style?.weight === 'bold' ? 700 : 400}
                   fontStyle={state.style?.italic ? 'italic' : 'normal'}
                   textDecoration={state.style?.underline ? 'underline' : 'none'}
+                  textStroke={false}
                 />
               );
             }

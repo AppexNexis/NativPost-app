@@ -16,8 +16,8 @@
  *   .dim           → background:rgba(0,0,0,N); position:absolute; inset:0; pointer-events:none
  *   .caption-box   → background-color:C; padding:16px 24px; border-radius:8px
  *   .caption-text  → font-weight:700; line-height:1.3; color:white;
- *                    -webkit-text-stroke:1px black;
  *                    text-shadow:0 1px 3px rgba(0,0,0,0.6);
+ *                    IF textStroke: add -webkit-text-stroke:1px black;
  *                    font-size:Npx; text-align:A; word-break:break-word
  *   layout/bottom  → position:absolute; inset:auto 0 0 0; display:flex;
  *                    align-items:flex-end; justify-content:center; padding:1rem
@@ -57,6 +57,8 @@ type SlideViewProps = {
   fontWeight?: number | null;
   fontStyle?: 'normal' | 'italic' | null;
   textDecoration?: 'none' | 'underline' | null;
+  /** Enable text stroke + shadow for extra legibility on busy backgrounds. */
+  textStroke?: boolean | null;
   /** Optional class name for the outer container. */
   className?: string;
 };
@@ -74,6 +76,7 @@ export function SlideView({
   fontWeight,
   fontStyle,
   textDecoration,
+  textStroke,
   className,
 }: SlideViewProps) {
   const isWall = layout === 'wall_of_text';
@@ -100,7 +103,10 @@ export function SlideView({
   const containerClass = getContainerClass();
   const textAlign = align === 'left' || align === 'right' ? align : 'center';
 
-  // Base text styling — applied regardless of caption box
+  // Base text styling — stroke off by default (clean, solid text).
+  // Use textShadow alone for subtle contrast on dark areas.
+  // When textStroke is enabled, add full stroke + shadow for legibility
+  // on any background, even without a caption box.
   const textStyle: React.CSSProperties = {
     fontWeight: fontWeight ?? 700,
     lineHeight: 1.3,
@@ -108,12 +114,15 @@ export function SlideView({
     fontSize: displayFontSize || undefined,
     textAlign,
     wordBreak: 'break-word',
-    WebkitTextStroke: '1px black',
     textShadow: '0 1px 3px rgba(0,0,0,0.6)',
     fontFamily: fontFamily || undefined,
     fontStyle: fontStyle || undefined,
     textDecoration: textDecoration || undefined,
   };
+
+  if (textStroke) {
+    textStyle.WebkitTextStroke = '1px black';
+  }
 
   if (hasBox) {
     textStyle.backgroundColor = captionBackgroundColor;
