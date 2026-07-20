@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, ImageOff, Loader2, Plus, RefreshCw, Sparkles
 
 import { useEditor } from './EditorContext';
 import { PhoneMockup } from './PhoneMockup';
+import { SlideView } from '@/components/content-library/SlideView';
 import { MediaSelectModal } from './tabs/MediaTab';
 import { getEditorKind } from '@/lib/editor/content-type-registry';
 
@@ -344,10 +345,9 @@ export function ImageEditorPreview() {
             </div>
           )}
 
-          {/* Full-bleed background dim scrim — sits between media and text so
-              text stays legible even on busy source images. WYSIWYG: mirrors
-              SlideshowComposition.tsx exactly. */}
-          {activeSlide?.url && (state.style?.backgroundDimming ?? 0) > 0 && (
+          {/* Full-bleed background dim scrim — only for single_image.
+              Per-slide mode: SlideView handles dim internally. */}
+          {!isPerSlide && activeSlide?.url && (state.style?.backgroundDimming ?? 0) > 0 && (
             <div
               className="pointer-events-none absolute inset-0"
               style={{
@@ -390,31 +390,21 @@ export function ImageEditorPreview() {
             if (isPerSlide) {
               const caption = readSlideCopy(activeIndex) || state.script.bodyText || '';
               if (!caption) return null;
-              const isWall = layout === 'wall_of_text';
               return (
-                <div
-                  className={`absolute inset-0 flex flex-col gap-3 px-6 ${positionClass} ${alignItemsClass}`}
-                  style={{
-                    fontFamily: baseFontFamily,
-                    color: baseColor,
-                    textAlign: align,
-                  }}
-                >
-                  <div
-                    className="rounded-md px-3 py-2"
-                    style={{
-                      backgroundColor: state.style?.backgroundColor || 'transparent',
-                      fontSize: (state.style?.fontSize || 20) * (isWall ? 0.7 : 0.5),
-                      fontWeight,
-                      fontStyle,
-                      textDecoration,
-                      lineHeight: 1.3,
-                      maxWidth: isWall ? '95%' : '90%',
-                    }}
-                  >
-                    {caption}
-                  </div>
-                </div>
+                <SlideView
+                  backgroundUrl={activeSlide.url}
+                  text={caption}
+                  layout={layout}
+                  align={state.style?.align}
+                  backgroundDimming={state.style?.backgroundDimming}
+                  captionBackgroundColor={state.style?.backgroundColor}
+                  fontSize={state.style?.fontSize}
+                  fontFamily={state.style?.fontFamily}
+                  color={state.style?.color}
+                  fontWeight={state.style?.weight === 'bold' ? 700 : 400}
+                  fontStyle={state.style?.italic ? 'italic' : 'normal'}
+                  textDecoration={state.style?.underline ? 'underline' : 'none'}
+                />
               );
             }
 

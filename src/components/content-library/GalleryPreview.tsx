@@ -18,6 +18,8 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
+import { SlideView } from './SlideView';
+
 type SlideCopyEntry = string | { text: string; durationSeconds?: number };
 
 type GalleryPreviewProps = {
@@ -126,100 +128,15 @@ export function GalleryPreview({ slides, slideCopy, aspectRatio, layout, align, 
       className="group relative overflow-hidden rounded-[2rem] border-[1.5px] border-white/[0.06] bg-neutral-900/40 shadow-2xl"
       style={{ width: frameWidth, aspectRatio: aspectCss }}
     >
-      {/* Slide image */}
-      <img
-        src={currentUrl}
-        alt={`Slide ${index + 1} of ${total}`}
-        className="size-full object-cover"
+      <SlideView
+        backgroundUrl={currentUrl}
+        text={caption}
+        layout={layout}
+        align={align}
+        backgroundDimming={backgroundDimming}
+        captionBackgroundColor={captionBackgroundColor}
+        fontSize={fontSize}
       />
-
-      {/* Full-bleed dim scrim — mirrors ImageEditorPreview so users see the
-          same dim they picked in the Layout tab. Sits between image and
-          caption overlay so text stays legible. */}
-      {typeof backgroundDimming === 'number' && backgroundDimming > 0 && (
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{ backgroundColor: `rgba(0,0,0,${Math.min(1, Math.max(0, backgroundDimming))})` }}
-        />
-      )}
-
-      {/* Optional caption overlay when slideCopy has content for this index.
-          Positioning mirrors the editor's ImageEditorPreview + Slideshow
-          composition: caption goes to top / center / bottom / full-bleed
-          depending on the editor's chosen layout, and horizontal alignment
-          follows the editor's align choice. */}
-      {caption && (() => {
-        const alignKey = (align === 'left' || align === 'right' || align === 'center')
-          ? align : 'center';
-        const textAlignClass =
-          alignKey === 'left' ? 'text-left'
-          : alignKey === 'right' ? 'text-right'
-          : 'text-center';
-
-        // Position based on layout. No background gradient/scrim — legibility
-        // comes from `WebkitTextStroke` + `textShadow` on the caption itself,
-        // matching the PostCard grid overlay (source of truth: PostCard.tsx).
-        let containerClass: string;
-        let innerClass: string;
-        switch (layout) {
-          case 'top_caption':
-            containerClass = 'absolute inset-x-0 top-0 flex items-start justify-center p-4';
-            innerClass = `w-full ${textAlignClass}`;
-            break;
-          case 'centered':
-            containerClass = 'absolute inset-0 flex items-center justify-center p-6';
-            innerClass = `w-full ${textAlignClass}`;
-            break;
-          case 'wall_of_text':
-            containerClass = 'absolute inset-0 flex items-center justify-center p-4';
-            innerClass = `w-full ${textAlignClass}`;
-            break;
-          case 'bottom_caption':
-          default:
-            containerClass = 'absolute inset-x-0 bottom-0 flex items-end justify-center p-4';
-            innerClass = `w-full ${textAlignClass}`;
-            break;
-        }
-
-        const isWall = layout === 'wall_of_text';
-        const hasBox = captionBackgroundColor && captionBackgroundColor !== 'transparent';
-        const captionFontSize = fontSize
-          ? isWall ? Math.round(fontSize * 1.15) : fontSize
-          : undefined;
-        return (
-          <div className={`pointer-events-none ${containerClass}`}>
-            {hasBox ? (
-              <div
-                className={`${innerClass} rounded-md leading-snug text-white`}
-                style={{
-                  backgroundColor: captionBackgroundColor,
-                  padding: '16px 24px',
-                  fontSize: captionFontSize || (isWall ? undefined : undefined),
-                  WebkitTextStroke: '1px black',
-                  textShadow: '0 1px 3px rgba(0,0,0,0.6)',
-                }}
-              >
-                <p className={`font-bold ${isWall ? '' : 'line-clamp-5'}`}>
-                  {caption}
-                </p>
-              </div>
-            ) : (
-              <p
-                className={`${innerClass} font-bold leading-snug text-white ${
-                  isWall ? 'line-clamp-none text-xl md:text-2xl' : 'line-clamp-5 text-sm'
-                }`}
-                style={{
-                  fontSize: captionFontSize || undefined,
-                  WebkitTextStroke: '1px black',
-                  textShadow: '0 1px 3px rgba(0,0,0,0.6)',
-                }}
-              >
-                {caption}
-              </p>
-            )}
-          </div>
-        );
-      })()}
 
       {/* Prev / Next arrows — mirror TemplateCard styling. */}
       {showArrows && (
