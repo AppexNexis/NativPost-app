@@ -11,7 +11,7 @@ import { campaignContentSchema, campaignSchema, contentItemSchema, publishingQue
 import { isVideoContentType } from '@/types/v2';
 import { renderEditorVideoServer, RenderTimeoutError } from '@/lib/editor/render-editor-video-server';
 import { reconstructRenderInput } from '@/lib/editor/reconstruct-render-input';
-import { burnTextOnSlides, extractSlideCopy, extractSlideUrls } from '@/lib/editor/burn-slide-text';
+import { renderAllSlides } from '@/lib/editor/render-slide-image';
 
 // Vercel Hobby cap; the compile step needs budget before publisher dispatch
 export const maxDuration = 300;
@@ -54,33 +54,69 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // ── Slideshow: expand graphicUrls + burn text onto slides ───────────────
-    // Slideshows store raw source slide URLs in graphicUrls[0] only. We need
-    // ALL slide URLs with text overlays for carousel publishing. The video
-    // compile gate below explicitly excludes slideshows; they go through this
-    // expansion + text-burning path instead.
-    if (item.contentType === 'slideshow') {
+    // ── Slideshow / single_image: render slides via image-engine Puppeteer ──
+    // Each slide image gets text overlays baked in via headless Chrome,
+    // matching the detail page's GalleryPreview styling exactly. Works for
+    // both multi-slide (carousel) and single-image publishes.
+    if (item.contentType === 'slideshow' || item.contentType === 'single_image') {
       const enrichment = (item.enrichmentData as Record<string, unknown> | null) ?? {};
-      const slideUrls = extractSlideUrls(enrichment);
-      if (slideUrls.length > 0) {
-        const slideCopy = extractSlideCopy(enrichment);
-        const burnedUrls = burnTextOnSlides(slideUrls, slideCopy);
-        item.graphicUrls = burnedUrls as any;
+      const editorScript = enrichment.editorScript as Record<string, unknown> | undefined;
+      const sourceMediaSlots = enrichment.sourceMediaSlots as Record<string, unknown> | undefined;
+      const editorStyle = enrichment.editorStyle as Record<string, unknown> | undefined;
 
-        // Persist so the DB has the correct URLs for downstream consumers
+      // Gather slides: for slideshow use sourceMediaSlots.slides, for
+      // single_image use sourceMediaSlots.background or graphicUrls[0].
+      let slides: Array<{ url: string }> = [];
+      let slideCopy: (string | null | undefined)[] = [];
+
+      if (item.contentType === 'slideshow' && sourceMediaSlots?.slides && Array.isArray(sourceMediaSlots.slides)) {
+        slides = sourceMediaSlots.slides.map((s: unknown) => {
+          if (typeof s === 'string') return { url: s };
+          if (s && typeof s === 'object') return { url: (s as { url?: string }).url ?? '' };
+          return { url: '' };
+        }).filter(s => s.url.length > 0);
+
+        // Per-slide captions from editorScript.slideCopy
+        if (editorScript?.slideCopy && Array.isArray(editorScript.slideCopy)) {
+          slideCopy = editorScript.slideCopy as (string | null | undefined)[];
+        } else if (sourceMediaSlots.slides && Array.isArray(sourceMediaSlots.slides)) {
+          slideCopy = sourceMediaSlots.slides.map((s: unknown) => {
+            if (s && typeof s === 'object') return (s as { caption?: string }).caption ?? null;
+            return null;
+          });
+        }
+      } else if (item.contentType === 'single_image') {
+        const bgUrl = sourceMediaSlots?.background && typeof sourceMediaSlots.background === 'object'
+          ? (sourceMediaSlots.background as { url?: string }).url ?? ''
+          : (item.graphicUrls as string[] | undefined)?.[0] ?? '';
+        if (bgUrl) slides = [{ url: bgUrl }];
+        slideCopy = [editorScript?.hookText as string || editorScript?.bodyText as string || null];
+      }
+
+      if (slides.length > 0) {
+        // Style params from enrichmentData — match GalleryPreview props
+        const renderedUrls = await renderAllSlides(slides, slideCopy, {
+          aspectRatio: item.aspectRatio || '9:16',
+          layout: (enrichment.editorLayout as string) || null,
+          align: (editorStyle?.align as string) || null,
+          backgroundDimming: (editorStyle?.backgroundDimming as number) ?? null,
+        });
+
+        item.graphicUrls = renderedUrls as any;
+
+        // Persist so detail page and consumers get the rendered URLs
         await db
           .update(contentItemSchema)
-          .set({ graphicUrls: burnedUrls, updatedAt: new Date() })
+          .set({ graphicUrls: renderedUrls, updatedAt: new Date() })
           .where(eq(contentItemSchema.id, id));
       }
     }
-    // ── End slideshow expansion ─────────────────────────────────────────────
+    // ── End slide image rendering ───────────────────────────────────────────
 
     // ── Compile-on-publish gate ─────────────────────────────────────────────
-    // Video & slideshow content items created outside the editor
-    // (Blitz, Campaigns, etc.) carry raw source URLs in graphicUrls[0]. If
-    // enrichmentData.isCompiled is not true, we render via the video engine
-    // before dispatching to platforms.
+    // Video content items from Blitz/Campaigns carry raw source URLs in
+    // graphicUrls[0]. If enrichmentData.isCompiled is not true, we render
+    // via the video engine before dispatching to platforms.
     if (isVideoContentType(item.contentType) && item.contentType !== 'slideshow') {
       const enrichment = (item.enrichmentData as Record<string, unknown> | null) ?? {};
 

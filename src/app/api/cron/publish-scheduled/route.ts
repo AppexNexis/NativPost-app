@@ -15,7 +15,7 @@ import { notifyPostFailed, notifyPostPublished } from '@/lib/notify-connect';
 import { isVideoContentType } from '@/types/v2';
 import { renderEditorVideoServer, RenderTimeoutError } from '@/lib/editor/render-editor-video-server';
 import { reconstructRenderInput } from '@/lib/editor/reconstruct-render-input';
-import { burnTextOnSlides, extractSlideCopy, extractSlideUrls } from '@/lib/editor/burn-slide-text';
+import { renderAllSlides } from '@/lib/editor/render-slide-image';
 
 // Vercel Hobby cap; compile step for each video post needs budget
 export const maxDuration = 300;
@@ -125,28 +125,60 @@ export async function GET(request: NextRequest) {
           error?: string;
         }> = [];
 
-        // ── Slideshow: expand graphicUrls + burn text onto slides ─────────
-        if (item.contentType === 'slideshow') {
+        // ── Slideshow / single_image: render slides via image-engine ──────
+        if (item.contentType === 'slideshow' || item.contentType === 'single_image') {
           const enrichment = (item.enrichmentData as Record<string, unknown> | null) ?? {};
-          const slideUrls = extractSlideUrls(enrichment);
-          if (slideUrls.length > 0) {
-            const slideCopy = extractSlideCopy(enrichment);
-            const burnedUrls = burnTextOnSlides(slideUrls, slideCopy);
-            item.graphicUrls = burnedUrls as any;
+          const editorScript = enrichment.editorScript as Record<string, unknown> | undefined;
+          const sourceMediaSlots = enrichment.sourceMediaSlots as Record<string, unknown> | undefined;
+          const editorStyle = enrichment.editorStyle as Record<string, unknown> | undefined;
+
+          let slides: Array<{ url: string }> = [];
+          let slideCopy: (string | null | undefined)[] = [];
+
+          if (item.contentType === 'slideshow' && sourceMediaSlots?.slides && Array.isArray(sourceMediaSlots.slides)) {
+            slides = sourceMediaSlots.slides.map((s: unknown) => {
+              if (typeof s === 'string') return { url: s };
+              if (s && typeof s === 'object') return { url: (s as { url?: string }).url ?? '' };
+              return { url: '' };
+            }).filter(s => s.url.length > 0);
+
+            if (editorScript?.slideCopy && Array.isArray(editorScript.slideCopy)) {
+              slideCopy = editorScript.slideCopy as (string | null | undefined)[];
+            } else if (sourceMediaSlots.slides && Array.isArray(sourceMediaSlots.slides)) {
+              slideCopy = sourceMediaSlots.slides.map((s: unknown) => {
+                if (s && typeof s === 'object') return (s as { caption?: string }).caption ?? null;
+                return null;
+              });
+            }
+          } else if (item.contentType === 'single_image') {
+            const bgUrl = sourceMediaSlots?.background && typeof sourceMediaSlots.background === 'object'
+              ? (sourceMediaSlots.background as { url?: string }).url ?? ''
+              : (item.graphicUrls as string[] | undefined)?.[0] ?? '';
+            if (bgUrl) slides = [{ url: bgUrl }];
+            slideCopy = [editorScript?.hookText as string || editorScript?.bodyText as string || null];
+          }
+
+          if (slides.length > 0) {
+            const renderedUrls = await renderAllSlides(slides, slideCopy, {
+              aspectRatio: item.aspectRatio || '9:16',
+              layout: (enrichment.editorLayout as string) || null,
+              align: (editorStyle?.align as string) || null,
+              backgroundDimming: (editorStyle?.backgroundDimming as number) ?? null,
+            });
+
+            item.graphicUrls = renderedUrls as any;
 
             await db
               .update(contentItemSchema)
-              .set({ graphicUrls: burnedUrls, updatedAt: new Date() })
+              .set({ graphicUrls: renderedUrls, updatedAt: new Date() })
               .where(eq(contentItemSchema.id, item.id));
           }
         }
-        // ── End slideshow expansion ─────────────────────────────────────────
+        // ── End slide image rendering ───────────────────────────────────────
 
         // ── Compile-on-publish gate (cron) ─────────────────────────────────
-        // Same logic as the user-triggered publish route, but with retry
-        // budget tracking (compileAttempts) and batch time budgeting so we
-        // don't exhaust the function's 300s window across multiple items.
-        // Applies to all video content types (slideshows handled above).
+        // Same logic as the user-triggered publish route, with retry
+        // budget tracking (compileAttempts) and batch time budgeting.
         if (isVideoContentType(item.contentType) && item.contentType !== 'slideshow') {
           const enrichment = (item.enrichmentData as Record<string, unknown> | null) ?? {};
 
