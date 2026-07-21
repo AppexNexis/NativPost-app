@@ -951,6 +951,7 @@ export async function publishToTikTok(
     brandOrganicToggle?: boolean;
     brandContentToggle?: boolean;
     isAIGC?: boolean;
+    caption?: string;
   },
 ): Promise<PublishResult> {
   if (!videoUrl) {
@@ -999,7 +1000,7 @@ export async function publishToTikTok(
       },
       body: JSON.stringify({
         post_info: {
-          title: (tiktokSettings?.title || caption).slice(0, 2200),
+          title: ((tiktokSettings as any)?.caption || tiktokSettings?.title || caption).slice(0, 2200),
           privacy_level: privacyLevel,
           disable_comment: tiktokSettings?.allowComment === true ? false : creatorInfo.commentDisabled,
           disable_duet: tiktokSettings?.allowDuet === true ? false : creatorInfo.duetDisabled,
