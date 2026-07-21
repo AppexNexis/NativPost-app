@@ -116,6 +116,7 @@ export function TikTokPublishModal({
   const [publishing, setPublishing] = useState(false);
   const [creatorInfo, setCreatorInfo] = useState<CreatorInfo | null>(null);
   const [freshnessTimestamp, setFreshnessTimestamp] = useState<number | null>(null);
+  const [avatarError, setAvatarError] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<TikTokPublishSettings>({
@@ -182,6 +183,7 @@ export function TikTokPublishModal({
     setPublishStatus('idle');
     setPublishId(null);
     setError(null);
+    setAvatarError(false);
     setFreshnessTimestamp(null);
     setSettings({
       caption: '',
@@ -345,32 +347,33 @@ export function TikTokPublishModal({
                   Your video is ready!
                 </div>
 
-                {/* TikTok-native 9:16 frame — fills preview column with text overlay matching editor styling */}
-                <div className="relative flex-1 w-full overflow-hidden rounded-lg border bg-black flex items-center justify-center" style={{ minHeight: '320px' }}>
+                {/* TikTok-native 9:16 frame — fills preview column */}
+                <div className="relative flex-1 w-full overflow-hidden rounded-lg bg-black" style={{ minHeight: '360px', aspectRatio: '9/16', maxHeight: '100%' }}>
                   {resolvedVideoUrl ? (
                     <>
                       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                       <video
                         src={resolvedVideoUrl}
-                        className="h-full w-full object-contain"
+                        className="absolute inset-0 h-full w-full"
+                        style={{ objectFit: 'cover' }}
                         controls
                         preload="metadata"
                         playsInline
-                        style={{ maxHeight: '100%' }}
                       />
-                      {/* Caption text overlay — mirrors SlideView bottom_caption styling */}
+                      {/* Gradient scrim for text legibility — matches detail page */}
+                      <div className="pointer-events-none absolute inset-0" style={{
+                        background: 'linear-gradient(0deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 40%)',
+                      }} />
+                      {/* Caption overlay — EXACT SlideView bottom_caption styling */}
                       {settings.caption && (
-                        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-center p-4"
-                          style={{
-                            background: 'linear-gradient(transparent 0%, rgba(0,0,0,0.4) 100%)',
-                          }}
-                        >
-                          <p className="text-center font-bold leading-snug text-white break-words max-w-full"
+                        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-center p-4">
+                          <p className="text-center font-bold text-white break-words max-w-[90%]"
                             style={{
-                              fontSize: 'clamp(0.625rem, 2.5vw, 1rem)',
+                              fontSize: 'clamp(0.75rem, 3.5vw, 1.25rem)',
+                              lineHeight: 1.375,
                               WebkitTextStroke: '1px black',
                               textShadow: '0 1px 3px rgba(0,0,0,0.6)',
-                              lineHeight: 1.3,
+                              wordBreak: 'break-word',
                             }}
                           >
                             {settings.caption}
@@ -404,12 +407,14 @@ export function TikTokPublishModal({
                 {/* Account chip (Guideline 1a) */}
                 {creatorInfo && (
                   <div className="flex items-center gap-3 rounded-lg border bg-muted/40 p-3">
-                    {creatorInfo.avatarUrl ? (
+                    {creatorInfo.avatarUrl && !avatarError ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={creatorInfo.avatarUrl}
                         alt="Avatar"
+                        referrerPolicy="no-referrer"
                         className="h-10 w-10 shrink-0 rounded-full border-2 border-[#FE2C55]/20 object-cover"
+                        onError={() => setAvatarError(true)}
                       />
                     ) : (
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FE2C55]/10 font-bold text-[#FE2C55]">
