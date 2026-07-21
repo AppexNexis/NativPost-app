@@ -5,7 +5,7 @@
  * Prefers the stored `permalink` (set inline at publish time). If missing,
  * reconstructs from `platformPostId` + platform-specific identifiers.
  *
- * Supported platforms: x, youtube, facebook, instagram.
+ * Handles: x, youtube, facebook, instagram, tiktok, linkedin, linkedin_page.
  */
 
 export type SupportedPlatform = 'twitter' | 'youtube' | 'facebook' | 'instagram';
@@ -84,6 +84,30 @@ export function getPostUrl(input: PostUrlInput): PostUrlResult {
         };
       }
       return { url: null, isFallback: false };
+    }
+
+    case 'tiktok': {
+      // TikTok API returns a publish_id, not the actual video ID.
+      // Fall back to the creator profile when username is available.
+      if (handle) {
+        return {
+          url: `https://www.tiktok.com/@${handle}`,
+          isFallback: true,
+        };
+      }
+      return { url: null, isFallback: false };
+    }
+
+    case 'linkedin':
+    case 'linkedin_page': {
+      // LinkedIn post URLs use the activity ID (platformPostId).
+      // Format: https://www.linkedin.com/feed/update/urn:li:activity:{activityId}
+      if (!platformPostId) return { url: null, isFallback: false };
+      const activityId = platformPostId.replace('urn:li:activity:', '');
+      return {
+        url: `https://www.linkedin.com/feed/update/urn:li:activity:${activityId}`,
+        isFallback: false,
+      };
     }
 
     default:
