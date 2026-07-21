@@ -19,7 +19,13 @@ const METRIC_ICONS: Record<string, { icon: LucideIcon; label: string }> = {
   comments: { icon: MessageCircle, label: 'Comments' },
   shares: { icon: Share2, label: 'Shares' },
   saves: { icon: Heart, label: 'Saves' },
+  saved: { icon: Heart, label: 'Saves' },
+  retweets: { icon: Share2, label: 'Retweets' },
+  replies: { icon: MessageCircle, label: 'Replies' },
 };
+
+// Order metrics appear in when present, rest fall back to insertion order.
+const METRIC_ORDER = ['impressions', 'reach', 'views', 'likes', 'comments', 'shares', 'saves', 'saved', 'retweets', 'replies'];
 
 function humanizeKey(key: string): string {
   if (METRIC_ICONS[key]) return METRIC_ICONS[key]!.label;
@@ -32,8 +38,42 @@ function toNumber(v: unknown): number | null {
   return null;
 }
 
+/**
+ * engagementData is stored NESTED BY PLATFORM, e.g.
+ *   { facebook: { likes, comments, shares, impressions },
+ *     instagram: { likes, comments, shares, saved } }
+ *
+ * This sums each metric across every platform's sub-object into a single
+ * flat totals map. Previously this component ran Object.entries() directly
+ * on the nested object and tried toNumber() on each platform's *object*
+ * value, which always failed — so every entry was silently filtered out
+ * and the panel showed the empty state even when data existed upstream.
+ */
+function flattenAcrossPlatforms(engagementData: Record<string, unknown>): Record<string, number> {
+  const totals: Record<string, number> = {};
+
+  for (const platformValue of Object.values(engagementData || {})) {
+    if (!platformValue || typeof platformValue !== 'object') continue;
+    for (const [metricKey, rawVal] of Object.entries(platformValue as Record<string, unknown>)) {
+      const n = toNumber(rawVal);
+      if (n === null) continue;
+      totals[metricKey] = (totals[metricKey] || 0) + n;
+    }
+  }
+
+  return totals;
+}
+
 export function EngagementPanel({ engagementData }: Props) {
-  const entries = Object.entries(engagementData || {}).filter(([, v]) => toNumber(v) !== null);
+  const totals = flattenAcrossPlatforms(engagementData);
+  const entries = Object.entries(totals).sort(([a], [b]) => {
+    const ai = METRIC_ORDER.indexOf(a);
+    const bi = METRIC_ORDER.indexOf(b);
+    if (ai === -1 && bi === -1) return 0;
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
 
   return (
     <Card className="p-4">
@@ -53,14 +93,13 @@ export function EngagementPanel({ engagementData }: Props) {
                 const meta = METRIC_ICONS[key];
                 const Icon = meta?.icon ?? BarChart3;
                 const label = humanizeKey(key);
-                const n = toNumber(val);
                 return (
                   <div key={key} className="rounded-md border bg-background/60 p-2.5">
                     <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                       <Icon className="size-3" />
                       {label}
                     </div>
-                    <p className="mt-1 text-lg font-semibold">{formatCount(n)}</p>
+                    <p className="mt-1 text-lg font-semibold">{formatCount(val)}</p>
                   </div>
                 );
               })}

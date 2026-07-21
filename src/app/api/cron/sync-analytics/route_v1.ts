@@ -310,24 +310,58 @@ async function fetchYouTubeMetrics(videoId: string, accessToken: string): Promis
 }
 
 async function fetchInstagramMetrics(mediaId: string, accessToken: string): Promise<Metrics | null> {
-  const metrics = 'impressions,reach,likes,comments,shares,saved';
-  const res = await fetch(
-    `https://graph.facebook.com/v21.0/${mediaId}/insights?metric=${metrics}&access_token=${accessToken}`,
+  // 'impressions' was deprecated by Meta for IG media (Graph API v22+) —
+  // including it alongside still-valid metrics makes the WHOLE call fail
+  // with a 400, since /insights validates the entire metric list at once.
+  // Try the full list first (works for older media), then retry without
+  // 'impressions' if that specific call fails.
+  const fullMetrics = 'impressions,reach,likes,comments,shares,saved';
+  const safeMetrics = 'reach,likes,comments,shares,saved';
+
+  let res = await fetch(
+    `https://graph.facebook.com/v21.0/${mediaId}/insights?metric=${fullMetrics}&access_token=${accessToken}`,
   );
 
   if (!res.ok) {
-    return null;
+    const errBody = await res.text();
+    console.warn(`[Analytics Sync] IG insights with 'impressions' failed for ${mediaId}, retrying without it:`, errBody);
+    res = await fetch(
+      `https://graph.facebook.com/v21.0/${mediaId}/insights?metric=${safeMetrics}&access_token=${accessToken}`,
+    );
   }
-  const data = await res.json();
-  if (!data.data) {
+
+  if (res.ok) {
+    const data = await res.json();
+    if (data.data?.length) {
+      const result: Metrics = {};
+      for (const metric of data.data) {
+        result[metric.name] = metric.values?.[0]?.value || 0;
+      }
+      return result;
+    }
+  } else {
+    const errBody = await res.text();
+    console.warn(`[Analytics Sync] IG insights failed entirely for ${mediaId}, falling back to edge counts:`, errBody);
+  }
+
+  // Fallback: direct like/comment counts via edges — works regardless of
+  // insights permission/metric issues, as long as pages_read_engagement
+  // (or instagram_manage_insights) is authorized for the connected account.
+  const fieldsRes = await fetch(
+    `https://graph.facebook.com/v21.0/${mediaId}?fields=like_count,comments_count&access_token=${accessToken}`,
+  );
+
+  if (!fieldsRes.ok) {
+    const errBody = await fieldsRes.text();
+    console.error(`[Analytics Sync] IG edge-count fallback also failed for ${mediaId}:`, errBody);
     return null;
   }
 
-  const result: Metrics = {};
-  for (const metric of data.data) {
-    result[metric.name] = metric.values?.[0]?.value || 0;
-  }
-  return result;
+  const fieldsData = await fieldsRes.json();
+  return {
+    likes: fieldsData.like_count || 0,
+    comments: fieldsData.comments_count || 0,
+  };
 }
 
 async function fetchTwitterMetrics(tweetId: string, accessToken: string): Promise<Metrics | null> {
@@ -355,28 +389,51 @@ async function fetchTwitterMetrics(tweetId: string, accessToken: string): Promis
 }
 
 async function fetchFacebookMetrics(postId: string, accessToken: string): Promise<Metrics | null> {
+  // Try Insights first (works for feed "post" nodes, gives impressions/reach too).
+  // This will fail for Photo/Video node ids with a Graph API error — expected
+  // for single-image and carousel posts, since photos aren't valid Insights targets.
   const metrics = 'post_impressions,post_impressions_unique,post_reactions_like_total,post_comments,post_shares';
-  const res = await fetch(
+  const insightsRes = await fetch(
     `https://graph.facebook.com/v21.0/${postId}/insights?metric=${metrics}&access_token=${accessToken}`,
   );
 
-  if (!res.ok) {
-    return null;
+  if (insightsRes.ok) {
+    const data = await insightsRes.json();
+    if (data.data?.length) {
+      const result: Metrics = {};
+      for (const metric of data.data) {
+        const key = metric.name
+          .replace('post_impressions_unique', 'reach')
+          .replace('post_impressions', 'impressions')
+          .replace('post_reactions_like_total', 'likes')
+          .replace('post_comments', 'comments')
+          .replace('post_shares', 'shares');
+        result[key] = metric.values?.[0]?.value || 0;
+      }
+      return result;
+    }
+  } else {
+    const errBody = await insightsRes.text();
+    console.warn(`[Analytics Sync] Facebook insights failed for ${postId}, falling back to edge counts:`, errBody);
   }
-  const data = await res.json();
-  if (!data.data) {
+
+  // Fallback: works uniformly for post, photo, and video node ids.
+  // No follower-count threshold, no node-type restriction — just direct
+  // like/comment/share counts via the object's own edges.
+  const fieldsRes = await fetch(
+    `https://graph.facebook.com/v21.0/${postId}?fields=likes.summary(true).limit(0),comments.summary(true).limit(0),shares&access_token=${accessToken}`,
+  );
+
+  if (!fieldsRes.ok) {
+    const errBody = await fieldsRes.text();
+    console.error(`[Analytics Sync] Facebook edge-count fallback also failed for ${postId}:`, errBody);
     return null;
   }
 
-  const result: Metrics = {};
-  for (const metric of data.data) {
-    const key = metric.name
-      .replace('post_impressions_unique', 'reach')
-      .replace('post_impressions', 'impressions')
-      .replace('post_reactions_like_total', 'likes')
-      .replace('post_comments', 'comments')
-      .replace('post_shares', 'shares');
-    result[key] = metric.values?.[0]?.value || 0;
-  }
-  return result;
+  const fieldsData = await fieldsRes.json();
+  return {
+    likes: fieldsData.likes?.summary?.total_count || 0,
+    comments: fieldsData.comments?.summary?.total_count || 0,
+    shares: fieldsData.shares?.count || 0,
+  };
 }

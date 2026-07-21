@@ -24,6 +24,7 @@ import {
 //   "instagram": { impressions, reach, likes, comments, saves },
 //   "twitter":  { impressions, likes, retweets, replies },
 //   "facebook": { impressions, likes, comments, shares },
+//   "tiktok":   { views, likes, comments, shares },
 // }
 //
 // Called by GitHub Actions every 6 hours.
@@ -172,6 +173,8 @@ async function fetchPlatformMetrics(
         return fetchTwitterMetrics(postId, accessToken);
       case 'facebook':
         return fetchFacebookMetrics(postId, accessToken);
+      case 'tiktok':
+        return fetchTikTokMetrics(postId, accessToken);
       default:
         return null;
     }
@@ -435,5 +438,101 @@ async function fetchFacebookMetrics(postId: string, accessToken: string): Promis
     likes: fieldsData.likes?.summary?.total_count || 0,
     comments: fieldsData.comments?.summary?.total_count || 0,
     shares: fieldsData.shares?.count || 0,
+  };
+}
+
+// -----------------------------------------------------------
+// TikTok
+//
+// IMPORTANT: the value stored as platformPostId at publish time
+// (see publishToTikTok in social-publish.ts) is TikTok's publish_id —
+// a job id for the async publish flow — NOT the actual TikTok video id.
+// These are different identifiers. We resolve the real video id via
+// the publish status endpoint first, then query metrics against that.
+//
+// Requires the 'video.list' scope on your TikTok app in addition to
+// 'video.publish'. If that scope isn't granted, fetchTikTokVideoMetrics
+// will fail with a permission error visible in these logs — check your
+// TikTok app's approved scopes if this keeps returning null.
+// -----------------------------------------------------------
+
+async function resolveTikTokVideoId(publishId: string, accessToken: string): Promise<string | null> {
+  try {
+    const res = await fetch('https://open.tiktokapis.com/v2/post/publish/status/fetch/', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json; charset=UTF-8',
+      },
+      body: JSON.stringify({ publish_id: publishId }),
+    });
+
+    if (!res.ok) {
+      console.warn(`[Analytics Sync] TikTok status fetch failed for publish_id ${publishId}:`, await res.text());
+      return null;
+    }
+
+    const data = await res.json();
+    const status: string = data.data?.status || '';
+    const videoId: string | undefined = data.data?.publicaly_available_post_id?.[0];
+
+    if (status && status !== 'PUBLISH_COMPLETE') {
+      console.warn(`[Analytics Sync] TikTok video for publish_id ${publishId} not ready yet (status: ${status})`);
+      return null;
+    }
+
+    return videoId || null;
+  } catch (err) {
+    console.error(`[Analytics Sync] TikTok status fetch error for ${publishId}:`, err);
+    return null;
+  }
+}
+
+async function fetchTikTokMetrics(postId: string, accessToken: string): Promise<Metrics | null> {
+  // If postId is a bare numeric TikTok video id already (e.g. it was
+  // resolved and persisted on an earlier sync), try metrics directly first
+  // to save a round trip. Otherwise treat it as a publish_id needing
+  // resolution. Adjust this check if your stored publish_id format differs —
+  // TikTok's publish_id is opaque and not formally documented as a fixed
+  // pattern, so this is a best-effort heuristic, not a guarantee.
+  const looksLikeRawVideoId = /^\d+$/.test(postId);
+
+  let videoId = postId;
+  if (!looksLikeRawVideoId) {
+    const resolved = await resolveTikTokVideoId(postId, accessToken);
+    if (!resolved) {
+      return null;
+    }
+    videoId = resolved;
+  }
+
+  const fields = 'id,like_count,comment_count,share_count,view_count';
+  const res = await fetch(`https://open.tiktokapis.com/v2/video/query/?fields=${fields}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=UTF-8',
+    },
+    body: JSON.stringify({ filters: { video_ids: [videoId] } }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    console.error(`[Analytics Sync] TikTok video query failed for ${videoId} (check 'video.list' scope is granted):`, errBody);
+    return null;
+  }
+
+  const data = await res.json();
+  const video = data.data?.videos?.[0];
+  if (!video) {
+    console.warn(`[Analytics Sync] TikTok video query returned no data for ${videoId}:`, JSON.stringify(data));
+    return null;
+  }
+
+  return {
+    views: video.view_count || 0,
+    likes: video.like_count || 0,
+    comments: video.comment_count || 0,
+    shares: video.share_count || 0,
   };
 }
