@@ -1026,10 +1026,14 @@ export async function publishToTikTok(
     const errCode = initData.error?.code || '';
     const errMsg = initData.error?.message || '';
     const isUnauditedWarning = errCode === 'unaudited_client_can_only_post_to_private_accounts';
+    const privacyWasPublic = tiktokSettings?.privacyLevel !== 'SELF_ONLY';
 
     if (!publishId) {
       if (isUnauditedWarning) {
-        return { success: true, platformPostId: 'tiktok-private-pending' };
+        return {
+          success: false,
+          error: 'TikTok app review not yet complete. Your app (NativPost) must be approved by TikTok for the Content Posting API before videos can be published publicly. Select "Only me" as the privacy setting to test with a private post, or submit your app for review at https://developers.tiktok.com.',
+        };
       }
       console.error('[TikTok] Init failed:', JSON.stringify(initData));
       if (errCode === 'spam_risk_too_many_posts' || errMsg.includes('cap')) {
@@ -1039,6 +1043,16 @@ export async function publishToTikTok(
         return { success: false, error: 'TikTok session expired. Please reconnect your TikTok account in Connections.' };
       }
       return { success: false, error: errMsg || errCode || 'TikTok upload failed. Please try again.' };
+    }
+
+    // If the init call returned both a publishId and an unaudited warning,
+    // only private (SELF_ONLY) posts are allowed. Public posts are blocked
+    // until TikTok approves the app through Content Posting API review.
+    if (isUnauditedWarning && privacyWasPublic) {
+      return {
+        success: false,
+        error: 'TikTok app review not yet complete. Public posts require TikTok approval. Select "Only me" as the privacy setting to test with a private post, or submit your app for review at https://developers.tiktok.com.',
+      };
     }
 
     // ── Poll video/status/fetch/ until PUBLISH_COMPLETE or FAILED ──────
