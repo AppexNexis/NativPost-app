@@ -198,6 +198,10 @@ export function TikTokPublishModal({
 
       if (!canceled && attempts < maxAttempts) {
         setTimeout(poll, 3000);
+      } else if (!canceled) {
+        // Timed out — TikTok is still processing but we can't wait longer
+        setPublishStatus('failed');
+        setError('Still processing on TikTok — check your TikTok app to confirm it posted, then close this.');
       }
     };
 
@@ -269,7 +273,7 @@ export function TikTokPublishModal({
     }
 
     initModal();
-  }, [isOpen, contentItem]);
+  }, [isOpen, contentItem.id]);
 
   if (!isOpen) return null;
 
