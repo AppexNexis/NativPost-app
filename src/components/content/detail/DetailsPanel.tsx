@@ -32,7 +32,6 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export function DetailsPanel({ item, campaign, template, influencer, angle }: Props) {
-  const platforms = (item.targetPlatforms || []).map(p => PLATFORM_LABELS[p] || p).join(', ') || '-';
 
   return (
     <Card className="p-4">
@@ -44,7 +43,29 @@ export function DetailsPanel({ item, campaign, template, influencer, angle }: Pr
         <Row label="Type" value={ctLabel(item.contentType)} />
         {item.topic && <Row label="Topic" value={item.topic} />}
         {item.contentMode && <Row label="Mode" value={ctLabel(item.contentMode)} />}
-        <Row label="Platforms" value={platforms} />
+        <Row label="Platforms" value={
+          <div className="flex flex-wrap gap-1.5 justify-end">
+            {(item.targetPlatforms as string[] || []).map(p => {
+              const label = PLATFORM_LABELS[p] || p;
+              const isTiktok = p === 'tiktok';
+              // TikTok shows "Review" when not yet configured
+              const needsReview = isTiktok && item.status === 'approved';
+              return (
+                <span
+                  key={p}
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                    needsReview
+                      ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-300'
+                      : 'bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {needsReview && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
+                  {label}
+                </span>
+              );
+            })}
+          </div>
+        } />
         {item.aspectRatio && <Row label="Aspect ratio" value={item.aspectRatio} />}
         {item.durationSeconds && item.durationSeconds > 0 && (
           <Row label="Duration" value={formatDuration(item.durationSeconds)} />

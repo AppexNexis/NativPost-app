@@ -22,6 +22,7 @@ type Props = ActionsPanelHandlers & {
   campaignReRollsRemaining?: number | null;
   hasTemplate?: boolean;
   actionLoading: string | null;
+  tiktokNeedsReview?: boolean;
 };
 
 export function ActionsPanel({
@@ -31,6 +32,7 @@ export function ActionsPanel({
   campaignReRollsRemaining,
   hasTemplate,
   actionLoading,
+  tiktokNeedsReview,
   onApprove,
   onOpenReject,
   onOpenDelete,
@@ -63,7 +65,7 @@ export function ActionsPanel({
           <>
             <Button className="w-full" onClick={onPublishNow} disabled={!!actionLoading || !canPublish}>
               {actionLoading === 'publish' ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Send className="mr-2 size-4" />}
-              Publish now
+              {tiktokNeedsReview ? 'Review & Publish' : 'Publish now'}
             </Button>
             <Button variant="outline" className="w-full" onClick={onOpenSchedule} disabled={!!actionLoading}>
               <Calendar className="mr-2 size-4" />

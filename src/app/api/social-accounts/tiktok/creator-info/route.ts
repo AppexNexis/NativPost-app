@@ -129,6 +129,7 @@ export async function GET(_request: NextRequest) {
       stitch_disabled?: boolean;
       max_video_post_duration_sec?: number;
       creator_username?: string;
+      can_post?: boolean;
     }
   }).data;
 
@@ -141,11 +142,13 @@ export async function GET(_request: NextRequest) {
 
   return NextResponse.json({
     nickname: d.nickname || d.creator_username || 'TikTok User',
+    creatorUsername: d.creator_username || null,
     avatarUrl: d.avatar_url || null,
     privacyLevelOptions: d.privacy_level_options || ['SELF_ONLY'],
     commentDisabled: d.comment_disabled ?? false,
     duetDisabled: d.duet_disabled ?? false,
     stitchDisabled: d.stitch_disabled ?? false,
     maxVideoDurationSec: d.max_video_post_duration_sec ?? 600,
+    canPost: d.can_post ?? true,
   });
 }

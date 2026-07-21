@@ -20,6 +20,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 
 import { PageHeader } from '@/features/dashboard/PageHeader';
 import type { ContentItem } from '@/types/v2';
+import type { TikTokPublishSettings } from '@/components/tiktok/TikTokPublishModal';
+import { TikTokPublishModal } from '@/components/tiktok/TikTokPublishModal';
 
 import { ActionsPanel } from './ActionsPanel';
 import { CaptionPanel } from './CaptionPanel';
@@ -72,6 +74,12 @@ export function ContentDetailClient({ id }: Props) {
   const [scheduleOpenMobile, setScheduleOpenMobile] = useState(false);
 
   const [retryingPlatform, setRetryingPlatform] = useState<string | null>(null);
+
+  // ── TikTok per-platform review ─────────────────────────────────────────
+  const [tiktokModalOpen, setTiktokModalOpen] = useState(false);
+  const [pendingTiktokSettings, setPendingTiktokSettings] = useState<TikTokPublishSettings | null>(null);
+  const platforms = (item?.targetPlatforms as string[]) || [];
+  const hasTiktok = platforms.includes('tiktok');
 
   const editorHref = useMemo(() => `/dashboard/editor?contentItemId=${id}`, [id]);
 
@@ -178,9 +186,22 @@ export function ContentDetailClient({ id }: Props) {
   };
 
   const publishNow = async () => {
+    // If TikTok is a target platform and no settings collected yet, open modal
+    if (hasTiktok && !pendingTiktokSettings) {
+      setTiktokModalOpen(true);
+      return;
+    }
+    await executePublish();
+  };
+
+  const executePublish = async (tiktokSettings?: TikTokPublishSettings) => {
     setActionLoading('publish');
     try {
-      const res = await fetch(`/api/content/${item.id}/publish`, { method: 'POST' });
+      const res = await fetch(`/api/content/${item.id}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tiktokSettings ? { tiktokSettings } : {}),
+      });
       if (res.ok) {
         const refreshRes = await fetch(`/api/content/${item.id}`);
         if (refreshRes.ok) {
@@ -190,6 +211,12 @@ export function ContentDetailClient({ id }: Props) {
         }
       }
     } finally { setActionLoading(null); }
+  };
+
+  const handleTikTokPublish = async (settings: TikTokPublishSettings) => {
+    setTiktokModalOpen(false);
+    setPendingTiktokSettings(settings);
+    await executePublish(settings);
   };
 
   const rejectWithFeedback = async (feedback: string) => {
@@ -297,6 +324,7 @@ export function ContentDetailClient({ id }: Props) {
               campaignReRollsRemaining={campaign ? campaign.reRollsRemaining : null}
               hasTemplate={!!item.templateId}
               actionLoading={actionLoading}
+              tiktokNeedsReview={hasTiktok && !pendingTiktokSettings && item.status === 'approved'}
               onApprove={() => updateStatus('approved')}
               onOpenReject={() => setRejectOpen(true)}
               onOpenDelete={() => setDeleteOpen(true)}
@@ -355,6 +383,22 @@ export function ContentDetailClient({ id }: Props) {
         captionPreview={item.caption}
         isBusy={actionLoading === 'delete'}
       />
+
+      {/* TikTok Publish Modal — opens when TikTok needs per-platform review */}
+      {hasTiktok && (
+        <TikTokPublishModal
+          isOpen={tiktokModalOpen}
+          onClose={() => setTiktokModalOpen(false)}
+          onPublish={handleTikTokPublish}
+          contentItem={{
+            id: item.id,
+            caption: item.caption,
+            contentType: item.contentType,
+            videoDuration: undefined,
+            videoUrl: (item.graphicUrls as string[] | undefined)?.[0],
+          }}
+        />
+      )}
     </>
   );
 }

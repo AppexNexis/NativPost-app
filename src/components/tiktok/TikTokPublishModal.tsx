@@ -10,7 +10,6 @@ import {
   Check,
   ChevronDown,
   Loader2,
-  Music,
   X,
   Shield,
   Video,
@@ -28,10 +27,13 @@ export type TikTokPublishSettings = {
   brandOrganicToggle: boolean;
   brandContentToggle: boolean;
   commercialDisclosure: boolean;
+  isAIGC: boolean;
+  musicConsent: boolean;
 };
 
 type CreatorInfo = {
   nickname: string;
+  creatorUsername: string | null;
   avatarUrl: string | null;
   privacyLevelOptions: string[];
   commentDisabled: boolean;
@@ -70,6 +72,7 @@ export function TikTokPublishModal({
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
   const [creatorInfo, setCreatorInfo] = useState<CreatorInfo | null>(null);
+  const [freshnessTimestamp, setFreshnessTimestamp] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<TikTokPublishSettings>({
@@ -81,6 +84,8 @@ export function TikTokPublishModal({
     commercialDisclosure: false, // Guideline 3a: OFF BY DEFAULT
     brandOrganicToggle: false,
     brandContentToggle: false,
+    isAIGC: false,
+    musicConsent: false,     // Must be actively checked — no default
   });
 
   const isPhotoPost = contentItem.contentType === 'image';
@@ -134,6 +139,7 @@ export function TikTokPublishModal({
     setPublishStatus('idle');
     setPublishId(null);
     setError(null);
+    setFreshnessTimestamp(null);
     setSettings({
       title: '',
       privacyLevel: '',
@@ -143,6 +149,8 @@ export function TikTokPublishModal({
       commercialDisclosure: false,
       brandOrganicToggle: false,
       brandContentToggle: false,
+      isAIGC: false,
+      musicConsent: false,
     });
 
     async function initModal() {
@@ -161,6 +169,7 @@ export function TikTokPublishModal({
 
         const creatorData: CreatorInfo = await creatorRes.json();
         setCreatorInfo(creatorData);
+        setFreshnessTimestamp(Date.now());
 
         // Guideline 1c: Check video duration limits
         if (contentItem.contentType === 'video' && contentItem.videoDuration && creatorData.maxVideoDurationSec) {
@@ -201,6 +210,7 @@ export function TikTokPublishModal({
 
   const isPublishDisabled =
     !settings.privacyLevel ||
+    !settings.musicConsent ||                      // Guideline: active consent required
     commercialDisclosureIncomplete ||
     brandedContentPrivacyViolation ||
     !!error ||
@@ -288,10 +298,20 @@ export function TikTokPublishModal({
                       {creatorInfo.nickname.charAt(0).toUpperCase()}
                     </div>
                   )}
-                  <div>
+                  <div className="flex-1">
                     <p className="text-xs text-muted-foreground font-medium">Posting as:</p>
-                    <p className="text-sm font-semibold text-foreground">@{creatorInfo.nickname}</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      @{creatorInfo.creatorUsername || creatorInfo.nickname}
+                    </p>
                   </div>
+                  {freshnessTimestamp && (
+                    <div className="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 border border-emerald-200">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      <span className="text-[10px] font-medium text-emerald-700 whitespace-nowrap">
+                        Settings verified
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -424,7 +444,25 @@ export function TikTokPublishModal({
                 </div>
               </div>
 
-              {/* 5. Commercial Disclosure (Guideline 3a & 3b) */}
+              {/* 5. AI Generated Content (Guideline 2d — required toggle) */}
+              <div className="rounded-lg border p-4 space-y-2">
+                <label className="flex items-center gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={settings.isAIGC}
+                    onChange={(e) => setSettings(s => ({ ...s, isAIGC: e.target.checked }))}
+                    className="accent-[#FE2C55] h-4 w-4 cursor-pointer"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-foreground">AI Generated Content</p>
+                    <p className="text-xs text-muted-foreground">
+                      Indicate if this content was generated or edited using AI tools
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {/* 6. Commercial Disclosure (Guideline 3a & 3b) */}
               <div className="rounded-lg border bg-muted/20 p-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
@@ -524,13 +562,26 @@ export function TikTokPublishModal({
             </div>
           )}
 
-          {/* Consent Declaration (Guideline 2 & 4) */}
-          <div className="flex items-center gap-2 mb-3 bg-background border rounded px-3 py-1.5 w-full">
-            <Music className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <p className="text-[11px] font-medium text-muted-foreground">
-              <span className="text-foreground font-semibold">Consent Declaration:</span> {consentText}
-            </p>
-          </div>
+          {/* Consent Declaration Checkbox (Guideline 2 & 4 — must be actively checked) */}
+          <label className="flex items-start gap-2 mb-3 bg-background border rounded px-3 py-2.5 w-full cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={settings.musicConsent}
+              onChange={(e) => setSettings(s => ({ ...s, musicConsent: e.target.checked }))}
+              className="accent-[#FE2C55] h-4 w-4 mt-0.5 shrink-0 cursor-pointer"
+            />
+            <div>
+              <p className="text-[11px] font-medium text-foreground leading-relaxed">
+                {consentText}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                Required. Your content must comply with TikTok's policies.
+              </p>
+            </div>
+            {settings.musicConsent && (
+              <Check className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+            )}
+          </label>
 
           <div className="flex w-full gap-3">
             <button

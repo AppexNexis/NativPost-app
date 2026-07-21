@@ -950,6 +950,7 @@ export async function publishToTikTok(
     allowStitch?: boolean;
     brandOrganicToggle?: boolean;
     brandContentToggle?: boolean;
+    isAIGC?: boolean;
   },
 ): Promise<PublishResult> {
   if (!videoUrl) {
@@ -985,8 +986,10 @@ export async function publishToTikTok(
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nativpost.com';
     const tiktokVideoUrl = `${appUrl}/api/media/proxy?url=${encodeURIComponent(playableUrl)}`;
 
-    const privacyLevel = tiktokSettings?.privacyLevel
-      || (creatorInfo.privacyLevelOptions.includes('SELF_ONLY') ? 'SELF_ONLY' : (creatorInfo.privacyLevelOptions[0] ?? 'SELF_ONLY'));
+    if (!tiktokSettings?.privacyLevel) {
+      return { success: false, error: 'TikTok requires a privacy/visibility setting to be explicitly selected.' };
+    }
+    const privacyLevel = tiktokSettings.privacyLevel;
 
     const initRes = await fetch('https://open.tiktokapis.com/v2/post/publish/video/init/', {
       method: 'POST',
@@ -1003,6 +1006,7 @@ export async function publishToTikTok(
           disable_stitch: tiktokSettings?.allowStitch === true ? false : creatorInfo.stitchDisabled,
           brand_organic_toggle: tiktokSettings?.brandOrganicToggle ?? false,
           brand_content_toggle: tiktokSettings?.brandContentToggle ?? false,
+          is_aigc: tiktokSettings?.isAIGC ?? false,
         },
         source_info: {
           source: 'PULL_FROM_URL',
