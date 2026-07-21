@@ -185,6 +185,8 @@ export function TikTokPublishModal({
 
         if (data.status === 'PUBLISH_COMPLETE') {
           if (!canceled) setPublishStatus('success');
+          // Auto-close after 1.5s so the user sees the success state
+          if (!canceled) setTimeout(() => { if (!canceled) onClose(); }, 1500);
           return;
         }
         if (data.status === 'FAILED') {

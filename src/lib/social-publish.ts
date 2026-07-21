@@ -954,6 +954,7 @@ export async function publishToTikTok(
     caption?: string;
     publishMethod?: string;
   },
+  platformUsername?: string,
 ): Promise<PublishResult> {
   if (!videoUrl) {
     return { success: false, error: 'TikTok requires a video. Create a video post first.' };
@@ -1073,7 +1074,7 @@ export async function publishToTikTok(
           body: JSON.stringify({ publish_id: publishId }),
         });
         const statusData = await statusRes.json() as {
-          data?: { status?: string; fail_reason?: string };
+          data?: { status?: string; fail_reason?: string; publicaly_available_post_id?: string[] };
           error?: { code?: string; message?: string };
         };
 
@@ -1082,7 +1083,13 @@ export async function publishToTikTok(
 
         if (status === 'PUBLISH_COMPLETE') {
           console.log('[TikTok] Publish complete ✓');
-          return { success: true, platformPostId: publishId };
+          // TikTok returns publicaly_available_post_id[0] as the video's
+          // aweme_id. Build the permalink from it + the creator's username.
+          const postId = statusData.data?.publicaly_available_post_id?.[0];
+          const permalink = platformUsername && postId
+            ? `https://www.tiktok.com/@${platformUsername}/video/${postId}`
+            : undefined;
+          return { success: true, platformPostId: publishId, permalink };
         }
         if (status === 'FAILED') {
           const reason = statusData.data?.fail_reason || 'Unknown TikTok failure';
@@ -1618,7 +1625,7 @@ export async function publishToplatform(
         brandOrganicToggle?: boolean; brandContentToggle?: boolean;
         isAIGC?: boolean; caption?: string; publishMethod?: string;
       } | undefined;
-      return publishToTikTok(accessToken, caption, squareVideo ?? verticalVideo, refreshToken, onTokenRefresh, tiktokSettings);
+      return publishToTikTok(accessToken, caption, squareVideo ?? verticalVideo, refreshToken, onTokenRefresh, tiktokSettings, platformUsername);
     }
 
     case 'youtube':
