@@ -339,26 +339,45 @@ export function TikTokPublishModal({
           ) : (
             <>
               {/* ── LEFT: sticky video preview + file properties ── */}
-              <div className="flex w-full shrink-0 flex-col gap-3 border-b p-6 lg:sticky lg:top-0 lg:h-full lg:w-[280px] lg:overflow-y-auto lg:border-b-0 lg:border-r">
+              <div className="flex w-full shrink-0 flex-col gap-3 border-b p-6 lg:sticky lg:top-0 lg:h-full lg:w-1/2 lg:overflow-y-auto lg:border-b-0 lg:border-r">
                 <div className="flex items-center gap-2 text-sm font-medium text-emerald-600">
                   <Check className="h-4 w-4" />
                   Your video is ready!
                 </div>
 
-                {/* TikTok-native 9:16 frame */}
-                <div
-                  className="w-full overflow-hidden rounded-lg border bg-black"
-                  style={{ aspectRatio: '9 / 16' }}
-                >
+                {/* TikTok-native 9:16 frame — fills preview column with text overlay matching editor styling */}
+                <div className="relative flex-1 w-full overflow-hidden rounded-lg border bg-black flex items-center justify-center" style={{ minHeight: '320px' }}>
                   {resolvedVideoUrl ? (
-                    // eslint-disable-next-line jsx-a11y/media-has-caption
-                    <video
-                      src={resolvedVideoUrl}
-                      className="h-full w-full object-contain"
-                      controls
-                      preload="metadata"
-                      playsInline
-                    />
+                    <>
+                      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                      <video
+                        src={resolvedVideoUrl}
+                        className="h-full w-full object-contain"
+                        controls
+                        preload="metadata"
+                        playsInline
+                        style={{ maxHeight: '100%' }}
+                      />
+                      {/* Caption text overlay — mirrors SlideView bottom_caption styling */}
+                      {settings.caption && (
+                        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-center p-4"
+                          style={{
+                            background: 'linear-gradient(transparent 0%, rgba(0,0,0,0.4) 100%)',
+                          }}
+                        >
+                          <p className="text-center font-bold leading-snug text-white break-words max-w-full"
+                            style={{
+                              fontSize: 'clamp(0.625rem, 2.5vw, 1rem)',
+                              WebkitTextStroke: '1px black',
+                              textShadow: '0 1px 3px rgba(0,0,0,0.6)',
+                              lineHeight: 1.3,
+                            }}
+                          >
+                            {settings.caption}
+                          </p>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-xs text-white/50">
                       No preview available
@@ -380,7 +399,7 @@ export function TikTokPublishModal({
               </div>
 
               {/* ── RIGHT: scrollable form ── */}
-              <div className="flex-1 space-y-6 overflow-y-auto p-6">
+              <div className="flex-1 space-y-6 overflow-y-auto p-6 lg:w-1/2">
 
                 {/* Account chip (Guideline 1a) */}
                 {creatorInfo && (
@@ -390,24 +409,24 @@ export function TikTokPublishModal({
                       <img
                         src={creatorInfo.avatarUrl}
                         alt="Avatar"
-                        className="h-10 w-10 rounded-full border border-neutral-200 object-cover"
+                        className="h-10 w-10 shrink-0 rounded-full border-2 border-[#FE2C55]/20 object-cover"
                       />
                     ) : (
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#FE2C55]/10 font-bold text-[#FE2C55]">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FE2C55]/10 font-bold text-[#FE2C55]">
                         {creatorInfo.nickname.charAt(0).toUpperCase()}
                       </div>
                     )}
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-foreground">
-                        {creatorInfo.creatorUsername || creatorInfo.nickname}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-muted-foreground">TikTok account</p>
+                      <p className="truncate text-sm font-semibold text-foreground">
+                        @{creatorInfo.creatorUsername || creatorInfo.nickname}
                       </p>
                     </div>
-                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
                     {freshnessTimestamp && (
-                      <div className="flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      <div className="flex shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1">
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
                         <span className="whitespace-nowrap text-[10px] font-medium text-emerald-700">
-                          Settings verified
+                          Verified
                         </span>
                       </div>
                     )}
@@ -521,12 +540,17 @@ export function TikTokPublishModal({
                   </div>
                 </label>
 
-                {/* Disclose video content (Guideline 3a & 3b) — renamed to match TikTok's own copy, rendered as a switch */}
-                <div className="space-y-3 border-t pt-5">
+                {/* Disclose video content (Guideline 3a & 3b) */}
+                <div className="space-y-3 rounded-lg border bg-muted/10 p-4">
                   <div className="flex items-center justify-between gap-4">
-                    <label htmlFor="disclose-toggle" className="text-sm font-medium text-foreground">
-                      Disclose video content
-                    </label>
+                    <div className="space-y-0.5">
+                      <label htmlFor="disclose-toggle" className="text-sm font-medium text-foreground cursor-pointer">
+                        Disclose video content
+                      </label>
+                      <p className="text-xs text-muted-foreground">
+                        This video promotes goods or services in exchange for something of value
+                      </p>
+                    </div>
                     <button
                       id="disclose-toggle"
                       type="button"
@@ -538,16 +562,13 @@ export function TikTokPublishModal({
                         brandOrganicToggle: false,
                         brandContentToggle: false,
                       }))}
-                      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${settings.commercialDisclosure ? 'bg-[#FE2C55]' : 'bg-muted-foreground/30'}`}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${settings.commercialDisclosure ? 'bg-[#FE2C55]' : 'bg-input'}`}
                     >
                       <span
-                        className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${settings.commercialDisclosure ? 'translate-x-[22px]' : 'translate-x-0.5'}`}
+                        className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${settings.commercialDisclosure ? 'translate-x-5' : 'translate-x-0'}`}
                       />
                     </button>
                   </div>
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    Turn on to disclose that this video promotes goods or services in exchange for something of value. Your video could promote yourself, a third party, or both.
-                  </p>
 
                   {brandTogglesActive && (
                     <div className="space-y-4 animate-in slide-in-from-top-2 duration-150">
