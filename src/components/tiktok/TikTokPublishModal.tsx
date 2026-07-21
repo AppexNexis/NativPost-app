@@ -752,8 +752,8 @@ export function TikTokPublishModal({
             )}
           </label>
 
-          {/* ── Publish Summary ── */}
-          <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+          {/* ── Publish Summary (hidden, kept for reference) ── */}
+          <div className="hidden space-y-2 rounded-lg border bg-muted/20 p-3">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Publish Summary</p>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-foreground">
               <span className="font-semibold">@{creatorInfo?.creatorUsername || creatorInfo?.nickname || 'TikTok'}</span>
