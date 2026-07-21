@@ -75,11 +75,21 @@ export function ContentDetailClient({ id }: Props) {
 
   const [retryingPlatform, setRetryingPlatform] = useState<string | null>(null);
 
+  // ── Connected accounts — cross-reference with targetPlatforms ──────────
+  // Blitz/Campaigns set targetPlatforms at generation time. If a user later
+  // disconnects a platform (e.g. TikTok), it should NOT appear in the UI
+  // or trigger review flows. We fetch active accounts and filter.
+  const [connectedPlatforms, setConnectedPlatforms] = useState<string[]>([]);
+
   // ── TikTok per-platform review ─────────────────────────────────────────
   const [tiktokModalOpen, setTiktokModalOpen] = useState(false);
   const [pendingTiktokSettings, setPendingTiktokSettings] = useState<TikTokPublishSettings | null>(null);
-  const platforms = (item?.targetPlatforms as string[]) || [];
-  const hasTiktok = platforms.includes('tiktok');
+  // Only filter when connectedPlatforms has loaded, otherwise show all
+  // (avoids flash where platforms briefly disappear on slow social-accounts fetch)
+  const effectivePlatforms = connectedPlatforms.length > 0
+    ? (item?.targetPlatforms as string[])?.filter(p => connectedPlatforms.includes(p)) || []
+    : (item?.targetPlatforms as string[]) || [];
+  const effectiveHasTiktok = effectivePlatforms.includes('tiktok');
 
   const editorHref = useMemo(() => `/dashboard/editor?contentItemId=${id}`, [id]);
 
@@ -112,6 +122,16 @@ export function ContentDetailClient({ id }: Props) {
         if (loaded.angleId) {
           fetch(`/api/content-angles/${loaded.angleId}`).then(r => r.ok ? r.json() : null).then(d => ok && d && setAngle(d.item)).catch(() => {});
         }
+
+        // Fetch connected social accounts to filter targetPlatforms
+        fetch('/api/social-accounts').then(r => r.ok ? r.json() : null).then(d => {
+          if (ok && d?.accounts) {
+            const active = (d.accounts as Array<{ platform: string; isActive: boolean }>)
+              .filter(a => a.isActive)
+              .map(a => a.platform);
+            setConnectedPlatforms(active);
+          }
+        }).catch(() => {});
       } finally {
         if (ok) setIsLoading(false);
       }
@@ -187,7 +207,7 @@ export function ContentDetailClient({ id }: Props) {
 
   const publishNow = async () => {
     // If TikTok is a target platform and no settings collected yet, open modal
-    if (hasTiktok && !pendingTiktokSettings) {
+    if (effectiveHasTiktok && !pendingTiktokSettings) {
       setTiktokModalOpen(true);
       return;
     }
@@ -324,7 +344,7 @@ export function ContentDetailClient({ id }: Props) {
               campaignReRollsRemaining={campaign ? campaign.reRollsRemaining : null}
               hasTemplate={!!item.templateId}
               actionLoading={actionLoading}
-              tiktokNeedsReview={hasTiktok && !pendingTiktokSettings && item.status === 'approved'}
+              tiktokNeedsReview={effectiveHasTiktok && !pendingTiktokSettings && item.status === 'approved'}
               onApprove={() => updateStatus('approved')}
               onOpenReject={() => setRejectOpen(true)}
               onOpenDelete={() => setDeleteOpen(true)}
@@ -352,6 +372,7 @@ export function ContentDetailClient({ id }: Props) {
 
             <DetailsPanel
               item={item}
+              effectivePlatforms={effectivePlatforms}
               campaign={campaign}
               template={template}
               influencer={influencer}
@@ -385,7 +406,7 @@ export function ContentDetailClient({ id }: Props) {
       />
 
       {/* TikTok Publish Modal — opens when TikTok needs per-platform review */}
-      {hasTiktok && (
+      {effectiveHasTiktok && (
         <TikTokPublishModal
           isOpen={tiktokModalOpen}
           onClose={() => setTiktokModalOpen(false)}

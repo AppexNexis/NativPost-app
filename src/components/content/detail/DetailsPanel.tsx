@@ -16,6 +16,7 @@ type Angle = { id: string; name: string; color?: string | null } | null;
 
 type Props = {
   item: ContentItem;
+  effectivePlatforms?: string[];
   campaign: Campaign;
   template: Template;
   influencer: Influencer;
@@ -31,7 +32,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export function DetailsPanel({ item, campaign, template, influencer, angle }: Props) {
+export function DetailsPanel({ item, effectivePlatforms, campaign, template, influencer, angle }: Props) {
 
   return (
     <Card className="p-4">
@@ -45,7 +46,7 @@ export function DetailsPanel({ item, campaign, template, influencer, angle }: Pr
         {item.contentMode && <Row label="Mode" value={ctLabel(item.contentMode)} />}
         <Row label="Platforms" value={
           <div className="flex flex-wrap gap-1.5 justify-end">
-            {(item.targetPlatforms as string[] || []).map(p => {
+            {(effectivePlatforms || item.targetPlatforms as string[] || []).map(p => {
               const label = PLATFORM_LABELS[p] || p;
               const isTiktok = p === 'tiktok';
               // TikTok shows "Review" when not yet configured
