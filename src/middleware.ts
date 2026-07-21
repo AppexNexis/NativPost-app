@@ -95,6 +95,7 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
         // Public /api/v1 surface — authenticated via bearer API keys,
         // NOT Clerk sessions. See src/lib/require-api-key.ts.
         || req.nextUrl.pathname.startsWith('/api/v1/')
+        || req.nextUrl.pathname.startsWith('/api/media/proxy')
       ) {
         return NextResponse.next();
       }

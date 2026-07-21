@@ -1,11 +1,16 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+// Vercel Hobby caps at 60s; Pro allows up to 300s. TikTok may need up
+// to 60s to download the full video through this proxy.
+export const maxDuration = 60;
+
 // -----------------------------------------------------------
-// GET /api/media/proxy?url=<encoded-uploadcare-url>
+// GET /api/media/proxy?url=<encoded-video-url>
 //
-// Proxies video/image files from Uploadcare CDN through
-// app.nativpost.com so TikTok's domain ownership check passes.
+// Proxies video/image files from Cloudinary (or legacy Uploadcare)
+// CDN through app.nativpost.com so TikTok's domain ownership check
+// passes and the video URL belongs to a verified domain.
 //
 // Why this exists:
 //   TikTok's PULL_FROM_URL requires the video URL to belong to a
@@ -26,8 +31,8 @@ const ALLOWED_CDN_HOSTS = [
   'ucarecdn.com',
   '32v3ws8ss0.ucarecd.net',
   '9c0v643oty.ucarecd.net',
+  'res.cloudinary.com',
 ];
-
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const rawUrl = searchParams.get('url');
@@ -48,7 +53,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Only https URLs are allowed' }, { status: 400 });
   }
 
-  // Security: only proxy from our known Uploadcare CDN hostnames
+  // Security: only proxy from known CDN hostnames (Uploadcare + Cloudinary)
   const hostAllowed = ALLOWED_CDN_HOSTS.some(
     host => targetUrl.hostname === host || targetUrl.hostname.endsWith(`.${host}`),
   );
