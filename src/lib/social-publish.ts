@@ -952,6 +952,7 @@ export async function publishToTikTok(
     brandContentToggle?: boolean;
     isAIGC?: boolean;
     caption?: string;
+    publishMethod?: string;
   },
 ): Promise<PublishResult> {
   if (!videoUrl) {
@@ -987,10 +988,10 @@ export async function publishToTikTok(
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nativpost.com';
     const tiktokVideoUrl = `${appUrl}/api/media/proxy?url=${encodeURIComponent(playableUrl)}`;
 
-    if (!tiktokSettings?.privacyLevel) {
-      return { success: false, error: 'TikTok requires a privacy/visibility setting to be explicitly selected.' };
-    }
-    const privacyLevel = tiktokSettings.privacyLevel;
+    const isInbox = tiktokSettings?.publishMethod === 'INBOX';
+    const privacyLevel = (!isInbox && tiktokSettings?.privacyLevel)
+      ? tiktokSettings.privacyLevel
+      : 'PUBLIC';
 
     const initRes = await fetch('https://open.tiktokapis.com/v2/post/publish/video/init/', {
       method: 'POST',
@@ -1002,9 +1003,9 @@ export async function publishToTikTok(
         post_info: {
           title: ((tiktokSettings as any)?.caption || tiktokSettings?.title || caption).slice(0, 2200),
           privacy_level: privacyLevel,
-          disable_comment: tiktokSettings?.allowComment === true ? false : creatorInfo.commentDisabled,
-          disable_duet: tiktokSettings?.allowDuet === true ? false : creatorInfo.duetDisabled,
-          disable_stitch: tiktokSettings?.allowStitch === true ? false : creatorInfo.stitchDisabled,
+          disable_comment: isInbox ? false : (tiktokSettings?.allowComment === true ? false : creatorInfo.commentDisabled),
+          disable_duet: isInbox ? false : (tiktokSettings?.allowDuet === true ? false : creatorInfo.duetDisabled),
+          disable_stitch: isInbox ? false : (tiktokSettings?.allowStitch === true ? false : creatorInfo.stitchDisabled),
           brand_organic_toggle: tiktokSettings?.brandOrganicToggle ?? false,
           brand_content_toggle: tiktokSettings?.brandContentToggle ?? false,
           is_aigc: tiktokSettings?.isAIGC ?? false,
@@ -1554,6 +1555,7 @@ export async function publishToplatform(
         title?: string; privacyLevel?: string; allowComment?: boolean;
         allowDuet?: boolean; allowStitch?: boolean;
         brandOrganicToggle?: boolean; brandContentToggle?: boolean;
+        isAIGC?: boolean; caption?: string; publishMethod?: string;
       } | undefined;
       return publishToTikTok(accessToken, caption, squareVideo ?? verticalVideo, refreshToken, onTokenRefresh, tiktokSettings);
     }
