@@ -79,6 +79,8 @@ interface TikTokPublishModalProps {
     fileSizeBytes?: number;
     videoResolutionLabel?: string; // e.g. "1080P"
   };
+  /** Avatar URL from the stored social account (reliable — not from creator-info API) */
+  avatarUrl?: string | null;
 }
 
 // ── Small helpers for the file-properties row ───────────────────────────────
@@ -111,6 +113,7 @@ export function TikTokPublishModal({
   onClose,
   onPublish,
   contentItem,
+  avatarUrl,
 }: TikTokPublishModalProps) {
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
@@ -407,10 +410,10 @@ export function TikTokPublishModal({
                 {/* Account chip (Guideline 1a) */}
                 {creatorInfo && (
                   <div className="flex items-center gap-3 rounded-lg border bg-muted/40 p-3">
-                    {creatorInfo.avatarUrl && !avatarError ? (
+                    {(avatarUrl ?? creatorInfo.avatarUrl) && !avatarError ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={creatorInfo.avatarUrl}
+                        src={avatarUrl ?? creatorInfo.avatarUrl ?? ''}
                         alt="Avatar"
                         referrerPolicy="no-referrer"
                         className="h-10 w-10 shrink-0 rounded-full border-2 border-[#FE2C55]/20 object-cover"

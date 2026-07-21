@@ -74,6 +74,7 @@ export function ContentDetailClient({ id }: Props) {
   const [scheduleOpenMobile, setScheduleOpenMobile] = useState(false);
 
   const [retryingPlatform, setRetryingPlatform] = useState<string | null>(null);
+  const [tiktokAccountAvatar, setTiktokAccountAvatar] = useState<string | null>(null);
 
   // ── Connected accounts — cross-reference with targetPlatforms ──────────
   // Blitz/Campaigns set targetPlatforms at generation time. If a user later
@@ -123,13 +124,15 @@ export function ContentDetailClient({ id }: Props) {
           fetch(`/api/content-angles/${loaded.angleId}`).then(r => r.ok ? r.json() : null).then(d => ok && d && setAngle(d.item)).catch(() => {});
         }
 
-        // Fetch connected social accounts to filter targetPlatforms
+        // Fetch connected social accounts — filter targetPlatforms + get TikTok avatar
         fetch('/api/social-accounts').then(r => r.ok ? r.json() : null).then(d => {
           if (ok && d?.accounts) {
-            const active = (d.accounts as Array<{ platform: string; isActive: boolean }>)
-              .filter(a => a.isActive)
-              .map(a => a.platform);
+            const accounts = d.accounts as Array<{ platform: string; isActive: boolean; profileImageUrl?: string }>;
+            const active = accounts.filter(a => a.isActive).map(a => a.platform);
             setConnectedPlatforms(active);
+            // Get TikTok avatar from stored social account (known to work)
+            const tiktokAcc = accounts.find(a => a.platform === 'tiktok' && a.isActive);
+            if (tiktokAcc?.profileImageUrl) setTiktokAccountAvatar(tiktokAcc.profileImageUrl);
           }
         }).catch(() => {});
       } finally {
@@ -418,6 +421,7 @@ export function ContentDetailClient({ id }: Props) {
             videoDuration: undefined,
             videoUrl: (item.graphicUrls as string[] | undefined)?.[0],
           }}
+          avatarUrl={tiktokAccountAvatar}
         />
       )}
     </>
