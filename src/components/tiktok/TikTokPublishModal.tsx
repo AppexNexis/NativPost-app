@@ -176,7 +176,7 @@ export function TikTokPublishModal({
       if (canceled) return;
       attempts++;
       try {
-        const res = await fetch('/api/social-accounts/tiktok/publish-status', {
+        const res = await fetch('/api/social-accounts/publish-status', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ publishId }),

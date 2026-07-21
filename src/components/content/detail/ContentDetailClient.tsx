@@ -261,20 +261,34 @@ export function ContentDetailClient({ id }: Props) {
         body: JSON.stringify(tiktokSettings ? { tiktokSettings } : {}),
       });
       if (res.ok) {
+        const body = await res.json() as { published?: boolean; results?: { platform: string; success: boolean; platformPostId?: string }[] };
         const refreshRes = await fetch(`/api/content/${item.id}`);
         if (refreshRes.ok) {
           const j = await refreshRes.json();
           setItem(j.item);
           setPublications((j.publications as Publication[]) || []);
         }
+        return body;
       }
+      return { published: false, results: [] };
     } finally { setActionLoading(null); }
   };
 
   const handleTikTokPublish = async (settings: TikTokPublishSettings) => {
-    setTiktokModalOpen(false);
     setPendingTiktokSettings(settings);
-    await executePublish(settings);
+    const result = await executePublish(settings);
+    // Extract TikTok publishId so the modal can keep polling if the
+    // backend poll loop timed out before TikTok finished processing.
+    if (result?.results) {
+      const tiktokResult = result.results.find(
+        (r: { platform: string }) => r.platform === 'tiktok',
+      );
+      if (tiktokResult?.platformPostId) {
+        return { publishId: tiktokResult.platformPostId };
+      }
+    }
+    // No TikTok publishId → modal closes via onClose() in TikTokPublishModal
+    return undefined;
   };
 
   const rejectWithFeedback = async (feedback: string) => {

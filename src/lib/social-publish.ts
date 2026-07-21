@@ -1027,7 +1027,10 @@ export async function publishToTikTok(
     const errMsg = initData.error?.message || '';
     const isUnauditedWarning = errCode === 'unaudited_client_can_only_post_to_private_accounts';
 
-    if (!publishId && !isUnauditedWarning) {
+    if (!publishId) {
+      if (isUnauditedWarning) {
+        return { success: true, platformPostId: 'tiktok-private-pending' };
+      }
       console.error('[TikTok] Init failed:', JSON.stringify(initData));
       if (errCode === 'spam_risk_too_many_posts' || errMsg.includes('cap')) {
         return { success: false, error: 'TikTok posting limit reached for today. Please try again tomorrow.' };
@@ -1038,7 +1041,56 @@ export async function publishToTikTok(
       return { success: false, error: errMsg || errCode || 'TikTok upload failed. Please try again.' };
     }
 
-    return { success: true, platformPostId: publishId || 'tiktok-pending' };
+    // ── Poll video/status/fetch/ until PUBLISH_COMPLETE or FAILED ──────
+    // TikTok's API is asynchronous: video/init/ returns a publish_id
+    // immediately, but the video processes in the background. We poll the
+    // status endpoint up to 40 times (5s interval = ~200s total) so the
+    // caller gets a definitive success/failure rather than a false
+    // "success" that masks a silent failure.
+    console.log('[TikTok] video/init/ accepted, polling status for publish_id:', publishId);
+    let statusAttempts = 0;
+    const maxStatusAttempts = 40;
+    while (statusAttempts < maxStatusAttempts) {
+      statusAttempts++;
+      await new Promise(r => setTimeout(r, 5000));
+
+      try {
+        const statusRes = await fetch('https://open.tiktokapis.com/v2/post/publish/status/fetch/', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json; charset=UTF-8',
+          },
+          body: JSON.stringify({ publish_id: publishId }),
+        });
+        const statusData = await statusRes.json() as {
+          data?: { status?: string; fail_reason?: string };
+          error?: { code?: string; message?: string };
+        };
+
+        const status = statusData.data?.status || '';
+        console.log(`[TikTok] Status poll #${statusAttempts}:`, status);
+
+        if (status === 'PUBLISH_COMPLETE') {
+          console.log('[TikTok] Publish complete ✓');
+          return { success: true, platformPostId: publishId };
+        }
+        if (status === 'FAILED') {
+          const reason = statusData.data?.fail_reason || 'Unknown TikTok failure';
+          console.error('[TikTok] Publish failed:', reason);
+          return { success: false, error: `TikTok publish failed: ${reason}` };
+        }
+        // Other statuses (PROCESSING_UPLOAD, etc.) → keep polling
+      } catch (pollErr) {
+        console.warn('[TikTok] Status poll error (non-fatal):', pollErr);
+        // network blip — keep polling
+      }
+    }
+
+    // Timed out — TikTok is still processing but we can't wait longer.
+    // Return publish_id so the frontend can continue polling async.
+    console.warn('[TikTok] Status polling timed out after 200s, returning publish_id for async polling');
+    return { success: true, platformPostId: publishId };
   } catch (err) {
     return { success: false, error: `TikTok error: ${err}` };
   }
