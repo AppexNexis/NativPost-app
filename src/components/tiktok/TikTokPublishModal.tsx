@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { RemotionPreviewPlayer } from '@/components/editor/RemotionPreviewPlayer';
+
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type TikTokPublishSettings = {
@@ -81,6 +83,16 @@ interface TikTokPublishModalProps {
   };
   /** Avatar URL from the stored social account (reliable — not from creator-info API) */
   avatarUrl?: string | null;
+  /** Enrichment data + style for Remotion preview (match content detail page) */
+  remotionProps?: {
+    backgroundUrl: string;
+    mediaSlots: Record<string, unknown>;
+    script: Record<string, unknown>;
+    style: Record<string, unknown>;
+    layout: string;
+    aspectRatio: string;
+    contentType: string;
+  } | null;
 }
 
 // ── Small helpers for the file-properties row ───────────────────────────────
@@ -114,6 +126,7 @@ export function TikTokPublishModal({
   onPublish,
   contentItem,
   avatarUrl,
+  remotionProps,
 }: TikTokPublishModalProps) {
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
@@ -351,39 +364,22 @@ export function TikTokPublishModal({
                 </div>
 
                 {/* TikTok-native 9:16 frame — fills preview column */}
-                <div className="relative flex-1 w-full overflow-hidden rounded-lg bg-black" style={{ minHeight: '360px', aspectRatio: '9/16', maxHeight: '100%' }}>
-                  {resolvedVideoUrl ? (
-                    <>
-                      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                      <video
-                        src={resolvedVideoUrl}
-                        className="absolute inset-0 h-full w-full"
-                        style={{ objectFit: 'cover' }}
-                        controls
-                        preload="metadata"
-                        playsInline
-                      />
-                      {/* Gradient scrim for text legibility — matches detail page */}
-                      <div className="pointer-events-none absolute inset-0" style={{
-                        background: 'linear-gradient(0deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 40%)',
-                      }} />
-                      {/* Caption overlay — EXACT SlideView bottom_caption styling */}
-                      {settings.caption && (
-                        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-center p-4">
-                          <p className="text-center font-bold text-white break-words max-w-[90%]"
-                            style={{
-                              fontSize: 'clamp(0.75rem, 3.5vw, 1.25rem)',
-                              lineHeight: 1.375,
-                              WebkitTextStroke: '1px black',
-                              textShadow: '0 1px 3px rgba(0,0,0,0.6)',
-                              wordBreak: 'break-word',
-                            }}
-                          >
-                            {settings.caption}
-                          </p>
-                        </div>
-                      )}
-                    </>
+                <div className="flex-1 w-full overflow-hidden rounded-lg bg-black flex items-center justify-center" style={{ minHeight: '360px', aspectRatio: '9/16', maxHeight: '100%' }}>
+                  {remotionProps ? (
+                    <RemotionPreviewPlayer
+                      contentType={remotionProps.contentType}
+                      inputProps={remotionProps}
+                    />
+                  ) : resolvedVideoUrl ? (
+                    // eslint-disable-next-line jsx-a11y/media-has-caption
+                    <video
+                      src={resolvedVideoUrl}
+                      className="h-full w-full"
+                      style={{ objectFit: 'cover' }}
+                      controls
+                      preload="metadata"
+                      playsInline
+                    />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-xs text-white/50">
                       No preview available

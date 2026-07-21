@@ -172,6 +172,39 @@ export function ContentDetailClient({ id }: Props) {
     || Object.keys(resolveMediaSlots(item)).length > 0;
   const canPublish = item.status === 'approved' && (!needsMedia || hasMedia);
 
+  // ── Remotion preview props for TikTok modal — matches ContentPreview ──
+  const tiktokRemotionProps = useMemo(() => {
+    if (!item) return null;
+    const ed = enrichment.editorScript as { hookText?: string; bodyText?: string; ctaText?: string } | undefined;
+    const script = ed && (ed.hookText || ed.bodyText || ed.ctaText)
+      ? ed
+      : (() => {
+          const lines = (item.caption || '').split('\n').map(l => l.trim()).filter(Boolean);
+          if (lines.length === 0) return {};
+          if (lines.length === 1) return { hookText: lines[0] };
+          if (lines.length === 2) return { hookText: lines[0], bodyText: lines[1] };
+          return { hookText: lines[0], bodyText: lines.slice(1, -1).join('\n'), ctaText: lines[lines.length - 1] };
+        })();
+    const mediaSlots = resolveMediaSlots(item);
+    const aspectRatio = item.aspectRatio || '9:16';
+    const bgUrl = mediaSlots.background?.url
+      || mediaSlots.hookVideo?.url
+      || mediaSlots.demoVideo?.url
+      || (item.graphicUrls?.[0] || '');
+    if (!bgUrl) return null;
+    return {
+      backgroundUrl: bgUrl,
+      mediaSlots: mediaSlots as unknown as Record<string, unknown>,
+      script: script as Record<string, unknown>,
+      style: (enrichment.editorStyle || {}) as Record<string, unknown>,
+      layout: (enrichment.editorLayout as string) || 'centered',
+      aspectRatio,
+      contentType: item.contentType,
+      previewMode: true,
+      posterUrl: item.graphicUrls?.[0] || '',
+    };
+  }, [item, enrichment]);
+
   // Actions
   const patch = async (body: Record<string, any>): Promise<ContentItem | null> => {
     const res = await fetch(`/api/content/${item.id}`, {
@@ -422,6 +455,7 @@ export function ContentDetailClient({ id }: Props) {
             videoUrl: (item.graphicUrls as string[] | undefined)?.[0],
           }}
           avatarUrl={tiktokAccountAvatar}
+          remotionProps={tiktokRemotionProps}
         />
       )}
     </>
