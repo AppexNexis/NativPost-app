@@ -180,11 +180,13 @@
     text-rendering: optimizeLegibility;
   }
 
-  /* Headings: negative tracking + balanced line wrapping so multi-line
-   * titles never leave a one-word orphan. Individual components may
-   * override tracking via the semantic type scale. */
+  /* Headings: the Safiro display face (Inter Tight fallback), negative
+   * tracking, and balanced line wrapping so multi-line titles never leave
+   * a one-word orphan. One rule sweeps every heading in the app — page
+   * titles, dialog/sheet/drawer titles, card and section headings. */
   h1, h2, h3, h4 {
     @apply tracking-tight;
+    font-family: var(--font-safiro);
     text-wrap: balance;
   }
 

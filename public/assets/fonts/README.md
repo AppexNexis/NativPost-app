@@ -1,18 +1,14 @@
 # Brand font files
 
-The app's font stacks reference **Safiro** (display headings) and **GeistMono**
-(labels, kbd, code) — the same families as the marketing site. The files are
-not committed because Safiro is a licensed font.
+Declarations live in `src/styles/fonts.css`. Current state:
 
-Drop these files into this directory to activate them (declarations live in
-`src/styles/fonts.css`):
+- `safiro-medium-webfont.woff2` / `.woff` — **Safiro Medium** (licensed, Atipo
+  Foundry). Serves the whole 400–600 range for now. To get true weight
+  variation, add `Safiro-Regular` and `Safiro-SemiBold` woff2 files from the
+  marketing site's licensed set and split the `@font-face` declarations.
+- `GeistMono-Regular.woff2` / `GeistMono-Medium.woff2` — **Geist Mono**
+  (open source, SIL OFL — sourced from the `geist` npm package; re-copy from
+  `node_modules/geist/dist/fonts/geist-mono/` after upgrades).
 
-- `Safiro-Regular.woff2` (400)
-- `Safiro-Medium.woff2` (500)
-- `Safiro-SemiBold.woff2` (600)
-- `GeistMono-Regular.woff2` (400)
-- `GeistMono-Medium.woff2` (500)
-
-Copy them from the marketing site's font assets. Until they exist, the app
-gracefully falls back to Inter Tight (display) and the system mono stack —
-no layout shift thanks to `font-display: swap`.
+All declarations use `font-display: swap`, so missing files degrade to the
+Inter Tight / system-mono fallback stacks without breakage.
