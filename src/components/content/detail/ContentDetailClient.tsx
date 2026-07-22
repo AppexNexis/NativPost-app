@@ -467,7 +467,7 @@ export function ContentDetailClient({ id }: Props) {
             id: item.id,
             caption: item.caption,
             contentType: item.contentType,
-            videoDuration: undefined,
+             videoDuration: item.durationSeconds ?? undefined,
             videoUrl: (item.graphicUrls as string[] | undefined)?.[0],
           }}
           avatarUrl={tiktokAccountAvatar}
