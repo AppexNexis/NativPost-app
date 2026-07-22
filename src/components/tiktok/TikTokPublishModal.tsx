@@ -114,8 +114,16 @@ function guessFileNameFromUrl(url?: string): string | null {
 
 function guessFormatFromUrl(url?: string): string | null {
   if (!url) return null;
-  const match = url.match(/\.([a-zA-Z0-9]{2,4})(?:[/?#]|$)/);
-  return match?.[1] ? match[1].toUpperCase() : null;
+  // const match = url.match(/\.([a-zA-Z0-9]{2,4})(?:[/?#]|$)/);
+  // return match?.[1] ? match[1].toUpperCase() : null;
+  try {
+    const clean = url.split('?')[0]?.split('#')[0] ?? url;
+    const lastSegment = clean.split('/').filter(Boolean).pop();
+    const match = lastSegment?.match(/\.([a-zA-Z0-9]{2,4})$/);
+    return match?.[1] ? match[1].toUpperCase() : null;
+  } catch {
+    return null;
+  }
 }
 
 function formatBytes(bytes?: number): string | null {
