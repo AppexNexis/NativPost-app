@@ -27,11 +27,13 @@ import {
 import { useEffect, useState } from 'react';
 
 import { RemotionPreviewPlayer } from '@/components/editor/RemotionPreviewPlayer';
+import { isVideoContentType } from '@/types/v2';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type TikTokPublishSettings = {
   caption: string;
+  publishMethod: 'DIRECT' | 'INBOX';
   privacyLevel: string;
   allowComment: boolean;
   allowDuet: boolean;
@@ -120,6 +122,13 @@ function formatBytes(bytes?: number): string | null {
   return `${mb.toFixed(2)}MB`;
 }
 
+function formatDuration(seconds?: number): string | null {
+  if (!seconds || seconds <= 0) return null;
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 export function TikTokPublishModal({
   isOpen,
   onClose,
@@ -137,6 +146,7 @@ export function TikTokPublishModal({
 
   const [settings, setSettings] = useState<TikTokPublishSettings>({
     caption: '',
+    publishMethod: 'DIRECT',
     privacyLevel: '',        // Guideline 2b: NO DEFAULT VALUE
     allowComment: false,     // Guideline 2c: NOT CHECKED BY DEFAULT
     allowDuet: false,        // Guideline 2c: NOT CHECKED BY DEFAULT
@@ -148,7 +158,8 @@ export function TikTokPublishModal({
     musicConsent: false,     // Must be actively checked — no default
   });
 
-  const isPhotoPost = contentItem.contentType === 'image';
+  // const isPhotoPost = contentItem.contentType === 'image';
+   const isPhotoPost = !isVideoContentType(contentItem.contentType);
 
   const [publishStatus, setPublishStatus] = useState<
     'idle' | 'uploading' | 'processing' | 'success' | 'failed'
@@ -156,15 +167,18 @@ export function TikTokPublishModal({
   const [publishId, setPublishId] = useState<string | null>(null);
 
   // ── Poll for publish status after getting a publishId (Guideline 5e) ───────
+  // Stops when modal closes or component unmounts (AbortController + canceled flag)
   useEffect(() => {
     if (!publishId) return;
+    let canceled = false;
     let attempts = 0;
     const maxAttempts = 20; // ~60s total
 
     const poll = async () => {
+      if (canceled) return;
       attempts++;
       try {
-        const res = await fetch('/api/social-accounts/tiktok/publish-status', {
+        const res = await fetch('/api/social-accounts/publish-status', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ publishId }),
@@ -172,23 +186,31 @@ export function TikTokPublishModal({
         const data = await res.json() as { status?: string; failReason?: string };
 
         if (data.status === 'PUBLISH_COMPLETE') {
-          setPublishStatus('success');
+          if (!canceled) setPublishStatus('success');
+          // Auto-close after 1.5s so the user sees the success state
+          if (!canceled) setTimeout(() => { if (!canceled) onClose(); }, 1500);
           return;
         }
         if (data.status === 'FAILED') {
-          setPublishStatus('failed');
-          setError(data.failReason || 'TikTok processing failed.');
+          if (!canceled) setPublishStatus('failed');
+          if (!canceled) setError(data.failReason || 'TikTok processing failed.');
           return;
         }
       } catch { /* keep polling */ }
 
-      if (attempts < maxAttempts) {
+      if (!canceled && attempts < maxAttempts) {
         setTimeout(poll, 3000);
+      } else if (!canceled) {
+        // Timed out — TikTok is still processing but we can't wait longer
+        setPublishStatus('failed');
+        setError('Still processing on TikTok — check your TikTok app to confirm it posted, then close this.');
       }
     };
 
     setPublishStatus('processing');
     setTimeout(poll, 3000);
+
+    return () => { canceled = true; };
   }, [publishId]);
 
   // ── Fetch AI title + creator info on open ─────────────────────────────────
@@ -203,6 +225,7 @@ export function TikTokPublishModal({
     setFreshnessTimestamp(null);
     setSettings({
       caption: '',
+      publishMethod: 'DIRECT',
       privacyLevel: '',
       allowComment: false,
       allowDuet: false,
@@ -233,7 +256,8 @@ export function TikTokPublishModal({
         setFreshnessTimestamp(Date.now());
 
         // Guideline 1c: Check video duration limits
-        if (contentItem.contentType === 'video' && contentItem.videoDuration && creatorData.maxVideoDurationSec) {
+        // if (contentItem.contentType === 'video' && contentItem.videoDuration && creatorData.maxVideoDurationSec) {
+           if (isVideoContentType(contentItem.contentType) && contentItem.videoDuration && creatorData.maxVideoDurationSec) {
           if (contentItem.videoDuration > creatorData.maxVideoDurationSec) {
             setError(`Your video duration (${contentItem.videoDuration}s) exceeds your TikTok account's maximum allowed limit of ${creatorData.maxVideoDurationSec}s.`);
           }
@@ -252,7 +276,7 @@ export function TikTokPublishModal({
     }
 
     initModal();
-  }, [isOpen, contentItem]);
+  }, [isOpen, contentItem.id]);
 
   if (!isOpen) return null;
 
@@ -269,15 +293,13 @@ export function TikTokPublishModal({
   const privacyIsPrivate               = settings.privacyLevel === 'SELF_ONLY';
   const brandedContentPrivacyViolation = brandTogglesActive && settings.brandContentToggle && privacyIsPrivate;
 
-  const isPublishDisabled =
-    !settings.privacyLevel ||
-    !settings.musicConsent ||                      // Guideline: active consent required
-    commercialDisclosureIncomplete ||
-    brandedContentPrivacyViolation ||
-    !!error ||
-    publishing ||
-    publishStatus === 'processing' ||
-    publishStatus === 'success';
+  const isPublishDisabled = !!error || publishing || publishStatus === 'processing' || publishStatus === 'success'
+    || (settings.publishMethod === 'DIRECT' && (
+      !settings.privacyLevel ||
+      !settings.musicConsent ||                      // Guideline: active consent required
+      commercialDisclosureIncomplete ||
+      brandedContentPrivacyViolation
+    ));
 
   // ── Resolve playable video URL ─────────────────────────────────────────────
   const resolvedVideoUrl = contentItem.videoUrl
@@ -286,14 +308,16 @@ export function TikTokPublishModal({
         : `${contentItem.videoUrl.endsWith('/') ? contentItem.videoUrl : `${contentItem.videoUrl}/`}video.mp4`)
     : null;
 
-  // ── File properties row (Filename / Format / Resolution / Size) ────────────
+  // ── File properties row (Filename / Format / Duration / Resolution / Size) ──
   const fileName   = contentItem.fileName ?? guessFileNameFromUrl(contentItem.videoUrl) ?? null;
   const fileFormat = contentItem.fileFormat ?? guessFormatFromUrl(contentItem.videoUrl) ?? null;
+  const duration    = formatDuration(contentItem.videoDuration);
   const fileSize    = formatBytes(contentItem.fileSizeBytes);
   const resolution  = contentItem.videoResolutionLabel ?? null;
   const fileProperties = [
     { label: 'Filename',   value: fileName },
     { label: 'Format',     value: fileFormat },
+    { label: 'Duration',   value: duration },
     { label: 'Resolution', value: resolution },
     { label: 'Size',       value: fileSize },
   ].filter(p => !!p.value);
@@ -328,7 +352,7 @@ export function TikTokPublishModal({
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-2">
             <Video className="h-5 w-5 text-[#FE2C55]" />
-            <h2 className="text-lg font-semibold tracking-tight">Upload to TikTok</h2>
+            <h2 className="text-lg font-semibold tracking-tight">TikTok Publishing</h2>
           </div>
           <button
             onClick={onClose}
@@ -403,6 +427,59 @@ export function TikTokPublishModal({
               {/* ── RIGHT: scrollable form ── */}
               <div className="flex-1 space-y-6 overflow-y-auto p-6 lg:w-1/2">
 
+                {/* Publishing Method Selector — Direct vs Inbox */}
+                <div className="space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Publishing Method</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSettings(s => ({ ...s, publishMethod: 'DIRECT' }))}
+                      className={`flex flex-col items-start gap-1 rounded-lg border-2 p-3 text-left transition-all ${
+                        settings.publishMethod === 'DIRECT'
+                          ? 'border-[#FE2C55] bg-[#FE2C55]/5 shadow-sm'
+                          : 'border-border hover:border-muted-foreground/30'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                          settings.publishMethod === 'DIRECT' ? 'border-[#FE2C55]' : 'border-muted-foreground/40'
+                        }`}>
+                          {settings.publishMethod === 'DIRECT' && (
+                            <span className="h-2 w-2 rounded-full bg-[#FE2C55]" />
+                          )}
+                        </span>
+                        <span className="text-sm font-semibold text-foreground">Direct Publish</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed pl-6">
+                        Publishes automatically from NativPost
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSettings(s => ({ ...s, publishMethod: 'INBOX' }))}
+                      className={`flex flex-col items-start gap-1 rounded-lg border-2 p-3 text-left transition-all ${
+                        settings.publishMethod === 'INBOX'
+                          ? 'border-[#FE2C55] bg-[#FE2C55]/5 shadow-sm'
+                          : 'border-border hover:border-muted-foreground/30'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                          settings.publishMethod === 'INBOX' ? 'border-[#FE2C55]' : 'border-muted-foreground/40'
+                        }`}>
+                          {settings.publishMethod === 'INBOX' && (
+                            <span className="h-2 w-2 rounded-full bg-[#FE2C55]" />
+                          )}
+                        </span>
+                        <span className="text-sm font-semibold text-foreground">Send to Inbox</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed pl-6">
+                        Review and finish posting in TikTok app
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Account chip (Guideline 1a) */}
                 {creatorInfo && (
                   <div className="flex items-center gap-3 rounded-lg border bg-muted/40 p-3">
@@ -443,17 +520,23 @@ export function TikTokPublishModal({
                   <textarea
                     value={settings.caption}
                     maxLength={2200}
-                    onChange={(e) => setSettings(s => ({ ...s, title: e.target.value }))}
+                    onChange={(e) => setSettings(s => ({ ...s, caption: e.target.value }))}
                     className="min-h-[70px] w-full rounded-lg border border-input bg-background p-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#FE2C55]/50"
                     placeholder="Share more about your video... #hashtags @mentions"
                   />
-                  <div className="text-right text-xs text-muted-foreground">
-                    {settings.caption.length}/2200
+                  <div className="text-right text-xs text-muted-foreground tabular-nums">
+                    <span className={
+                      settings.caption.length >= 2200 ? 'text-destructive font-semibold'
+                      : settings.caption.length >= 2000 ? 'text-amber-500 font-medium'
+                      : 'text-muted-foreground'
+                    }>
+                      {settings.caption.length} / 2200
+                    </span>
                   </div>
                 </div>
 
-                {/* Privacy (Guideline 2b) */}
-                <div className="space-y-2">
+                {/* Privacy (Guideline 2b) — hidden in Inbox mode */}
+                <div className={`space-y-2 ${settings.publishMethod !== 'DIRECT' ? 'hidden' : ''}`}>
                   <label className="text-sm font-medium text-foreground">
                     Who can view this video <span className="text-destructive">*</span>
                   </label>
@@ -463,7 +546,7 @@ export function TikTokPublishModal({
                       onChange={(e) => setSettings(s => ({ ...s, privacyLevel: e.target.value }))}
                       className="w-full cursor-pointer appearance-none rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FE2C55]/50"
                     >
-                      <option value="" disabled>-- Select target audience (Required) --</option>
+                      <option value="" disabled>Select who can view this video</option>
                       {creatorInfo?.privacyLevelOptions.map((opt) => {
                         const isPrivateOption  = opt === 'SELF_ONLY';
                         const isOptionDisabled = isPrivateOption && brandTogglesActive && settings.brandContentToggle;
@@ -484,8 +567,8 @@ export function TikTokPublishModal({
                   )}
                 </div>
 
-                {/* Interaction settings (Guideline 2c) */}
-                <div className="space-y-3">
+                {/* Interaction settings (Guideline 2c) — hidden in Inbox mode */}
+                <div className={`space-y-3 ${settings.publishMethod !== 'DIRECT' ? 'hidden' : ''}`}>
                   <label className="text-sm font-medium text-foreground">Allow users to</label>
                   <div className="flex flex-wrap gap-4">
                     <label className={`flex items-center gap-2 text-sm ${creatorInfo?.commentDisabled ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'}`}>
@@ -530,8 +613,8 @@ export function TikTokPublishModal({
                   </div>
                 </div>
 
-                {/* AI Generated Content (optional — good practice) */}
-                <label className="flex cursor-pointer items-center gap-3 select-none">
+                {/* AI-generated content (optional — good practice) — hidden in Inbox mode */}
+                <label className={`flex cursor-pointer items-center gap-3 select-none ${settings.publishMethod !== 'DIRECT' ? 'hidden' : ''}`}>
                   <input
                     type="checkbox"
                     checked={settings.isAIGC}
@@ -539,13 +622,13 @@ export function TikTokPublishModal({
                     className="h-4 w-4 cursor-pointer accent-[#FE2C55]"
                   />
                   <div>
-                    <p className="text-sm font-medium text-foreground">AI Generated Content</p>
+                    <p className="text-sm font-medium text-foreground">AI-generated content</p>
                     <p className="text-xs text-muted-foreground">Indicate if this content was generated or edited using AI tools</p>
                   </div>
                 </label>
 
-                {/* Disclose video content (Guideline 3a & 3b) */}
-                <div className="space-y-3 rounded-lg border bg-muted/10 p-4">
+                {/* Disclose video content (Guideline 3a & 3b) — hidden in Inbox mode */}
+                <div className={`space-y-3 rounded-lg border bg-muted/10 p-4 ${settings.publishMethod !== 'DIRECT' ? 'hidden' : ''}`}>
                   <div className="flex items-center justify-between gap-4">
                     <div className="space-y-0.5">
                       <label htmlFor="disclose-toggle" className="text-sm font-medium text-foreground cursor-pointer">
@@ -560,6 +643,7 @@ export function TikTokPublishModal({
                       type="button"
                       role="switch"
                       aria-checked={settings.commercialDisclosure}
+                      aria-label="Disclose video content"
                       onClick={() => setSettings(s => ({
                         ...s,
                         commercialDisclosure: !s.commercialDisclosure,
@@ -579,6 +663,7 @@ export function TikTokPublishModal({
                       <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
                         Your video will be labeled &quot;{settings.brandContentToggle ? 'Paid partnership' : 'Promotional content'}&quot;. This cannot be changed once your video is posted.
                       </div>
+                      <p className="text-xs text-muted-foreground">You may select one or both.</p>
 
                       {/* Your Brand (Brand Organic) */}
                       <label className="flex cursor-pointer items-start gap-3 select-none">
@@ -624,13 +709,15 @@ export function TikTokPublishModal({
                   <p className="text-xs text-muted-foreground">
                     {consentText}
                   </p>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+                </div>  {/* close Disclose section */}
+              </div>  {/* close right column */}
 
-        {/* Footer */}
+            </>
+
+          )}
+
+        </div>  {/* close body */}
+
         <div className="flex flex-col items-center border-t bg-muted/40 px-6 py-4">
 
           {/* Publish status feedback (Guideline 5e) */}
@@ -653,8 +740,8 @@ export function TikTokPublishModal({
             </div>
           )}
 
-          {/* Active consent checkbox — required, no default (Guideline 2 & 4) */}
-          <label className="mb-3 flex w-full cursor-pointer items-start gap-2 select-none rounded border bg-background px-3 py-2.5">
+          {/* Active consent checkbox — required, no default (Guideline 2 & 4) — hidden in Inbox mode */}
+          <label className={`mb-3 flex w-full cursor-pointer items-start gap-2 select-none rounded border bg-background px-3 py-2.5 ${settings.publishMethod !== 'DIRECT' ? 'hidden' : ''}`}>
             <input
               type="checkbox"
               checked={settings.musicConsent}
@@ -673,6 +760,50 @@ export function TikTokPublishModal({
               <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
             )}
           </label>
+
+          {/* ── Publish Summary (hidden, kept for reference) ── */}
+          <div className="hidden space-y-2 rounded-lg border bg-muted/20 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Publish Summary</p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-foreground">
+              <span className="font-semibold">@{creatorInfo?.creatorUsername || creatorInfo?.nickname || 'TikTok'}</span>
+              {settings.publishMethod === 'DIRECT' ? (
+                <>
+                  {settings.privacyLevel && (
+                    <span className="text-muted-foreground">·</span>
+                  )}
+                  {settings.privacyLevel && (
+                    <span>{PRIVACY_LABELS[settings.privacyLevel] || settings.privacyLevel}</span>
+                  )}
+                  <span className="text-muted-foreground">·</span>
+                  <span>Comments: {settings.allowComment ? 'On' : 'Off'}</span>
+                  <span className="text-muted-foreground">·</span>
+                  <span>Duet: {settings.allowDuet ? 'On' : 'Off'}</span>
+                  <span className="text-muted-foreground">·</span>
+                  <span>Stitch: {settings.allowStitch ? 'On' : 'Off'}</span>
+                  {settings.commercialDisclosure && (
+                    <>
+                      <span className="text-muted-foreground">·</span>
+                      <span className="text-amber-600 font-medium">
+                        {settings.brandContentToggle ? 'Paid partnership' : 'Promotional'}
+                      </span>
+                    </>
+                  )}
+                </>
+              ) : (
+                <span className="text-muted-foreground">Review and publish in TikTok app</span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className={`inline-block h-1.5 w-1.5 rounded-full ${settings.publishMethod === 'DIRECT' ? 'bg-[#FE2C55]' : 'bg-amber-400'}`} />
+              <span>{settings.publishMethod === 'DIRECT' ? 'Direct Publish' : 'Send to Inbox'}</span>
+              {settings.caption && (
+                <>
+                  <span className="text-muted-foreground">·</span>
+                  <span className="truncate max-w-[200px]">&quot;{settings.caption.slice(0, 60)}{settings.caption.length > 60 ? '...' : ''}&quot;</span>
+                </>
+              )}
+            </div>
+          </div>
 
           <div className="flex w-full gap-3">
             <button
@@ -694,21 +825,23 @@ export function TikTokPublishModal({
               {publishing ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Uploading...
+                  Uploading to TikTok...
                 </>
               ) : (
-                'Upload'
+                settings.publishMethod === 'DIRECT' ? 'Publish to TikTok' : 'Send to Inbox'
               )}
             </button>
           </div>
 
           {/* Processing warning (Guideline 5d) */}
           <p className="mt-2 text-center text-[11px] leading-relaxed text-muted-foreground">
-            Note: After finishing deployment, it can take up to a few minutes for background asset processing to execute before content reflects publicly on your TikTok profile layout.
+            TikTok may take several minutes to finish processing your video after it has been uploaded.
           </p>
-        </div>
+        </div>  {/* close footer */}
 
       </div>
+
     </div>
+
   );
 }

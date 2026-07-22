@@ -58,11 +58,13 @@ type CreatorInfo = {
 };
 
 const PRIVACY_LABELS: Record<string, string> = {
-  PUBLIC_TO_EVERYONE:    'Everyone',
+  PUBLIC_TO_EVERYONE: 'Everyone',
   MUTUAL_FOLLOW_FRIENDS: 'Friends',
-  SELF_ONLY:             'Only me (private)',
-  FOLLOWER_OF_CREATOR:   'Followers',
+  SELF_ONLY: 'Only me (private)',
+  FOLLOWER_OF_CREATOR: 'Followers',
 };
+
+const ALL_PRIVACY_LEVELS = Object.keys(PRIVACY_LABELS);
 
 interface TikTokPublishModalProps {
   isOpen: boolean;
@@ -159,7 +161,7 @@ export function TikTokPublishModal({
   });
 
   // const isPhotoPost = contentItem.contentType === 'image';
-   const isPhotoPost = !isVideoContentType(contentItem.contentType);
+  const isPhotoPost = !isVideoContentType(contentItem.contentType);
 
   const [publishStatus, setPublishStatus] = useState<
     'idle' | 'uploading' | 'processing' | 'success' | 'failed'
@@ -257,7 +259,7 @@ export function TikTokPublishModal({
 
         // Guideline 1c: Check video duration limits
         // if (contentItem.contentType === 'video' && contentItem.videoDuration && creatorData.maxVideoDurationSec) {
-           if (isVideoContentType(contentItem.contentType) && contentItem.videoDuration && creatorData.maxVideoDurationSec) {
+        if (isVideoContentType(contentItem.contentType) && contentItem.videoDuration && creatorData.maxVideoDurationSec) {
           if (contentItem.videoDuration > creatorData.maxVideoDurationSec) {
             setError(`Your video duration (${contentItem.videoDuration}s) exceeds your TikTok account's maximum allowed limit of ${creatorData.maxVideoDurationSec}s.`);
           }
@@ -283,14 +285,14 @@ export function TikTokPublishModal({
   // ── Validation helpers ─────────────────────────────────────────────────────
   const brandTogglesActive = settings.commercialDisclosure;
   const standardDeclaration = "By posting, you agree to TikTok's Music Usage Confirmation.";
-  const brandedDeclaration  = "By posting, you agree to TikTok's Branded Content Policy and Music Usage Confirmation.";
+  const brandedDeclaration = "By posting, you agree to TikTok's Branded Content Policy and Music Usage Confirmation.";
 
   const consentText = (brandTogglesActive && settings.brandContentToggle)
     ? brandedDeclaration
     : standardDeclaration;
 
   const commercialDisclosureIncomplete = brandTogglesActive && !settings.brandOrganicToggle && !settings.brandContentToggle;
-  const privacyIsPrivate               = settings.privacyLevel === 'SELF_ONLY';
+  const privacyIsPrivate = settings.privacyLevel === 'SELF_ONLY';
   const brandedContentPrivacyViolation = brandTogglesActive && settings.brandContentToggle && privacyIsPrivate;
 
   const isPublishDisabled = !!error || publishing || publishStatus === 'processing' || publishStatus === 'success'
@@ -304,22 +306,22 @@ export function TikTokPublishModal({
   // ── Resolve playable video URL ─────────────────────────────────────────────
   const resolvedVideoUrl = contentItem.videoUrl
     ? (/\.(?:mp4|mov|webm)(?:[/?#]|$)/i.test(contentItem.videoUrl)
-        ? contentItem.videoUrl
-        : `${contentItem.videoUrl.endsWith('/') ? contentItem.videoUrl : `${contentItem.videoUrl}/`}video.mp4`)
+      ? contentItem.videoUrl
+      : `${contentItem.videoUrl.endsWith('/') ? contentItem.videoUrl : `${contentItem.videoUrl}/`}video.mp4`)
     : null;
 
   // ── File properties row (Filename / Format / Duration / Resolution / Size) ──
-  const fileName   = contentItem.fileName ?? guessFileNameFromUrl(contentItem.videoUrl) ?? null;
+  const fileName = contentItem.fileName ?? guessFileNameFromUrl(contentItem.videoUrl) ?? null;
   const fileFormat = contentItem.fileFormat ?? guessFormatFromUrl(contentItem.videoUrl) ?? null;
-  const duration    = formatDuration(contentItem.videoDuration);
-  const fileSize    = formatBytes(contentItem.fileSizeBytes);
-  const resolution  = contentItem.videoResolutionLabel ?? null;
+  const duration = formatDuration(contentItem.videoDuration);
+  const fileSize = formatBytes(contentItem.fileSizeBytes);
+  const resolution = contentItem.videoResolutionLabel ?? null;
   const fileProperties = [
-    { label: 'Filename',   value: fileName },
-    { label: 'Format',     value: fileFormat },
-    { label: 'Duration',   value: duration },
+    { label: 'Filename', value: fileName },
+    { label: 'Format', value: fileFormat },
+    { label: 'Duration', value: duration },
     { label: 'Resolution', value: resolution },
-    { label: 'Size',       value: fileSize },
+    { label: 'Size', value: fileSize },
   ].filter(p => !!p.value);
 
   // ── Handle publish ─────────────────────────────────────────────────────────
@@ -434,16 +436,14 @@ export function TikTokPublishModal({
                     <button
                       type="button"
                       onClick={() => setSettings(s => ({ ...s, publishMethod: 'DIRECT' }))}
-                      className={`flex flex-col items-start gap-1 rounded-lg border-2 p-3 text-left transition-all ${
-                        settings.publishMethod === 'DIRECT'
-                          ? 'border-[#FE2C55] bg-[#FE2C55]/5 shadow-sm'
-                          : 'border-border hover:border-muted-foreground/30'
-                      }`}
+                      className={`flex flex-col items-start gap-1 rounded-lg border-2 p-3 text-left transition-all ${settings.publishMethod === 'DIRECT'
+                        ? 'border-[#FE2C55] bg-[#FE2C55]/5 shadow-sm'
+                        : 'border-border hover:border-muted-foreground/30'
+                        }`}
                     >
                       <div className="flex items-center gap-2">
-                        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
-                          settings.publishMethod === 'DIRECT' ? 'border-[#FE2C55]' : 'border-muted-foreground/40'
-                        }`}>
+                        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${settings.publishMethod === 'DIRECT' ? 'border-[#FE2C55]' : 'border-muted-foreground/40'
+                          }`}>
                           {settings.publishMethod === 'DIRECT' && (
                             <span className="h-2 w-2 rounded-full bg-[#FE2C55]" />
                           )}
@@ -457,16 +457,14 @@ export function TikTokPublishModal({
                     <button
                       type="button"
                       onClick={() => setSettings(s => ({ ...s, publishMethod: 'INBOX' }))}
-                      className={`flex flex-col items-start gap-1 rounded-lg border-2 p-3 text-left transition-all ${
-                        settings.publishMethod === 'INBOX'
-                          ? 'border-[#FE2C55] bg-[#FE2C55]/5 shadow-sm'
-                          : 'border-border hover:border-muted-foreground/30'
-                      }`}
+                      className={`flex flex-col items-start gap-1 rounded-lg border-2 p-3 text-left transition-all ${settings.publishMethod === 'INBOX'
+                        ? 'border-[#FE2C55] bg-[#FE2C55]/5 shadow-sm'
+                        : 'border-border hover:border-muted-foreground/30'
+                        }`}
                     >
                       <div className="flex items-center gap-2">
-                        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
-                          settings.publishMethod === 'INBOX' ? 'border-[#FE2C55]' : 'border-muted-foreground/40'
-                        }`}>
+                        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${settings.publishMethod === 'INBOX' ? 'border-[#FE2C55]' : 'border-muted-foreground/40'
+                          }`}>
                           {settings.publishMethod === 'INBOX' && (
                             <span className="h-2 w-2 rounded-full bg-[#FE2C55]" />
                           )}
@@ -502,6 +500,11 @@ export function TikTokPublishModal({
                       <p className="truncate text-sm font-semibold text-foreground">
                         @{creatorInfo.creatorUsername || creatorInfo.nickname}
                       </p>
+                      {creatorInfo.maxVideoDurationSec > 0 && (
+                        <p className="text-[11px] text-muted-foreground">
+                          Max video duration: {Math.floor(creatorInfo.maxVideoDurationSec / 60)}m {creatorInfo.maxVideoDurationSec % 60}s
+                        </p>
+                      )}
                     </div>
                     {freshnessTimestamp && (
                       <div className="flex shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1">
@@ -527,8 +530,8 @@ export function TikTokPublishModal({
                   <div className="text-right text-xs text-muted-foreground tabular-nums">
                     <span className={
                       settings.caption.length >= 2200 ? 'text-destructive font-semibold'
-                      : settings.caption.length >= 2000 ? 'text-amber-500 font-medium'
-                      : 'text-muted-foreground'
+                        : settings.caption.length >= 2000 ? 'text-amber-500 font-medium'
+                          : 'text-muted-foreground'
                     }>
                       {settings.caption.length} / 2200
                     </span>
@@ -548,7 +551,7 @@ export function TikTokPublishModal({
                     >
                       <option value="" disabled>Select who can view this video</option>
                       {creatorInfo?.privacyLevelOptions.map((opt) => {
-                        const isPrivateOption  = opt === 'SELF_ONLY';
+                        const isPrivateOption = opt === 'SELF_ONLY';
                         const isOptionDisabled = isPrivateOption && brandTogglesActive && settings.brandContentToggle;
                         return (
                           <option key={opt} value={opt} disabled={isOptionDisabled}>
@@ -565,6 +568,12 @@ export function TikTokPublishModal({
                       ⚠️ Branded content visibility cannot be set to private. Please change audience.
                     </p>
                   )}
+                  {creatorInfo && creatorInfo.privacyLevelOptions.length < ALL_PRIVACY_LEVELS.length && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Some options are hidden because TikTok restricts this creator to{' '}
+                      {creatorInfo.privacyLevelOptions.map(o => PRIVACY_LABELS[o] || o).join(', ')}.
+                    </p>
+                  )}
                 </div>
 
                 {/* Interaction settings (Guideline 2c) — hidden in Inbox mode */}
@@ -572,42 +581,63 @@ export function TikTokPublishModal({
                   <label className="text-sm font-medium text-foreground">Allow users to</label>
                   <div className="flex flex-wrap gap-4">
                     <label className={`flex items-center gap-2 text-sm ${creatorInfo?.commentDisabled ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'}`}>
-                      <input
-                        type="checkbox"
-                        disabled={creatorInfo?.commentDisabled}
-                        checked={settings.allowComment && !creatorInfo?.commentDisabled}
-                        onChange={(e) => setSettings(s => ({ ...s, allowComment: e.target.checked }))}
-                        className="h-4 w-4 cursor-pointer accent-[#FE2C55] disabled:cursor-not-allowed"
-                      />
-                      Comment
-                      {creatorInfo?.commentDisabled && <span className="text-[11px] text-destructive">(disabled)</span>}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            disabled={creatorInfo?.commentDisabled}
+                            checked={settings.allowComment && !creatorInfo?.commentDisabled}
+                            onChange={(e) => setSettings(s => ({ ...s, allowComment: e.target.checked }))}
+                            className="h-4 w-4 cursor-pointer accent-[#FE2C55] disabled:cursor-not-allowed"
+                            title={creatorInfo?.commentDisabled ? 'This creator has disabled comments on their TikTok account.' : undefined}
+                          />
+                          Comment
+                        </div>
+                        {creatorInfo?.commentDisabled && (
+                          <p className="mt-0.5 text-[11px] text-muted-foreground">Disabled in the creator's TikTok app settings.</p>
+                        )}
+                      </div>
                     </label>
 
                     {!isPhotoPost && (
                       <label className={`flex items-center gap-2 text-sm ${creatorInfo?.duetDisabled ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'}`}>
-                        <input
-                          type="checkbox"
-                          disabled={creatorInfo?.duetDisabled}
-                          checked={settings.allowDuet && !creatorInfo?.duetDisabled}
-                          onChange={(e) => setSettings(s => ({ ...s, allowDuet: e.target.checked }))}
-                          className="h-4 w-4 cursor-pointer accent-[#FE2C55] disabled:cursor-not-allowed"
-                        />
-                        Duet
-                        {creatorInfo?.duetDisabled && <span className="text-[11px] text-destructive">(disabled)</span>}
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              disabled={creatorInfo?.duetDisabled}
+                              checked={settings.allowDuet && !creatorInfo?.duetDisabled}
+                              onChange={(e) => setSettings(s => ({ ...s, allowDuet: e.target.checked }))}
+                              className="h-4 w-4 cursor-pointer accent-[#FE2C55] disabled:cursor-not-allowed"
+                              title={creatorInfo?.duetDisabled ? 'This creator has disabled duet on their TikTok account.' : undefined}
+                            />
+                            Duet
+                          </div>
+                          {creatorInfo?.duetDisabled && (
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">Disabled in the creator's TikTok app settings.</p>
+                          )}
+                        </div>
                       </label>
                     )}
 
                     {!isPhotoPost && (
                       <label className={`flex items-center gap-2 text-sm ${creatorInfo?.stitchDisabled ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'}`}>
-                        <input
-                          type="checkbox"
-                          disabled={creatorInfo?.stitchDisabled}
-                          checked={settings.allowStitch && !creatorInfo?.stitchDisabled}
-                          onChange={(e) => setSettings(s => ({ ...s, allowStitch: e.target.checked }))}
-                          className="h-4 w-4 cursor-pointer accent-[#FE2C55] disabled:cursor-not-allowed"
-                        />
-                        Stitch
-                        {creatorInfo?.stitchDisabled && <span className="text-[11px] text-destructive">(disabled)</span>}
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              disabled={creatorInfo?.stitchDisabled}
+                              checked={settings.allowStitch && !creatorInfo?.stitchDisabled}
+                              onChange={(e) => setSettings(s => ({ ...s, allowStitch: e.target.checked }))}
+                              className="h-4 w-4 cursor-pointer accent-[#FE2C55] disabled:cursor-not-allowed"
+                              title={creatorInfo?.stitchDisabled ? 'This creator has disabled stitch on their TikTok account.' : undefined}
+                            />
+                            Stitch
+                          </div>
+                          {creatorInfo?.stitchDisabled && (
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">Disabled in the creator's TikTok app settings.</p>
+                          )}
+                        </div>
                       </label>
                     )}
                   </div>
