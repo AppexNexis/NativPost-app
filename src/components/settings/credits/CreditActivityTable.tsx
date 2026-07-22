@@ -14,9 +14,9 @@ import {
 } from '@/components/ui/table';
 import type { CreditActivity } from '@/lib/ai-studio/server';
 
-interface Props {
+type Props = {
   activity: CreditActivity[];
-}
+};
 
 function typeLabel(t: CreditActivity['type']): string {
   switch (t) {
@@ -52,8 +52,8 @@ export function CreditActivityTable({ activity }: Props) {
     <div className="flex flex-col gap-4 rounded-xl border bg-background dark:bg-neutral-950">
       <div className="flex items-center justify-between border-b p-5">
         <div>
-          <h3 className="text-base font-semibold">Credit Activity</h3>
-          <p className="mt-0.5 text-sm text-muted-foreground">
+          <h3 className="text-heading">Credit Activity</h3>
+          <p className="mt-0.5 text-body text-muted-foreground">
             Recent purchases and consumption from the last 30 days.
           </p>
         </div>
@@ -67,7 +67,7 @@ export function CreditActivityTable({ activity }: Props) {
       </div>
       {items.length === 0
         ? (
-            <div className="px-5 pb-6 text-sm text-muted-foreground">
+            <div className="px-5 pb-6 text-body text-muted-foreground">
               No credit activity yet. Your first generation or top-up will show up here.
             </div>
           )
@@ -85,7 +85,7 @@ export function CreditActivityTable({ activity }: Props) {
                 <TableBody>
                   {items.map(row => (
                     <TableRow key={row.id}>
-                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                      <TableCell className="whitespace-nowrap text-body text-muted-foreground">
                         {fmtDate(row.createdAt)}
                       </TableCell>
                       <TableCell className="text-sm">

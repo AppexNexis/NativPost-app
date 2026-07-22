@@ -35,7 +35,7 @@ export function DeleteDialog({ open, onOpenChange, onConfirm, captionPreview, is
         </DialogHeader>
         {captionPreview && (
           <div className="rounded-md border bg-muted/40 px-3 py-2">
-            <p className="line-clamp-3 text-xs text-muted-foreground">
+            <p className="line-clamp-3 text-meta text-muted-foreground">
               {captionPreview}
             </p>
           </div>

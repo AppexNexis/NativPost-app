@@ -1,7 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { cn } from '@/utils/Helpers';
@@ -39,16 +39,16 @@ export function BackHeader({
           'transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring',
         )}
       >
-        <ChevronLeft className="h-4 w-4" />
+        <ChevronLeft className="size-4" />
         <span>{label}</span>
       </Link>
       {(title || subtitle) && (
         <div className="min-w-0 flex-1">
           {title && (
-            <div className="truncate text-sm font-medium text-foreground">{title}</div>
+            <div className="truncate font-display text-heading text-foreground">{title}</div>
           )}
           {subtitle && (
-            <div className="truncate text-xs text-muted-foreground">{subtitle}</div>
+            <div className="truncate text-meta text-muted-foreground">{subtitle}</div>
           )}
         </div>
       )}

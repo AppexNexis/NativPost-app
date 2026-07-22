@@ -1,5 +1,6 @@
 'use client';
 
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check,
   CheckCircle2,
@@ -9,13 +10,14 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { EmptyState } from '@/features/dashboard/EmptyState';
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
-import { LoadingState } from '@/features/dashboard/LoadingState';
 import { PageHeader } from '@/features/dashboard/PageHeader';
+import { ListPageSkeleton } from '@/features/dashboard/PageSkeletons';
+import { PLATFORM_COLORS, PLATFORM_LABELS } from '@/lib/platforms';
 
 // -----------------------------------------------------------
 // TYPES
@@ -34,33 +36,6 @@ type ContentItem = {
   createdAt: string;
   variantGroupId: string | null;
   variantNumber: number;
-};
-
-// -----------------------------------------------------------
-// CONFIG
-// -----------------------------------------------------------
-const PLATFORM_LABELS: Record<string, string> = {
-  instagram: 'Instagram',
-  linkedin: 'LinkedIn',
-  linkedin_page: 'LinkedIn Page',
-  twitter: 'X',
-  facebook: 'Facebook',
-  tiktok: 'TikTok',
-  youtube: 'YouTube',
-  threads: 'Threads',
-  pinterest: 'Pinterest',
-};
-
-const PLATFORM_COLORS: Record<string, string> = {
-  instagram: 'bg-pink-500',
-  linkedin: 'bg-blue-600',
-  linkedin_page: 'bg-blue-700',
-  twitter: 'bg-zinc-800',
-  facebook: 'bg-blue-500',
-  tiktok: 'bg-zinc-900',
-  youtube: 'bg-red-600',
-  threads: 'bg-zinc-700',
-  pinterest: 'bg-red-500',
 };
 
 // -----------------------------------------------------------
@@ -83,7 +58,7 @@ function QualityBadge({ score }: { score: number }) {
       ? 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400'
       : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400';
   return (
-    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${color}`}>
+    <span className={`rounded-full px-2 py-0.5 text-micro font-medium ${color}`}>
       {pct}
       % quality
     </span>
@@ -94,35 +69,31 @@ function QualityBadge({ score }: { score: number }) {
 // PAGE
 // -----------------------------------------------------------
 export default function ApprovalsPage() {
-  const [items, setItems] = useState<ContentItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectFeedback, setRejectFeedback] = useState('');
-  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  const fetchPending = useCallback(async () => {
-    setFetchError(null);
-    try {
+  // Pending queue through the query cache — instant back-nav, silent revalidate.
+  const queryClient = useQueryClient();
+  const { data, isLoading, error: queryError, refetch } = useQuery({
+    queryKey: ['approvals'],
+    queryFn: async (): Promise<ContentItem[]> => {
       const res = await fetch('/api/content?status=pending_review&limit=100');
-      if (res.ok) {
-        const data = await res.json();
-        setItems(data.items || []);
-      } else {
-        setFetchError(`Server returned ${res.status}. Please try again.`);
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}. Please try again.`);
       }
-    } catch (err) {
-      console.error('Failed to fetch pending items:', err);
-      setFetchError(err instanceof Error ? err.message : 'Network request failed');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+      const body = await res.json();
+      return body.items || [];
+    },
+  });
+  const items = useMemo(() => data ?? [], [data]);
+  const fetchError = queryError ? queryError.message : null;
 
-  useEffect(() => {
-    fetchPending();
-  }, [fetchPending]);
+  // Approve/reject remove items from the cached queue in place.
+  const removeItems = useCallback((ids: string[]) => {
+    queryClient.setQueryData<ContentItem[]>(['approvals'], old => old?.filter(i => !ids.includes(i.id)));
+  }, [queryClient]);
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -153,7 +124,7 @@ export default function ApprovalsPage() {
       if (!res.ok) {
         throw new Error(`Server returned ${res.status}`);
       }
-      setItems(prev => prev.filter(i => i.id !== id));
+      removeItems([id]);
       setSelected((prev) => {
         const next = new Set(prev); next.delete(id); return next;
       });
@@ -177,7 +148,7 @@ export default function ApprovalsPage() {
       if (!res.ok) {
         throw new Error(`Server returned ${res.status}`);
       }
-      setItems(prev => prev.filter(i => i.id !== id));
+      removeItems([id]);
       setRejectingId(null);
       setRejectFeedback('');
       toast.success('Content rejected');
@@ -202,7 +173,7 @@ export default function ApprovalsPage() {
         }),
       ),
     );
-    setItems(prev => prev.filter(i => !selected.has(i.id)));
+    removeItems(ids);
     setSelected(new Set());
     setActionLoading(null);
     const failures = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok));
@@ -217,7 +188,7 @@ export default function ApprovalsPage() {
     return (
       <>
         <PageHeader title="Approvals" description="Review and approve content before it goes live." />
-        <LoadingState message="Loading items awaiting review" />
+        <ListPageSkeleton rows={5} />
       </>
     );
   }
@@ -230,7 +201,7 @@ export default function ApprovalsPage() {
           title="Couldn't load approvals queue"
           detail={fetchError}
           onRetry={() => {
-            void fetchPending();
+            void refetch();
           }}
         />
       </>
@@ -245,7 +216,7 @@ export default function ApprovalsPage() {
         actions={items.length > 0 ? (
           // Responsive actions: stack on mobile, row on sm+
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground sm:text-sm">
+            <span className="text-meta text-muted-foreground sm:text-sm">
               {selected.size > 0 ? `${selected.size} selected` : `${items.length} pending`}
             </span>
             <button
@@ -312,13 +283,13 @@ export default function ApprovalsPage() {
 
                   {/* Meta — wraps gracefully on mobile */}
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-meta text-muted-foreground">
                       Variant
                       {' '}
                       {item.variantNumber}
                     </span>
-                    <span className="text-xs text-muted-foreground/40">·</span>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-meta text-muted-foreground/40">·</span>
+                    <span className="text-meta text-muted-foreground">
                       {item.contentType.replace(/_/g, ' ')}
                     </span>
 
@@ -337,7 +308,7 @@ export default function ApprovalsPage() {
 
                   {/* Date + view link */}
                   <div className="flex shrink-0 items-center gap-2">
-                    <span className="hidden text-xs text-muted-foreground sm:block">
+                    <span className="hidden text-meta text-muted-foreground sm:block">
                       {new Date(item.createdAt).toLocaleDateString()}
                     </span>
                     <Link
@@ -357,7 +328,7 @@ export default function ApprovalsPage() {
                   {item.hashtags.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-1.5">
                       {(item.hashtags as string[]).map(tag => (
-                        <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                        <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                           {tag}
                         </span>
                       ))}

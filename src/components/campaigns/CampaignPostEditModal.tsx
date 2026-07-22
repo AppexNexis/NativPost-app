@@ -1,6 +1,5 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -10,8 +9,10 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
+import { useCallback, useRef, useState } from 'react';
 
-import type { ContentItem } from '@/types/v2';
+import { type AudioSelection, AudioSelectModal } from '@/components/media/AudioSelectModal';
+import { MediaPickerModal } from '@/components/media/MediaPickerModal';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -19,6 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
@@ -30,9 +32,7 @@ import { Separator } from '@/components/ui/separator';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { MediaPickerModal } from '@/components/media/MediaPickerModal';
-import { AudioSelectModal, type AudioSelection } from '@/components/media/AudioSelectModal';
+import type { ContentItem } from '@/types/v2';
 
 export type CampaignPostEditModalProps = {
   campaignId: string;
@@ -83,7 +83,7 @@ function resolveSlides(enrichment: Record<string, unknown>): SlideEntry[] {
           ?? snapSlideCaptions[i]
           ?? (s.caption ? String(s.caption) : ''),
       }))
-      .filter((s) => !!s.url);
+      .filter(s => !!s.url);
   }
   return [];
 }
@@ -95,16 +95,26 @@ function resolveVideoThumb(enrichment: Record<string, unknown>, graphicUrls?: st
   const mediaSlots = (enrichment.sourceMediaSlots ?? {}) as Record<string, unknown>;
   const bg = (mediaSlots.background ?? {}) as Record<string, unknown>;
   const snapshot = (enrichment.templateSnapshot ?? {}) as Record<string, unknown>;
-  if (bg.thumbnailUrl && !EDITOR_VIDEO_RE.test(String(bg.thumbnailUrl))) return String(bg.thumbnailUrl);
-  if (snapshot.thumbnailUrl && !EDITOR_VIDEO_RE.test(String(snapshot.thumbnailUrl))) return String(snapshot.thumbnailUrl);
+  if (bg.thumbnailUrl && !EDITOR_VIDEO_RE.test(String(bg.thumbnailUrl))) {
+    return String(bg.thumbnailUrl);
+  }
+  if (snapshot.thumbnailUrl && !EDITOR_VIDEO_RE.test(String(snapshot.thumbnailUrl))) {
+    return String(snapshot.thumbnailUrl);
+  }
   const tus = snapshot.thumbnailUrls;
-  if (Array.isArray(tus) && tus.length > 0 && typeof tus[0] === 'string') return tus[0];
+  if (Array.isArray(tus) && tus.length > 0 && typeof tus[0] === 'string') {
+    return tus[0];
+  }
   if (tus && typeof tus === 'object' && !Array.isArray(tus)) {
     const first = Object.values(tus as Record<string, unknown>)[0];
-    if (typeof first === 'string' && !EDITOR_VIDEO_RE.test(first)) return first;
+    if (typeof first === 'string' && !EDITOR_VIDEO_RE.test(first)) {
+      return first;
+    }
   }
   const gUrl = Array.isArray(graphicUrls) ? (graphicUrls[0] ?? '') : '';
-  if (gUrl && !EDITOR_VIDEO_RE.test(gUrl)) return gUrl;
+  if (gUrl && !EDITOR_VIDEO_RE.test(gUrl)) {
+    return gUrl;
+  }
   return '';
 }
 
@@ -112,14 +122,24 @@ function resolveVideoThumb(enrichment: Record<string, unknown>, graphicUrls?: st
 function resolveVideoUrl(enrichment: Record<string, unknown>, graphicUrls?: string[]): string {
   const mediaSlots = (enrichment.sourceMediaSlots ?? {}) as Record<string, unknown>;
   const bg = (mediaSlots.background ?? {}) as Record<string, unknown>;
-  if (bg.url && (bg.assetType === 'video' || EDITOR_VIDEO_RE.test(String(bg.url)))) return String(bg.url);
+  if (bg.url && (bg.assetType === 'video' || EDITOR_VIDEO_RE.test(String(bg.url)))) {
+    return String(bg.url);
+  }
   const hookVid = (mediaSlots.hookVideo ?? {}) as Record<string, unknown>;
-  if (hookVid.url) return String(hookVid.url);
+  if (hookVid.url) {
+    return String(hookVid.url);
+  }
   const snapshot = (enrichment.templateSnapshot ?? {}) as Record<string, unknown>;
-  if (snapshot.sourceUrl) return String(snapshot.sourceUrl);
-  if (snapshot.mediaUrl && EDITOR_VIDEO_RE.test(String(snapshot.mediaUrl))) return String(snapshot.mediaUrl);
+  if (snapshot.sourceUrl) {
+    return String(snapshot.sourceUrl);
+  }
+  if (snapshot.mediaUrl && EDITOR_VIDEO_RE.test(String(snapshot.mediaUrl))) {
+    return String(snapshot.mediaUrl);
+  }
   const gUrl = Array.isArray(graphicUrls) ? (graphicUrls[0] ?? '') : '';
-  if (gUrl && EDITOR_VIDEO_RE.test(gUrl)) return gUrl;
+  if (gUrl && EDITOR_VIDEO_RE.test(gUrl)) {
+    return gUrl;
+  }
   return '';
 }
 
@@ -164,11 +184,15 @@ export function CampaignPostEditModal({
   const pickerWasOpen = useRef(false);
   const pickerCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const markPickerOpen = useCallback(() => {
-    if (pickerCloseTimer.current) clearTimeout(pickerCloseTimer.current);
+    if (pickerCloseTimer.current) {
+      clearTimeout(pickerCloseTimer.current);
+    }
     pickerWasOpen.current = true;
   }, []);
   const markPickerClosed = useCallback(() => {
-    pickerCloseTimer.current = setTimeout(() => { pickerWasOpen.current = false; }, 300);
+    pickerCloseTimer.current = setTimeout(() => {
+      pickerWasOpen.current = false;
+    }, 300);
   }, []);
 
   // ── Left panel ────────────────────────────────────────────────────────────
@@ -204,19 +228,21 @@ export function CampaignPostEditModal({
   // (anyPickerOpen state guard removed — using pickerWasOpen ref instead to
   //  avoid the race where state resets before Radix fires the outer dialog event)
   const STROKE_DIRS: [number, number][] = [[1, 0], [0, 1], [-1, 0], [0, -1]];
-  const tShadow =
-    strokeWidth > 0
+  const tShadow
+    = strokeWidth > 0
       ? STROKE_DIRS.map(([dx, dy]) => `${strokeColor} ${dx * strokeWidth}px ${dy * strokeWidth}px 0`).join(', ')
       : 'none';
-  const bgStyle: React.CSSProperties =
-    background === 'white'
+  const bgStyle: React.CSSProperties
+    = background === 'white'
       ? { backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: 4, padding: '4px 8px' }
       : background === 'snapchat'
         ? { backgroundColor: '#FFFC00', borderRadius: 4, padding: '4px 8px' }
         : {};
 
   const handleRegenerate = useCallback(async () => {
-    if (isRegenerating || reRollsRemaining <= 0) return;
+    if (isRegenerating || reRollsRemaining <= 0) {
+      return;
+    }
     setIsRegenerating(true);
     setRegenError(null);
     try {
@@ -231,7 +257,9 @@ export function CampaignPostEditModal({
         }),
       });
       const data = (await res.json()) as { contentItem?: ContentItem; error?: string };
-      if (!res.ok) throw new Error(data.error ?? 'Regeneration failed');
+      if (!res.ok) {
+        throw new Error(data.error ?? 'Regeneration failed');
+      }
       if (data.contentItem) {
         setItem(data.contentItem);
         const newEnrichment = (data.contentItem.enrichmentData ?? {}) as Record<string, unknown>;
@@ -247,13 +275,15 @@ export function CampaignPostEditModal({
   }, [isRegenerating, reRollsRemaining, campaignId, item.id, prompt, mentionBusiness]);
 
   const handleSave = useCallback(async () => {
-    if (isSaving) return;
+    if (isSaving) {
+      return;
+    }
     setIsSaving(true);
     try {
       const updatedSlots = isSlideshow
         ? {
             ...(enrichment.sourceMediaSlots as Record<string, unknown> ?? {}),
-            slides: slides.map((s) => ({ url: s.url })),
+            slides: slides.map(s => ({ url: s.url })),
           }
         : enrichment.sourceMediaSlots;
 
@@ -261,7 +291,7 @@ export function CampaignPostEditModal({
         ? {
             ...(script as Record<string, unknown>),
             // Persist per-slide captions so they survive reload
-            slideCopy: slides.map((s) => s.caption ?? ''),
+            slideCopy: slides.map(s => s.caption ?? ''),
             hookText: slides[0]?.caption ?? script.hookText,
             textStyle: { fontFamily, fontWeight, fontSize, color: textColor, strokeWidth, strokeColor, background },
           }
@@ -293,24 +323,44 @@ export function CampaignPostEditModal({
       setIsSaving(false);
     }
   }, [
-    isSaving, item, onSaved, enrichment, script, isSlideshow, slides,
-    mentionBusiness, fontFamily, fontWeight, fontSize, textColor, strokeWidth, strokeColor, background,
+    isSaving,
+    item,
+    onSaved,
+    enrichment,
+    script,
+    isSlideshow,
+    slides,
+    mentionBusiness,
+    fontFamily,
+    fontWeight,
+    fontSize,
+    textColor,
+    strokeWidth,
+    strokeColor,
+    background,
     audioTrack,
   ]);
 
   // ── Slide nav helpers ─────────────────────────────────────────────────────
-  const goPrev = () => setSlideIndex((i) => Math.max(0, i - 1));
-  const goNext = () => setSlideIndex((i) => Math.min(slides.length - 1, i + 1));
+  const goPrev = () => setSlideIndex(i => Math.max(0, i - 1));
+  const goNext = () => setSlideIndex(i => Math.min(slides.length - 1, i + 1));
 
   const currentSlideUrl = slides[slideIndex]?.url ?? '';
 
   return (
     <>
-      <Dialog open onOpenChange={(o) => { if (!o && !pickerWasOpen.current) onCancel(); }}>
+      <Dialog
+        open
+        onOpenChange={(o) => {
+          if (!o && !pickerWasOpen.current) {
+            onCancel();
+          }
+        }}
+      >
         <DialogContent
-          className="flex h-screen max-h-screen w-screen max-w-screen flex-col gap-0 rounded-none p-0 [&>button]:hidden"
-          onPointerDownOutside={(e) => e.preventDefault()}
-          onInteractOutside={(e) => e.preventDefault()}
+          className="max-w-screen flex h-screen max-h-screen w-screen flex-col gap-0 rounded-none p-0 [&>button]:hidden"
+          onPointerDownOutside={e => e.preventDefault()}
+          onInteractOutside={e => e.preventDefault()}
         >
           <DialogTitle className="sr-only">Edit content</DialogTitle>
 
@@ -323,7 +373,7 @@ export function CampaignPostEditModal({
             <span className="text-sm font-semibold">
               Edit content
               {item.contentType && (
-                <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px] font-normal text-muted-foreground capitalize">
+                <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-micro font-normal capitalize text-muted-foreground">
                   {item.contentType.replace(/_/g, ' ')}
                 </span>
               )}
@@ -349,15 +399,17 @@ export function CampaignPostEditModal({
               {/* ASSETS — slideshow mode shows slide thumbnails */}
               {isSlideshow ? (
                 <section className="flex min-h-0 flex-1 flex-col p-5 pb-3">
-                  <p className="mb-3 shrink-0 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Slides ({slides.length})
+                  <p className="mb-3 shrink-0 text-micro font-semibold uppercase tracking-wider text-muted-foreground">
+                    Slides (
+                    {slides.length}
+                    )
                   </p>
                   <ScrollArea className="min-h-0 flex-1 pr-1">
                     <div className="space-y-2">
                       {slides.map((slide, idx) => (
                         <div
                           key={idx}
-                          className={`flex items-center gap-3 rounded-xl border p-2.5 cursor-pointer transition-colors ${
+                          className={`flex cursor-pointer items-center gap-3 rounded-xl border p-2.5 transition-colors ${
                             idx === slideIndex ? 'border-primary bg-primary/5' : 'bg-background hover:bg-muted/50'
                           }`}
                           onClick={() => setSlideIndex(idx)}
@@ -365,7 +417,7 @@ export function CampaignPostEditModal({
                           <div className="relative size-10 shrink-0 overflow-hidden rounded-lg bg-muted">
                             {slide.url ? (
                               // eslint-disable-next-line @next/next/no-img-element
-                              <img src={slide.url} alt={`Slide ${idx + 1}`} className="h-full w-full object-cover" />
+                              <img src={slide.url} alt={`Slide ${idx + 1}`} className="size-full object-cover" />
                             ) : (
                               <div className="flex h-full items-center justify-center">
                                 <ImageIcon className="size-4 text-muted-foreground" />
@@ -373,16 +425,21 @@ export function CampaignPostEditModal({
                             )}
                           </div>
                           <div className="min-w-0 flex-1 overflow-hidden">
-                            <p className="truncate text-xs font-medium">Slide {idx + 1}</p>
+                            <p className="truncate text-xs font-medium">
+                              Slide
+                              {idx + 1}
+                            </p>
                             {slide.caption && (
-                              <p className="truncate text-[11px] text-muted-foreground">{slide.caption}</p>
+                              <p className="truncate text-micro text-muted-foreground">{slide.caption}</p>
                             )}
                           </div>
                           <Button
                             variant="outline"
                             size="sm"
-                            className="shrink-0 h-7 text-xs"
-                            onClick={(e) => { e.stopPropagation(); markPickerOpen(); setShowSlideSwap(idx); }}
+                            className="h-7 shrink-0 text-xs"
+                            onClick={(e) => {
+                              e.stopPropagation(); markPickerOpen(); setShowSlideSwap(idx);
+                            }}
                           >
                             Swap
                           </Button>
@@ -394,7 +451,9 @@ export function CampaignPostEditModal({
                         variant="outline"
                         size="sm"
                         className="w-full gap-2 text-xs"
-                        onClick={() => { markPickerOpen(); setShowAddSlide(true); }}
+                        onClick={() => {
+                          markPickerOpen(); setShowAddSlide(true);
+                        }}
                       >
                         <Plus className="size-3.5" />
                         Add slide
@@ -406,7 +465,7 @@ export function CampaignPostEditModal({
                 /* VIDEO mode: show video + audio swap. Fixed height section
                    — Assets list is only 2 rows so no need to flex-grow. */
                 <section className="shrink-0 p-5 pb-3">
-                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <p className="mb-3 text-micro font-semibold uppercase tracking-wider text-muted-foreground">
                     Assets
                   </p>
                   <div className="space-y-2">
@@ -420,13 +479,15 @@ export function CampaignPostEditModal({
                       )}
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-medium">Video</p>
-                        <p className="truncate text-[11px] text-muted-foreground">Background video</p>
+                        <p className="truncate text-micro text-muted-foreground">Background video</p>
                       </div>
                       <Button
                         variant="outline"
                         size="sm"
-                        className="shrink-0 h-7 text-xs"
-                        onClick={() => { markPickerOpen(); setShowVideoSwap(true); }}
+                        className="h-7 shrink-0 text-xs"
+                        onClick={() => {
+                          markPickerOpen(); setShowVideoSwap(true);
+                        }}
                       >
                         Swap
                       </Button>
@@ -439,13 +500,15 @@ export function CampaignPostEditModal({
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-medium">Audio</p>
-                        <p className="truncate text-[11px] text-muted-foreground">{audioLabel}</p>
+                        <p className="truncate text-micro text-muted-foreground">{audioLabel}</p>
                       </div>
                       <Button
                         variant="outline"
                         size="sm"
-                        className="shrink-0 h-7 text-xs"
-                        onClick={() => { markPickerOpen(); setShowAudioSwap(true); }}
+                        className="h-7 shrink-0 text-xs"
+                        onClick={() => {
+                          markPickerOpen(); setShowAudioSwap(true);
+                        }}
                       >
                         Swap
                       </Button>
@@ -472,12 +535,12 @@ export function CampaignPostEditModal({
 
                 {/* PROMPT */}
                 <section>
-                  <Label className="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <Label className="mb-2 block text-micro font-semibold uppercase tracking-wider text-muted-foreground">
                     Prompt
                   </Label>
                   <Textarea
                     value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
+                    onChange={e => setPrompt(e.target.value)}
                     placeholder="Optional instructions for regeneration…"
                     rows={3}
                     className="resize-none text-xs"
@@ -497,13 +560,13 @@ export function CampaignPostEditModal({
                 </Button>
 
                 {reRollsRemaining <= 0 && (
-                  <p className="text-center text-[11px] text-muted-foreground">No re-rolls remaining</p>
+                  <p className="text-center text-micro text-muted-foreground">No re-rolls remaining</p>
                 )}
               </div>
             </aside>
 
             {/* ─ CENTER — preview ─────────────────────────────────────────── */}
-            <main className="flex flex-1 flex-col items-center justify-center overflow-hidden bg-muted/30 p-6 gap-4">
+            <main className="flex flex-1 flex-col items-center justify-center gap-4 overflow-hidden bg-muted/30 p-6">
               {/* Phone mockup */}
               <div
                 className="relative overflow-hidden rounded-2xl shadow-2xl"
@@ -513,9 +576,9 @@ export function CampaignPostEditModal({
                   /* Slideshow carousel */
                   currentSlideUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={currentSlideUrl} alt={`Slide ${slideIndex + 1}`} className="h-full w-full object-cover" />
+                    <img src={currentSlideUrl} alt={`Slide ${slideIndex + 1}`} className="size-full object-cover" />
                   ) : (
-                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-neutral-900">
+                    <div className="flex size-full flex-col items-center justify-center gap-2 bg-neutral-900">
                       <ImageIcon className="size-10 text-neutral-600" />
                       <p className="text-xs text-neutral-400">No image</p>
                     </div>
@@ -523,11 +586,11 @@ export function CampaignPostEditModal({
                 ) : (
                   /* Video preview — use <video> if we have a video URL, otherwise fall back to thumbnail image */
                   videoUrl ? (
-                    // eslint-disable-next-line jsx-a11y/media-has-caption
+
                     <video
                       src={videoUrl}
                       poster={videoThumb || undefined}
-                      className="h-full w-full object-cover"
+                      className="size-full object-cover"
                       autoPlay
                       muted
                       loop
@@ -535,9 +598,9 @@ export function CampaignPostEditModal({
                     />
                   ) : videoThumb ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={videoThumb} alt="Preview" className="h-full w-full object-cover" />
+                    <img src={videoThumb} alt="Preview" className="size-full object-cover" />
                   ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-neutral-900">
+                    <div className="flex size-full items-center justify-center bg-neutral-900">
                       <p className="text-xs text-neutral-400">No preview</p>
                     </div>
                   )
@@ -545,7 +608,7 @@ export function CampaignPostEditModal({
 
                 {/* Centered overlay text */}
                 {overlayText && (
-                  <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
                     <p
                       className="text-center font-semibold leading-snug"
                       style={{
@@ -565,7 +628,7 @@ export function CampaignPostEditModal({
 
                 {/* Slide counter badge */}
                 {isSlideshow && slides.length > 0 && (
-                  <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 pointer-events-none">
+                  <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center gap-1.5">
                     {slides.map((_, i) => (
                       <div
                         key={i}
@@ -591,8 +654,11 @@ export function CampaignPostEditModal({
                     <ChevronLeft className="size-4" />
                     Prev
                   </Button>
-                  <span className="text-xs text-muted-foreground">
-                    {slideIndex + 1} / {slides.length}
+                  <span className="text-meta text-muted-foreground">
+                    {slideIndex + 1}
+                    {' '}
+                    /
+                    {slides.length}
                   </span>
                   <Button
                     variant="outline"
@@ -613,7 +679,7 @@ export function CampaignPostEditModal({
               <div className="space-y-1 p-4 pb-16">
 
                 {/* TEXT accordion header */}
-                <div className="flex items-center gap-2 px-1 py-1">
+                <div className="flex items-center gap-2 p-1">
                   <span className="text-sm font-semibold text-muted-foreground">T</span>
                   <span className="text-sm font-semibold">Text</span>
                 </div>
@@ -624,7 +690,11 @@ export function CampaignPostEditModal({
                     <>
                       <div className="space-y-1.5">
                         <Label className="text-[10px] text-muted-foreground">
-                          Slide {slideIndex + 1} text
+                          Slide
+                          {' '}
+                          {slideIndex + 1}
+                          {' '}
+                          text
                         </Label>
                         <Textarea
                           value={slides[slideIndex]?.caption ?? ''}
@@ -643,7 +713,7 @@ export function CampaignPostEditModal({
                         <Label className="text-[10px] text-muted-foreground">Post caption (social media)</Label>
                         <Textarea
                           value={item.caption ?? ''}
-                          onChange={(e) => setItem((p) => ({ ...p, caption: e.target.value }))}
+                          onChange={e => setItem(p => ({ ...p, caption: e.target.value }))}
                           rows={2}
                           className="resize-none text-xs"
                           placeholder="Caption shown on the platform post…"
@@ -656,7 +726,7 @@ export function CampaignPostEditModal({
                       <Label className="text-[10px] text-muted-foreground">Caption</Label>
                       <Textarea
                         value={item.caption ?? ''}
-                        onChange={(e) => setItem((p) => ({ ...p, caption: e.target.value }))}
+                        onChange={e => setItem(p => ({ ...p, caption: e.target.value }))}
                         rows={3}
                         className="resize-none text-xs"
                       />
@@ -671,7 +741,7 @@ export function CampaignPostEditModal({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {FONTS.map((f) => (
+                        {FONTS.map(f => (
                           <SelectItem key={f.value} value={f.value} className="text-xs">
                             {f.label}
                           </SelectItem>
@@ -685,7 +755,7 @@ export function CampaignPostEditModal({
                     <div className="flex items-center justify-between">
                       <Label className="text-[10px] text-muted-foreground">Weight</Label>
                       <span className="text-[10px] font-medium">
-                        {WEIGHTS.find((w) => w.value === fontWeight)?.label ?? fontWeight}
+                        {WEIGHTS.find(w => w.value === fontWeight)?.label ?? fontWeight}
                       </span>
                     </div>
                     <Slider
@@ -701,7 +771,10 @@ export function CampaignPostEditModal({
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label className="text-[10px] text-muted-foreground">Size</Label>
-                      <span className="text-[10px] font-medium">{fontSize}px</span>
+                      <span className="text-[10px] font-medium">
+                        {fontSize}
+                        px
+                      </span>
                     </div>
                     <Slider
                       min={8}
@@ -719,7 +792,7 @@ export function CampaignPostEditModal({
                       <input
                         type="color"
                         value={textColor}
-                        onChange={(e) => setTextColor(e.target.value)}
+                        onChange={e => setTextColor(e.target.value)}
                         className="size-8 cursor-pointer rounded-md border"
                       />
                       <input
@@ -727,7 +800,9 @@ export function CampaignPostEditModal({
                         value={textColor.toUpperCase()}
                         onChange={(e) => {
                           const v = e.target.value;
-                          if (/^#[0-9A-Fa-f]{0,6}$/.test(v)) setTextColor(v);
+                          if (/^#[0-9A-F]{0,6}$/i.test(v)) {
+                            setTextColor(v);
+                          }
                         }}
                         className="h-8 flex-1 rounded-md border bg-background px-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary/40"
                         maxLength={7}
@@ -739,7 +814,10 @@ export function CampaignPostEditModal({
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label className="text-[10px] text-muted-foreground">Stroke</Label>
-                      <span className="text-[10px] font-medium">{strokeWidth}px</span>
+                      <span className="text-[10px] font-medium">
+                        {strokeWidth}
+                        px
+                      </span>
                     </div>
                     <Slider
                       min={0}
@@ -757,7 +835,7 @@ export function CampaignPostEditModal({
                       <input
                         type="color"
                         value={strokeColor}
-                        onChange={(e) => setStrokeColor(e.target.value)}
+                        onChange={e => setStrokeColor(e.target.value)}
                         className="size-8 cursor-pointer rounded-md border"
                       />
                       <input
@@ -765,7 +843,9 @@ export function CampaignPostEditModal({
                         value={strokeColor.toUpperCase()}
                         onChange={(e) => {
                           const v = e.target.value;
-                          if (/^#[0-9A-Fa-f]{0,6}$/.test(v)) setStrokeColor(v);
+                          if (/^#[0-9A-F]{0,6}$/i.test(v)) {
+                            setStrokeColor(v);
+                          }
                         }}
                         className="h-8 flex-1 rounded-md border bg-background px-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary/40"
                         maxLength={7}
@@ -777,7 +857,7 @@ export function CampaignPostEditModal({
                   <div className="space-y-1.5">
                     <Label className="text-[10px] text-muted-foreground">Background</Label>
                     <div className="flex gap-1.5">
-                      {(['white', 'none', 'snapchat'] as const).map((bg) => (
+                      {(['white', 'none', 'snapchat'] as const).map(bg => (
                         <button
                           key={bg}
                           type="button"
@@ -804,11 +884,15 @@ export function CampaignPostEditModal({
       {showSlideSwap !== null && (
         <MediaPickerModal
           open
-          onClose={() => { markPickerClosed(); setShowSlideSwap(null); }}
+          onClose={() => {
+            markPickerClosed(); setShowSlideSwap(null);
+          }}
           onSelect={(url) => {
             const idx = showSlideSwap;
-            setSlides((prev) => prev.map((s, i) => (i === idx ? { ...s, url } : s)));
-            if (slideIndex !== idx) setSlideIndex(idx);
+            setSlides(prev => prev.map((s, i) => (i === idx ? { ...s, url } : s)));
+            if (slideIndex !== idx) {
+              setSlideIndex(idx);
+            }
             markPickerClosed();
             setShowSlideSwap(null);
           }}
@@ -820,7 +904,9 @@ export function CampaignPostEditModal({
       {/* Add slide picker (image only) */}
       <MediaPickerModal
         open={showAddSlide}
-        onClose={() => { markPickerClosed(); setShowAddSlide(false); }}
+        onClose={() => {
+          markPickerClosed(); setShowAddSlide(false);
+        }}
         onSelect={(url) => {
           setSlides((prev) => {
             const next = [...prev, { url }];
@@ -837,7 +923,9 @@ export function CampaignPostEditModal({
       {/* Video swap picker */}
       <MediaPickerModal
         open={showVideoSwap}
-        onClose={() => { markPickerClosed(); setShowVideoSwap(false); }}
+        onClose={() => {
+          markPickerClosed(); setShowVideoSwap(false);
+        }}
         onSelect={(url) => {
           // If selected URL is a video file, use as videoUrl; otherwise use as thumb
           if (EDITOR_VIDEO_RE.test(url)) {
@@ -862,7 +950,9 @@ export function CampaignPostEditModal({
             markPickerClosed();
             setShowAudioSwap(false);
           }}
-          onClose={() => { markPickerClosed(); setShowAudioSwap(false); }}
+          onClose={() => {
+            markPickerClosed(); setShowAudioSwap(false);
+          }}
         />
       )}
     </>

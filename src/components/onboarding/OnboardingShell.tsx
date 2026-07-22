@@ -5,11 +5,15 @@
  *
  * Split-column layout for the onboarding wizard. Left column is a dark
  * hero panel mirroring the sign-in screen. Right column hosts the step
- * card. Progress pills sit under the card, an optional Back link under
- * that. Fully dark-mode aware.
+ * card with direction-aware step transitions (forward slides in from the
+ * right, back from the left; reduced-motion users get a plain crossfade).
+ * Progress pills sit under the card, an optional Back link under that.
+ * Fully dark-mode aware.
  */
 
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import Image from 'next/image';
+import { useRef } from 'react';
 
 import { cn } from '@/utils/Helpers';
 
@@ -30,6 +34,16 @@ export function OnboardingShell({
   showBack,
   children,
 }: OnboardingShellProps) {
+  const reduceMotion = useReducedMotion();
+
+  // Direction of travel: +1 forward, -1 back. Tracked against the previous
+  // index so the exit/enter slides mirror the user's movement.
+  const prevIndexRef = useRef(stepIndex);
+  const direction = stepIndex >= prevIndexRef.current ? 1 : -1;
+  prevIndexRef.current = stepIndex;
+
+  const slide = reduceMotion ? 0 : 24 * direction;
+
   return (
     <div className="grid h-screen grid-cols-1 overflow-hidden bg-background lg:grid-cols-2">
       {/* Left brand column */}
@@ -46,32 +60,33 @@ export function OnboardingShell({
         </div>
 
         <div className="max-w-md space-y-6">
-          <p className="text-xs font-medium uppercase tracking-[0.2em] text-white/50">
+          <p className="flex items-center gap-2 font-mono text-label uppercase text-white/50">
+            <span aria-hidden className="size-1.5 rounded-full bg-primary" />
             Set up your brand voice
           </p>
-          <h2 className="text-3xl font-semibold leading-tight tracking-tight text-white sm:text-4xl">
+          <h2 className="font-display text-3xl font-semibold leading-tight tracking-tight text-white sm:text-4xl">
             Your brand,
             <br />
             everywhere,
             <br />
             on autopilot.
           </h2>
-          <p className="text-sm leading-relaxed text-white/60">
+          <p className="text-body leading-relaxed text-white/60">
             A few quick questions so we can generate content that actually sounds like you. You can edit anything later in Brand Profile.
           </p>
         </div>
 
-        <div className="grid grid-cols-3 gap-6 border-t border-white/10 pt-6 text-xs text-white/60">
+        <div className="grid grid-cols-3 gap-6 border-t border-white/10 pt-6 text-meta text-white/60">
           <div>
-            <p className="text-lg font-semibold text-white">9+</p>
+            <p className="text-lg font-semibold tabular-nums text-white">9+</p>
             <p>Social platforms</p>
           </div>
           <div>
-            <p className="text-lg font-semibold text-white">7 days</p>
+            <p className="text-lg font-semibold tabular-nums text-white">7 days</p>
             <p>Free trial</p>
           </div>
           <div>
-            <p className="text-lg font-semibold text-white">$0</p>
+            <p className="text-lg font-semibold tabular-nums text-white">$0</p>
             <p>Due today</p>
           </div>
         </div>
@@ -93,8 +108,18 @@ export function OnboardingShell({
               />
             </div>
 
-            <div className="rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
-              {children}
+            <div className="overflow-hidden rounded-2xl border border-border bg-card p-6 shadow-elevation-2 sm:p-8">
+              <AnimatePresence mode="wait" initial={false} custom={direction}>
+                <motion.div
+                  key={stepIndex}
+                  initial={{ opacity: 0, x: slide }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -slide }}
+                  transition={{ duration: 0.2, ease: [0.25, 1, 0.5, 1] }}
+                >
+                  {children}
+                </motion.div>
+              </AnimatePresence>
             </div>
 
             <div className="mt-6 flex flex-col items-center gap-2">
@@ -114,7 +139,7 @@ export function OnboardingShell({
                 ))}
               </div>
               {currentStepLabel && (
-                <p className="text-xs font-medium text-muted-foreground">
+                <p className="font-mono text-meta tabular-nums text-muted-foreground">
                   {stepIndex + 1}
                   /
                   {totalSteps}

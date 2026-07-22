@@ -1,6 +1,6 @@
-
 'use client';
 
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check,
   Image as ImageIcon,
@@ -9,8 +9,19 @@ import {
   Type,
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useState } from 'react';
 
+import {
+  FacebookIcon,
+  InstagramIcon,
+  LinkedInIcon,
+  PinterestIcon,
+  type PlatformInfo,
+  ThreadsIcon,
+  TikTokIcon,
+  TwitterIcon,
+  YoutubeIcon,
+} from '@/components/icons/PlatformIcons';
 import {
   Tooltip,
   TooltipContent,
@@ -19,18 +30,7 @@ import {
 } from '@/components/ui/tooltip';
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
 import { LoadingState } from '@/features/dashboard/LoadingState';
-
-import {
-  FacebookIcon,
-  InstagramIcon,
-  LinkedInIcon,
-  PinterestIcon,
-  ThreadsIcon,
-  TikTokIcon,
-  TwitterIcon,
-  YoutubeIcon,
-  type PlatformInfo,
-} from '@/components/icons/PlatformIcons';
+import { ListPageSkeleton } from '@/features/dashboard/PageSkeletons';
 
 // ---------------------------------------------------------------------------
 // TYPES
@@ -259,7 +259,7 @@ function Avatar({
         .split(/[\s_.]/)
         .filter(Boolean)
         .slice(0, 2)
-        .map((w) => w[0]?.toUpperCase() ?? '')
+        .map(w => w[0]?.toUpperCase() ?? '')
         .join('')
     : '?';
 
@@ -308,7 +308,7 @@ function PlatformTip({ tip }: { tip: PlatformEntry['tip'] }) {
             {tip.items.map((item, i) => (
               <li
                 key={i}
-                className="list-disc text-[11px] leading-relaxed text-muted-foreground"
+                className="list-disc text-micro leading-relaxed text-muted-foreground"
               >
                 {item}
               </li>
@@ -325,30 +325,25 @@ function PlatformTip({ tip }: { tip: PlatformEntry['tip'] }) {
 // ---------------------------------------------------------------------------
 function SocialAccountsContent() {
   const searchParams = useSearchParams();
-  const [accounts, setAccounts] = useState<SocialAccount[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
   const successPlatform = searchParams.get('success');
   const errorType = searchParams.get('error');
 
-  const fetchAccounts = useCallback(async () => {
-    try {
+  // Connected accounts through the query cache — instant back-nav.
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['social-accounts'],
+    queryFn: async (): Promise<SocialAccount[]> => {
       const res = await fetch('/api/social-accounts');
-      if (res.ok) {
-        const data = await res.json();
-        setAccounts(data.accounts || []);
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}`);
       }
-    } catch (err) {
-      console.error('Failed to fetch accounts:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchAccounts();
-  }, [fetchAccounts]);
+      const body = await res.json();
+      return body.accounts || [];
+    },
+  });
+  const accounts = data ?? [];
 
   const connectPlatform = (entry: PlatformEntry) => {
     window.location.href = entry.connectHref
@@ -358,11 +353,13 @@ function SocialAccountsContent() {
 
   const disconnectAccount = async (accountId: string) => {
     // eslint-disable-next-line no-alert
-    if (!confirm('Disconnect this account? You can reconnect at any time.')) return;
+    if (!confirm('Disconnect this account? You can reconnect at any time.')) {
+      return;
+    }
     setDisconnecting(accountId);
     try {
       await fetch(`/api/social-accounts?id=${accountId}`, { method: 'DELETE' });
-      setAccounts((prev) => prev.filter((a) => a.id !== accountId));
+      queryClient.setQueryData<SocialAccount[]>(['social-accounts'], old => old?.filter(a => a.id !== accountId));
     } finally {
       setDisconnecting(null);
     }
@@ -370,22 +367,22 @@ function SocialAccountsContent() {
 
   const resolveAccount = (entry: PlatformEntry): SocialAccount | undefined => {
     if (entry.id === 'twitter_v1') {
-      return accounts.find((a) => a.platform === 'twitter' && a.isActive && a.oauthToken);
+      return accounts.find(a => a.platform === 'twitter' && a.isActive && a.oauthToken);
     }
     if (entry.id === 'twitter') {
-      return accounts.find((a) => a.platform === 'twitter' && a.isActive && a.accessToken);
+      return accounts.find(a => a.platform === 'twitter' && a.isActive && a.accessToken);
     }
-    return accounts.find((a) => a.platform === entry.id && a.isActive);
+    return accounts.find(a => a.platform === entry.id && a.isActive);
   };
 
-  const connectedCount = accounts.filter((a) => a.isActive).length;
+  const connectedCount = accounts.filter(a => a.isActive).length;
 
   return (
     <TooltipProvider delayDuration={150}>
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-xl font-semibold tracking-tight">Social accounts</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
+        <p className="mt-0.5 text-body text-muted-foreground">
           {connectedCount > 0
             ? `${connectedCount} platform${connectedCount === 1 ? '' : 's'} connected. Connect more to expand your publishing reach.`
             : 'Connect your social accounts to publish and schedule content.'}
@@ -399,7 +396,8 @@ function SocialAccountsContent() {
             <Check className="size-3 text-white" />
           </div>
           <span>
-            <span className="font-medium capitalize">{successPlatform}</span>{' '}
+            <span className="font-medium capitalize">{successPlatform}</span>
+            {' '}
             connected successfully.
           </span>
         </div>
@@ -415,10 +413,10 @@ function SocialAccountsContent() {
       )}
 
       {isLoading ? (
-        <LoadingState message="Loading connected accounts" minHeightClass="min-h-[300px]" />
+        <ListPageSkeleton rows={6} />
       ) : (
         <div className="space-y-8">
-          {PLATFORM_GROUPS.map((group) => (
+          {PLATFORM_GROUPS.map(group => (
             <div key={group.label}>
               <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {group.label}
@@ -490,11 +488,11 @@ function SocialAccountsContent() {
                               : 'Connected'}
                           </p>
                         ) : isMediaRow ? (
-                          <p className="mt-0.5 text-xs text-muted-foreground">
+                          <p className="mt-0.5 text-meta text-muted-foreground">
                             Connect to publish images &amp; videos to X
                           </p>
                         ) : (
-                          <p className="mt-0.5 text-xs text-muted-foreground">
+                          <p className="mt-0.5 text-meta text-muted-foreground">
                             Not connected
                           </p>
                         )}
@@ -561,7 +559,7 @@ function SocialAccountsContent() {
               </div>
 
               {group.label === 'Social' && (
-                <p className="mt-2 text-xs text-muted-foreground">
+                <p className="mt-2 text-meta text-muted-foreground">
                   X requires two separate connections: one for text posts (OAuth 2.0) and one
                   for images &amp; video (OAuth 1.0a). Connect both for full publishing support.
                 </p>
@@ -571,7 +569,7 @@ function SocialAccountsContent() {
         </div>
       )}
 
-      <p className="mt-8 text-xs text-muted-foreground">
+      <p className="mt-8 text-meta text-muted-foreground">
         NativPost uses official platform APIs with OAuth 2.0 and OAuth 1.0a where required.
         Credentials are encrypted and stored securely. Content is never published without your
         explicit approval.

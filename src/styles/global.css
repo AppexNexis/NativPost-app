@@ -1,3 +1,5 @@
+@import './fonts.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -75,6 +77,34 @@
     --np-yellow: #F9EB57;
     --np-cyan: #83E7EE;
     --np-red: #FFB9A2;
+
+    /* ============================================
+     * Font stacks — Safiro for display headings, GeistMono for
+     * labels/kbd/code. Both degrade gracefully when the licensed
+     * files aren't present (see src/styles/fonts.css).
+     * ============================================ */
+    --font-safiro: 'Safiro', 'Safiro Fallback', 'Inter Tight', system-ui, -apple-system, sans-serif;
+    --font-geist-mono: 'GeistMono', ui-monospace, sfmono-regular, 'Roboto Mono', menlo, monaco, 'Liberation Mono', 'DejaVu Sans Mono', 'Courier New', monospace;
+
+    /* ============================================
+     * Motion system — the only allowed durations/easings.
+     * instant: hover/pressed · fast: small state changes
+     * base: reveals/popovers · slow: modals/drawers
+     * ============================================ */
+    --motion-instant: 100ms;
+    --motion-fast: 150ms;
+    --motion-base: 200ms;
+    --motion-slow: 300ms;
+    --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+    --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
+
+    /* ============================================
+     * Elevation system
+     * 1: cards/raised rows · 2: dropdowns/popovers · 3: modals/palette
+     * ============================================ */
+    --elevation-1: 0 1px 2px 0 rgb(16 24 40 / 0.05);
+    --elevation-2: 0 4px 12px -2px rgb(16 24 40 / 0.08), 0 2px 4px -2px rgb(16 24 40 / 0.04);
+    --elevation-3: 0 20px 48px -12px rgb(16 24 40 / 0.18), 0 8px 16px -8px rgb(16 24 40 / 0.08);
   }
 
   .dark {
@@ -116,6 +146,23 @@
 
     /* Ring */
     --ring: 259 99% 65%;
+
+    /* Elevation — dark surfaces separate via lighter fills, shadows stay subtle */
+    --elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+    --elevation-2: 0 4px 12px -2px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+    --elevation-3: 0 20px 48px -12px rgb(0 0 0 / 0.65), 0 8px 16px -8px rgb(0 0 0 / 0.4);
+  }
+
+  /* WCAG 2.3.3 — collapse all motion for users who ask for it */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
@@ -127,6 +174,25 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter Tight', system-ui, -apple-system, sans-serif;
+    /* Enterprise type rendering: required ligatures + contextual
+     * alternates on, and full kerning/legibility pipeline. */
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Headings: negative tracking + balanced line wrapping so multi-line
+   * titles never leave a one-word orphan. Individual components may
+   * override tracking via the semantic type scale. */
+  h1, h2, h3, h4 {
+    @apply tracking-tight;
+    text-wrap: balance;
+  }
+
+  /* Data is always tabular: counters, stats, timestamps, prices. Numbers
+   * that reflow as they tick (9 → 10) must not shift layout. Applied via
+   * the `tabular-nums` utility at usage sites; kbd/code get it for free. */
+  kbd, code, samp {
+    font-variant-numeric: tabular-nums;
   }
 }
 

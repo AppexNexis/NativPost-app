@@ -30,10 +30,10 @@ const OrganizationSelectionPage = () => (
 
     {/* Heading */}
     <div className="mb-8 max-w-md text-center">
-      <h1 className="text-xl font-semibold tracking-tight text-foreground">
+      <h1 className="font-display text-title text-foreground">
         Get started with NativPost
       </h1>
-      <p className="mt-2 text-sm text-muted-foreground">
+      <p className="mt-2 text-body text-muted-foreground">
         Select or create a workspace to set up your brand profile and start generating content.
       </p>
     </div>

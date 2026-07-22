@@ -103,7 +103,9 @@ export function WebhookCard({ endpoint, onEdit, onChanged }: Props) {
   };
 
   const handleRotate = async () => {
-    if (!confirm('Rotate the signing secret? The old secret stops working immediately.')) return;
+    if (!confirm('Rotate the signing secret? The old secret stops working immediately.')) {
+      return;
+    }
     setRotating(true);
     setFeedback(null);
     try {
@@ -112,7 +114,9 @@ export function WebhookCard({ endpoint, onEdit, onChanged }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rotateSecret: true }),
       });
-      if (!res.ok) throw new Error('Rotate failed');
+      if (!res.ok) {
+        throw new Error('Rotate failed');
+      }
       await onChanged();
       setShowSecret(true);
       setTransientFeedback({ kind: 'info', message: 'Signing secret rotated. Update every receiver.' });
@@ -132,7 +136,9 @@ export function WebhookCard({ endpoint, onEdit, onChanged }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: !endpoint.enabled }),
       });
-      if (!res.ok) throw new Error('Toggle failed');
+      if (!res.ok) {
+        throw new Error('Toggle failed');
+      }
       await onChanged();
     } catch (err: any) {
       setTransientFeedback({ kind: 'error', message: err?.message || 'Toggle failed.' });
@@ -142,12 +148,16 @@ export function WebhookCard({ endpoint, onEdit, onChanged }: Props) {
   };
 
   const handleDelete = async () => {
-    if (!confirm('Delete this webhook endpoint? Delivery history will be removed too.')) return;
+    if (!confirm('Delete this webhook endpoint? Delivery history will be removed too.')) {
+      return;
+    }
     setDeleting(true);
     setFeedback(null);
     try {
       const res = await fetch(`/api/settings/webhooks/${endpoint.id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Delete failed');
+      if (!res.ok) {
+        throw new Error('Delete failed');
+      }
       await onChanged();
     } catch (err: any) {
       setTransientFeedback({ kind: 'error', message: err?.message || 'Delete failed.' });
@@ -185,9 +195,9 @@ export function WebhookCard({ endpoint, onEdit, onChanged }: Props) {
             )}
           </div>
           {endpoint.description && (
-            <p className="text-sm text-muted-foreground">{endpoint.description}</p>
+            <p className="text-body text-muted-foreground">{endpoint.description}</p>
           )}
-          <p className="text-xs text-muted-foreground">
+          <p className="text-meta text-muted-foreground">
             {eventLabel}
             {endpoint.consecutiveFailures > 0 && (
               <>
@@ -288,7 +298,7 @@ export function WebhookCard({ endpoint, onEdit, onChanged }: Props) {
       <button
         type="button"
         onClick={() => setExpanded(v => !v)}
-        className="flex items-center gap-1.5 self-start text-xs text-muted-foreground transition-colors hover:text-foreground"
+        className="flex items-center gap-1.5 self-start text-meta text-muted-foreground transition-colors hover:text-foreground"
       >
         {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
         {expanded ? 'Hide delivery log' : 'Show delivery log'}

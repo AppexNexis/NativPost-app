@@ -10,9 +10,9 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 const PRESETS = ['10', '20', '50', '100'] as const;
 const CREDITS_PER_DOLLAR = 10;
 
-interface Props {
+type Props = {
   onBuy: (amountUsd: number) => void;
-}
+};
 
 export function BuyCreditsCard({ onBuy }: Props) {
   const [selection, setSelection] = useState<string>('10');
@@ -28,8 +28,8 @@ export function BuyCreditsCard({ onBuy }: Props) {
   return (
     <div className="flex flex-col gap-5 rounded-xl border bg-background p-5 dark:bg-neutral-950">
       <div>
-        <h3 className="text-base font-semibold">Buy Credits</h3>
-        <p className="mt-0.5 text-sm text-muted-foreground">
+        <h3 className="text-heading">Buy Credits</h3>
+        <p className="mt-0.5 text-body text-muted-foreground">
           Add credits with a one-time payment on your saved card.
         </p>
       </div>
@@ -82,16 +82,16 @@ export function BuyCreditsCard({ onBuy }: Props) {
             Custom amount
           </span>
         </div>
-        <span className="text-xs text-muted-foreground">$10 to $1000</span>
+        <span className="text-meta text-muted-foreground">$10 to $1000</span>
       </button>
 
       {selection === 'custom' && (
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="custom-amount" className="text-xs text-muted-foreground">
+          <Label htmlFor="custom-amount" className="text-meta text-muted-foreground">
             Enter amount in USD
           </Label>
           <div className="relative">
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-body text-muted-foreground">
               $
             </span>
             <Input
@@ -140,7 +140,7 @@ export function BuyCreditsCard({ onBuy }: Props) {
       </Button>
 
       <div className="border-t pt-4">
-        <Label htmlFor="coupon" className="text-xs text-muted-foreground">
+        <Label htmlFor="coupon" className="text-meta text-muted-foreground">
           Have a coupon?
         </Label>
         <div className="mt-1 flex gap-2">
@@ -155,7 +155,7 @@ export function BuyCreditsCard({ onBuy }: Props) {
             Redeem
           </Button>
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">Coupons coming soon.</p>
+        <p className="mt-1 text-meta text-muted-foreground">Coupons coming soon.</p>
       </div>
     </div>
   );

@@ -13,7 +13,6 @@ import { getEditorKind } from '@/lib/editor/content-type-registry';
 import type { ContentItem } from '@/types/v2';
 
 import { getOverlayText, VIDEO_CONTENT_TYPES, VIDEO_RE } from '../preview-helpers';
-import { ASPECT_RATIO_LABELS, ctLabel } from './status-config';
 import {
   hasAnyMedia,
   resolveImageUrl,
@@ -21,6 +20,7 @@ import {
   resolveVideoUrl,
   toVideoSrc,
 } from './media-resolvers';
+import { ASPECT_RATIO_LABELS, ctLabel } from './status-config';
 
 type Props = {
   item: ContentItem;
@@ -39,7 +39,6 @@ export function ContentPreview({
 }: Props) {
   const editorKind = getEditorKind(item.contentType);
   const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
-
 
   const useGallery = editorKind === 'image' || IMAGE_KIND_TYPES.has(item.contentType);
   const useVideoBranch = VIDEO_CONTENT_TYPES.has(item.contentType) && !useGallery;
@@ -65,19 +64,25 @@ export function ContentPreview({
       const urls = mediaSlots.slides
         .map(s => s?.url)
         .filter((u): u is string => typeof u === 'string' && u.length > 0);
-      if (urls.length > 0) return urls;
+      if (urls.length > 0) {
+        return urls;
+      }
     }
     return (item.graphicUrls ?? []).filter(u => typeof u === 'string' && u.length > 0);
   }, [mediaSlots.slides, item.graphicUrls]);
 
   const slideCopy = useMemo(() => {
     const script = (enrichment.editorScript ?? {}) as Record<string, any>;
-    if (Array.isArray(script.slideCopy) && script.slideCopy.length > 0) return script.slideCopy;
+    if (Array.isArray(script.slideCopy) && script.slideCopy.length > 0) {
+      return script.slideCopy;
+    }
     if (mediaSlots.slides && mediaSlots.slides.length > 0) {
       const captions = mediaSlots.slides
         .map(s => s?.caption ?? '')
         .filter((c): c is string => typeof c === 'string' && c.length > 0);
-      if (captions.length > 0) return captions;
+      if (captions.length > 0) {
+        return captions;
+      }
     }
     // Fallback for single_image / wall_of_text where the overlay text lives on
     // editorScript.hookText — mirrors PostCard's getOverlayText helper so the
@@ -89,11 +94,19 @@ export function ContentPreview({
   // Video branch — reconstruct editor state fallback from caption.
   const scriptWithFallback = useMemo(() => {
     const ed = enrichment.editorScript as { hookText?: string; bodyText?: string; ctaText?: string } | undefined;
-    if (ed && (ed.hookText || ed.bodyText || ed.ctaText)) return ed;
+    if (ed && (ed.hookText || ed.bodyText || ed.ctaText)) {
+      return ed;
+    }
     const lines = (item.caption || '').split('\n').map(l => l.trim()).filter(Boolean);
-    if (lines.length === 0) return {};
-    if (lines.length === 1) return { hookText: lines[0] };
-    if (lines.length === 2) return { hookText: lines[0], bodyText: lines[1] };
+    if (lines.length === 0) {
+      return {};
+    }
+    if (lines.length === 1) {
+      return { hookText: lines[0] };
+    }
+    if (lines.length === 2) {
+      return { hookText: lines[0], bodyText: lines[1] };
+    }
     return {
       hookText: lines[0],
       bodyText: lines.slice(1, -1).join('\n'),
@@ -136,7 +149,9 @@ export function ContentPreview({
   // exists, we render the poster image instead (see the fallback branch below).
   const videoUrl = useMemo(() => {
     const v = resolveVideoUrl(item);
-    if (v) return v;
+    if (v) {
+      return v;
+    }
     const first = item.graphicUrls?.[0];
     return first && VIDEO_RE.test(first) ? first : '';
   }, [item]);
@@ -158,9 +173,11 @@ export function ContentPreview({
         ? (
             <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 bg-muted/20 py-12 text-center">
               <HeaderIcon className="mb-2 size-8 text-muted-foreground/40" />
-              <p className="text-sm text-muted-foreground">No media yet</p>
-              <p className="mt-1 max-w-xs text-xs text-muted-foreground/70">
-                {ctLabel(item.contentType)} posts need media before you can publish them.
+              <p className="text-body text-muted-foreground">No media yet</p>
+              <p className="mt-1 max-w-xs text-meta text-muted-foreground/70">
+                {ctLabel(item.contentType)}
+                {' '}
+                posts need media before you can publish them.
               </p>
               <Button asChild size="sm" variant="outline" className="mt-4">
                 <Link href={editorHref}>Open in editor</Link>

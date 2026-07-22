@@ -1,7 +1,7 @@
 'use client';
 
-import { BarChart3, Eye, Heart, MessageCircle, Share2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { BarChart3, Eye, Heart, MessageCircle, Share2 } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
 
@@ -28,13 +28,19 @@ const METRIC_ICONS: Record<string, { icon: LucideIcon; label: string }> = {
 const METRIC_ORDER = ['impressions', 'reach', 'views', 'likes', 'comments', 'shares', 'saves', 'saved', 'retweets', 'replies'];
 
 function humanizeKey(key: string): string {
-  if (METRIC_ICONS[key]) return METRIC_ICONS[key]!.label;
+  if (METRIC_ICONS[key]) {
+    return METRIC_ICONS[key]!.label;
+  }
   return key.replace(/[_-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 function toNumber(v: unknown): number | null {
-  if (typeof v === 'number' && Number.isFinite(v)) return v;
-  if (typeof v === 'string' && /^\d+(\.\d+)?$/.test(v)) return Number(v);
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    return v;
+  }
+  if (typeof v === 'string' && /^\d+(\.\d+)?$/.test(v)) {
+    return Number(v);
+  }
   return null;
 }
 
@@ -53,10 +59,14 @@ function flattenAcrossPlatforms(engagementData: Record<string, unknown>): Record
   const totals: Record<string, number> = {};
 
   for (const platformValue of Object.values(engagementData || {})) {
-    if (!platformValue || typeof platformValue !== 'object') continue;
+    if (!platformValue || typeof platformValue !== 'object') {
+      continue;
+    }
     for (const [metricKey, rawVal] of Object.entries(platformValue as Record<string, unknown>)) {
       const n = toNumber(rawVal);
-      if (n === null) continue;
+      if (n === null) {
+        continue;
+      }
       totals[metricKey] = (totals[metricKey] || 0) + n;
     }
   }
@@ -69,9 +79,15 @@ export function EngagementPanel({ engagementData }: Props) {
   const entries = Object.entries(totals).sort(([a], [b]) => {
     const ai = METRIC_ORDER.indexOf(a);
     const bi = METRIC_ORDER.indexOf(b);
-    if (ai === -1 && bi === -1) return 0;
-    if (ai === -1) return 1;
-    if (bi === -1) return -1;
+    if (ai === -1 && bi === -1) {
+      return 0;
+    }
+    if (ai === -1) {
+      return 1;
+    }
+    if (bi === -1) {
+      return -1;
+    }
     return ai - bi;
   });
 
@@ -83,7 +99,7 @@ export function EngagementPanel({ engagementData }: Props) {
       </div>
       {entries.length === 0
         ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-meta text-muted-foreground">
               Engagement data will appear here once the post has been live for a few hours.
             </p>
           )

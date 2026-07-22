@@ -56,9 +56,9 @@ type InfluencerReadiness = {
 };
 
 type BlitzAdvanced = {
-  blackoutDays?: number[];        // 0=Sun..6=Sat, omit or [] for none
-  preferredTime?: string;         // 'any' | 'morning' | 'afternoon' | 'evening'
-  autoApproveThreshold?: number;  // 0 = disabled
+  blackoutDays?: number[]; // 0=Sun..6=Sat, omit or [] for none
+  preferredTime?: string; // 'any' | 'morning' | 'afternoon' | 'evening'
+  autoApproveThreshold?: number; // 0 = disabled
 };
 
 type CampaignSettings = {
@@ -200,7 +200,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
   const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   const toggleBlackoutDay = (day: number) => {
-    setBlitzAdvanced(prev => {
+    setBlitzAdvanced((prev) => {
       const days = prev.blackoutDays ?? [];
       const next = days.includes(day) ? days.filter(d => d !== day) : [...days, day].sort();
       return { ...prev, blackoutDays: next };
@@ -424,7 +424,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
               <div className="rounded-xl border bg-muted/30 p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Influencer frequency</span>
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-body text-muted-foreground">
                     {influencerFrequency === 0 ? 'None' : `${influencerFrequency} / campaign`}
                   </span>
                 </div>
@@ -437,7 +437,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                   onChange={e => setInfluencerFrequency(Number.parseInt(e.target.value, 10))}
                   className="mt-2 w-full accent-primary"
                 />
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1 text-meta text-muted-foreground">
                   How many AI influencer posts to include per campaign
                 </p>
               </div>
@@ -468,20 +468,20 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                 <div className="rounded-xl border bg-muted/30 p-4">
                   <div className="mb-3">
                     <Label className="text-sm font-medium">Select influencers</Label>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
+                    <p className="mt-0.5 text-meta text-muted-foreground">
                       Only influencers that pass all 4 readiness checks can be used by Blitz.
                     </p>
                   </div>
 
                   {influencersLoading && (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-2 text-meta text-muted-foreground">
                       <Loader2 className="size-3.5 animate-spin" />
                       Loading influencers…
                     </div>
                   )}
 
                   {!influencersLoading && influencers.length === 0 && (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-meta text-muted-foreground">
                       No AI influencers yet.
                       {' '}
                       <a href="/dashboard/ai-studio#influencers" className="text-primary underline">
@@ -538,7 +538,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                               <ReadinessCheck label="Account connected" ok={readiness.accountConnected} />
                             </div>
                             {!isReady && (
-                              <p className="mt-1.5 text-[11px] text-red-500 dark:text-red-400">
+                              <p className="mt-1.5 text-micro text-red-500 dark:text-red-400">
                                 Complete all 4 checks before this influencer can appear in Blitz content.
                               </p>
                             )}
@@ -603,7 +603,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                   </button>
                 </div>
                 {availableAngles.length === 0 && (
-                  <p className="text-xs text-muted-foreground">No content angles configured yet.</p>
+                  <p className="text-meta text-muted-foreground">No content angles configured yet.</p>
                 )}
                 <div className="space-y-2">
                   {availableAngles.map((angle) => {
@@ -627,7 +627,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                               onChange={e => updateAngleWeight(angle.id, Number.parseInt(e.target.value, 10) || 0)}
                               className="h-7 w-16 rounded-md border bg-background px-2 text-center text-xs"
                             />
-                            <span className="text-xs text-muted-foreground">%</span>
+                            <span className="text-meta text-muted-foreground">%</span>
                           </div>
                         )}
                       </div>
@@ -677,7 +677,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                   title={`Platform media: ${platformPercent}%`}
                 />
               </div>
-              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <div className="flex items-center gap-4 text-meta text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <span className="size-2 rounded-full bg-primary" />
                   Own uploads
@@ -705,7 +705,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
               <div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-foreground">Own uploads</span>
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-body text-muted-foreground">
                     {ownMediaMix}
                     %
                   </span>
@@ -745,7 +745,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                 </a>
               </div>
 
-              <p className="text-xs text-muted-foreground">
+              <p className="text-meta text-muted-foreground">
                 Remaining
                 {' '}
                 {platformPercent}
@@ -789,7 +789,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                       onChange={e => updateContentMix(key, Number.parseInt(e.target.value, 10) || 0)}
                       className="h-7 w-14 rounded-md border bg-background px-2 text-center text-xs"
                     />
-                    <span className="w-4 text-xs text-muted-foreground">%</span>
+                    <span className="w-4 text-meta text-muted-foreground">%</span>
                   </div>
                 ))}
               </div>
@@ -828,7 +828,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                   className="mt-1"
                 />
                 {blitzCap !== null && blitzCap !== -1 && (
-                  <p className="mt-1 text-[11px] text-muted-foreground">
+                  <p className="mt-1 text-micro text-muted-foreground">
                     Your
                     {' '}
                     {planName ?? 'current'}
@@ -855,7 +855,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                   onChange={e => setQualityThreshold(Number.parseInt(e.target.value, 10) / 100)}
                   className="mt-2 w-full accent-primary"
                 />
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1 text-meta text-muted-foreground">
                   {Math.round(qualityThreshold * 100)}
                   %
                 </p>
@@ -869,13 +869,13 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
               it. Effective targets are derived at publish time. */}
           <section>
             <h3 className="mb-1 text-sm font-semibold">Publishing accounts</h3>
-            <p className="mb-3 text-xs text-muted-foreground">
+            <p className="mb-3 text-meta text-muted-foreground">
               Choose which connected accounts Blitz publishes to. Newly
               connected accounts are enabled by default.
             </p>
             <div className="rounded-xl border bg-muted/30 p-4">
               {connectedAccounts.length === 0 ? (
-                <div className="text-xs text-muted-foreground">
+                <div className="text-meta text-muted-foreground">
                   No social accounts connected yet.
                   {' '}
                   <a href="/dashboard/social-accounts" className="text-primary hover:underline">
@@ -894,12 +894,12 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                         key={acc.id}
                         className="flex flex-col items-start gap-2 rounded-lg border bg-card p-2.5"
                       >
-                        <div className="min-w-0 w-full">
+                        <div className="w-full min-w-0">
                           <p className="truncate text-sm font-medium capitalize">
                             {acc.platform}
                           </p>
                           {acc.handle && (
-                            <p className="truncate text-[11px] text-muted-foreground">
+                            <p className="truncate text-micro text-muted-foreground">
                               {acc.handle}
                             </p>
                           )}
@@ -940,7 +940,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
               {/* Blackout days */}
               <div className="rounded-xl border bg-muted/30 p-4">
                 <Label className="text-sm font-medium">Blackout days</Label>
-                <p className="mb-2 text-xs text-muted-foreground">
+                <p className="mb-2 text-meta text-muted-foreground">
                   Skip Blitz generation on selected days of the week.
                 </p>
                 <div className="flex gap-1.5">
@@ -967,7 +967,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
               {/* Preferred posting time */}
               <div className="rounded-xl border bg-muted/30 p-4">
                 <Label className="text-sm font-medium">Preferred posting time</Label>
-                <p className="mb-2 text-xs text-muted-foreground">
+                <p className="mb-2 text-meta text-muted-foreground">
                   Schedule posts for a specific part of the day.
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -997,7 +997,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
               {/* Auto-approve threshold */}
               <div className="rounded-xl border bg-muted/30 p-4">
                 <Label className="text-sm font-medium">Auto-approve threshold</Label>
-                <p className="mb-2 text-xs text-muted-foreground">
+                <p className="mb-2 text-meta text-muted-foreground">
                   After approving this many posts in a row from the same niche, auto-approve the
                   remaining posts from that niche. Set to 0 to disable.
                 </p>
@@ -1011,7 +1011,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                     onChange={e => setAutoApproveThreshold(Number.parseInt(e.target.value, 10))}
                     className="flex-1 accent-primary"
                   />
-                  <span className="min-w-6 text-center text-sm text-muted-foreground">
+                  <span className="min-w-6 text-center text-body text-muted-foreground">
                     {blitzAdvanced.autoApproveThreshold ?? 0}
                   </span>
                 </div>

@@ -1,30 +1,37 @@
-"use client";
+'use client';
 
-import React, { useEffect, useRef, useState } from "react";
-import { Plus, Calendar, BarChart3, AlertTriangle, CalendarDays, Loader2, Pencil, Trash2 } from "lucide-react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { CampaignWizard } from "@/components/campaigns/CampaignWizard";
-import { EmptyState } from "@/features/dashboard/EmptyState";
+import { AlertTriangle, BarChart3, Calendar, CalendarDays, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import React, { useEffect, useRef, useState } from 'react';
+
+import { CampaignWizard } from '@/components/campaigns/CampaignWizard';
+import { EmptyState } from '@/features/dashboard/EmptyState';
 // import { CampaignReviewGrid } from "@/components/campaigns/CampaignReviewGrid";
-import type { Campaign, ContentAngle, SocialAccount } from "@/types/v2";
+import type { Campaign, ContentAngle, SocialAccount } from '@/types/v2';
 
-interface CampaignsPageProps {
+type CampaignsPageProps = {
   campaigns: Campaign[];
   angles: ContentAngle[];
   accounts: SocialAccount[];
   influencers: { id: string; name: string }[];
-}
+};
 
 export function CampaignsPage({ campaigns, angles, accounts, influencers }: CampaignsPageProps) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"active" | "drafts" | "completed" | "new">("active");
+  const [activeTab, setActiveTab] = useState<'active' | 'drafts' | 'completed' | 'new'>('active');
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
 
   const filteredCampaigns = campaigns.filter((c) => {
-    if (activeTab === "active") return ["active", "scheduled", "generating", "review"].includes(c.status);
-    if (activeTab === "drafts") return c.status === "draft";
-    if (activeTab === "completed") return ["completed", "cancelled"].includes(c.status);
+    if (activeTab === 'active') {
+      return ['active', 'scheduled', 'generating', 'review'].includes(c.status);
+    }
+    if (activeTab === 'drafts') {
+      return c.status === 'draft';
+    }
+    if (activeTab === 'completed') {
+      return ['completed', 'cancelled'].includes(c.status);
+    }
     return true;
   });
 
@@ -36,14 +43,14 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
     setError(null);
 
     try {
-      const res = await fetch("/api/campaigns", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch('/api/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(campaign),
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: "Failed to create campaign" }));
+        const data = await res.json().catch(() => ({ error: 'Failed to create campaign' }));
         throw new Error(data.error || `HTTP ${res.status}`);
       }
 
@@ -52,7 +59,7 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
       router.refresh();
       return item;
     } catch (err: any) {
-      const message = err.message || "Failed to create campaign";
+      const message = err.message || 'Failed to create campaign';
       setError(message);
       throw new Error(message);
     } finally {
@@ -69,8 +76,8 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
       // Generation happens in the background worker; the campaign row's
       // progress bar polls via useCampaignJobProgress inside CampaignListItem.
       const res = await fetch(`/api/campaigns/${campaignId}/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
       });
 
       const data = await res.json().catch(() => ({} as Record<string, unknown>));
@@ -83,7 +90,7 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
       // via the poller.
       router.refresh();
     } catch (err: any) {
-      const message = err.message || "Failed to start campaign generation";
+      const message = err.message || 'Failed to start campaign generation';
       setError(message);
       throw new Error(message);
     } finally {
@@ -97,21 +104,21 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
 
     try {
       const res = await fetch(`/api/campaigns/${campaignId}/launch`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: "Failed to launch campaign" }));
+        const data = await res.json().catch(() => ({ error: 'Failed to launch campaign' }));
         throw new Error(data.error || `HTTP ${res.status}`);
       }
 
       const result = await res.json() as { success: boolean; scheduledPosts: number };
-      console.log("Campaign launched:", result);
+      console.log('Campaign launched:', result);
       // Re-fetch so status transition (draft/review → active/scheduled) is visible.
       router.refresh();
     } catch (err: any) {
-      const message = err.message || "Failed to launch campaign";
+      const message = err.message || 'Failed to launch campaign';
       setError(message);
       throw new Error(message);
     } finally {
@@ -119,23 +126,23 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
     }
   };
 
-  if (activeTab === "new" || selectedCampaign) {
+  if (activeTab === 'new' || selectedCampaign) {
     return (
       <div className="space-y-6">
         {error && (
           <div className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+            <AlertTriangle className="size-4 flex-shrink-0" />
             {error}
           </div>
         )}
         <div className="flex items-center gap-4">
           <button
             onClick={() => {
-              setActiveTab("active");
+              setActiveTab('active');
               setSelectedCampaign(null);
               setError(null);
             }}
-            className="text-sm text-muted-foreground hover:text-foreground"
+            className="text-body text-muted-foreground hover:text-foreground"
           >
             ← Back to campaigns
           </button>
@@ -159,83 +166,83 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Campaigns</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
+          <p className="mt-0.5 text-body text-muted-foreground">
             Create and manage automated content campaigns. Generate, review, and schedule posts in bulk.
           </p>
         </div>
         <button
-          onClick={() => setActiveTab("new")}
+          onClick={() => setActiveTab('new')}
           className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="size-4" />
           New Campaign
         </button>
       </div>
 
       <div className="flex gap-1 rounded-lg border bg-muted/50 p-1">
         <button
-          onClick={() => setActiveTab("active")}
+          onClick={() => setActiveTab('active')}
           className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === "active" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            activeTab === 'active' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
           }`}
         >
-          <Calendar className="h-4 w-4" />
+          <Calendar className="size-4" />
           Active
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-            {campaigns.filter((c) => ["active", "scheduled", "generating", "review"].includes(c.status)).length}
+          <span className="rounded-full bg-muted px-2 py-0.5 text-meta text-muted-foreground">
+            {campaigns.filter(c => ['active', 'scheduled', 'generating', 'review'].includes(c.status)).length}
           </span>
         </button>
         <button
-          onClick={() => setActiveTab("drafts")}
+          onClick={() => setActiveTab('drafts')}
           className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === "drafts" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            activeTab === 'drafts' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           Drafts
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-            {campaigns.filter((c) => c.status === "draft").length}
+          <span className="rounded-full bg-muted px-2 py-0.5 text-meta text-muted-foreground">
+            {campaigns.filter(c => c.status === 'draft').length}
           </span>
         </button>
         <button
-          onClick={() => setActiveTab("completed")}
+          onClick={() => setActiveTab('completed')}
           className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === "completed" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            activeTab === 'completed' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
           }`}
         >
-          <BarChart3 className="h-4 w-4" />
+          <BarChart3 className="size-4" />
           Completed
         </button>
       </div>
 
       {filteredCampaigns.length === 0 ? (
-        activeTab === "active" ? (
+        activeTab === 'active' ? (
           <EmptyState
             icon={Calendar}
             title="Plan a multi-day campaign"
             description="Campaigns generate a coordinated series of posts across your accounts in one shot \u2014 pick a goal, a cadence, and NativPost handles the rest."
-            primary={{ label: "Create campaign", onClick: () => setActiveTab("new") }}
-            secondary={{ label: "Try Blitz instead", href: "/dashboard/blitz" }}
+            primary={{ label: 'Create campaign', onClick: () => setActiveTab('new') }}
+            secondary={{ label: 'Try Blitz instead', href: '/dashboard/blitz' }}
           />
-        ) : activeTab === "drafts" ? (
+        ) : activeTab === 'drafts' ? (
           <EmptyState
             icon={Calendar}
             title="No drafts saved"
             description="Half-finished campaigns land here so you can pick them up later. Start a new one and save it to draft anytime."
-            primary={{ label: "New campaign", onClick: () => setActiveTab("new") }}
-            secondary={{ label: "View active campaigns", onClick: () => setActiveTab("active") }}
+            primary={{ label: 'New campaign', onClick: () => setActiveTab('new') }}
+            secondary={{ label: 'View active campaigns', onClick: () => setActiveTab('active') }}
           />
         ) : (
           <EmptyState
             icon={Calendar}
             title="No completed campaigns yet"
             description="Wrapped and cancelled campaigns will appear here. Head to Active to see what\u2019s currently running."
-            primary={{ label: "View active campaigns", onClick: () => setActiveTab("active") }}
-            secondary={{ label: "Start a new campaign", onClick: () => setActiveTab("new") }}
+            primary={{ label: 'View active campaigns', onClick: () => setActiveTab('active') }}
+            secondary={{ label: 'Start a new campaign', onClick: () => setActiveTab('new') }}
           />
         )
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {filteredCampaigns.map((campaign) => (
+          {filteredCampaigns.map(campaign => (
             <CampaignCard
               key={campaign.id}
               campaign={campaign}
@@ -295,9 +302,13 @@ function useCampaignJobProgress(campaign: Campaign) {
           `/api/campaigns/${campaign.id}/generate/status`,
           { cache: 'no-store' },
         );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
         const data = await res.json();
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
         setJob(data.job ?? null);
 
         // Terminal state — refresh the server-rendered list so status
@@ -310,13 +321,17 @@ function useCampaignJobProgress(campaign: Campaign) {
         // Silent — the next tick will retry. Poll cadence is short enough
         // that transient network blips resolve on their own.
       }
-      if (!cancelled) timer = setTimeout(tick, 2500);
+      if (!cancelled) {
+        timer = setTimeout(tick, 2500);
+      }
     };
 
     tick();
     return () => {
       cancelled = true;
-      if (timer) clearTimeout(timer);
+      if (timer) {
+        clearTimeout(timer);
+      }
     };
   }, [campaign.id, shouldPoll]);
 
@@ -338,14 +353,14 @@ function CampaignCard({
   onDeleted: () => void;
 }) {
   const statusColors: Record<string, string> = {
-    draft: "bg-muted text-muted-foreground",
-    generating: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-    review: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-    scheduled: "bg-primary/10 text-primary",
-    active: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
-    paused: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
-    completed: "bg-muted text-muted-foreground",
-    cancelled: "bg-destructive/10 text-destructive",
+    draft: 'bg-muted text-muted-foreground',
+    generating: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    review: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    scheduled: 'bg-primary/10 text-primary',
+    active: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+    paused: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+    completed: 'bg-muted text-muted-foreground',
+    cancelled: 'bg-destructive/10 text-destructive',
   };
 
   const job = useCampaignJobProgress(campaign);
@@ -369,8 +384,12 @@ function CampaignCard({
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isDeleting) return;
-    if (!window.confirm(`Delete campaign "${campaign.name}"? This cannot be undone.`)) return;
+    if (isDeleting) {
+      return;
+    }
+    if (!window.confirm(`Delete campaign "${campaign.name}"? This cannot be undone.`)) {
+      return;
+    }
     setIsDeleting(true);
     setDeleteError(null);
     try {
@@ -387,7 +406,7 @@ function CampaignCard({
   };
 
   return (
-    <div className="group flex flex-col rounded-xl border bg-card p-4 transition-all hover:shadow-sm hover:border-border/80">
+    <div className="group flex flex-col rounded-xl border bg-card p-4 transition-all hover:border-border/80 hover:shadow-sm">
       {/* Header: title + status */}
       <div className="flex items-start justify-between gap-2">
         <button
@@ -396,7 +415,7 @@ function CampaignCard({
           className="min-w-0 flex-1 text-left"
         >
           <h3 className="truncate text-sm font-semibold text-foreground">{campaign.name}</h3>
-          <span className={`mt-1.5 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusColors[campaign.status] || "bg-muted text-muted-foreground"}`}>
+          <span className={`mt-1.5 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusColors[campaign.status] || 'bg-muted text-muted-foreground'}`}>
             {campaign.status}
           </span>
         </button>
@@ -427,15 +446,23 @@ function CampaignCard({
         onClick={onOpen}
         className="mt-3 flex flex-1 flex-col text-left"
       >
-        <p className="text-xs text-muted-foreground">
+        <p className="text-meta text-muted-foreground">
           {job && campaign.status === 'generating' ? (
             <>
-              {stepLabel} {Math.round(progress)}%
+              {stepLabel}
+              {' '}
+              {Math.round(progress)}
+              %
               {job.postsTotal > 0 && ` · ${job.postsCompleted} of ${job.postsTotal} posts`}
             </>
           ) : (
             <>
-              {campaign.generatedPosts} of {campaign.totalPosts} posts
+              {campaign.generatedPosts}
+              {' '}
+              of
+              {campaign.totalPosts}
+              {' '}
+              posts
               {campaign.startDate && ` · ${new Date(campaign.startDate).toLocaleDateString()}`}
             </>
           )}
@@ -453,10 +480,18 @@ function CampaignCard({
             {job.errorMessage}
           </p>
         )}
-        <div className="mt-3 flex items-center gap-3 text-[11px] text-muted-foreground">
-          <span>{campaign.postsPerDay} posts/day</span>
+        <div className="mt-3 flex items-center gap-3 text-micro text-muted-foreground">
+          <span>
+            {campaign.postsPerDay}
+            {' '}
+            posts/day
+          </span>
           <span aria-hidden>·</span>
-          <span>{campaign.campaignLengthDays} days</span>
+          <span>
+            {campaign.campaignLengthDays}
+            {' '}
+            days
+          </span>
         </div>
       </button>
 
@@ -472,7 +507,7 @@ function CampaignCard({
             className="inline-flex items-center gap-1.5 rounded-lg border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             title="Open calendar"
           >
-            <CalendarDays className="h-3.5 w-3.5" />
+            <CalendarDays className="size-3.5" />
             Calendar
           </Link>
         </div>

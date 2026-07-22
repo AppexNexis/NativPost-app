@@ -55,7 +55,9 @@ export function BulkActionBar({
   };
 
   const handleSchedule = async () => {
-    if (!scheduleDate) return;
+    if (!scheduleDate) {
+      return;
+    }
     const iso = new Date(`${scheduleDate}T${scheduleTime || '09:00'}:00`).toISOString();
     await onSchedule(iso);
     setScheduleDate('');
@@ -106,8 +108,13 @@ export function BulkActionBar({
             <PopoverContent className="w-80" align="center" side="top">
               <div className="space-y-3">
                 <div>
-                  <p className="text-sm font-medium">Reject {selectedCount} posts</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
+                  <p className="text-sm font-medium">
+                    Reject
+                    {selectedCount}
+                    {' '}
+                    posts
+                  </p>
+                  <p className="mt-0.5 text-meta text-muted-foreground">
                     Optional feedback signal for the engine.
                   </p>
                 </div>
@@ -140,14 +147,19 @@ export function BulkActionBar({
             <PopoverContent className="w-72" align="center" side="top">
               <div className="space-y-3">
                 <div>
-                  <p className="text-sm font-medium">Schedule {selectedCount} posts</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
+                  <p className="text-sm font-medium">
+                    Schedule
+                    {selectedCount}
+                    {' '}
+                    posts
+                  </p>
+                  <p className="mt-0.5 text-meta text-muted-foreground">
                     All selected posts will be scheduled for this time.
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Date</label>
+                    <label className="mb-1 block text-micro font-medium text-muted-foreground">Date</label>
                     <input
                       type="date"
                       value={scheduleDate}
@@ -156,7 +168,7 @@ export function BulkActionBar({
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Time</label>
+                    <label className="mb-1 block text-micro font-medium text-muted-foreground">Time</label>
                     <input
                       type="time"
                       value={scheduleTime}
@@ -207,7 +219,11 @@ export function BulkActionBar({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="size-5 text-red-500" />
-              Delete {selectedCount} posts?
+              Delete
+              {' '}
+              {selectedCount}
+              {' '}
+              posts?
             </DialogTitle>
             <DialogDescription>
               This action cannot be undone. The selected posts will be permanently removed.
@@ -222,7 +238,9 @@ export function BulkActionBar({
               onClick={handleConfirmDelete}
               disabled={isBusy}
             >
-              Delete {selectedCount}
+              Delete
+              {' '}
+              {selectedCount}
             </Button>
           </DialogFooter>
         </DialogContent>

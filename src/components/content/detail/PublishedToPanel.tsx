@@ -55,7 +55,9 @@ function statusPill(status: string): { label: string; className: string } {
 export function PublishedToPanel({ publications, onRetry, isRetrying }: Props) {
   const [copiedFor, setCopiedFor] = useState<string | null>(null);
 
-  if (!publications || publications.length === 0) return null;
+  if (!publications || publications.length === 0) {
+    return null;
+  }
 
   const copy = (platform: string, url: string) => {
     navigator.clipboard.writeText(url);
@@ -94,7 +96,10 @@ export function PublishedToPanel({ publications, onRetry, isRetrying }: Props) {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{meta.label}</p>
                     {pub.platformUsername && (
-                      <p className="truncate text-[11px] text-muted-foreground">@{pub.platformUsername}</p>
+                      <p className="truncate text-micro text-muted-foreground">
+                        @
+                        {pub.platformUsername}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -127,7 +132,7 @@ export function PublishedToPanel({ publications, onRetry, isRetrying }: Props) {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-6 gap-1 px-2 text-[11px]"
+                      className="h-6 gap-1 px-2 text-micro"
                       onClick={() => onRetry(pub.platform)}
                       disabled={isRetrying === pub.platform}
                     >
@@ -146,7 +151,7 @@ export function PublishedToPanel({ publications, onRetry, isRetrying }: Props) {
                             asChild
                             size="sm"
                             variant="outline"
-                            className="h-6 gap-1 px-2 text-[11px]"
+                            className="h-6 gap-1 px-2 text-micro"
                           >
                             <a href={url} target="_blank" rel="noopener noreferrer">
                               <ExternalLink className="size-2.5" />

@@ -74,7 +74,9 @@ export function PostsFilters({
   }, [search]);
   useEffect(() => {
     const t = setTimeout(() => {
-      if (localSearch !== search) onSearchChange(localSearch);
+      if (localSearch !== search) {
+        onSearchChange(localSearch);
+      }
     }, 300);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -107,7 +109,7 @@ export function PostsFilters({
           value={localSearch}
           onChange={e => setLocalSearch(e.target.value)}
           placeholder="Search captions..."
-          className="h-9 w-full rounded-md border bg-background pl-8 pr-8 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+          className="h-9 w-full rounded-md border bg-background px-8 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
         />
         {localSearch && (
           <button
@@ -208,7 +210,7 @@ export function PostsFilters({
             onPlatformsChange([]);
           }}
           className={cn(
-            'inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+            'inline-flex items-center gap-1 rounded-md px-2 py-1 text-micro font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
           )}
         >
           <X className="size-3" />

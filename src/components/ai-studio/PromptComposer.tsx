@@ -3,15 +3,16 @@
 import { Loader2, Sparkles } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Kbd } from '@/components/ui/kbd';
 import { Textarea } from '@/components/ui/textarea';
-import { estimateCredits, getModel, type AiStudioKind } from '@/lib/ai-studio/models';
+import { type AiStudioKind, estimateCredits, getModel } from '@/lib/ai-studio/models';
 
-import { AspectRatioPicker, type AspectRatio } from './AspectRatioPicker';
+import { type AspectRatio, AspectRatioPicker } from './AspectRatioPicker';
 import { DurationSlider } from './DurationSlider';
 import { ModelPicker } from './ModelPicker';
 import { ReferenceImageSlot } from './ReferenceImageSlot';
 
-interface PromptComposerProps {
+type PromptComposerProps = {
   kind: AiStudioKind;
   modelId: string;
   onModelChange: (id: string) => void;
@@ -25,7 +26,7 @@ interface PromptComposerProps {
   onReferencesChange: (r: string[]) => void;
   onSubmit: () => void;
   submitting: boolean;
-}
+};
 
 export function PromptComposer(props: PromptComposerProps) {
   const {
@@ -54,17 +55,27 @@ export function PromptComposer(props: PromptComposerProps) {
 
   function setReferenceAt(idx: number, url: string | undefined) {
     const next = [...references];
-    if (url) next[idx] = url;
-    else next.splice(idx, 1);
+    if (url) {
+      next[idx] = url;
+    } else {
+      next.splice(idx, 1);
+    }
     onReferencesChange(next.filter(Boolean));
   }
 
   return (
-    <div className="rounded-lg border border-border bg-background p-4 shadow-sm">
+    <div className="rounded-lg border border-border bg-background p-4 shadow-elevation-2">
       <div className="flex flex-col gap-3">
         <Textarea
           value={prompt}
-          onChange={(e) => onPromptChange(e.target.value)}
+          onChange={e => onPromptChange(e.target.value)}
+          onKeyDown={(e) => {
+            // ⌘/Ctrl+Enter generates without leaving the prompt.
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !disabled) {
+              e.preventDefault();
+              onSubmit();
+            }
+          }}
           placeholder="Describe what you want to create..."
           rows={3}
           className="resize-none bg-background"
@@ -73,12 +84,14 @@ export function PromptComposer(props: PromptComposerProps) {
         {needsImage && (
           <div className="flex flex-wrap gap-2">
             {[0, 1, 2, 3].map((idx) => {
-              if (idx > references.length) return null;
+              if (idx > references.length) {
+                return null;
+              }
               return (
                 <ReferenceImageSlot
                   key={idx}
                   value={references[idx]}
-                  onChange={(url) => setReferenceAt(idx, url)}
+                  onChange={url => setReferenceAt(idx, url)}
                 />
               );
             })}
@@ -91,14 +104,18 @@ export function PromptComposer(props: PromptComposerProps) {
           {kind === 'video' && durations.length > 0 && (
             <DurationSlider durations={durations} value={duration} onChange={onDurationChange} />
           )}
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2.5">
+            <Kbd className="hidden bg-background sm:inline-flex">⌘↵</Kbd>
             <Button onClick={onSubmit} disabled={disabled} size="lg">
               {submitting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 size-4 animate-spin" />
               ) : (
-                <Sparkles className="mr-2 h-4 w-4" />
+                <Sparkles className="mr-2 size-4" />
               )}
-              Generate ({credits} credits)
+              Generate (
+              {credits}
+              {' '}
+              credits)
             </Button>
           </div>
         </div>

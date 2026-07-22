@@ -22,7 +22,7 @@ import type { ContentTemplate, TemplateStructure } from '@/types/v2';
 // ---------------------------------------------------------------------------
 // TYPES
 // ---------------------------------------------------------------------------
-export interface RemixEdits {
+export type RemixEdits = {
   structure: TemplateStructure;
   style: TextStyle;
   layout: TemplateLayout;
@@ -32,9 +32,9 @@ export interface RemixEdits {
     url: string;
     source: 'library' | 'upload' | 'original';
   };
-}
+};
 
-interface TextStyle {
+type TextStyle = {
   fontFamily: string;
   fontSize: number;
   color: string;
@@ -43,7 +43,7 @@ interface TextStyle {
   weight: 'normal' | 'bold';
   italic: boolean;
   underline: boolean;
-}
+};
 
 type TemplateLayout =
   | 'wall_of_text'
@@ -52,22 +52,22 @@ type TemplateLayout =
   | 'bottom_caption'
   | 'top_caption';
 
-interface MediaReplacement {
+type MediaReplacement = {
   id: string;
   slot: 'background' | 'slide' | 'hook_video' | 'b_roll';
   label: string;
   currentUrl: string;
   newUrl?: string;
   newPublicId?: string;
-}
+};
 
-interface RemixEditorProps {
+type RemixEditorProps = {
   template: ContentTemplate;
   initialEdits?: Partial<RemixEdits>;
   onChange: (edits: RemixEdits) => void;
   onGenerate: () => void;
   isGenerating: boolean;
-}
+};
 
 // ---------------------------------------------------------------------------
 // CONFIG
@@ -92,9 +92,19 @@ const LAYOUT_OPTIONS: { value: TemplateLayout; label: string; icon: React.Elemen
 ];
 
 const COLOR_SWATCHES = [
-  '#ffffff', '#000000', '#ef4444', '#f97316', '#f59e0b',
-  '#84cc16', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6',
-  '#8b5cf6', '#d946ef', '#f43f5e',
+  '#ffffff',
+  '#000000',
+  '#ef4444',
+  '#f97316',
+  '#f59e0b',
+  '#84cc16',
+  '#22c55e',
+  '#14b8a6',
+  '#06b6d4',
+  '#3b82f6',
+  '#8b5cf6',
+  '#d946ef',
+  '#f43f5e',
 ];
 
 const DEFAULT_STYLE: TextStyle = {
@@ -112,7 +122,9 @@ const DEFAULT_STYLE: TextStyle = {
 // HELPERS
 // ---------------------------------------------------------------------------
 function isVideoUrl(url?: string | null): boolean {
-  if (!url) return false;
+  if (!url) {
+    return false;
+  }
   return /\.(?:mp4|mov|webm|avi)(?:[/?#]|$)/i.test(url) || url.includes('cloudinary.com') && url.includes('/video/');
 }
 
@@ -206,7 +218,7 @@ export function RemixEditor({
     field: 'text' | 'duration',
     value: string | number,
   ) => {
-    setStructure((prev) => ({
+    setStructure(prev => ({
       ...prev,
       [key]: { ...prev[key], [field]: value },
     }));
@@ -228,7 +240,9 @@ export function RemixEditor({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ paramsToSign }),
       });
-      if (!signatureRes.ok) throw new Error('Failed to get upload signature');
+      if (!signatureRes.ok) {
+        throw new Error('Failed to get upload signature');
+      }
       const sig = await signatureRes.json();
 
       const formData = new FormData();
@@ -244,11 +258,13 @@ export function RemixEditor({
         { method: 'POST', body: formData },
       );
 
-      if (!uploadRes.ok) throw new Error('Cloudinary upload failed');
+      if (!uploadRes.ok) {
+        throw new Error('Cloudinary upload failed');
+      }
       const data = await uploadRes.json();
 
-      setMediaReplacements((prev) =>
-        prev.map((r) =>
+      setMediaReplacements(prev =>
+        prev.map(r =>
           r.id === slotId
             ? { ...r, newUrl: data.secure_url, newPublicId: data.public_id }
             : r,
@@ -262,7 +278,7 @@ export function RemixEditor({
     }
   };
 
-  const previewUrl = mediaReplacements.find((r) => r.id === 'background')?.newUrl
+  const previewUrl = mediaReplacements.find(r => r.id === 'background')?.newUrl
     || template.mediaUrl
     || template.thumbnailUrl;
 
@@ -306,15 +322,17 @@ export function RemixEditor({
                     layout === 'bottom_caption'
                       ? 'justify-end'
                       : layout === 'top_caption'
-                      ? 'justify-start'
-                      : layout === 'centered'
-                      ? 'items-center justify-center'
-                      : 'items-center justify-center'
+                        ? 'justify-start'
+                        : layout === 'centered'
+                          ? 'items-center justify-center'
+                          : 'items-center justify-center'
                   } p-4`}
                 >
                   {(['hook', 'body', 'cta'] as const).map((key) => {
                     const segment = structure[key];
-                    if (!segment) return null;
+                    if (!segment) {
+                      return null;
+                    }
                     return (
                       <div
                         key={key}
@@ -339,7 +357,7 @@ export function RemixEditor({
               </div>
             </div>
             <div className="border-t px-4 py-3">
-              <p className="text-xs text-muted-foreground">
+              <p className="text-meta text-muted-foreground">
                 This is a live preview. Final rendered media may differ slightly.
               </p>
             </div>
@@ -373,7 +391,7 @@ export function RemixEditor({
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-3 text-xs font-medium transition-colors ${
+                  className={`flex flex-1 items-center justify-center gap-1.5 p-3 text-xs font-medium transition-colors ${
                     activeTab === tab.id
                       ? 'border-b-2 border-primary text-primary'
                       : 'text-muted-foreground hover:text-foreground'
@@ -391,19 +409,22 @@ export function RemixEditor({
               <div className="space-y-5">
                 {(['hook', 'body', 'cta'] as const).map((key) => {
                   const segment = structure[key];
-                  if (!segment) return null;
+                  if (!segment) {
+                    return null;
+                  }
                   const labels = { hook: 'Hook', body: 'Body', cta: 'CTA' };
                   return (
                     <div key={key}>
                       <label className="mb-1.5 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         <span>{labels[key]}</span>
                         <span className="font-normal normal-case text-muted-foreground/60">
-                          {segment.duration}s
+                          {segment.duration}
+                          s
                         </span>
                       </label>
                       <textarea
                         value={segment.text}
-                        onChange={(e) => updateStructureText(key, 'text', e.target.value)}
+                        onChange={e => updateStructureText(key, 'text', e.target.value)}
                         rows={key === 'body' ? 4 : 2}
                         className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                       />
@@ -412,7 +433,7 @@ export function RemixEditor({
                         min={1}
                         max={30}
                         value={segment.duration}
-                        onChange={(e) => updateStructureText(key, 'duration', Number(e.target.value))}
+                        onChange={e => updateStructureText(key, 'duration', Number(e.target.value))}
                         className="mt-2 w-full"
                       />
                     </div>
@@ -429,10 +450,10 @@ export function RemixEditor({
                     </label>
                     <select
                       value={style.fontFamily}
-                      onChange={(e) => setStyle((s) => ({ ...s, fontFamily: e.target.value }))}
+                      onChange={e => setStyle(s => ({ ...s, fontFamily: e.target.value }))}
                       className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
                     >
-                      {FONT_OPTIONS.map((f) => (
+                      {FONT_OPTIONS.map(f => (
                         <option key={f.value} value={f.value}>
                           {f.label}
                         </option>
@@ -442,14 +463,17 @@ export function RemixEditor({
 
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Size: {style.fontSize}px
+                      Size:
+                      {' '}
+                      {style.fontSize}
+                      px
                     </label>
                     <input
                       type="range"
                       min={12}
                       max={72}
                       value={style.fontSize}
-                      onChange={(e) => setStyle((s) => ({ ...s, fontSize: Number(e.target.value) }))}
+                      onChange={e => setStyle(s => ({ ...s, fontSize: Number(e.target.value) }))}
                       className="w-full"
                     />
                   </div>
@@ -459,11 +483,11 @@ export function RemixEditor({
                       Text color
                     </label>
                     <div className="flex flex-wrap gap-2">
-                      {COLOR_SWATCHES.map((c) => (
+                      {COLOR_SWATCHES.map(c => (
                         <button
                           key={c}
                           type="button"
-                          onClick={() => setStyle((s) => ({ ...s, color: c }))}
+                          onClick={() => setStyle(s => ({ ...s, color: c }))}
                           className={`size-7 rounded-full border-2 ${
                             style.color === c ? 'border-primary' : 'border-transparent'
                           }`}
@@ -474,7 +498,7 @@ export function RemixEditor({
                       <input
                         type="color"
                         value={style.color}
-                        onChange={(e) => setStyle((s) => ({ ...s, color: e.target.value }))}
+                        onChange={e => setStyle(s => ({ ...s, color: e.target.value }))}
                         className="size-7 cursor-pointer rounded-full border-0 p-0"
                       />
                     </div>
@@ -491,11 +515,11 @@ export function RemixEditor({
                         'rgba(255,255,255,0.5)',
                         'rgba(255,255,255,0.8)',
                         'transparent',
-                      ].map((c) => (
+                      ].map(c => (
                         <button
                           key={c}
                           type="button"
-                          onClick={() => setStyle((s) => ({ ...s, backgroundColor: c }))}
+                          onClick={() => setStyle(s => ({ ...s, backgroundColor: c }))}
                           className={`size-7 rounded border-2 ${
                             style.backgroundColor === c ? 'border-primary' : 'border-border'
                           }`}
@@ -519,7 +543,7 @@ export function RemixEditor({
                         <button
                           key={opt.value}
                           type="button"
-                          onClick={() => setStyle((s) => ({ ...s, align: opt.value }))}
+                          onClick={() => setStyle(s => ({ ...s, align: opt.value }))}
                           className={`flex flex-1 items-center justify-center rounded-lg border py-2 ${
                             style.align === opt.value
                               ? 'border-primary bg-primary/5 text-primary'
@@ -535,36 +559,42 @@ export function RemixEditor({
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => setStyle((s) => ({ ...s, weight: s.weight === 'bold' ? 'normal' : 'bold' }))}
+                      onClick={() => setStyle(s => ({ ...s, weight: s.weight === 'bold' ? 'normal' : 'bold' }))}
                       className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-medium ${
                         style.weight === 'bold'
                           ? 'border-primary bg-primary/5 text-primary'
                           : 'hover:bg-muted'
                       }`}
                     >
-                      <Bold className="size-3.5" /> Bold
+                      <Bold className="size-3.5" />
+                      {' '}
+                      Bold
                     </button>
                     <button
                       type="button"
-                      onClick={() => setStyle((s) => ({ ...s, italic: !s.italic }))}
+                      onClick={() => setStyle(s => ({ ...s, italic: !s.italic }))}
                       className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-medium ${
                         style.italic
                           ? 'border-primary bg-primary/5 text-primary'
                           : 'hover:bg-muted'
                       }`}
                     >
-                      <Italic className="size-3.5" /> Italic
+                      <Italic className="size-3.5" />
+                      {' '}
+                      Italic
                     </button>
                     <button
                       type="button"
-                      onClick={() => setStyle((s) => ({ ...s, underline: !s.underline }))}
+                      onClick={() => setStyle(s => ({ ...s, underline: !s.underline }))}
                       className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-medium ${
                         style.underline
                           ? 'border-primary bg-primary/5 text-primary'
                           : 'hover:bg-muted'
                       }`}
                     >
-                      <Underline className="size-3.5" /> Underline
+                      <Underline className="size-3.5" />
+                      {' '}
+                      Underline
                     </button>
                   </div>
                 </div>
@@ -573,7 +603,7 @@ export function RemixEditor({
 
             {activeTab === 'layout' && (
               <div className="space-y-4">
-                <p className="text-xs text-muted-foreground">
+                <p className="text-meta text-muted-foreground">
                   Choose how text and media are composed in the final video.
                 </p>
                 <div className="grid grid-cols-2 gap-3">
@@ -601,10 +631,10 @@ export function RemixEditor({
 
             {activeTab === 'media' && (
               <div className="space-y-4">
-                <p className="text-xs text-muted-foreground">
+                <p className="text-meta text-muted-foreground">
                   Replace background video, images, or individual slides.
                 </p>
-                {mediaReplacements.map((rep) => (
+                {mediaReplacements.map(rep => (
                   <div key={rep.id} className="rounded-lg border bg-muted/30 p-3">
                     <div className="mb-2 flex items-center justify-between">
                       <span className="text-xs font-medium">{rep.label}</span>
@@ -640,7 +670,9 @@ export function RemixEditor({
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (file) handleMediaUpload(rep.id, file);
+                          if (file) {
+                            handleMediaUpload(rep.id, file);
+                          }
                         }}
                         disabled={uploadingSlot === rep.id}
                       />
@@ -649,13 +681,12 @@ export function RemixEditor({
                       <button
                         type="button"
                         onClick={() =>
-                          setMediaReplacements((prev) =>
-                            prev.map((r) =>
+                          setMediaReplacements(prev =>
+                            prev.map(r =>
                               r.id === rep.id ? { ...r, newUrl: undefined, newPublicId: undefined } : r,
                             ),
-                          )
-                        }
-                        className="mt-2 w-full text-xs text-muted-foreground hover:text-foreground"
+                          )}
+                        className="mt-2 w-full text-meta text-muted-foreground hover:text-foreground"
                       >
                         Revert to original
                       </button>
@@ -667,12 +698,12 @@ export function RemixEditor({
 
             {activeTab === 'audio' && (
               <div className="space-y-4">
-                <p className="text-xs text-muted-foreground">
+                <p className="text-meta text-muted-foreground">
                   Replace the audio track. Full audio library coming soon.
                 </p>
                 <div className="rounded-lg border bg-muted/30 p-3">
                   <p className="text-sm font-medium">Current track</p>
-                  <p className="text-xs text-muted-foreground">{audioTrack?.name || 'Original audio'}</p>
+                  <p className="text-meta text-muted-foreground">{audioTrack?.name || 'Original audio'}</p>
                 </div>
                 <div className="space-y-2">
                   {[
@@ -681,7 +712,7 @@ export function RemixEditor({
                     { name: 'Energetic Pop', source: 'library' as const },
                     { name: 'Calm Acoustic', source: 'library' as const },
                     { name: 'No audio / Mute', source: 'library' as const },
-                  ].map((track) => (
+                  ].map(track => (
                     <button
                       key={track.name}
                       type="button"
@@ -690,8 +721,7 @@ export function RemixEditor({
                           name: track.name,
                           url: track.source === 'original' ? template.mediaUrl || '' : '',
                           source: track.source,
-                        })
-                      }
+                        })}
                       className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
                         audioTrack?.name === track.name
                           ? 'border-primary bg-primary/5 text-primary'

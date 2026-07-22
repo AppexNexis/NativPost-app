@@ -28,7 +28,9 @@ type Props = {
 };
 
 function formatDate(iso: string | null): string {
-  if (!iso) return '—';
+  if (!iso) {
+    return '—';
+  }
   return new Date(iso).toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'short',
@@ -37,14 +39,24 @@ function formatDate(iso: string | null): string {
 }
 
 function formatRelative(iso: string | null): string {
-  if (!iso) return 'Never used';
+  if (!iso) {
+    return 'Never used';
+  }
   const then = new Date(iso).getTime();
   const now = Date.now();
   const diffSec = Math.max(1, Math.round((now - then) / 1000));
-  if (diffSec < 60) return `${diffSec}s ago`;
-  if (diffSec < 3600) return `${Math.round(diffSec / 60)}m ago`;
-  if (diffSec < 86_400) return `${Math.round(diffSec / 3600)}h ago`;
-  if (diffSec < 86_400 * 30) return `${Math.round(diffSec / 86_400)}d ago`;
+  if (diffSec < 60) {
+    return `${diffSec}s ago`;
+  }
+  if (diffSec < 3600) {
+    return `${Math.round(diffSec / 60)}m ago`;
+  }
+  if (diffSec < 86_400) {
+    return `${Math.round(diffSec / 3600)}h ago`;
+  }
+  if (diffSec < 86_400 * 30) {
+    return `${Math.round(diffSec / 86_400)}d ago`;
+  }
   return formatDate(iso);
 }
 
@@ -56,7 +68,7 @@ export function ApiKeyTable({ rows, onRevokeRequest }: Props) {
           <KeyRound className="size-5" />
         </div>
         <p className="text-sm font-medium">No API keys yet</p>
-        <p className="max-w-xs text-xs text-muted-foreground">
+        <p className="max-w-xs text-meta text-muted-foreground">
           Create a key to start calling the NativPost API from your own tools,
           scripts, or automation platforms.
         </p>

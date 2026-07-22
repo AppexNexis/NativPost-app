@@ -50,7 +50,9 @@ const STATUS_STYLE: Record<string, { label: string; dot: string; bg: string }> =
 
 function formatDate(item: ContentItem): string {
   const ref = item.scheduledFor || item.publishedAt || item.createdAt;
-  if (!ref) return '—';
+  if (!ref) {
+    return '—';
+  }
   return new Date(ref).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
@@ -91,8 +93,12 @@ function ThumbCell({ item }: { item: ContentItem }) {
 }
 
 function SortIcon({ sorted }: { sorted: false | 'asc' | 'desc' }) {
-  if (sorted === 'asc') return <ArrowUp className="ml-1 size-3" />;
-  if (sorted === 'desc') return <ArrowDown className="ml-1 size-3" />;
+  if (sorted === 'asc') {
+    return <ArrowUp className="ml-1 size-3" />;
+  }
+  if (sorted === 'desc') {
+    return <ArrowDown className="ml-1 size-3" />;
+  }
   return <ArrowUpDown className="ml-1 size-3 opacity-40" />;
 }
 
@@ -125,7 +131,7 @@ export function PostTableView({
       header: () => (
         <Checkbox
           checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-          onCheckedChange={(v) => onToggleAll(allIds, Boolean(v))}
+          onCheckedChange={v => onToggleAll(allIds, Boolean(v))}
           aria-label="Select all rows"
         />
       ),
@@ -152,7 +158,7 @@ export function PostTableView({
         <button
           type="button"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="inline-flex items-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+          className="inline-flex items-center text-micro font-medium uppercase tracking-wide text-muted-foreground"
         >
           Caption
           <SortIcon sorted={column.getIsSorted()} />
@@ -172,14 +178,14 @@ export function PostTableView({
         <button
           type="button"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="inline-flex items-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+          className="inline-flex items-center text-micro font-medium uppercase tracking-wide text-muted-foreground"
         >
           Type
           <SortIcon sorted={column.getIsSorted()} />
         </button>
       ),
       cell: ({ row }) => (
-        <span className="text-[11px] text-muted-foreground">{ctLabel(row.original.contentType)}</span>
+        <span className="text-micro text-muted-foreground">{ctLabel(row.original.contentType)}</span>
       ),
     },
     {
@@ -188,7 +194,7 @@ export function PostTableView({
         <button
           type="button"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="inline-flex items-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+          className="inline-flex items-center text-micro font-medium uppercase tracking-wide text-muted-foreground"
         >
           Status
           <SortIcon sorted={column.getIsSorted()} />
@@ -206,7 +212,7 @@ export function PostTableView({
     },
     {
       id: 'platforms',
-      header: () => <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Platforms</span>,
+      header: () => <span className="text-micro font-medium uppercase tracking-wide text-muted-foreground">Platforms</span>,
       cell: ({ row }) => (
         <div className="flex items-center gap-1">
           {(row.original.targetPlatforms ?? []).slice(0, 3).map(p => (
@@ -223,14 +229,14 @@ export function PostTableView({
         <button
           type="button"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="inline-flex items-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+          className="inline-flex items-center text-micro font-medium uppercase tracking-wide text-muted-foreground"
         >
           Date
           <SortIcon sorted={column.getIsSorted()} />
         </button>
       ),
       cell: ({ row }) => (
-        <span className="text-[11px] text-muted-foreground">{formatDate(row.original)}</span>
+        <span className="text-micro text-muted-foreground">{formatDate(row.original)}</span>
       ),
     },
     {
@@ -327,7 +333,7 @@ export function PostTableView({
               )
             : (
                 <TableRow>
-                  <TableCell colSpan={columns.length} className="h-24 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={columns.length} className="h-24 text-center text-body text-muted-foreground">
                     No posts.
                   </TableCell>
                 </TableRow>

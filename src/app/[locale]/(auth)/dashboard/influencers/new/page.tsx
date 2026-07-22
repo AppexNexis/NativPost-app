@@ -485,7 +485,7 @@ function ReferencesStep({
     <div className="space-y-4">
       <div>
         <div className="text-sm font-medium">Reference photos</div>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-body text-muted-foreground">
           Upload
           {' '}
           {MIN_REFERENCES}
@@ -548,7 +548,7 @@ function ReferencesStep({
         )}
       </div>
 
-      <div className="text-xs text-muted-foreground">
+      <div className="text-meta text-muted-foreground">
         {references.length}
         /
         {MAX_REFERENCES}
@@ -613,7 +613,7 @@ function VoiceStep({
           <Mic size={16} />
           Pick a voice
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-body text-muted-foreground">
           This becomes the voice-over for every talking-head video generated from this influencer.
           {' '}
           Click Play to hear a sample.
@@ -628,19 +628,22 @@ function VoiceStep({
       )}
 
       {voiceTab === 'clones' && cloneEnabled && (
-        <CloneUploader onCloned={async () => { await onVoicesRefresh(); }} />
+        <CloneUploader onCloned={async () => {
+          await onVoicesRefresh();
+        }}
+        />
       )}
 
       {voicesLoading
         ? (
-            <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 py-4 text-body text-muted-foreground">
               <Loader2 size={14} className="animate-spin" />
               Loading voices
             </div>
           )
         : activeList.length === 0
           ? (
-              <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border p-6 text-center text-body text-muted-foreground">
                 {voiceTab === 'clones'
                   ? 'No cloned voices yet. Upload a 30 second to 3 minute audio sample above.'
                   : 'No voices available.'}
@@ -754,7 +757,7 @@ function CloneUploader({ onCloned }: { onCloned: () => Promise<void> }) {
         <Upload size={14} />
         Clone a voice
       </div>
-      <p className="mb-3 text-xs text-muted-foreground">
+      <p className="mb-3 text-meta text-muted-foreground">
         Upload a clear 30 second to 3 minute audio sample. Best results with a single speaker, no background music.
       </p>
       <div className="space-y-2">
@@ -788,10 +791,10 @@ function CloneUploader({ onCloned }: { onCloned: () => Promise<void> }) {
             )}
           </CldUploadWidget>
           {audioUrl && (
-            <span className="truncate text-xs text-muted-foreground">Sample uploaded</span>
+            <span className="truncate text-meta text-muted-foreground">Sample uploaded</span>
           )}
         </div>
-        <label className="flex items-start gap-2 text-xs text-muted-foreground">
+        <label className="flex items-start gap-2 text-meta text-muted-foreground">
           <input
             type="checkbox"
             checked={consented}
@@ -834,7 +837,7 @@ function PersonaStep({
           <UserRound size={16} />
           Persona prompt
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-body text-muted-foreground">
           Describe how this influencer talks and what they care about. The script LLM uses
           this as the system prompt so every caption sounds like the same person.
         </p>
@@ -848,7 +851,7 @@ function PersonaStep({
         className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
       />
 
-      <div className="text-xs text-muted-foreground">
+      <div className="text-meta text-muted-foreground">
         {personaPrompt.trim().length}
         {' '}
         characters (20 minimum)
@@ -889,7 +892,7 @@ function BasePreviewStep({
           <Wand2 size={16} />
           Base character preview
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-body text-muted-foreground">
           We're generating a candidate face from your traits. Don't like it? Add
           instructions below and hit Regenerate to try a different look. Regenerations
           produce a brand-new person, not edits to this one.
@@ -914,7 +917,7 @@ function BasePreviewStep({
                     className="size-full object-cover"
                   />
                 )
-              : <span className="text-sm text-muted-foreground">Preparing…</span>}
+              : <span className="text-body text-muted-foreground">Preparing…</span>}
       </div>
 
       <div>
@@ -932,7 +935,7 @@ function BasePreviewStep({
       </div>
 
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-meta text-muted-foreground">
           ~3 credits per regeneration
         </p>
         <button
@@ -990,7 +993,7 @@ function ReviewStep({
           <Sparkles size={16} />
           Review &amp; create
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-body text-muted-foreground">
           Our agents will train the identity model for
           {' '}
           <span className="font-medium text-foreground">{traits.name || 'this influencer'}</span>
@@ -1007,7 +1010,7 @@ function ReviewStep({
                 <img src={previewUrl} alt="Base character" className="size-full object-cover" />
               )
             : (
-                <div className="flex size-full items-center justify-center text-xs text-muted-foreground">
+                <div className="flex size-full items-center justify-center text-meta text-muted-foreground">
                   No preview
                 </div>
               )}

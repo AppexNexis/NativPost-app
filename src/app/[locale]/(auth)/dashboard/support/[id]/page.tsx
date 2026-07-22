@@ -10,13 +10,13 @@ import {
   ArrowLeft,
   Bot,
   CheckCircle2,
+  ChevronDown,
   Loader2,
   Send,
   Sparkles,
   User,
   UserCircle2,
   X,
-  ChevronDown,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -76,13 +76,16 @@ function MessageBubble({ message }: { message: Message }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="rounded-xl rounded-tl-sm border border-amber-200 bg-amber-50 px-4 py-3">
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-600">
+            <p className="mb-1 text-micro font-semibold uppercase tracking-wide text-amber-600">
               Internal note
             </p>
             <p className="whitespace-pre-wrap text-sm text-amber-900">{message.body}</p>
           </div>
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            {message.authorName} · {formatDate(message.createdAt)}
+          <p className="mt-1 text-micro text-muted-foreground">
+            {message.authorName}
+            {' '}
+            ·
+            {formatDate(message.createdAt)}
           </p>
         </div>
       </div>
@@ -97,7 +100,7 @@ function MessageBubble({ message }: { message: Message }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="rounded-xl rounded-tl-sm border border-emerald-200 bg-emerald-50 px-4 py-3">
-            <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+            <p className="mb-1.5 flex items-center gap-1.5 text-micro font-semibold text-emerald-700">
               <Sparkles className="size-3 shrink-0" />
               AI Support
               {message.streaming && (
@@ -113,7 +116,7 @@ function MessageBubble({ message }: { message: Message }) {
             </p>
           </div>
           {!message.streaming && (
-            <p className="mt-1 text-[11px] text-muted-foreground">{formatDate(message.createdAt)}</p>
+            <p className="mt-1 text-micro text-muted-foreground">{formatDate(message.createdAt)}</p>
           )}
         </div>
       </div>
@@ -127,8 +130,11 @@ function MessageBubble({ message }: { message: Message }) {
           <div className="rounded-xl rounded-tr-sm bg-foreground px-4 py-3 text-background">
             <p className="whitespace-pre-wrap text-sm">{message.body}</p>
           </div>
-          <p className="mt-1 text-right text-[11px] text-muted-foreground">
-            {message.authorName} · {formatDate(message.createdAt)}
+          <p className="mt-1 text-right text-micro text-muted-foreground">
+            {message.authorName}
+            {' '}
+            ·
+            {formatDate(message.createdAt)}
           </p>
         </div>
         <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -147,15 +153,18 @@ function MessageBubble({ message }: { message: Message }) {
       <div className="min-w-0 flex-1">
         <div className="rounded-xl rounded-tl-sm border bg-card px-4 py-3">
           {message.aiPolished && (
-            <p className="mb-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+            <p className="mb-1.5 flex items-center gap-1 text-micro text-muted-foreground">
               <Sparkles className="size-3" />
               AI polished
             </p>
           )}
           <p className="whitespace-pre-wrap text-sm">{message.body}</p>
         </div>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          {message.authorName} · {formatDate(message.createdAt)}
+        <p className="mt-1 text-micro text-muted-foreground">
+          {message.authorName}
+          {' '}
+          ·
+          {formatDate(message.createdAt)}
         </p>
       </div>
     </div>
@@ -225,7 +234,9 @@ export default function TicketDetailPage() {
   // SEND REPLY + OPEN STREAM
   // -----------------------------------------------------------
   const sendReply = async () => {
-    if (!reply.trim() || sending) return;
+    if (!reply.trim() || sending) {
+      return;
+    }
 
     const text = reply.trim();
     setSending(true);
@@ -242,7 +253,7 @@ export default function TicketDetailPage() {
       aiPolished: false,
       createdAt: new Date().toISOString(),
     };
-    setMessages((prev) => [...prev, optimisticMsg]);
+    setMessages(prev => [...prev, optimisticMsg]);
     scrollToBottom();
 
     try {
@@ -262,7 +273,7 @@ export default function TicketDetailPage() {
         createdAt: new Date().toISOString(),
         streaming: true,
       };
-      setMessages((prev) => [...prev, streamingMsg]);
+      setMessages(prev => [...prev, streamingMsg]);
       scrollToBottom();
 
       const abort = new AbortController();
@@ -274,7 +285,9 @@ export default function TicketDetailPage() {
         signal: abort.signal,
       });
 
-      if (!streamRes.body) throw new Error('No stream body');
+      if (!streamRes.body) {
+        throw new Error('No stream body');
+      }
 
       const reader = streamRes.body.getReader();
       const decoder = new TextDecoder();
@@ -283,7 +296,9 @@ export default function TicketDetailPage() {
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -302,8 +317,8 @@ export default function TicketDetailPage() {
               try {
                 const token = JSON.parse(rawData);
                 if (typeof token === 'string') {
-                  setMessages((prev) =>
-                    prev.map((m) =>
+                  setMessages(prev =>
+                    prev.map(m =>
                       m.id === STREAMING_MSG_ID ? { ...m, body: m.body + token } : m,
                     ),
                   );
@@ -315,8 +330,8 @@ export default function TicketDetailPage() {
             } else if (currentEvent === 'done') {
               try {
                 const saved = JSON.parse(rawData) as { messageId?: string; createdAt?: string };
-                setMessages((prev) =>
-                  prev.map((m) =>
+                setMessages(prev =>
+                  prev.map(m =>
                     m.id === STREAMING_MSG_ID
                       ? {
                           ...m,
@@ -328,8 +343,8 @@ export default function TicketDetailPage() {
                   ),
                 );
               } catch {
-                setMessages((prev) =>
-                  prev.map((m) =>
+                setMessages(prev =>
+                  prev.map(m =>
                     m.id === STREAMING_MSG_ID
                       ? { ...m, id: `ai-${Date.now()}`, streaming: false }
                       : m,
@@ -338,8 +353,8 @@ export default function TicketDetailPage() {
               }
               currentEvent = '';
             } else if (currentEvent === 'error') {
-              setMessages((prev) =>
-                prev.map((m) =>
+              setMessages(prev =>
+                prev.map(m =>
                   m.id === STREAMING_MSG_ID
                     ? {
                         ...m,
@@ -359,8 +374,10 @@ export default function TicketDetailPage() {
         }
       }
     } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'AbortError') return;
-      setMessages((prev) => prev.filter((m) => m.id !== STREAMING_MSG_ID));
+      if (err instanceof Error && err.name === 'AbortError') {
+        return;
+      }
+      setMessages(prev => prev.filter(m => m.id !== STREAMING_MSG_ID));
     } finally {
       setSending(false);
       abortRef.current = null;
@@ -371,7 +388,9 @@ export default function TicketDetailPage() {
   // AI POLISH
   // -----------------------------------------------------------
   const polishReply = async () => {
-    if (!reply.trim() || polishing) return;
+    if (!reply.trim() || polishing) {
+      return;
+    }
     setPolishing(true);
     try {
       const res = await fetch(`/api/support/tickets/${ticketId}/polish`, {
@@ -409,7 +428,7 @@ export default function TicketDetailPage() {
   if (!ticket) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
-        <p className="text-sm text-muted-foreground">Ticket not found.</p>
+        <p className="text-body text-muted-foreground">Ticket not found.</p>
         <Link
           href="/dashboard/support"
           className="text-sm font-medium text-foreground underline underline-offset-2 hover:opacity-70"
@@ -421,7 +440,7 @@ export default function TicketDetailPage() {
   }
 
   const isClosed = ['resolved', 'closed'].includes(ticket.status);
-  const isStreaming = messages.some((m) => m.id === STREAMING_MSG_ID && m.streaming);
+  const isStreaming = messages.some(m => m.id === STREAMING_MSG_ID && m.streaming);
 
   return (
     <div className="flex h-full flex-col">
@@ -437,8 +456,17 @@ export default function TicketDetailPage() {
 
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold sm:text-base">{ticket.subject}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              #{ticketId.slice(0, 8).toUpperCase()} · {ticket.submitterName} · opened {formatDate(ticket.createdAt)}
+            <p className="mt-0.5 text-meta text-muted-foreground">
+              #
+              {ticketId.slice(0, 8).toUpperCase()}
+              {' '}
+              ·
+              {' '}
+              {ticket.submitterName}
+              {' '}
+              · opened
+              {' '}
+              {formatDate(ticket.createdAt)}
             </p>
           </div>
 
@@ -457,7 +485,7 @@ export default function TicketDetailPage() {
                 {/* Mobile dropdown trigger */}
                 <button
                   type="button"
-                  onClick={() => setShowStatusMenu((v) => !v)}
+                  onClick={() => setShowStatusMenu(v => !v)}
                   className="flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-sm hover:bg-muted sm:hidden"
                 >
                   Actions
@@ -504,7 +532,7 @@ export default function TicketDetailPage() {
       {/* Message thread */}
       <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-6">
         <div className="mx-auto max-w-2xl space-y-5">
-          {messages.map((m) => (
+          {messages.map(m => (
             <MessageBubble key={m.id} message={m} />
           ))}
           <div ref={bottomRef} />
@@ -522,7 +550,9 @@ export default function TicketDetailPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (originalDraft) setReply(originalDraft);
+                    if (originalDraft) {
+                      setReply(originalDraft);
+                    }
                     setOriginalDraft(null);
                     setPolishInfo(null);
                   }}
@@ -535,13 +565,15 @@ export default function TicketDetailPage() {
 
             <textarea
               value={reply}
-              onChange={(e) => setReply(e.target.value)}
+              onChange={e => setReply(e.target.value)}
               placeholder="Write a reply..."
               rows={3}
               disabled={sending || isStreaming}
               className="w-full resize-none rounded-xl border bg-muted/30 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-foreground/20 disabled:opacity-50"
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !isStreaming) sendReply();
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !isStreaming) {
+                  sendReply();
+                }
               }}
             />
 
@@ -562,7 +594,7 @@ export default function TicketDetailPage() {
               </button>
 
               <div className="flex items-center gap-2">
-                <p className="hidden text-[11px] text-muted-foreground sm:block">
+                <p className="hidden text-micro text-muted-foreground sm:block">
                   {isStreaming ? 'AI is responding' : 'Cmd+Enter to send'}
                 </p>
                 <button
@@ -583,8 +615,12 @@ export default function TicketDetailPage() {
           </div>
         </div>
       ) : (
-        <div className="border-t bg-muted/20 px-4 py-4 text-center text-sm text-muted-foreground sm:px-6">
-          This ticket is {ticket.status}.{' '}
+        <div className="border-t bg-muted/20 p-4 text-center text-body text-muted-foreground sm:px-6">
+          This ticket is
+          {' '}
+          {ticket.status}
+          .
+          {' '}
           <button
             type="button"
             onClick={() => updateStatus('open')}

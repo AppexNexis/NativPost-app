@@ -89,7 +89,9 @@ export function WebhookDialog({
   };
 
   const handleSave = async () => {
-    if (!url.trim() || saving) return;
+    if (!url.trim() || saving) {
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -145,7 +147,7 @@ export function WebhookDialog({
               maxLength={2048}
               autoFocus
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-meta text-muted-foreground">
               Must be HTTPS in production. NativPost sends
               {' '}
               <code className="rounded bg-muted px-1 py-0.5 text-xs">NativPost-Signature</code>
@@ -179,7 +181,7 @@ export function WebhookDialog({
                     className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium hover:bg-muted/40"
                   >
                     <span>{EVENT_GROUPS[group] ?? group}</span>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-meta text-muted-foreground">
                       {allOn ? 'All on' : someOn ? 'Some on' : 'Off'}
                     </span>
                   </button>
@@ -187,7 +189,7 @@ export function WebhookDialog({
                     {groupEvents.map(evt => (
                       <label
                         key={evt}
-                        className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
+                        className="flex cursor-pointer items-center gap-2 text-meta text-muted-foreground hover:text-foreground"
                       >
                         <Checkbox
                           checked={events.includes(evt)}
@@ -200,7 +202,7 @@ export function WebhookDialog({
                 </div>
               );
             })}
-            <p className="text-xs text-muted-foreground">
+            <p className="text-meta text-muted-foreground">
               Leave everything unchecked to receive every event NativPost adds in the
               future.
             </p>

@@ -1,12 +1,12 @@
 import type { LucideIcon } from 'lucide-react';
 
-interface StatCardProps {
+type StatCardProps = {
   icon: LucideIcon;
   label: string;
   value: string | number;
   change?: string;
   trend?: 'up' | 'down' | 'neutral';
-}
+};
 
 export function StatCard({ icon: Icon, label, value, change, trend }: StatCardProps) {
   return (
@@ -16,9 +16,9 @@ export function StatCard({ icon: Icon, label, value, change, trend }: StatCardPr
           <Icon className="size-5 text-muted-foreground" />
         </div>
         <div className="min-w-0">
-          <p className="text-xs font-medium text-muted-foreground">{label}</p>
+          <p className="text-meta font-medium text-muted-foreground">{label}</p>
           <div className="flex items-baseline gap-2">
-            <p className="text-2xl font-semibold tracking-tight">{value}</p>
+            <p className="text-2xl font-semibold tabular-nums tracking-tight">{value}</p>
             {change && (
               <span
                 className={`text-xs font-medium ${

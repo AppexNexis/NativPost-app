@@ -18,11 +18,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiKeysPanel } from '@/components/settings/api-keys/ApiKeysPanel';
 import { CreditsPanel } from '@/components/settings/credits/CreditsPanel';
 import { PageHeader } from '@/features/dashboard/PageHeader';
+import { CONTENT_LANGUAGE_GROUPS, CONTENT_LANGUAGES } from '@/lib/content-languages';
+import { PLATFORM_LABELS } from '@/lib/platforms';
 
 // -----------------------------------------------------------
 // Types
 // -----------------------------------------------------------
-interface OrgSettings {
+type OrgSettings = {
   timezone: string;
   contentLanguage: string;
   defaultContentMode: string;
@@ -33,57 +35,63 @@ interface OrgSettings {
   antiSlopThreshold: number;
   autoSchedule: boolean;
   defaultPostTime: string;
-}
+};
 
-interface UserPrefs {
+type UserPrefs = {
   theme: string;
   notifyPublish: boolean;
   notifyFailure: boolean;
   notifyApproval: boolean;
   notifyBilling: boolean;
   sidebarDensity: string;
-}
+};
 
 const TAB_KEYS = ['workspace', 'notifications', 'publishing', 'content', 'appearance', 'credits', 'api-keys'] as const;
 type TabKey = typeof TAB_KEYS[number];
 
 const TABS: { key: TabKey; label: string; icon: typeof Building2 }[] = [
-  { key: 'workspace',    label: 'Workspace',     icon: Building2 },
+  { key: 'workspace', label: 'Workspace', icon: Building2 },
   { key: 'notifications', label: 'Notifications', icon: Bell },
-  { key: 'publishing',   label: 'Publishing',    icon: PenLine },
-  { key: 'content',      label: 'Content',       icon: Layout },
-  { key: 'credits',      label: 'Credits',       icon: Coins },
-  { key: 'api-keys',     label: 'API keys',      icon: KeyRound },
-  { key: 'appearance',   label: 'Appearance',    icon: Palette },
+  { key: 'publishing', label: 'Publishing', icon: PenLine },
+  { key: 'content', label: 'Content', icon: Layout },
+  { key: 'credits', label: 'Credits', icon: Coins },
+  { key: 'api-keys', label: 'API keys', icon: KeyRound },
+  { key: 'appearance', label: 'Appearance', icon: Palette },
 ];
 
 const PANEL_TABS: TabKey[] = ['credits', 'api-keys'];
 
 const TIMEZONES = [
-  'Africa/Lagos', 'Africa/Nairobi', 'Africa/Accra', 'Africa/Johannesburg',
-  'Africa/Cairo', 'Africa/Casablanca', 'Europe/London', 'Europe/Paris',
-  'America/New_York', 'America/Chicago', 'America/Los_Angeles',
-  'America/Toronto', 'Asia/Dubai', 'Asia/Singapore', 'Asia/Tokyo',
-  'Australia/Sydney', 'UTC',
-];
-
-const LANGUAGES = [
-  { value: 'en', label: 'English' },
-  { value: 'es', label: 'Spanish' },
-  { value: 'fr', label: 'French' },
-  { value: 'pt', label: 'Portuguese' },
+  'Africa/Lagos',
+  'Africa/Nairobi',
+  'Africa/Accra',
+  'Africa/Johannesburg',
+  'Africa/Cairo',
+  'Africa/Casablanca',
+  'Europe/London',
+  'Europe/Paris',
+  'America/New_York',
+  'America/Chicago',
+  'America/Los_Angeles',
+  'America/Toronto',
+  'Asia/Dubai',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+  'UTC',
 ];
 
 const PLATFORMS = [
-  'instagram', 'linkedin', 'linkedin_page', 'twitter',
-  'facebook', 'tiktok', 'youtube', 'threads', 'pinterest',
+  'instagram',
+  'linkedin',
+  'linkedin_page',
+  'twitter',
+  'facebook',
+  'tiktok',
+  'youtube',
+  'threads',
+  'pinterest',
 ];
-
-const PLATFORM_LABELS: Record<string, string> = {
-  instagram: 'Instagram', linkedin: 'LinkedIn', linkedin_page: 'LinkedIn Page',
-  twitter: 'X / Twitter', facebook: 'Facebook', tiktok: 'TikTok',
-  youtube: 'YouTube', threads: 'Threads', pinterest: 'Pinterest',
-};
 
 const DEFAULT_ORG_SETTINGS: OrgSettings = {
   timezone: 'Africa/Lagos',
@@ -146,7 +154,7 @@ function SettingRow({
       <div className="max-w-sm">
         <p className="text-sm font-medium">{label}</p>
         {description && (
-          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+          <p className="mt-0.5 text-meta text-muted-foreground">{description}</p>
         )}
       </div>
       <div className="sm:min-w-[200px]">{children}</div>
@@ -228,9 +236,13 @@ export default function SettingsPage() {
       fetch('/api/settings/org').then(r => r.ok ? r.json() : null),
       fetch('/api/settings/user').then(r => r.ok ? r.json() : null),
     ]).then(([org, user]) => {
-      if (org) setOrgSettings(s => ({ ...s, ...org }));
+      if (org) {
+        setOrgSettings(s => ({ ...s, ...org }));
+      }
       // Sync UI state only — do not touch the DOM theme here
-      if (user) setUserPrefs(s => ({ ...s, ...user }));
+      if (user) {
+        setUserPrefs(s => ({ ...s, ...user }));
+      }
     }).finally(() => setLoading(false));
   }, []);
 
@@ -297,7 +309,9 @@ export default function SettingsPage() {
   };
 
   const handleSave = async () => {
-    if (PANEL_TABS.includes(activeTab)) return;
+    if (PANEL_TABS.includes(activeTab)) {
+      return;
+    }
     const isOrgTab = ['workspace', 'publishing', 'content'].includes(activeTab);
     if (isOrgTab) {
       await saveOrgSettings(orgSettings);
@@ -349,14 +363,16 @@ export default function SettingsPage() {
       <div className="flex flex-col gap-6 lg:flex-row lg:gap-8">
         {/* Tab sidebar */}
         <nav className="flex shrink-0 flex-row gap-1 overflow-x-auto lg:w-44 lg:flex-col">
-          {TABS.map(tab => {
+          {TABS.map((tab) => {
             const Icon = tab.icon;
             return (
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => { void setActiveTab(tab.key); }}
-                className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium whitespace-nowrap transition-colors lg:w-full ${
+                onClick={() => {
+                  void setActiveTab(tab.key);
+                }}
+                className={`flex items-center gap-2.5 whitespace-nowrap rounded-lg px-3 py-2.5 text-ui font-medium transition-colors lg:w-full ${
                   activeTab === tab.key
                     ? 'bg-primary/10 text-primary'
                     : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -365,7 +381,7 @@ export default function SettingsPage() {
                 <Icon className="size-4 shrink-0" />
                 {tab.label}
                 {activeTab === tab.key && (
-                  <ChevronRight className="ml-auto size-3.5 hidden lg:block" />
+                  <ChevronRight className="ml-auto hidden size-3.5 lg:block" />
                 )}
               </button>
             );
@@ -387,7 +403,6 @@ export default function SettingsPage() {
             {/* ── API keys ── */}
             {activeTab === 'api-keys' && <ApiKeysPanel />}
 
-
             {/* ── Workspace ── */}
             {activeTab === 'workspace' && (
               <>
@@ -398,17 +413,32 @@ export default function SettingsPage() {
                     options={TIMEZONES.map(tz => ({ value: tz, label: tz.replace('_', ' ') }))}
                   />
                 </SettingRow>
-                <SettingRow label="Content language" description="Primary language for AI-generated content.">
-                  <Select
+                <SettingRow label="Content language" description="Primary language for AI-generated content — captions, hooks, and hashtags are written in this language.">
+                  <select
                     value={orgSettings.contentLanguage}
-                    onChange={v => updateOrg('contentLanguage', v)}
-                    options={LANGUAGES}
-                  />
+                    onChange={e => updateOrg('contentLanguage', e.target.value)}
+                    aria-label="Content language"
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  >
+                    {CONTENT_LANGUAGE_GROUPS.map(group => (
+                      <optgroup key={group.region} label={group.region}>
+                        {group.languages.map(lang => (
+                          <option key={lang.value} value={lang.value}>
+                            {lang.label === lang.native ? lang.label : `${lang.label} — ${lang.native}`}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                    {/* Preserve an unknown stored code instead of silently re-mapping it */}
+                    {!CONTENT_LANGUAGES.some(l => l.value === orgSettings.contentLanguage) && (
+                      <option value={orgSettings.contentLanguage}>{orgSettings.contentLanguage}</option>
+                    )}
+                  </select>
                 </SettingRow>
                 <SettingRow label="Team members" description="Manage roles and invitations.">
                   <a
                     href="/dashboard/team"
-                    className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-body text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   >
                     Manage team
                     <ChevronRight className="size-3.5" />
@@ -437,7 +467,7 @@ export default function SettingsPage() {
                     href="https://connect.nativpost.com"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-body text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   >
                     Set up Connect
                     <ChevronRight className="size-3.5" />

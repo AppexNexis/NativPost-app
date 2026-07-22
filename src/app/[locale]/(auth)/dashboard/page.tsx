@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@clerk/nextjs';
+import { useQuery } from '@tanstack/react-query';
 import {
   AlertCircle,
   BarChart3,
@@ -10,14 +11,17 @@ import {
   Clock,
   FileText,
   Layers,
-  Loader2,
   PenLine,
   Send,
   TrendingUp,
   Video,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+
+import { getStatusMeta } from '@/components/content/detail/status-config';
+import { Skeleton } from '@/components/ui/skeleton';
+import { fetchJson } from '@/lib/fetch-json';
+import { PLATFORM_COLORS, PLATFORM_LABELS } from '@/lib/platforms';
 
 // -----------------------------------------------------------
 // TYPES
@@ -37,6 +41,17 @@ type UpcomingPost = {
   targetPlatforms: string[];
   contentType: string;
   scheduledFor: string;
+};
+
+type ActivityItem = {
+  id: string;
+  caption: string;
+  status: string;
+  targetPlatforms: string[];
+  contentType: string;
+  scheduledFor: string | null;
+  publishedAt: string | null;
+  createdAt: string;
 };
 
 type RecentFailure = {
@@ -67,36 +82,9 @@ type DashboardData = {
   };
   pendingItems: PendingItem[];
   upcoming: UpcomingPost[];
-  recentActivity: unknown[];
+  recentActivity: ActivityItem[];
   onboarding: OnboardingStatus;
   recentFailures: RecentFailure[];
-};
-
-// -----------------------------------------------------------
-// CONFIG
-// -----------------------------------------------------------
-const PLATFORM_LABELS: Record<string, string> = {
-  instagram: 'Instagram',
-  linkedin: 'LinkedIn',
-  linkedin_page: 'LinkedIn Page',
-  twitter: 'X',
-  facebook: 'Facebook',
-  tiktok: 'TikTok',
-  youtube: 'YouTube',
-  threads: 'Threads',
-  pinterest: 'Pinterest',
-};
-
-const PLATFORM_COLORS: Record<string, string> = {
-  instagram: 'bg-pink-500',
-  linkedin: 'bg-blue-600',
-  linkedin_page: 'bg-blue-700',
-  twitter: 'bg-zinc-800',
-  facebook: 'bg-blue-500',
-  tiktok: 'bg-zinc-900',
-  youtube: 'bg-red-600',
-  threads: 'bg-zinc-700',
-  pinterest: 'bg-red-500',
 };
 
 // -----------------------------------------------------------
@@ -174,7 +162,7 @@ function OnboardingChecklist({ onboarding }: { onboarding: OnboardingStatus }) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold">Get set up</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <p className="mt-0.5 text-meta text-muted-foreground">
             {completedCount}
             {' '}
             of
@@ -248,10 +236,10 @@ function StatCard({
         </div>
         <ChevronRight className="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
       </div>
-      <p className={`text-2xl font-bold tracking-tight ${accent && value > 0 ? 'text-amber-700 dark:text-amber-400' : ''}`}>
+      <p className={`text-2xl font-semibold tabular-nums tracking-tight ${accent && value > 0 ? 'text-amber-700 dark:text-amber-400' : ''}`}>
         {value}
       </p>
-      <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-meta text-muted-foreground">{label}</p>
     </Link>
   );
 }
@@ -270,7 +258,7 @@ function SectionHeader({
   return (
     <div className="flex items-center justify-between border-b px-5 py-4">
       <div className="flex items-center gap-2">
-        <h2 className="text-sm font-semibold">{title}</h2>
+        <h2 className="text-body font-semibold">{title}</h2>
         {count !== undefined && count > 0 && (
           <span className="flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
             {count > 99 ? '99+' : count}
@@ -280,7 +268,7 @@ function SectionHeader({
       {href && linkLabel && (
         <Link
           href={href}
-          className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+          className="text-meta text-muted-foreground transition-colors hover:text-foreground"
         >
           {linkLabel}
           <ChevronRight className="ml-0.5 inline-block size-3" />
@@ -294,51 +282,50 @@ function SectionHeader({
 // PAGE
 // -----------------------------------------------------------
 export default function DashboardPage() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
+  // Cached server state: revisiting the dashboard paints the last known data
+  // instantly and revalidates in the background.
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: () => fetchJson<DashboardData>('/api/dashboard'),
+  });
 
-  // At the top of DashboardPage, alongside the existing useState/useEffect:
   const { orgId } = useAuth();
   const teamOrgId = process.env.NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID;
   const isStaff = !!(teamOrgId && orgId === teamOrgId);
 
- useEffect(() => {
-  async function load() {
-    try {
-      const res = await fetch('/api/dashboard');
-      if (res.ok) {
-        setData(await res.json());
-      } else {
-        setHasError(true); // 👈 Catches 500 or broken API responses
-      }
-    } catch (err) {
-      console.error('Dashboard load failed:', err);
-      setHasError(true); // 👈 Catches network dropouts
-    } finally {
-      setIsLoading(false);
-    }
-  }
-  load();
-}, []);
-
   if (isLoading) {
+    // Skeleton mirrors the real layout so content doesn't jump when it lands.
     return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      <div className="space-y-6" aria-busy="true" aria-label="Loading dashboard">
+        <div>
+          <Skeleton className="h-6 w-32" />
+          <Skeleton className="mt-2 h-4 w-48" />
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          {Array.from({ length: 4 }, (_, i) => (
+            <Skeleton key={i} className="h-[120px] rounded-xl" />
+          ))}
+        </div>
+        <div className="grid gap-6 lg:grid-cols-3">
+          <Skeleton className="h-[360px] rounded-xl lg:col-span-2" />
+          <div className="space-y-4">
+            <Skeleton className="h-[200px] rounded-xl" />
+            <Skeleton className="h-[240px] rounded-xl" />
+          </div>
+        </div>
       </div>
     );
   }
 
-  if (hasError || !data) {
-  return (
-    <div className="flex min-h-[400px] flex-col items-center justify-center text-center">
-      <AlertCircle className="mb-4 size-8 text-red-500" />
-      <h2 className="text-lg font-semibold">Failed to load dashboard</h2>
-      <p className="text-sm text-muted-foreground">Please refresh the page to try again.</p>
-    </div>
-  );
-}
+  if (isError || !data) {
+    return (
+      <div className="flex min-h-[400px] flex-col items-center justify-center text-center">
+        <AlertCircle className="mb-4 size-8 text-red-500" />
+        <h2 className="text-lg font-semibold">Failed to load dashboard</h2>
+        <p className="text-body text-muted-foreground">Please refresh the page to try again.</p>
+      </div>
+    );
+  }
 
   const stats = data?.stats || {
     pendingApprovals: 0,
@@ -353,15 +340,16 @@ export default function DashboardPage() {
   // const hasUpcoming = (data?.upcoming.length || 0) > 0;
 
   const hasPending = (data.pendingItems?.length || 0) > 0;
-const hasFailures = (data.recentFailures?.length || 0) > 0;
-const hasUpcoming = (data.upcoming?.length || 0) > 0;
+  const hasFailures = (data.recentFailures?.length || 0) > 0;
+  const hasUpcoming = (data.upcoming?.length || 0) > 0;
+  const hasActivity = (data.recentActivity?.length || 0) > 0;
 
   return (
     <div className="space-y-6">
       {/* Page heading */}
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Overview</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
+        <h1 className="font-display text-title">Overview</h1>
+        <p className="mt-0.5 text-body text-muted-foreground">
           {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
         </p>
       </div>
@@ -448,7 +436,7 @@ const hasUpcoming = (data.upcoming?.length || 0) > 0;
                   <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400" />
                 </div>
                 <p className="text-sm font-medium">All caught up</p>
-                <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+                <p className="mt-1 max-w-xs text-meta text-muted-foreground">
                   No content waiting for your review. We'll notify you when new posts are ready.
                 </p>
                 <Link
@@ -478,7 +466,7 @@ const hasUpcoming = (data.upcoming?.length || 0) > 0;
                         {(item.targetPlatforms || []).map(p => (
                           <PlatformBadge key={p} platform={p} />
                         ))}
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-meta text-muted-foreground">
                           {relativeTime(item.createdAt)}
                         </span>
                         {item.antiSlopScore !== null && item.antiSlopScore >= 0.8 && (
@@ -531,7 +519,7 @@ const hasUpcoming = (data.upcoming?.length || 0) > 0;
             {!hasUpcoming ? (
               <div className="px-5 py-8 text-center">
                 <Calendar className="mx-auto mb-2 size-6 text-muted-foreground/40" />
-                <p className="text-xs text-muted-foreground">Nothing scheduled.</p>
+                <p className="text-meta text-muted-foreground">Nothing scheduled.</p>
                 <Link
                   href="/dashboard/calendar"
                   className="mt-2 block text-xs text-primary underline"
@@ -575,7 +563,7 @@ const hasUpcoming = (data.upcoming?.length || 0) > 0;
           {/* Quick actions */}
           <div className="rounded-xl border bg-card">
             <div className="border-b px-5 py-4">
-              <h2 className="text-sm font-semibold">Quick actions</h2>
+              <h2 className="text-body font-semibold">Quick actions</h2>
             </div>
             <div className="space-y-1 p-3">
               {[
@@ -620,13 +608,48 @@ const hasUpcoming = (data.upcoming?.length || 0) > 0;
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-medium leading-tight">{label}</p>
-                    <p className="text-[11px] text-muted-foreground">{sub}</p>
+                    <p className="text-micro text-muted-foreground">{sub}</p>
                   </div>
                   <ChevronRight className="ml-auto size-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                 </Link>
               ))}
             </div>
           </div>
+
+          {/* Recent activity — what happened lately, newest first */}
+          {hasActivity && (
+            <div className="rounded-xl border bg-card">
+              <SectionHeader
+                title="Recent activity"
+                href="/dashboard/posts"
+                linkLabel="All posts"
+              />
+              <div className="divide-y">
+                {data.recentActivity.map((item) => {
+                  const meta = getStatusMeta(item.status);
+                  const when = item.publishedAt ?? item.scheduledFor ?? item.createdAt;
+                  return (
+                    <Link
+                      key={item.id}
+                      href={`/dashboard/content/${item.id}`}
+                      className="group flex items-center gap-3 px-5 py-3 transition-colors hover:bg-muted/30"
+                    >
+                      <span className={`size-2 shrink-0 rounded-full ${meta.dot}`} aria-hidden="true" />
+                      <div className="min-w-0 flex-1">
+                        <p className="line-clamp-1 text-xs">{item.caption || 'Untitled post'}</p>
+                        <p className="mt-0.5 text-micro text-muted-foreground">
+                          {meta.label}
+                          {' · '}
+                          {new Date(when).getTime() > Date.now() ? timeUntil(when) : relativeTime(when)}
+                        </p>
+                      </div>
+                      <ChevronRight className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

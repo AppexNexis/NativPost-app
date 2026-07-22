@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 import { Checkbox } from '@/components/ui/checkbox';
-import { useInView } from '@/hooks/useInView';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useInView } from '@/hooks/useInView';
 import type { ContentItem } from '@/types/v2';
 import { cn } from '@/utils/Helpers';
 
@@ -177,7 +177,7 @@ export function PostCard({
         <div className="flex items-center justify-between gap-2">
           <Link
             href={`/dashboard/content/${item.id}`}
-            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-muted"
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-micro font-medium text-foreground/80 transition-colors hover:bg-muted"
           >
             <PencilLine className="size-3" />
             <span className="hidden sm:inline">Edit</span>
@@ -188,7 +188,7 @@ export function PostCard({
               <button
                 type="button"
                 onClick={() => onApprove(item.id)}
-                className="inline-flex items-center gap-1 rounded-md bg-emerald-500 px-2 py-1 text-[11px] font-medium text-white transition-colors hover:bg-emerald-600"
+                className="inline-flex items-center gap-1 rounded-md bg-emerald-500 px-2 py-1 text-micro font-medium text-white transition-colors hover:bg-emerald-600"
                 aria-label="Approve"
               >
                 <CheckCircle2 className="size-3" />

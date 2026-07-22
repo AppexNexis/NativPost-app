@@ -23,7 +23,7 @@ import { useEffect, useRef, useState } from 'react';
 import { type ContentAngleDraft, ContentAnglesPreview } from '@/components/onboarding/ContentAnglesPreview';
 import { OnboardingLogoUploader } from '@/components/onboarding/OnboardingLogoUploader';
 import { OnboardingShell } from '@/components/onboarding/OnboardingShell';
-import { ChoiceGrid, ContinueButton, StepHeading } from '@/components/onboarding/StepShell';
+import { ChoiceGrid, ContinueButton, StepHeading, SuccessCheck } from '@/components/onboarding/StepShell';
 import { Input } from '@/components/ui/input';
 
 // -----------------------------------------------------------
@@ -276,7 +276,7 @@ export default function OnboardingSetupPage() {
           return;
         }
         const steps: { completed: boolean }[] = json.steps ?? [];
-        const completed = steps.some((s) => s.completed === true);
+        const completed = steps.some(s => s.completed === true);
         if (completed) {
           router.replace('/dashboard');
           return;
@@ -892,6 +892,7 @@ export default function OnboardingSetupPage() {
 
       {currentStep === 'next_steps' && (
         <>
+          <SuccessCheck />
           <StepHeading title="You're set up" subtitle="Your brand profile is saved. Here's what happens from here." />
           <ol className="mb-6 space-y-2 text-sm">
             <li className="border-b border-border pb-2">

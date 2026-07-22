@@ -37,12 +37,16 @@ export function CreateKeyDialog({ open, onOpenChange, onCreated }: Props) {
   };
 
   const handleClose = (nextOpen: boolean) => {
-    if (!nextOpen) reset();
+    if (!nextOpen) {
+      reset();
+    }
     onOpenChange(nextOpen);
   };
 
   const handleCreate = async () => {
-    if (!name.trim() || creating) return;
+    if (!name.trim() || creating) {
+      return;
+    }
     setCreating(true);
     setError(null);
     try {
@@ -65,7 +69,9 @@ export function CreateKeyDialog({ open, onOpenChange, onCreated }: Props) {
   };
 
   const handleCopy = async () => {
-    if (!plaintext) return;
+    if (!plaintext) {
+      return;
+    }
     try {
       await navigator.clipboard.writeText(plaintext);
       setCopied(true);
@@ -99,7 +105,7 @@ export function CreateKeyDialog({ open, onOpenChange, onCreated }: Props) {
                     maxLength={80}
                     autoFocus
                   />
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-meta text-muted-foreground">
                     Full access to your workspace. Anyone with this key can publish, edit
                     or delete content on your behalf.
                   </p>

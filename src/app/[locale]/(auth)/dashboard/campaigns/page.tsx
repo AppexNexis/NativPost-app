@@ -1,10 +1,11 @@
+import { and, desc, eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
+
 import { CampaignsPage } from '@/components/campaigns/CampaignsPage';
 import { getAuthContext } from '@/lib/auth';
 import { cleanupStaleBlitzCampaigns } from '@/lib/blitz/cleanup-stale';
 import { getDb } from '@/libs/DB';
 import { aiInfluencerSchema, campaignSchema, contentAngleSchema, socialAccountSchema } from '@/models/Schema';
-import { eq, and, desc } from 'drizzle-orm';
 
 export const metadata: Metadata = {
   title: 'Campaigns | NativPost',
@@ -17,7 +18,7 @@ export default async function Page() {
 
   // If auth fails, render empty state (middleware should catch this, but be safe)
   if (error || !orgId) {
-    return <p className="py-8 text-sm text-muted-foreground">Please sign in to view campaigns.</p>;
+    return <p className="py-8 text-body text-muted-foreground">Please sign in to view campaigns.</p>;
   }
 
   // Purge yesterday's Today's Blitz rows and their unapproved posts before
@@ -40,7 +41,7 @@ export default async function Page() {
         ),
       )
       .orderBy(contentAngleSchema.name)
-      .then((items) => items.filter((item) => item.isSystem || item.orgId === orgId)),
+      .then(items => items.filter(item => item.isSystem || item.orgId === orgId)),
     db
       .select()
       .from(socialAccountSchema)

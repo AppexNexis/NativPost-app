@@ -1,23 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight, Check } from 'lucide-react';
-import type { Campaign, ContentAngle, CampaignAngle, ContentMix, TargetAccount, ContentItem } from '@/types/v2';
-import type { SocialAccount } from '@/types/v2';
+import { useCallback, useEffect, useState } from 'react';
+
+import { PLATFORM_LABELS } from '@/lib/platforms';
+import type { Campaign, CampaignAngle, ContentAngle, ContentItem, ContentMix, SocialAccount, TargetAccount } from '@/types/v2';
+
 import { CampaignReviewGrid } from './CampaignReviewGrid';
 
 // Allowed publishing platforms for campaigns. YouTube added 2026-07-10.
 const CAMPAIGN_ALLOWED_PLATFORMS = ['facebook', 'instagram', 'tiktok', 'youtube'] as const;
 
-const PLATFORM_LABELS: Record<string, string> = {
-  facebook: 'Facebook',
-  instagram: 'Instagram',
-  tiktok: 'TikTok',
-  youtube: 'YouTube',
-};
-
-interface CampaignWizardProps {
+type CampaignWizardProps = {
   angles: ContentAngle[];
   accounts: SocialAccount[];
   influencers: { id: string; name: string }[];
@@ -27,7 +22,7 @@ interface CampaignWizardProps {
   isLoading?: boolean;
   /** When provided the wizard resumes from the correct step instead of starting fresh. */
   initialCampaign?: Campaign | null;
-}
+};
 
 function initialStepForCampaign(campaign: Campaign): number {
   switch (campaign.status) {
@@ -114,8 +109,8 @@ export function CampaignWizard({
   // On mount, load content items if resuming a campaign that already has them.
   useEffect(() => {
     if (
-      initialCampaign?.id &&
-      ['review', 'active', 'scheduled', 'paused', 'completed'].includes(initialCampaign.status)
+      initialCampaign?.id
+      && ['review', 'active', 'scheduled', 'paused', 'completed'].includes(initialCampaign.status)
     ) {
       fetchCampaignItems(initialCampaign.id);
     }
@@ -129,7 +124,9 @@ export function CampaignWizard({
   // Review; a naive "await onGenerate → setCurrentStep(7)" races the
   // background drain and lands the user on an empty Review grid.
   useEffect(() => {
-    if (!isGenerating || !generatedCampaignId) return;
+    if (!isGenerating || !generatedCampaignId) {
+      return;
+    }
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     let nullJobPolls = 0; // count consecutive polls where data.job is missing
@@ -161,7 +158,7 @@ export function CampaignWizard({
             // Never regress the total to 0. The wizard seeds
             // `postsTotal` on submit; a stale/DB-default 0 from the
             // first status poll must not clobber the target count.
-            setJobProgress((prev) => ({
+            setJobProgress(prev => ({
               postsCompleted: completed,
               postsTotal: Math.max(prev.postsTotal, polledTotal),
             }));
@@ -184,7 +181,7 @@ export function CampaignWizard({
                   }
                 }
                 attempts++;
-                await new Promise((r) => setTimeout(r, 1500));
+                await new Promise(r => setTimeout(r, 1500));
               }
               if (!cancelled) {
                 setIsGenerating(false);
@@ -200,23 +197,29 @@ export function CampaignWizard({
           }
         }
       } catch { /* silent */ }
-      if (!cancelled) timer = setTimeout(poll, 2500);
+      if (!cancelled) {
+        timer = setTimeout(poll, 2500);
+      }
     };
     timer = setTimeout(poll, 1000);
-    return () => { cancelled = true; clearTimeout(timer); };
+    return () => {
+      cancelled = true; clearTimeout(timer);
+    };
   }, [isGenerating, generatedCampaignId]);
 
   const totalSteps = STEPS.length;
   const progress = ((currentStep + 1) / totalSteps) * 100;
 
   const updateCampaign = useCallback((updates: Partial<Campaign>) => {
-    setCampaign((prev) => ({ ...prev, ...updates }));
+    setCampaign(prev => ({ ...prev, ...updates }));
   }, []);
 
   const fetchCampaignItems = async (campaignId: string) => {
     try {
       const res = await fetch(`/api/campaigns/${campaignId}`);
-      if (!res.ok) throw new Error('Failed to fetch campaign items');
+      if (!res.ok) {
+        throw new Error('Failed to fetch campaign items');
+      }
       const data = await res.json();
       const loaded = (data.contentItems || []).map((cc: any) => ({
         ...(cc.contentItem || {}),
@@ -248,7 +251,7 @@ export function CampaignWizard({
     // NoConnectedChannelsError gate so users don't get a confusing
     // 200-with-errorCode after clicking Generate.
     const targets = (campaign.targetAccounts ?? []) as TargetAccount[];
-    const validTargets = targets.filter((a) =>
+    const validTargets = targets.filter(a =>
       (CAMPAIGN_ALLOWED_PLATFORMS as readonly string[]).includes(a.platform),
     );
     if (validTargets.length === 0) {
@@ -276,7 +279,9 @@ export function CampaignWizard({
         campaignId = preCreatedId;
       } else {
         const created = await onCreate(submitCampaign);
-        if (!created?.id) throw new Error('Campaign create failed');
+        if (!created?.id) {
+          throw new Error('Campaign create failed');
+        }
         campaignId = created.id;
       }
 
@@ -302,13 +307,13 @@ export function CampaignWizard({
       return;
     }
     if (currentStep < totalSteps - 1) {
-      setCurrentStep((s) => s + 1);
+      setCurrentStep(s => s + 1);
     }
   };
 
   const handleBack = () => {
     if (currentStep > 0) {
-      setCurrentStep((s) => s - 1);
+      setCurrentStep(s => s - 1);
     }
   };
 
@@ -324,7 +329,9 @@ export function CampaignWizard({
   };
 
   const handleReRoll = async (itemId: string) => {
-    if (!generatedCampaignId) return;
+    if (!generatedCampaignId) {
+      return;
+    }
     try {
       const res = await fetch(`/api/campaigns/${generatedCampaignId}/re-roll`, {
         method: 'POST',
@@ -344,8 +351,10 @@ export function CampaignWizard({
   const handleDelete = async (itemId: string) => {
     try {
       const res = await fetch(`/api/content/${itemId}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Delete failed');
-      setContentItems((prev) => prev.filter((i) => i.id !== itemId));
+      if (!res.ok) {
+        throw new Error('Delete failed');
+      }
+      setContentItems(prev => prev.filter(i => i.id !== itemId));
     } catch (err: any) {
       setReviewError(err.message || 'Delete failed');
     }
@@ -358,10 +367,12 @@ export function CampaignWizard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'approved' }),
       });
-      if (!res.ok) throw new Error('Approve failed');
+      if (!res.ok) {
+        throw new Error('Approve failed');
+      }
       const data = await res.json();
-      setContentItems((prev) =>
-        prev.map((i) => (i.id === itemId ? { ...i, ...data.item } : i))
+      setContentItems(prev =>
+        prev.map(i => (i.id === itemId ? { ...i, ...data.item } : i)),
       );
     } catch (err: any) {
       setReviewError(err.message || 'Approve failed');
@@ -369,16 +380,20 @@ export function CampaignWizard({
   };
 
   const handleScheduleChange = async (itemId: string, date: string, time: string) => {
-    if (!generatedCampaignId) return;
+    if (!generatedCampaignId) {
+      return;
+    }
     try {
       const res = await fetch(`/api/campaigns/${generatedCampaignId}/content/${itemId}/schedule`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scheduledDate: date, scheduledTime: time }),
       });
-      if (!res.ok) throw new Error('Schedule update failed');
-      setContentItems((prev) =>
-        prev.map((i) => (i.id === itemId ? { ...i, scheduledDate: date, scheduledTime: time } : i))
+      if (!res.ok) {
+        throw new Error('Schedule update failed');
+      }
+      setContentItems(prev =>
+        prev.map(i => (i.id === itemId ? { ...i, scheduledDate: date, scheduledTime: time } : i)),
       );
     } catch (err: any) {
       setReviewError(err.message || 'Schedule update failed');
@@ -422,7 +437,7 @@ export function CampaignWizard({
             onApprove={handleApprove}
             onScheduleChange={handleScheduleChange}
             onItemUpdated={(updated) => {
-              setContentItems((prev) => prev.map((it) => (it.id === updated.id ? { ...it, ...updated } : it)));
+              setContentItems(prev => prev.map(it => (it.id === updated.id ? { ...it, ...updated } : it)));
             }}
           />
         );
@@ -448,7 +463,13 @@ export function CampaignWizard({
         {/* Step header row */}
         <div className="flex items-center justify-between border-b border-border px-8 py-4">
           <span className="text-sm font-semibold text-foreground">{STEPS[currentStep]?.label ?? ''}</span>
-          <span className="text-xs text-muted-foreground">{currentStep + 1} / {totalSteps}</span>
+          <span className="text-meta text-muted-foreground">
+            {currentStep + 1}
+            {' '}
+            /
+            {' '}
+            {totalSteps}
+          </span>
         </div>
 
         <div className="p-8">
@@ -460,7 +481,7 @@ export function CampaignWizard({
           <button
             onClick={handleBack}
             disabled={currentStep === 0 || isGenerating || isLoading}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 text-body text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ChevronLeft className="size-4" />
             Back
@@ -483,7 +504,11 @@ export function CampaignWizard({
             >
               {isGenerating ? 'Generating...' : (
                 <>
-                  Generate {calculateTotalPosts(campaign)} posts
+                  Generate
+                  {' '}
+                  {calculateTotalPosts(campaign)}
+                  {' '}
+                  posts
                   <ChevronRight className="size-4" />
                 </>
               )}
@@ -508,14 +533,14 @@ export function CampaignWizard({
 // Shared step props interface
 // ============================================================
 
-interface StepProps {
+type StepProps = {
   campaign: Partial<Campaign>;
   angles: ContentAngle[];
   accounts: SocialAccount[];
   influencers: { id: string; name: string }[];
   isLoading: boolean;
   onUpdate: (u: Partial<Campaign>) => void;
-}
+};
 
 // ============================================================
 // STEP 1: BASICS
@@ -548,7 +573,9 @@ function StepBasics({ campaign, onUpdate }: StepProps) {
 
   const handleMixChange = (key: keyof ContentMix, delta: number) => {
     const current = (mix[key] ?? 0) + delta;
-    if (current < 0 || current > 100) return;
+    if (current < 0 || current > 100) {
+      return;
+    }
     onUpdate({ contentMix: { ...mix, [key]: current } });
   };
 
@@ -568,7 +595,7 @@ function StepBasics({ campaign, onUpdate }: StepProps) {
         <input
           type="text"
           value={campaign.name ?? ''}
-          onChange={(e) => onUpdate({ name: e.target.value })}
+          onChange={e => onUpdate({ name: e.target.value })}
           className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
       </div>
@@ -576,7 +603,10 @@ function StepBasics({ campaign, onUpdate }: StepProps) {
       <div>
         <div className="flex items-center justify-between">
           <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Content Mix</label>
-          <span className="text-sm font-medium text-gray-900">{totalMix}%</span>
+          <span className="text-sm font-medium text-gray-900">
+            {totalMix}
+            %
+          </span>
         </div>
         <div className="mt-3 space-y-3">
           {(
@@ -588,19 +618,22 @@ function StepBasics({ campaign, onUpdate }: StepProps) {
             ] as [keyof ContentMix, string, string][]
           ).map(([key, label, color]) => (
             <div key={key} className="flex items-center gap-4">
-              <div className={`h-3 w-3 rounded-full ${color}`} />
+              <div className={`size-3 rounded-full ${color}`} />
               <span className="flex-1 text-sm text-gray-700">{label}</span>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => handleMixChange(key, -5)}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50"
+                  className="flex size-7 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50"
                 >
                   -
                 </button>
-                <span className="w-10 text-center text-sm font-medium">{mix[key] ?? 0}%</span>
+                <span className="w-10 text-center text-sm font-medium">
+                  {mix[key] ?? 0}
+                  %
+                </span>
                 <button
                   onClick={() => handleMixChange(key, 5)}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50"
+                  className="flex size-7 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50"
                 >
                   +
                 </button>
@@ -613,7 +646,10 @@ function StepBasics({ campaign, onUpdate }: StepProps) {
       <div>
         <div className="flex items-center justify-between">
           <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Remix Ratio</label>
-          <span className="text-sm font-medium text-gray-900">{campaign.remixRatio}%</span>
+          <span className="text-sm font-medium text-gray-900">
+            {campaign.remixRatio}
+            %
+          </span>
         </div>
         <p className="mt-1 text-xs text-gray-400">
           How much we remix trending content vs. create original ideas from scratch. Slide right for more remix.
@@ -623,7 +659,7 @@ function StepBasics({ campaign, onUpdate }: StepProps) {
           min={0}
           max={100}
           value={campaign.remixRatio ?? 50}
-          onChange={(e) => onUpdate({ remixRatio: parseInt(e.target.value) })}
+          onChange={e => onUpdate({ remixRatio: Number.parseInt(e.target.value) })}
           className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 accent-primary"
         />
         <div className="mt-1 flex justify-between text-xs text-gray-400">
@@ -643,16 +679,18 @@ function StepAngles({ campaign, angles, onUpdate }: StepProps) {
   const totalWeight = campaignAngles.reduce((sum, a) => sum + (a.weight ?? 0), 0);
 
   const handleWeightChange = (angleId: string, weight: number) => {
-    const exists = campaignAngles.find((a) => a.angleId === angleId);
+    const exists = campaignAngles.find(a => a.angleId === angleId);
     const updated = exists
-      ? campaignAngles.map((a) => (a.angleId === angleId ? { ...a, weight } : a))
+      ? campaignAngles.map(a => (a.angleId === angleId ? { ...a, weight } : a))
       : [...campaignAngles, { angleId, weight }];
     onUpdate({ angles: updated });
   };
 
   const equalize = () => {
     const count = angles.length;
-    if (count === 0) return;
+    if (count === 0) {
+      return;
+    }
     const weight = Math.floor(100 / count);
     const remainder = 100 - weight * count;
     const updated = angles.map((angle, i) => ({
@@ -678,7 +716,8 @@ function StepAngles({ campaign, angles, onUpdate }: StepProps) {
             Equalize
           </button>
           <span className={`text-sm font-medium ${totalWeight === 100 ? 'text-green-600' : 'text-gray-900'}`}>
-            {totalWeight}/100
+            {totalWeight}
+            /100
           </span>
         </div>
       </div>
@@ -690,21 +729,24 @@ function StepAngles({ campaign, angles, onUpdate }: StepProps) {
       ) : (
         <div className="space-y-4">
           {angles.map((angle) => {
-            const campaignAngle = campaignAngles.find((a) => a.angleId === angle.id);
+            const campaignAngle = campaignAngles.find(a => a.angleId === angle.id);
             const weight = campaignAngle?.weight ?? 0;
             return (
               <div key={angle.id} className="flex items-center gap-4">
-                <div className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: angle.color ?? '#ccc' }} />
+                <div className="size-3 shrink-0 rounded-full" style={{ backgroundColor: angle.color ?? '#ccc' }} />
                 <span className="flex-1 truncate text-sm text-gray-700">{angle.name}</span>
                 <input
                   type="range"
                   min={0}
                   max={100}
                   value={weight}
-                  onChange={(e) => handleWeightChange(angle.id, parseInt(e.target.value))}
+                  onChange={e => handleWeightChange(angle.id, Number.parseInt(e.target.value))}
                   className="w-48 accent-primary"
                 />
-                <span className="w-10 text-right text-sm font-medium">{weight}%</span>
+                <span className="w-10 text-right text-sm font-medium">
+                  {weight}
+                  %
+                </span>
               </div>
             );
           })}
@@ -735,7 +777,7 @@ function StepVoice({ campaign, onUpdate }: StepProps) {
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold text-foreground">Set the voice of your campaign</h3>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           Choose how often we mention your business, and optionally narrow the platform videos we draw from.
         </p>
       </div>
@@ -744,9 +786,9 @@ function StepVoice({ campaign, onUpdate }: StepProps) {
         <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Mention My Business
         </label>
-        <p className="mb-3 text-sm text-muted-foreground">How often to weave your product into the generated posts.</p>
+        <p className="mb-3 text-body text-muted-foreground">How often to weave your product into the generated posts.</p>
         <div className="flex gap-2">
-          {frequencies.map((freq) => (
+          {frequencies.map(freq => (
             <button
               key={freq.value}
               onClick={() => onUpdate({ mentionFrequency: freq.value as Campaign['mentionFrequency'] })}
@@ -766,7 +808,7 @@ function StepVoice({ campaign, onUpdate }: StepProps) {
         <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Gender Preference
         </label>
-        <p className="mb-3 text-sm text-muted-foreground">Filter platform videos by gender. Tap a selected option to clear it.</p>
+        <p className="mb-3 text-body text-muted-foreground">Filter platform videos by gender. Tap a selected option to clear it.</p>
         <div className="flex gap-2">
           {genderOptions.map((option) => {
             const isActive = campaign.genderPreference === option.value;
@@ -806,7 +848,10 @@ function StepSources({ campaign, influencers, isLoading, onUpdate }: StepProps) 
       <div>
         <div className="flex items-center justify-between">
           <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Own-Media Mix</label>
-          <span className="text-sm font-medium text-gray-900">{campaign.ownMediaMix}%</span>
+          <span className="text-sm font-medium text-gray-900">
+            {campaign.ownMediaMix}
+            %
+          </span>
         </div>
         <p className="mt-1 text-xs text-gray-400">
           What share of suggestions should pull from your own uploads vs. platform / stock sources.
@@ -816,7 +861,7 @@ function StepSources({ campaign, influencers, isLoading, onUpdate }: StepProps) 
           min={0}
           max={100}
           value={campaign.ownMediaMix ?? 50}
-          onChange={(e) => onUpdate({ ownMediaMix: parseInt(e.target.value) })}
+          onChange={e => onUpdate({ ownMediaMix: Number.parseInt(e.target.value) })}
           className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 accent-primary"
         />
         <div className="mt-1 flex justify-between text-xs text-gray-400">
@@ -828,7 +873,10 @@ function StepSources({ campaign, influencers, isLoading, onUpdate }: StepProps) 
       <div>
         <div className="flex items-center justify-between">
           <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Influencer Frequency</label>
-          <span className="text-sm font-medium text-gray-900">{campaign.influencerFrequency}%</span>
+          <span className="text-sm font-medium text-gray-900">
+            {campaign.influencerFrequency}
+            %
+          </span>
         </div>
         <p className="mt-1 text-xs text-gray-400">
           What share of posts feature one of your trained influencers. Finish training at least one influencer to enable this.
@@ -838,12 +886,12 @@ function StepSources({ campaign, influencers, isLoading, onUpdate }: StepProps) 
           min={0}
           max={100}
           value={campaign.influencerFrequency ?? 0}
-          onChange={(e) => onUpdate({ influencerFrequency: parseInt(e.target.value) })}
+          onChange={e => onUpdate({ influencerFrequency: Number.parseInt(e.target.value) })}
           disabled={influencers.length === 0 || isLoading}
           className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 accent-primary disabled:opacity-40"
         />
         {influencers.length === 0 && (
-          <p className="mt-2 text-xs text-muted-foreground">
+          <p className="mt-2 text-meta text-muted-foreground">
             Train at least one influencer in AI Studio to enable this feature.
           </p>
         )}
@@ -856,13 +904,13 @@ function StepSources({ campaign, influencers, isLoading, onUpdate }: StepProps) 
 // STEP 5: ACCOUNTS
 // ============================================================
 function StepAccounts({ campaign, accounts, onUpdate }: StepProps) {
-  const selectedIds = (campaign.targetAccounts ?? []).map((a) => a.accountId);
+  const selectedIds = (campaign.targetAccounts ?? []).map(a => a.accountId);
 
   const toggleAccount = (account: SocialAccount) => {
     const current = (campaign.targetAccounts ?? []) as TargetAccount[];
-    const exists = current.find((a) => a.accountId === account.id);
+    const exists = current.find(a => a.accountId === account.id);
     if (exists) {
-      onUpdate({ targetAccounts: current.filter((a) => a.accountId !== account.id) });
+      onUpdate({ targetAccounts: current.filter(a => a.accountId !== account.id) });
     } else {
       onUpdate({
         targetAccounts: [...current, { accountId: account.id, platform: account.platform }],
@@ -871,7 +919,7 @@ function StepAccounts({ campaign, accounts, onUpdate }: StepProps) {
   };
 
   // Only show platforms that have at least one connected account
-  const allowedAccounts = accounts.filter((a) =>
+  const allowedAccounts = accounts.filter(a =>
     (CAMPAIGN_ALLOWED_PLATFORMS as readonly string[]).includes(a.platform),
   );
   const grouped = allowedAccounts.reduce<Record<string, SocialAccount[]>>((acc, account) => {
@@ -880,22 +928,22 @@ function StepAccounts({ campaign, accounts, onUpdate }: StepProps) {
   }, {});
 
   const connectedPlatforms = (CAMPAIGN_ALLOWED_PLATFORMS as readonly string[]).filter(
-    (p) => (grouped[p] ?? []).length > 0,
+    p => (grouped[p] ?? []).length > 0,
   );
 
   return (
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold text-foreground">Where should we post?</h3>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           Select the accounts you want this campaign to publish to.
         </p>
       </div>
 
       {connectedPlatforms.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border p-8 text-center">
-          <p className="text-sm text-muted-foreground">No accounts connected yet.</p>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="text-body text-muted-foreground">No accounts connected yet.</p>
+          <p className="mt-1 text-meta text-muted-foreground">
             Connect Facebook, Instagram, TikTok, or YouTube in Social Accounts.
           </p>
         </div>
@@ -924,14 +972,15 @@ function StepAccounts({ campaign, accounts, onUpdate }: StepProps) {
                       >
                         <div className="flex items-center gap-3">
                           <div
-                            className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
+                            className={`flex size-5 items-center justify-center rounded-full border-2 ${
                               isSelected ? 'border-primary bg-primary' : 'border-muted-foreground/40'
                             }`}
                           >
-                            {isSelected && <Check className="h-3 w-3 text-white" />}
+                            {isSelected && <Check className="size-3 text-white" />}
                           </div>
                           <span className="text-sm font-medium text-foreground">
-                            @{account.platformUsername ?? account.platformUserId}
+                            @
+                            {account.platformUsername ?? account.platformUserId}
                           </span>
                         </div>
                         <span className={`text-xs font-medium ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
@@ -972,7 +1021,7 @@ function StepCadence({ campaign, onUpdate }: StepProps) {
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold text-foreground">How often, and for how long?</h3>
-        <p className="text-sm text-muted-foreground">We'll spread the posts evenly across the campaign window.</p>
+        <p className="text-body text-muted-foreground">We'll spread the posts evenly across the campaign window.</p>
       </div>
 
       <div>
@@ -981,26 +1030,26 @@ function StepCadence({ campaign, onUpdate }: StepProps) {
           <div className="flex items-center gap-3">
             <button
               onClick={() => onUpdate({ postsPerDay: Math.max(1, (campaign.postsPerDay ?? 3) - 1) })}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-border text-foreground hover:bg-muted"
+              className="flex size-8 items-center justify-center rounded-xl border border-border text-foreground hover:bg-muted"
             >
               -
             </button>
             <span className="text-lg font-semibold text-foreground">{campaign.postsPerDay ?? 3}</span>
             <button
               onClick={() => onUpdate({ postsPerDay: Math.min(3, (campaign.postsPerDay ?? 3) + 1) })}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-border text-foreground hover:bg-muted"
+              className="flex size-8 items-center justify-center rounded-xl border border-border text-foreground hover:bg-muted"
             >
               +
             </button>
           </div>
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">Max 3 per account per day.</p>
+        <p className="mt-1 text-meta text-muted-foreground">Max 3 per account per day.</p>
       </div>
 
       <div>
         <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Campaign length</label>
         <div className="flex gap-2">
-          {lengthOptions.map((opt) => (
+          {lengthOptions.map(opt => (
             <button
               key={opt.value}
               onClick={() => onUpdate({ campaignLengthDays: opt.value })}
@@ -1021,7 +1070,7 @@ function StepCadence({ campaign, onUpdate }: StepProps) {
         <input
           type="date"
           value={campaign.startDate ?? ''}
-          onChange={(e) => onUpdate({ startDate: e.target.value || null })}
+          onChange={e => onUpdate({ startDate: e.target.value || null })}
           className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </div>
@@ -1032,9 +1081,19 @@ function StepCadence({ campaign, onUpdate }: StepProps) {
             <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total posts</div>
             <div className="mt-0.5 text-2xl font-bold text-foreground">{totalPosts}</div>
           </div>
-          <div className="text-right text-xs text-muted-foreground">
-            {(campaign.targetAccounts ?? []).length || 1} account{(campaign.targetAccounts ?? []).length !== 1 ? 's' : ''} &times;{' '}
-            {campaign.postsPerDay ?? 3}/day &times; {campaign.campaignLengthDays ?? 7} days
+          <div className="text-right text-meta text-muted-foreground">
+            {(campaign.targetAccounts ?? []).length || 1}
+            {' '}
+            account
+            {(campaign.targetAccounts ?? []).length !== 1 ? 's' : ''}
+            {' '}
+            &times;
+            {' '}
+            {campaign.postsPerDay ?? 3}
+            /day &times;
+            {campaign.campaignLengthDays ?? 7}
+            {' '}
+            days
           </div>
         </div>
       </div>
@@ -1064,7 +1123,7 @@ function StepGenerate({
     <div className="space-y-6">
       <div className="text-center">
         <h3 className="text-lg font-semibold text-foreground">Ready to generate</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-body text-muted-foreground">
           We'll write content for every post. Re-roll, edit, or remove individual posts before launch.
         </p>
       </div>
@@ -1078,16 +1137,24 @@ function StepGenerate({
         ].map(({ value, label }) => (
           <div key={label} className="rounded-xl border border-border bg-card p-3 text-center">
             <div className="text-xl font-bold text-foreground">{value}</div>
-            <div className="mt-0.5 text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
+            <div className="mt-0.5 text-micro uppercase tracking-wide text-muted-foreground">{label}</div>
           </div>
         ))}
       </div>
 
       {isGenerating && (
         <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <div className="flex items-center justify-between text-meta text-muted-foreground">
             <span>Generating posts...</span>
-            <span>{completed} of {total} ready</span>
+            <span>
+              {completed}
+              {' '}
+              of
+              {' '}
+              {total}
+              {' '}
+              ready
+            </span>
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
             <div
@@ -1127,7 +1194,7 @@ function StepReview({
   return (
     <div className="space-y-6">
       {reviewError && (
-        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {reviewError}
         </div>
       )}
@@ -1156,11 +1223,17 @@ function StepLaunch({ campaign }: StepProps) {
       </div>
       <div>
         <h3 className="text-center text-lg font-semibold text-foreground">Campaign scheduled!</h3>
-        <p className="mt-1 text-center text-sm text-muted-foreground">
-          {campaign.name || 'Your campaign'} is now {campaign.status ?? 'scheduled'}. We'll start posting on{' '}
+        <p className="mt-1 text-center text-body text-muted-foreground">
+          {campaign.name || 'Your campaign'}
+          {' '}
+          is now
+          {campaign.status ?? 'scheduled'}
+          . We'll start posting on
+          {' '}
           {campaign.startDate
             ? new Date(campaign.startDate).toLocaleDateString()
-            : 'the scheduled date'}.
+            : 'the scheduled date'}
+          .
         </p>
       </div>
     </div>

@@ -1,5 +1,6 @@
 'use client';
 
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Grid3X3,
   LayoutList,
@@ -18,6 +19,7 @@ import { PostTableView } from '@/components/content/PostTableView';
 import { EmptyState } from '@/features/dashboard/EmptyState';
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
 import { LoadingState } from '@/features/dashboard/LoadingState';
+import { GridPageSkeleton, ListPageSkeleton } from '@/features/dashboard/PageSkeletons';
 import type { ContentItem } from '@/types/v2';
 import { cn } from '@/utils/Helpers';
 
@@ -34,6 +36,12 @@ type Counts = {
   published: number;
   rejected: number;
   total: number;
+};
+
+type PostsApiPage = {
+  items?: ContentItem[];
+  counts?: Counts;
+  nextCursor?: string | null;
 };
 
 const EMPTY_COUNTS: Counts = {
@@ -91,11 +99,16 @@ function ViewToggle({ view, onChange }: { view: ViewMode; onChange: (v: ViewMode
 // URL HELPERS
 // -----------------------------------------------------------
 function updateUrl(patch: Record<string, string | null>) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined') {
+    return;
+  }
   const url = new URL(window.location.href);
   for (const [k, v] of Object.entries(patch)) {
-    if (v === null || v === '') url.searchParams.delete(k);
-    else url.searchParams.set(k, v);
+    if (v === null || v === '') {
+      url.searchParams.delete(k);
+    } else {
+      url.searchParams.set(k, v);
+    }
   }
   window.history.replaceState({}, '', url.toString());
 }
@@ -123,14 +136,9 @@ function PostsClient() {
   });
   const [sort, setSort] = useState<string>(searchParams.get('sort') || 'newest');
 
-  // ── Data state ──────────────────────────────────────────────────────────
-  const [items, setItems] = useState<ContentItem[]>([]);
-  const [counts, setCounts] = useState<Counts>(EMPTY_COUNTS);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  // ── Data state (server state lives in the query cache) ─────────────────
   const [isBulkBusy, setIsBulkBusy] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [errorDismissed, setErrorDismissed] = useState(false);
 
   // ── Selection state ─────────────────────────────────────────────────────
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -150,63 +158,69 @@ function PostsClient() {
   // ── Fetcher ─────────────────────────────────────────────────────────────
   const buildParams = useCallback((cursor?: string | null) => {
     const p = new URLSearchParams({ limit: '50' });
-    if (statusFilter) p.set('status', statusFilter);
-    if (search.trim()) p.set('search', search.trim());
-    if (contentTypes.length) p.set('contentType', contentTypes.join(','));
-    if (platforms.length) p.set('platform', platforms.join(','));
-    if (sort && sort !== 'newest') p.set('sort', sort);
-    if (cursor) p.set('cursor', cursor);
+    if (statusFilter) {
+      p.set('status', statusFilter);
+    }
+    if (search.trim()) {
+      p.set('search', search.trim());
+    }
+    if (contentTypes.length) {
+      p.set('contentType', contentTypes.join(','));
+    }
+    if (platforms.length) {
+      p.set('platform', platforms.join(','));
+    }
+    if (sort && sort !== 'newest') {
+      p.set('sort', sort);
+    }
+    if (cursor) {
+      p.set('cursor', cursor);
+    }
     return p;
   }, [statusFilter, search, contentTypes, platforms, sort]);
 
-  const fetchItems = useCallback(async () => {
-    setIsLoading(true);
-    setFetchError(null);
-    try {
-      const res = await fetch(`/api/content?${buildParams()}`, { cache: 'no-store' });
-      if (res.ok) {
-        const data = await res.json();
-        setItems(data.items || []);
-        setCounts(data.counts || EMPTY_COUNTS);
-        setNextCursor(data.nextCursor || null);
-      } else {
-        setFetchError(`Server returned ${res.status}. Please try again.`);
-      }
-    } catch (err) {
-      console.error('[Posts] fetch failed:', err);
-      setFetchError(err instanceof Error ? err.message : 'Network request failed');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [buildParams]);
+  // Cursor-paginated posts feed through the query cache — revisiting the
+  // page paints the last known list instantly and revalidates quietly.
+  const queryClient = useQueryClient();
+  const postsKey = useMemo(
+    () => ['posts', { status: statusFilter, search: search.trim(), contentTypes, platforms, sort }] as const,
+    [statusFilter, search, contentTypes, platforms, sort],
+  );
 
-  const fetchMore = useCallback(async () => {
-    if (!nextCursor || isLoadingMore) return;
-    setIsLoadingMore(true);
-    try {
-      const res = await fetch(`/api/content?${buildParams(nextCursor)}`, { cache: 'no-store' });
-      if (res.ok) {
-        const data = await res.json();
-        setItems(prev => [...prev, ...(data.items || [])]);
-        setNextCursor(data.nextCursor || null);
+  const {
+    data,
+    isLoading,
+    error: queryError,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: postsKey,
+    queryFn: async ({ pageParam }): Promise<PostsApiPage> => {
+      const res = await fetch(`/api/content?${buildParams(pageParam)}`, { cache: 'no-store' });
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}. Please try again.`);
       }
-    } catch (err) {
-      console.error('[Posts] fetch more failed:', err);
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [nextCursor, isLoadingMore, buildParams]);
+      return res.json();
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: last => last.nextCursor ?? null,
+  });
 
-  useEffect(() => {
-    fetchItems();
-  }, [fetchItems]);
+  const items = useMemo(() => data?.pages.flatMap(p => p.items ?? []) ?? [], [data]);
+  const counts = data?.pages[0]?.counts ?? EMPTY_COUNTS;
+  const fetchError = !errorDismissed && queryError ? queryError.message : null;
 
   // ── Selection helpers ───────────────────────────────────────────────────
   const toggleSelected = useCallback((id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       return next;
     });
   }, []);
@@ -214,8 +228,11 @@ function PostsClient() {
   const toggleAll = useCallback((ids: string[], select: boolean) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (select) ids.forEach(id => next.add(id));
-      else ids.forEach(id => next.delete(id));
+      if (select) {
+        ids.forEach(id => next.add(id));
+      } else {
+        ids.forEach(id => next.delete(id));
+      }
       return next;
     });
   }, []);
@@ -254,66 +271,82 @@ function PostsClient() {
   }, []);
 
   const applyOptimisticUpdate = useCallback((ids: string[], patch: Partial<ContentItem>) => {
-    setItems(prev => prev.map(item => (ids.includes(item.id) ? { ...item, ...patch } : item)));
-  }, []);
+    queryClient.setQueryData<{ pages: PostsApiPage[]; pageParams: unknown[] }>(postsKey, old => old && ({
+      ...old,
+      pages: old.pages.map(pg => ({
+        ...pg,
+        items: (pg.items ?? []).map(item => (ids.includes(item.id) ? { ...item, ...patch } : item)),
+      })),
+    }));
+  }, [queryClient, postsKey]);
   const applyOptimisticRemove = useCallback((ids: string[]) => {
-    setItems(prev => prev.filter(item => !ids.includes(item.id)));
-  }, []);
+    queryClient.setQueryData<{ pages: PostsApiPage[]; pageParams: unknown[] }>(postsKey, old => old && ({
+      ...old,
+      pages: old.pages.map(pg => ({
+        ...pg,
+        items: (pg.items ?? []).filter(item => !ids.includes(item.id)),
+      })),
+    }));
+  }, [queryClient, postsKey]);
 
   // Single-card handlers
   const handleApproveOne = useCallback(async (id: string) => {
     applyOptimisticUpdate([id], { status: 'approved' });
-    const ok = await callBulk('approve', [id]);
-    if (!ok) fetchItems();
-    else fetchItems();
-  }, [callBulk, fetchItems, applyOptimisticUpdate]);
+    await callBulk('approve', [id]);
+    void refetch();
+  }, [callBulk, refetch, applyOptimisticUpdate]);
 
   const handleDeleteOne = useCallback(async (id: string) => {
-    if (!window.confirm('Delete this post? This action cannot be undone.')) return;
+    if (!window.confirm('Delete this post? This action cannot be undone.')) {
+      return;
+    }
     applyOptimisticRemove([id]);
-    const ok = await callBulk('delete', [id]);
-    if (!ok) fetchItems();
-    else fetchItems();
-  }, [callBulk, fetchItems, applyOptimisticRemove]);
+    await callBulk('delete', [id]);
+    void refetch();
+  }, [callBulk, refetch, applyOptimisticRemove]);
 
   // Bulk handlers
   const selectedIds = useMemo(() => Array.from(selected), [selected]);
 
   const handleBulkApprove = useCallback(async () => {
-    if (selectedIds.length === 0) return;
+    if (selectedIds.length === 0) {
+      return;
+    }
     applyOptimisticUpdate(selectedIds, { status: 'approved' });
-    const ok = await callBulk('approve', selectedIds);
+    await callBulk('approve', selectedIds);
     clearSelection();
-    if (!ok) fetchItems();
-    else fetchItems();
-  }, [selectedIds, callBulk, fetchItems, clearSelection, applyOptimisticUpdate]);
+    void refetch();
+  }, [selectedIds, callBulk, refetch, clearSelection, applyOptimisticUpdate]);
 
   const handleBulkReject = useCallback(async (feedback: string) => {
-    if (selectedIds.length === 0) return;
+    if (selectedIds.length === 0) {
+      return;
+    }
     applyOptimisticUpdate(selectedIds, { status: 'rejected' });
-    const ok = await callBulk('reject', selectedIds, { rejectionFeedback: feedback });
+    await callBulk('reject', selectedIds, { rejectionFeedback: feedback });
     clearSelection();
-    if (!ok) fetchItems();
-    else fetchItems();
-  }, [selectedIds, callBulk, fetchItems, clearSelection, applyOptimisticUpdate]);
+    void refetch();
+  }, [selectedIds, callBulk, refetch, clearSelection, applyOptimisticUpdate]);
 
   const handleBulkSchedule = useCallback(async (scheduledFor: string) => {
-    if (selectedIds.length === 0) return;
+    if (selectedIds.length === 0) {
+      return;
+    }
     applyOptimisticUpdate(selectedIds, { status: 'scheduled', scheduledFor });
-    const ok = await callBulk('schedule', selectedIds, { scheduledFor });
+    await callBulk('schedule', selectedIds, { scheduledFor });
     clearSelection();
-    if (!ok) fetchItems();
-    else fetchItems();
-  }, [selectedIds, callBulk, fetchItems, clearSelection, applyOptimisticUpdate]);
+    void refetch();
+  }, [selectedIds, callBulk, refetch, clearSelection, applyOptimisticUpdate]);
 
   const handleBulkDelete = useCallback(async () => {
-    if (selectedIds.length === 0) return;
+    if (selectedIds.length === 0) {
+      return;
+    }
     applyOptimisticRemove(selectedIds);
-    const ok = await callBulk('delete', selectedIds);
+    await callBulk('delete', selectedIds);
     clearSelection();
-    if (!ok) fetchItems();
-    else fetchItems();
-  }, [selectedIds, callBulk, fetchItems, clearSelection, applyOptimisticRemove]);
+    void refetch();
+  }, [selectedIds, callBulk, refetch, clearSelection, applyOptimisticRemove]);
 
   // ── Derived render bits ─────────────────────────────────────────────────
   const anySelected = selected.size > 0;
@@ -326,7 +359,7 @@ function PostsClient() {
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">{pageTitle}</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
+          <p className="mt-0.5 text-body text-muted-foreground">
             {counts.total}
             {' '}
             {counts.total === 1 ? 'post' : 'posts'}
@@ -406,13 +439,17 @@ function PostsClient() {
         <ErrorBanner
           title="Couldn't load your posts"
           detail={fetchError}
-          onRetry={() => { void fetchItems(); }}
-          onDismiss={() => setFetchError(null)}
+          onRetry={() => {
+            void refetch();
+          }}
+          onDismiss={() => setErrorDismissed(true)}
         />
       )}
       {isLoading
         ? (
-            <LoadingState message="Loading your posts" />
+            view === 'grid'
+              ? <GridPageSkeleton cards={10} />
+              : <ListPageSkeleton rows={8} />
           )
         : items.length === 0 && !fetchError
           ? (
@@ -471,16 +508,18 @@ function PostsClient() {
                 )}
 
                 {/* Load more */}
-                {nextCursor && (
+                {hasNextPage && (
                   <div className="mt-6 flex justify-center pb-24">
                     <button
                       type="button"
-                      onClick={fetchMore}
-                      disabled={isLoadingMore}
+                      onClick={() => {
+                        void fetchNextPage();
+                      }}
+                      disabled={isFetchingNextPage}
                       className="inline-flex items-center gap-2 rounded-md border bg-card px-4 py-2 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
                     >
-                      {isLoadingMore && <Loader2 className="size-3.5 animate-spin" />}
-                      {isLoadingMore ? 'Loading...' : 'Load more'}
+                      {isFetchingNextPage && <Loader2 className="size-3.5 animate-spin" />}
+                      {isFetchingNextPage ? 'Loading...' : 'Load more'}
                     </button>
                   </div>
                 )}

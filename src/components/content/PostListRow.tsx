@@ -34,7 +34,9 @@ const STATUS_STYLE: Record<string, { label: string; dot: string; bg: string }> =
 
 function formatDate(item: ContentItem): string {
   const ref = item.scheduledFor || item.publishedAt || item.createdAt;
-  if (!ref) return '—';
+  if (!ref) {
+    return '—';
+  }
   return new Date(ref).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
@@ -106,7 +108,7 @@ export function PostListRow({ item, selected, onToggleSelected, onApprove, onDel
         <p className="line-clamp-2 text-sm leading-snug text-foreground/90">
           {item.caption || <span className="italic text-muted-foreground">No caption</span>}
         </p>
-        <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+        <div className="mt-1 flex items-center gap-2 text-micro text-muted-foreground">
           <span>{ctLabel(item.contentType)}</span>
           <span>·</span>
           <span>{formatDate(item)}</span>
@@ -115,7 +117,7 @@ export function PostListRow({ item, selected, onToggleSelected, onApprove, onDel
 
       {/* Status + platforms */}
       <div className="flex shrink-0 items-center gap-3">
-        <span className={cn('hidden items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium sm:inline-flex', style.bg)}>
+        <span className={cn('hidden items-center gap-1 rounded-full px-2 py-0.5 text-micro font-medium sm:inline-flex', style.bg)}>
           <span className={cn('size-1.5 rounded-full', style.dot)} />
           {style.label}
         </span>
@@ -132,7 +134,7 @@ export function PostListRow({ item, selected, onToggleSelected, onApprove, onDel
           <button
             type="button"
             onClick={() => onApprove(item.id)}
-            className="hidden items-center gap-1 rounded-md bg-emerald-500 px-2 py-1 text-[11px] font-medium text-white transition-colors hover:bg-emerald-600 sm:inline-flex"
+            className="hidden items-center gap-1 rounded-md bg-emerald-500 px-2 py-1 text-micro font-medium text-white transition-colors hover:bg-emerald-600 sm:inline-flex"
             aria-label="Approve"
           >
             <CheckCircle2 className="size-3" />

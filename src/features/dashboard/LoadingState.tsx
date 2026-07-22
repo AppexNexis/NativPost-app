@@ -13,7 +13,7 @@ import { Loader2 } from 'lucide-react';
  * their own progress UI rather than reuse this.
  */
 
-interface LoadingStateProps {
+type LoadingStateProps = {
   message?: string;
   /**
    * Optional hint shown under the message in muted text. Good for context
@@ -23,7 +23,7 @@ interface LoadingStateProps {
   hint?: string;
   /** Height class for the container. Defaults to a comfy 400px minimum. */
   minHeightClass?: string;
-}
+};
 
 export function LoadingState({
   message = 'Loading',
@@ -34,9 +34,9 @@ export function LoadingState({
     <div className={`flex ${minHeightClass} flex-col items-center justify-center gap-3 text-center`}>
       <Loader2 className="size-6 animate-spin text-muted-foreground" />
       <div className="space-y-1">
-        <p className="text-sm font-medium text-foreground">{message}</p>
+        <p className="text-body font-medium text-foreground">{message}</p>
         {hint && (
-          <p className="text-xs text-muted-foreground">{hint}</p>
+          <p className="text-meta text-muted-foreground">{hint}</p>
         )}
       </div>
     </div>

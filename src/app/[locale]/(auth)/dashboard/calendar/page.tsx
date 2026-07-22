@@ -1,5 +1,6 @@
 'use client';
 
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
   Calendar,
@@ -162,12 +163,7 @@ function formatWeekRangeShort(start: Date, end: Date): string {
 // PAGE
 // -----------------------------------------------------------
 export default function CalendarPage() {
-  const [items, setItems] = useState<ContentItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Monthly Plan state
-  const [planState, setPlanState] = useState<PlanState | null>(null);
-  const [isPlanLoading, setIsPlanLoading] = useState(false);
+  // Monthly Plan mutation state (reads live in the query cache below)
   const [isGenerating, setIsGenerating] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
   const [dismissingPosition, setDismissingPosition] = useState<number | null>(null);
@@ -200,47 +196,35 @@ export default function CalendarPage() {
   const currentMonth = toMonthString(currentDate);
 
   // -----------------------------------------------------------
-  // Data fetching
+  // Data fetching — content + month-keyed plan through the query cache.
+  // Month navigation refetches automatically via the query key; revisiting
+  // a month (or the page) paints cached data instantly.
   // -----------------------------------------------------------
-  const fetchContent = useCallback(async () => {
-    setIsLoading(true);
-    try {
+  const queryClient = useQueryClient();
+
+  const { data: contentData, isLoading } = useQuery({
+    queryKey: ['calendar-content'],
+    queryFn: async (): Promise<ContentItem[]> => {
       const res = await fetch('/api/content?limit=500');
-      if (res.ok) {
-        const data = await res.json();
-        setItems(data.items || []);
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}`);
       }
-    } catch (err) {
-      console.error('Failed to fetch content:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+      const body = await res.json();
+      return body.items || [];
+    },
+  });
+  const items = useMemo(() => contentData ?? [], [contentData]);
 
-  const fetchPlan = useCallback(async (month: string) => {
-    setIsPlanLoading(true);
-    setPlanError(null);
-    try {
-      const res = await fetch(`/api/calendar/plan?month=${month}`);
-      if (res.ok) {
-        const data = await res.json();
-        setPlanState(data);
+  const { data: planState = null, isFetching: isPlanLoading } = useQuery({
+    queryKey: ['calendar-plan', currentMonth],
+    queryFn: async (): Promise<PlanState> => {
+      const res = await fetch(`/api/calendar/plan?month=${currentMonth}`);
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}`);
       }
-    } catch (err) {
-      console.error('Failed to fetch plan:', err);
-    } finally {
-      setIsPlanLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchContent();
-  }, [fetchContent]);
-
-  // Refetch plan whenever the visible month changes
-  useEffect(() => {
-    fetchPlan(currentMonth);
-  }, [currentMonth, fetchPlan]);
+      return res.json();
+    },
+  });
 
   // -----------------------------------------------------------
   // Plan actions
@@ -259,13 +243,13 @@ export default function CalendarPage() {
         setPlanError(data.error || 'Failed to generate plan.');
         return;
       }
-      setPlanState(data);
+      queryClient.setQueryData(['calendar-plan', currentMonth], data);
     } catch {
       setPlanError('Something went wrong. Please try again.');
     } finally {
       setIsGenerating(false);
     }
-  }, [currentMonth]);
+  }, [currentMonth, queryClient]);
 
   const handleDismissTopic = useCallback(async (position: number, dismissed: boolean) => {
     setDismissingPosition(position);
@@ -275,8 +259,8 @@ export default function CalendarPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ month: currentMonth, position, dismissed }),
       });
-      // Optimistic update
-      setPlanState(prev => {
+      // Optimistic update in the cached plan
+      queryClient.setQueryData<PlanState | undefined>(['calendar-plan', currentMonth], (prev) => {
         if (!prev?.plan) {
           return prev;
         }
@@ -299,7 +283,7 @@ export default function CalendarPage() {
     } finally {
       setDismissingPosition(null);
     }
-  }, [currentMonth, setSelectedParam]);
+  }, [currentMonth, setSelectedParam, queryClient]);
 
   // -----------------------------------------------------------
   // Calendar days
@@ -473,7 +457,9 @@ export default function CalendarPage() {
               <button
                 key={mode}
                 type="button"
-                onClick={() => { setViewParam(mode); setSelectedParam(null); }}
+                onClick={() => {
+                  setViewParam(mode); setSelectedParam(null);
+                }}
                 className={`rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors ${
                   viewMode === mode
                     ? 'bg-foreground text-background'
@@ -507,7 +493,7 @@ export default function CalendarPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium">Monthly Plan</p>
-                  <p className="text-xs text-muted-foreground">{planState.lockedReason}</p>
+                  <p className="text-meta text-muted-foreground">{planState.lockedReason}</p>
                 </div>
               </div>
               <Link
@@ -528,10 +514,16 @@ export default function CalendarPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium">
-                    No Monthly Plan for {formatMonthYear(currentDate)}
+                    No Monthly Plan for
+                    {' '}
+                    {formatMonthYear(currentDate)}
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    Generate {planMeta?.topicsAllowed} strategic content topics to fill your month.
+                  <p className="text-meta text-muted-foreground">
+                    Generate
+                    {' '}
+                    {planMeta?.topicsAllowed}
+                    {' '}
+                    strategic content topics to fill your month.
                   </p>
                 </div>
               </div>
@@ -563,12 +555,22 @@ export default function CalendarPage() {
                     <span className="font-normal text-muted-foreground">·</span>
                     {' '}
                     <span className="font-normal text-primary">
-                      {activeTopics.length} topic{activeTopics.length !== 1 ? 's' : ''} remaining
+                      {activeTopics.length}
+                      {' '}
+                      topic
+                      {activeTopics.length !== 1 ? 's' : ''}
+                      {' '}
+                      remaining
                     </span>
                   </p>
                   {planMeta && planMeta.regenerationsAllowed !== null && (
-                    <p className="text-[11px] text-muted-foreground">
-                      {planMeta.regenerationsAllowed - planMeta.regenerationsUsed} regeneration{planMeta.regenerationsAllowed - planMeta.regenerationsUsed !== 1 ? 's' : ''} left this month
+                    <p className="text-micro text-muted-foreground">
+                      {planMeta.regenerationsAllowed - planMeta.regenerationsUsed}
+                      {' '}
+                      regeneration
+                      {planMeta.regenerationsAllowed - planMeta.regenerationsUsed !== 1 ? 's' : ''}
+                      {' '}
+                      left this month
                     </p>
                   )}
                 </div>
@@ -608,7 +610,7 @@ export default function CalendarPage() {
               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sm:hidden">
                 {WEEKDAYS_MOBILE[i]}
               </span>
-              <span className="hidden text-[11px] font-semibold uppercase tracking-wider text-muted-foreground sm:block">
+              <span className="hidden text-micro font-semibold uppercase tracking-wider text-muted-foreground sm:block">
                 {d}
               </span>
             </div>
@@ -646,7 +648,7 @@ export default function CalendarPage() {
                 <div className="flex items-start justify-between p-1 sm:p-2">
                   <span
                     className={`
-                      inline-flex size-5 items-center justify-center rounded-full text-[10px] font-semibold sm:size-6 sm:text-[11px]
+                      inline-flex size-5 items-center justify-center rounded-full text-[10px] font-semibold sm:size-6 sm:text-micro
                       ${isThisToday ? 'bg-primary text-white' : isOutside ? 'text-muted-foreground/30' : 'text-foreground/80'}
                     `}
                   >
@@ -663,7 +665,7 @@ export default function CalendarPage() {
                 <div className="px-1 pb-1 sm:hidden">
                   {totalItems > 0 && (
                     <div className="flex flex-wrap gap-0.5">
-                      {posts.slice(0, 3).map(post => {
+                      {posts.slice(0, 3).map((post) => {
                         const config = STATUS_CONFIG[post.status] || STATUS_CONFIG.draft!;
                         return <span key={post.id} className={`size-1.5 rounded-full ${config.dot}`} />;
                       })}
@@ -686,7 +688,7 @@ export default function CalendarPage() {
                           className={`flex items-center gap-1.5 rounded px-1.5 py-0.5 transition-colors ${config.bar} hover:opacity-80`}
                         >
                           <span className={`size-1.5 shrink-0 rounded-full ${config.dot}`} />
-                          <span className="truncate text-[11px] font-medium text-foreground/80">
+                          <span className="truncate text-micro font-medium text-foreground/80">
                             {post.caption.slice(0, 28)}
                           </span>
                         </Link>
@@ -695,13 +697,13 @@ export default function CalendarPage() {
                   })}
 
                   {/* Plan topic suggestions */}
-                  {topics.slice(0, Math.max(0, maxVisible - posts.length)).map((t) => (
+                  {topics.slice(0, Math.max(0, maxVisible - posts.length)).map(t => (
                     <div
                       key={t.position}
                       className="flex items-center gap-1.5 rounded border border-dashed border-primary/30 bg-primary/5 px-1.5 py-0.5"
                     >
                       <span className="size-1.5 shrink-0 rounded-full bg-primary/60" />
-                      <span className="truncate text-[11px] font-medium text-primary">
+                      <span className="truncate text-micro font-medium text-primary">
                         {t.topic.slice(0, 28)}
                       </span>
                     </div>
@@ -710,7 +712,9 @@ export default function CalendarPage() {
                   {overflowCount > 0 && (
                     <button
                       type="button"
-                      onClick={(e) => { e.stopPropagation(); handleDayClick(date); }}
+                      onClick={(e) => {
+                        e.stopPropagation(); handleDayClick(date);
+                      }}
                       className="w-full px-1.5 text-left text-[10px] font-medium text-muted-foreground hover:text-foreground"
                     >
                       +
@@ -733,13 +737,13 @@ export default function CalendarPage() {
           .map(([key, cfg]) => (
             <div key={key} className="flex items-center gap-1.5">
               <span className={`size-1.5 rounded-full ${cfg.dot}`} />
-              <span className="text-[11px] text-muted-foreground">{cfg.label}</span>
+              <span className="text-micro text-muted-foreground">{cfg.label}</span>
             </div>
           ))}
         {hasPlan && (
           <div className="flex items-center gap-1.5">
             <span className="size-1.5 rounded-full border border-dashed border-primary/50 bg-primary/20" />
-            <span className="text-[11px] font-medium text-primary">Suggested topic</span>
+            <span className="text-micro font-medium text-primary">Suggested topic</span>
           </div>
         )}
       </div>
@@ -769,7 +773,7 @@ export default function CalendarPage() {
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   {WEEKDAYS_LONG[selectedDate.getDay()]}
                 </p>
-                <h2 className="text-base font-semibold tracking-tight sm:text-lg">
+                <h2 className="text-heading tracking-tight sm:text-lg">
                   {selectedDate.toLocaleDateString('en-US', {
                     month: 'long',
                     day: 'numeric',
@@ -794,8 +798,9 @@ export default function CalendarPage() {
               {selectedTopics.length > 0 && (
                 <div className="border-b">
                   <div className="px-5 py-3">
-                    <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-primary/70">
-                      Monthly Plan suggestion{selectedTopics.length > 1 ? 's' : ''}
+                    <p className="mb-2.5 text-micro font-semibold uppercase tracking-wider text-primary/70">
+                      Monthly Plan suggestion
+                      {selectedTopics.length > 1 ? 's' : ''}
                     </p>
                     <div className="space-y-3">
                       {selectedTopics.map((t) => {
@@ -874,7 +879,7 @@ export default function CalendarPage() {
                     <div className="rounded-lg border border-dashed p-3">
                       <Clock className="size-5 text-muted-foreground" />
                     </div>
-                    <p className="text-sm text-muted-foreground">No posts on this day.</p>
+                    <p className="text-body text-muted-foreground">No posts on this day.</p>
                   </div>
                 ) : selectedPosts.length > 0 ? (
                   <div className="space-y-2">

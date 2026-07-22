@@ -1,7 +1,7 @@
 'use client';
 
-import { AtSign, ExternalLink, Link2, Mail, Percent, Tag } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { AtSign, ExternalLink, Link2, Mail, Percent, Tag } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -29,7 +29,7 @@ function Row({ icon: Icon, label, children }: { icon: LucideIcon; label: string;
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-        <div className="mt-0.5 text-sm break-words">{children}</div>
+        <div className="mt-0.5 break-words text-sm">{children}</div>
       </div>
     </div>
   );
@@ -44,7 +44,9 @@ export function EnrichmentPanel({ enrichment, applied }: Props) {
     || (enrichment.reference_links?.length ?? 0) > 0
     || (enrichment.custom_mentions?.length ?? 0) > 0
   );
-  if (!hasAny) return null;
+  if (!hasAny) {
+    return null;
+  }
 
   return (
     <Card className="p-4 sm:p-5">
@@ -53,7 +55,9 @@ export function EnrichmentPanel({ enrichment, applied }: Props) {
         <h3 className="text-sm font-semibold">Post enrichment</h3>
         {applied?.length > 0 && (
           <span className="ml-auto rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400">
-            {applied.length} applied
+            {applied.length}
+            {' '}
+            applied
           </span>
         )}
       </div>
@@ -69,7 +73,7 @@ export function EnrichmentPanel({ enrichment, applied }: Props) {
               {enrichment.cta_label || 'Learn more'}
               <ExternalLink className="size-3" />
             </a>
-            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{enrichment.cta_url}</p>
+            <p className="mt-0.5 truncate text-micro text-muted-foreground">{enrichment.cta_url}</p>
           </Row>
         )}
         {enrichment.promo_code && (
@@ -92,7 +96,7 @@ export function EnrichmentPanel({ enrichment, applied }: Props) {
             <ul className="space-y-0.5">
               {enrichment.reference_links.map(l => (
                 <li key={l}>
-                  <a href={l} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline break-all">
+                  <a href={l} target="_blank" rel="noopener noreferrer" className="break-all text-xs text-primary hover:underline">
                     {l}
                   </a>
                 </li>
@@ -107,7 +111,7 @@ export function EnrichmentPanel({ enrichment, applied }: Props) {
         )}
       </div>
       <Separator className="my-3" />
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-micro text-muted-foreground">
         Enrichment is appended to the caption at publish time.
       </p>
     </Card>

@@ -51,7 +51,9 @@ export function TrendingTemplateBrowser({ contentType, onRemix, limit = 12 }: Pr
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      if (!contentType) return;
+      if (!contentType) {
+        return;
+      }
       setState({ status: 'loading' });
       try {
         const params = new URLSearchParams({
@@ -76,7 +78,9 @@ export function TrendingTemplateBrowser({ contentType, onRemix, limit = 12 }: Pr
         const templates: ContentTemplate[] = Array.isArray(data.templates)
           ? data.templates
           : [];
-        if (!cancelled) setState({ status: 'ready', templates });
+        if (!cancelled) {
+          setState({ status: 'ready', templates });
+        }
       } catch (err) {
         if (!cancelled) {
           setState({
@@ -99,17 +103,19 @@ export function TrendingTemplateBrowser({ contentType, onRemix, limit = 12 }: Pr
       {state.status === 'idle' || state.status === 'loading' ? (
         <div className="flex items-center justify-center rounded-xl border border-dashed border-border/60 bg-muted/20 px-6 py-10">
           <Loader2 className="mr-2 size-4 animate-spin text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">Loading trending templates...</span>
+          <span className="text-body text-muted-foreground">Loading trending templates...</span>
         </div>
       ) : state.status === 'error' ? (
         <div className="rounded-xl border border-red-200/60 bg-red-50/60 px-4 py-3 text-sm text-red-700">
-          Couldn&apos;t load trending templates. {state.message}
+          Couldn&apos;t load trending templates.
+          {' '}
+          {state.message}
         </div>
       ) : templates.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-muted/20 px-6 py-10 text-center">
           <Sparkles className="size-6 text-muted-foreground/30" strokeWidth={1.2} />
           <p className="text-sm font-medium text-foreground">No trending templates yet</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-meta text-muted-foreground">
             Nothing has been approved for this content type. Start from scratch below.
           </p>
         </div>

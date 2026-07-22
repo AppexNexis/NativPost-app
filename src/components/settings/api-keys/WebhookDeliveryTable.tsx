@@ -86,7 +86,7 @@ export function WebhookDeliveryTable({ endpointId, refreshKey = 0 }: Props) {
             )
           : rows.length === 0
             ? (
-                <p className="rounded-lg border border-dashed py-6 text-center text-xs text-muted-foreground">
+                <p className="rounded-lg border border-dashed py-6 text-center text-meta text-muted-foreground">
                   No deliveries yet. Send a test payload to see it appear here.
                 </p>
               )
@@ -122,7 +122,7 @@ export function WebhookDeliveryTable({ endpointId, refreshKey = 0 }: Props) {
                                     </span>
                                   )}
                             </td>
-                            <td className="px-3 py-2 font-mono text-[11px]">{r.event}</td>
+                            <td className="px-3 py-2 font-mono text-micro">{r.event}</td>
                             <td className="px-3 py-2 text-muted-foreground">{r.statusCode ?? '—'}</td>
                             <td className="px-3 py-2 text-muted-foreground">
                               {r.durationMs != null ? `${r.durationMs}ms` : '—'}

@@ -15,12 +15,12 @@ import {
 
 const CREDITS_PER_DOLLAR = 10;
 
-interface Props {
+type Props = {
   open: boolean;
   amountUsd: number;
   onOpenChange: (open: boolean) => void;
   onPurchased: () => Promise<void>;
-}
+};
 
 type Phase = 'idle' | 'charging' | 'success' | 'error';
 
@@ -69,10 +69,14 @@ export function ConfirmPurchaseDialog({ open, amountUsd, onOpenChange, onPurchas
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => {
-      if (phase === 'charging') return;
-      onOpenChange(v);
-    }}
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (phase === 'charging') {
+          return;
+        }
+        onOpenChange(v);
+      }}
     >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
@@ -91,7 +95,7 @@ export function ConfirmPurchaseDialog({ open, amountUsd, onOpenChange, onPurchas
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Total</span>
-            <span className="text-base font-semibold tabular-nums">
+            <span className="text-heading tabular-nums">
               $
               {amountUsd.toFixed(2)}
             </span>
@@ -154,7 +158,7 @@ export function ConfirmPurchaseDialog({ open, amountUsd, onOpenChange, onPurchas
               )}
         </DialogFooter>
         {creditsAdded > 0 && phase === 'success' && (
-          <p className="text-center text-xs text-muted-foreground">
+          <p className="text-center text-meta text-muted-foreground">
             {creditsAdded.toLocaleString()}
             {' '}
             credits added.

@@ -19,7 +19,7 @@ import { useEffect, useState } from 'react';
 type NotificationType = 'error' | 'warning' | 'info' | 'success';
 type NotificationCategory = 'publish' | 'approval' | 'billing' | 'system' | 'content';
 
-interface Notification {
+type Notification = {
   id: string;
   type: NotificationType;
   category: NotificationCategory;
@@ -29,39 +29,39 @@ interface Notification {
   actionLabel: string | null;
   isRead: boolean;
   createdAt: string;
-}
+};
 
 // -----------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------
 const CATEGORY_ICON: Record<NotificationCategory, typeof Send> = {
-  publish:  Send,
+  publish: Send,
   approval: CheckCircle2,
-  billing:  CreditCard,
-  system:   AlertCircle,
-  content:  FileText,
+  billing: CreditCard,
+  system: AlertCircle,
+  content: FileText,
 };
 
 const TYPE_COLOR: Record<NotificationType, string> = {
-  error:   'text-destructive',
+  error: 'text-destructive',
   warning: 'text-amber-500',
-  info:    'text-blue-500',
+  info: 'text-blue-500',
   success: 'text-emerald-500',
 };
 
 const TYPE_BG: Record<NotificationType, string> = {
-  error:   'bg-destructive/10',
+  error: 'bg-destructive/10',
   warning: 'bg-amber-50 dark:bg-amber-950/20',
-  info:    'bg-blue-50 dark:bg-blue-950/20',
+  info: 'bg-blue-50 dark:bg-blue-950/20',
   success: 'bg-emerald-50 dark:bg-emerald-950/20',
 };
 
 const CATEGORY_LABELS: Record<NotificationCategory, string> = {
-  publish:  'Publishing',
+  publish: 'Publishing',
   approval: 'Approvals',
-  billing:  'Billing',
-  system:   'System',
-  content:  'Content',
+  billing: 'Billing',
+  system: 'System',
+  content: 'Content',
 };
 
 type FilterTab = 'all' | NotificationCategory;
@@ -76,13 +76,23 @@ const TABS: { key: FilterTab; label: string }[] = [
 function formatRelativeTime(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) {
+    return 'Just now';
+  }
+  if (mins < 60) {
+    return `${mins}m ago`;
+  }
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) {
+    return `${hrs}h ago`;
+  }
   const days = Math.floor(hrs / 24);
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days}d ago`;
+  if (days === 1) {
+    return 'Yesterday';
+  }
+  if (days < 7) {
+    return `${days}d ago`;
+  }
   return new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
@@ -116,10 +126,10 @@ function groupByDate(notifications: Notification[]) {
 // -----------------------------------------------------------
 // Component
 // -----------------------------------------------------------
-interface NotificationPanelProps {
+type NotificationPanelProps = {
   onClose: () => void;
   onAllRead: () => void;
-}
+};
 
 export function NotificationPanel({ onClose, onAllRead }: NotificationPanelProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -182,7 +192,7 @@ export function NotificationPanel({ onClose, onAllRead }: NotificationPanelProps
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">Notifications</span>
           {unreadCount > 0 && (
-            <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
+            <span className="rounded-full bg-primary px-2 py-0.5 text-micro font-semibold text-primary-foreground">
               {unreadCount}
             </span>
           )}
@@ -209,13 +219,13 @@ export function NotificationPanel({ onClose, onAllRead }: NotificationPanelProps
       </div>
 
       {/* Tabs */}
-      <div className="flex shrink-0 gap-0.5 overflow-x-auto border-b px-3 py-2 scrollbar-none">
+      <div className="scrollbar-none flex shrink-0 gap-0.5 overflow-x-auto border-b px-3 py-2">
         {TABS.map(tab => (
           <button
             key={tab.key}
             type="button"
             onClick={() => setActiveTab(tab.key)}
-            className={`rounded-md px-2.5 py-1 text-[12px] font-medium whitespace-nowrap transition-colors ${
+            className={`whitespace-nowrap rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors ${
               activeTab === tab.key
                 ? 'bg-primary/10 text-primary'
                 : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -238,7 +248,7 @@ export function NotificationPanel({ onClose, onAllRead }: NotificationPanelProps
               <CheckCircle2 className="size-5 text-muted-foreground" />
             </div>
             <p className="text-sm font-medium">Nothing to catch up on</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-meta text-muted-foreground">
               {activeTab === 'all'
                 ? 'All notifications will appear here.'
                 : `No ${CATEGORY_LABELS[activeTab as NotificationCategory] || activeTab} notifications.`}
@@ -248,10 +258,10 @@ export function NotificationPanel({ onClose, onAllRead }: NotificationPanelProps
           <div className="py-2">
             {groups.map(group => (
               <div key={group.label}>
-                <p className="px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                <p className="px-4 py-2 text-micro font-medium uppercase tracking-wider text-muted-foreground/60">
                   {group.label}
                 </p>
-                {group.items.map(n => {
+                {group.items.map((n) => {
                   const Icon = CATEGORY_ICON[n.category] ?? AlertCircle;
                   return (
                     <button
@@ -271,11 +281,11 @@ export function NotificationPanel({ onClose, onAllRead }: NotificationPanelProps
                         {/* Content */}
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
-                            <p className={`text-[13px] font-medium leading-snug ${!n.isRead ? 'text-foreground' : 'text-muted-foreground'}`}>
+                            <p className={`text-ui font-medium leading-snug ${!n.isRead ? 'text-foreground' : 'text-muted-foreground'}`}>
                               {n.title}
                             </p>
                             <div className="flex shrink-0 items-center gap-1.5">
-                              <span className="text-[11px] text-muted-foreground">
+                              <span className="text-micro text-muted-foreground">
                                 {formatRelativeTime(n.createdAt)}
                               </span>
                               {!n.isRead && (

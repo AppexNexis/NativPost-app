@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 
+import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/features/dashboard/PageHeader';
 import { ANNUAL_SAVE_PCT, type BillingInterval, FREE_TRIAL_DAYS, getMonthlyEquivalentDisplay, SETUP_FEE_USD, VISIBLE_PLANS } from '@/lib/plans';
 
@@ -298,7 +299,7 @@ function PaystackPortal({
                   </div>
                 </div>
               ) : (
-                <p className="py-4 text-center text-sm text-muted-foreground">
+                <p className="py-4 text-center text-body text-muted-foreground">
                   No active subscription details found.
                 </p>
               )}
@@ -346,7 +347,7 @@ function PaystackPortal({
                       </div>
                     ))}
                   </div>
-                  <p className="mt-2 text-[11px] text-muted-foreground">
+                  <p className="mt-2 text-micro text-muted-foreground">
                     Full receipts are sent to your email after each payment.
                   </p>
                 </div>
@@ -529,9 +530,15 @@ function BillingContent() {
   const currentPlanIndex = VISIBLE_PLANS.findIndex(p => p.id === billing?.plan);
 
   if (isLoading) {
+    // Mirrors the plans layout so the frame paints instantly.
     return (
-      <div className="flex min-h-[300px] items-center justify-center">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+      <div className="space-y-8" aria-busy="true" aria-label="Loading billing">
+        <Skeleton className="h-24 rounded-xl" />
+        <div className="grid gap-4 md:grid-cols-3">
+          {Array.from({ length: 3 }, (_, i) => (
+            <Skeleton key={i} className="h-[380px] rounded-xl" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -634,7 +641,7 @@ function BillingContent() {
                   isTrialing={billing?.isTrialing ?? false}
                 />
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1 text-meta text-muted-foreground">
                 {billing?.isTrialing
                   ? `Trial ends ${new Date(billing.trialEndsAt!).toLocaleDateString('en-US', {
                     month: 'long',
@@ -673,7 +680,7 @@ function BillingContent() {
         {/* Stats row */}
         <div className="grid grid-cols-2 divide-x sm:grid-cols-4">
           <div className="px-5 py-4">
-            <p className="text-xs text-muted-foreground">Posts this month</p>
+            <p className="text-meta text-muted-foreground">Posts this month</p>
             <p className="mt-1 text-2xl font-bold tabular-nums">
               {billing?.usage.postsThisMonth ?? 0}
               <span className="ml-1 text-sm font-normal text-muted-foreground">
@@ -683,26 +690,26 @@ function BillingContent() {
               </span>
             </p>
             {billing?.isTrialing && billing.plan !== 'starter' && (
-              <p className="mt-1 text-[11px] leading-tight text-muted-foreground">
+              <p className="mt-1 text-micro leading-tight text-muted-foreground">
                 Starter limits apply during trial
               </p>
             )}
           </div>
 
           <div className="px-5 py-4">
-            <p className="text-xs text-muted-foreground">Platforms</p>
+            <p className="text-meta text-muted-foreground">Platforms</p>
             <p className="mt-1 text-2xl font-bold tabular-nums">
               {billing?.usage.platformsLimit === 99 ? '∞' : (billing?.usage.platformsLimit ?? 0)}
             </p>
             {billing?.isTrialing && billing.plan !== 'starter' && (
-              <p className="mt-1 text-[11px] leading-tight text-muted-foreground">
+              <p className="mt-1 text-micro leading-tight text-muted-foreground">
                 Unlocks after subscribing
               </p>
             )}
           </div>
 
           <div className="border-t px-5 py-4 sm:border-t-0">
-            <p className="text-xs text-muted-foreground">Plan price</p>
+            <p className="text-meta text-muted-foreground">Plan price</p>
             <p className="mt-1 text-2xl font-bold tabular-nums">
               {billing?.billingInterval === 'year' ? (
                 <>
@@ -721,7 +728,7 @@ function BillingContent() {
           </div>
 
           <div className="border-t px-5 py-4 sm:border-t-0">
-            <p className="text-xs text-muted-foreground">Setup fee</p>
+            <p className="text-meta text-muted-foreground">Setup fee</p>
             <p className="mt-1 text-2xl font-bold">
               {billing?.setupFeePaid ? (
                 <span className="text-emerald-600">Paid</span>
@@ -780,7 +787,7 @@ function BillingContent() {
                 }}
               />
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">
+            <p className="mt-2 text-meta text-muted-foreground">
               Subscribe before your trial ends to keep your content flowing without interruption.
             </p>
           </div>
@@ -791,8 +798,8 @@ function BillingContent() {
       <div>
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="text-base font-semibold">Available plans</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <h2 className="text-heading">Available plans</h2>
+            <p className="mt-0.5 text-meta text-muted-foreground">
               All plans include a one-time $
               {SETUP_FEE_USD}
               {' '}
@@ -804,7 +811,7 @@ function BillingContent() {
           <div className="flex flex-col gap-1.5 sm:items-end">
             {billing?.planStatus === 'active' ? (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Billed via</span>
+                <span className="text-meta text-muted-foreground">Billed via</span>
                 <span className="rounded-lg border bg-muted/50 px-4 py-1.5 text-xs font-bold">
                   {paymentMethod === 'paystack' ? 'Paystack' : 'Stripe'}
                 </span>
@@ -812,7 +819,7 @@ function BillingContent() {
             ) : (
               <>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Pay with:</span>
+                  <span className="text-meta text-muted-foreground">Pay with:</span>
                   <div className="flex rounded-lg border bg-muted/50 p-0.5">
                     <button
                       type="button"
@@ -837,7 +844,7 @@ function BillingContent() {
                   </div>
                 </div>
                 {paymentMethod === 'stripe' && (
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-micro text-muted-foreground">
                     Have a promo code? Enter it on the next page.
                   </span>
                 )}
@@ -1037,7 +1044,7 @@ function BillingContent() {
         </div>
 
         {/* Enterprise */}
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-1.5 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-1.5 rounded-xl border border-dashed p-4 text-body text-muted-foreground">
           <span>Need Agency or Enterprise with custom pricing?</span>
           <Link
             href="https://nativpost.com/contact-us"
@@ -1055,7 +1062,7 @@ function BillingContent() {
       <div className="flex flex-col gap-3 rounded-xl border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-medium">See the full feature breakdown</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <p className="mt-0.5 text-meta text-muted-foreground">
             Compare every feature across all plans on our pricing page.
           </p>
         </div>
@@ -1073,7 +1080,7 @@ function BillingContent() {
       {/* Payment history */}
       <div>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold">Payment history</h2>
+          <h2 className="text-heading">Payment history</h2>
           {billing?.hasStripe && billing.planStatus === 'active' && !billing.hasPaystackSub && (
             <button
               type="button"
@@ -1102,7 +1109,7 @@ function BillingContent() {
         </div>
 
         <div className="rounded-2xl border bg-card p-5">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-body text-muted-foreground">
             {billing?.hasStripe && (
               <>
                 <strong className="font-semibold text-foreground">Stripe:</strong>

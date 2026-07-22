@@ -206,17 +206,17 @@ type BlitzDailyViewProps = {
   disabledAccountIds?: string[];
 };
 
+const NO_IDS: string[] = [];
+
 export function BlitzDailyView({
   campaign,
   initialContentItems,
   dailyLimitReached: serverDailyLimitReached,
   dailyLimitCount: serverDailyLimitCount,
   dailyLimit: serverDailyLimit,
-  effectiveTargetAccountIds = [],
-  disabledAccountIds = [],
+  effectiveTargetAccountIds = NO_IDS,
+  disabledAccountIds = NO_IDS,
 }: BlitzDailyViewProps) {
-  const router = useRouter();
-
   const [items, setItems] = useState<BlitzItem[]>(initialContentItems);
   const [isGenerating, setIsGenerating] = useState(false);
   const [actionPending, setActionPending] = useState<string | null>(null);
@@ -228,16 +228,17 @@ export function BlitzDailyView({
   // Live progress from the /generate/status poll so QueueLoading shows real
   // step + percentage instead of a static "Building today's queue" message.
   const [generationProgress, setGenerationProgress] = useState<{ step: string; percent: number } | null>(null);
-  // Mini-toast for feedback on keyboard-driven actions. Cleared by a
-  // rolling timer; setting a new toast resets the timer.
-  const [toast, setToast] = useState<{ id: number; text: string; kind: 'ok' | 'skip' | 'info' } | null>(null);
+  // Mini-toast for feedback on swipe/keyboard actions. Cleared by a
+  // rolling timer; setting a new toast resets the timer. A toast may carry
+  // an `undo` action (skip toasts do) — those get a longer window.
+  const [toast, setToast] = useState<{ id: number; text: string; kind: 'ok' | 'skip' | 'info'; undo?: () => void } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showToast = useCallback((text: string, kind: 'ok' | 'skip' | 'info' = 'info') => {
+  const showToast = useCallback((text: string, kind: 'ok' | 'skip' | 'info' = 'info', undo?: () => void) => {
     if (toastTimerRef.current) {
       clearTimeout(toastTimerRef.current);
     }
-    setToast({ id: Date.now(), text, kind });
-    toastTimerRef.current = setTimeout(() => setToast(null), 1800);
+    setToast({ id: Date.now(), text, kind, undo });
+    toastTimerRef.current = setTimeout(() => setToast(null), undo ? 4000 : 1800);
   }, []);
   useEffect(() => () => {
     if (toastTimerRef.current) {
@@ -483,6 +484,19 @@ export function BlitzDailyView({
       // from the server before patchStatus commits, so the card reappears.
       removeFromQueue(item.id);
 
+      // Skip is reversible for a few seconds — flips the status back and
+      // restores the card to the front of the queue.
+      showToast('Skipped', 'skip', () => {
+        setToast(null);
+        setOutcome({ kind: 'none' });
+        setItems(prev => (prev.some(i => i.id === item.id) ? prev : [item, ...prev]));
+        void patchStatus(item.id, 'pending_review').catch(() => {
+          // Server rejected the undo — drop the restored card and re-sync.
+          setItems(prev => prev.filter(i => i.id !== item.id));
+          void refresh();
+        });
+      });
+
       // If the queue is now empty AND the daily limit is hit, show the
       // daily-limit state immediately instead of triggering auto-refill
       // (which would call runGenerate → POST /generate → engine call →
@@ -532,9 +546,13 @@ export function BlitzDailyView({
     try {
       await patchStatus(item.id, 'approved');
       removeFromQueue(item.id);
-      router.push(`/dashboard/content/${item.id}`);
+      // Stay in the swipe flow — momentum is the whole point of Blitz.
+      // (Navigating to the content page after every approve made reviewing
+      // a 10-post queue take 10 round-trips and left QueueDone unreachable.)
+      showToast('Approved', 'ok');
     } catch (err: any) {
       setError(err?.message || 'Approve failed');
+    } finally {
       setActionPending(null);
     }
   };
@@ -680,6 +698,16 @@ export function BlitzDailyView({
           return;
         }
       }
+      // 'U' undoes the last skip while its toast is still up.
+      if ((e.key === 'u' || e.key === 'U') && toast?.undo && !settingsOpen && !helpOpen) {
+        const el = document.activeElement as HTMLElement | null;
+        const tag = el?.tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !el?.isContentEditable) {
+          e.preventDefault();
+          toast.undo();
+          return;
+        }
+      }
       if (!current) {
         return;
       }
@@ -696,11 +724,9 @@ export function BlitzDailyView({
       }
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        showToast('Skipped', 'skip');
         void handleReject(current);
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        showToast('Approved', 'ok');
         void handleApprove(current);
       } else if (e.key === 'e' || e.key === 'E') {
         e.preventDefault();
@@ -710,14 +736,14 @@ export function BlitzDailyView({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.id, settingsOpen, helpOpen, actionPending]);
+  }, [current?.id, settingsOpen, helpOpen, actionPending, toast]);
 
   // Loading OR the outcome empty states short-circuit the card view.
   const queueDone = !current && !isGenerating && outcome.kind === 'none';
   const showLoading = isGenerating && queue.length === 0;
 
   return (
-    <div className="flex h-[calc(100dvh-var(--header-h,64px))] flex-col overflow-hidden bg-background">
+    <div className="flex h-[calc(100dvh-var(--header-h,88px))] flex-col overflow-hidden bg-background">
       {/* Header: progress ring + Settings + Help */}
       <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2 sm:px-6">
         <div className="flex items-center">
@@ -786,11 +812,9 @@ export function BlitzDailyView({
             behind={behind.slice(0, 2)}
             actionPending={actionPending === current.id}
             onApprove={() => {
-              showToast('Approved', 'ok');
               void handleApprove(current);
             }}
             onReject={() => {
-              showToast('Skipped', 'skip');
               void handleReject(current);
             }}
             onEdit={() => handleEdit(current)}
@@ -798,7 +822,9 @@ export function BlitzDailyView({
         ) : null}
       </div>
 
-      {/* Toast — bottom-center mini-feedback for swipe/keyboard actions */}
+      {/* Toast — bottom-center mini-feedback for swipe/keyboard actions.
+          Skip toasts carry an Undo action, so the pill itself accepts
+          pointer events while the wrapper stays click-through. */}
       {toast && (
         <div
           key={toast.id}
@@ -807,17 +833,26 @@ export function BlitzDailyView({
           className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center"
         >
           <div
-            className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium shadow-lg backdrop-blur-md ${
+            className={`pointer-events-auto inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium shadow-elevation-2 backdrop-blur-md ${
               toast.kind === 'ok'
                 ? 'bg-emerald-500/90 text-white'
                 : toast.kind === 'skip'
                   ? 'bg-red-500/90 text-white'
-                  : 'bg-background/90 text-foreground border border-border'
+                  : 'border border-border bg-background/90 text-foreground'
             }`}
           >
             {toast.kind === 'ok' && <CheckCircle2 className="size-4" />}
             {toast.kind === 'skip' && <X className="size-4" />}
             {toast.text}
+            {toast.undo && (
+              <button
+                type="button"
+                onClick={toast.undo}
+                className="-mr-1 ml-1 rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-semibold transition-colors duration-instant hover:bg-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              >
+                Undo
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -927,7 +962,7 @@ function CardPair({
             disabled={actionPending}
             title="Reject"
             aria-label="Reject"
-            className="flex size-14 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-colors hover:bg-red-600 disabled:cursor-default disabled:opacity-50"
+            className="flex size-14 items-center justify-center rounded-full bg-red-500 text-white shadow-elevation-2 transition-all duration-instant hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 active:scale-95 disabled:cursor-default disabled:opacity-50"
           >
             <X className="size-6" />
           </button>
@@ -940,7 +975,7 @@ function CardPair({
             type="button"
             onClick={onEdit}
             disabled={actionPending}
-            className="inline-flex h-12 items-center gap-2 rounded-full border-2 border-border bg-background px-6 text-sm font-medium text-foreground shadow-md transition-colors hover:bg-muted disabled:cursor-default disabled:opacity-60"
+            className="inline-flex h-12 items-center gap-2 rounded-full border-2 border-border bg-background px-6 text-sm font-medium text-foreground shadow-elevation-1 transition-all duration-instant hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-95 disabled:cursor-default disabled:opacity-60"
           >
             <Pencil className="size-4" />
             Edit
@@ -954,7 +989,7 @@ function CardPair({
             disabled={actionPending}
             title="Approve"
             aria-label="Approve"
-            className="flex size-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg transition-colors hover:bg-emerald-600 disabled:cursor-default disabled:opacity-60"
+            className="flex size-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-elevation-2 transition-all duration-instant hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 active:scale-95 disabled:cursor-default disabled:opacity-60"
           >
             {actionPending ? (
               <Loader2 className="size-6 animate-spin" />
@@ -991,14 +1026,14 @@ function CardHeader({
     <div className="flex shrink-0 flex-col items-center gap-1.5">
       <div className="flex flex-wrap items-center justify-center gap-2">
         {typeLabel && (
-          <span className="rounded-full bg-muted px-3 py-0.5 text-[11px] font-medium capitalize text-foreground/70">
+          <span className="rounded-full bg-muted px-3 py-0.5 text-micro font-medium capitalize text-foreground/70">
             {typeLabel}
           </span>
         )}
         {topicLabel && (
           <span
             title={topicLabel}
-            className="max-w-[240px] truncate rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-0.5 text-[11px] font-medium text-sky-700 dark:text-sky-300"
+            className="max-w-[240px] truncate rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-0.5 text-micro font-medium text-sky-700 dark:text-sky-300"
           >
             {topicLabel}
           </span>
@@ -1062,7 +1097,7 @@ function WhyTooltip({ enrichment, snapshot }: { enrichment: any; snapshot: any }
         onClick={() => setOpen(v => !v)}
         aria-describedby="why-this-content-tooltip"
         aria-expanded={open}
-        className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-background px-3 py-0.5 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-muted"
+        className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-background px-3 py-0.5 text-micro font-medium text-foreground/80 transition-colors hover:bg-muted"
       >
         <HelpCircle className="size-3" />
         Why This Content?
@@ -1157,7 +1192,7 @@ function RemixedFromPanel({ snapshot }: { snapshot: any }) {
         )}
         {originalHook && (
           <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 -translate-y-1/2 px-2">
-            <div className="mx-auto w-fit max-w-[95%] rounded-md bg-black/65 px-2 py-1 text-[11px] leading-tight text-white backdrop-blur-sm">
+            <div className="mx-auto w-fit max-w-[95%] rounded-md bg-black/65 px-2 py-1 text-micro leading-tight text-white backdrop-blur-sm">
               {originalHook}
             </div>
           </div>
@@ -1165,13 +1200,13 @@ function RemixedFromPanel({ snapshot }: { snapshot: any }) {
         {/* Engagement chips overlaid bottom-right */}
         <div className="absolute inset-y-0 right-1.5 z-10 flex flex-col items-end justify-end gap-1 pb-2">
           {typeof likes === 'number' && likes > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-black/65 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm">
+            <span className="inline-flex items-center gap-1 rounded-full bg-black/65 px-2 py-0.5 text-micro font-medium text-white backdrop-blur-sm">
               <Heart className="size-3" />
               {formatCompactNumber(likes)}
             </span>
           )}
           {typeof views === 'number' && views > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-black/65 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm">
+            <span className="inline-flex items-center gap-1 rounded-full bg-black/65 px-2 py-0.5 text-micro font-medium text-white backdrop-blur-sm">
               <Eye className="size-3" />
               {formatCompactNumber(views)}
             </span>
@@ -1486,7 +1521,10 @@ function BlitzSwipeCard({
             <div className="relative size-full bg-neutral-800">
               {fallbackMediaUrl && (
                 fallbackIsVideo
+                  // Muted decorative preview — no caption data exists for source media.
+                  // eslint-disable-next-line jsx-a11y/media-has-caption
                   ? <video src={fallbackMediaUrl} className="absolute inset-0 size-full object-cover" muted={muted} loop playsInline autoPlay />
+                  // eslint-disable-next-line @next/next/no-img-element
                   : <img src={fallbackMediaUrl} alt="" className="absolute inset-0 size-full object-cover" />
               )}
               {hookText && (
@@ -1535,6 +1573,7 @@ function BlitzSwipeCard({
       ) : isCompiled && compiledUrl ? (
         <div className="pointer-events-none size-full">
           {isCompiledVideo ? (
+            // eslint-disable-next-line jsx-a11y/media-has-caption -- muted preview; no caption data
             <video src={compiledUrl} className="size-full object-cover" muted={muted} loop playsInline autoPlay />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
@@ -1550,6 +1589,7 @@ function BlitzSwipeCard({
       ) : compiledUrl ? (
         <div className="pointer-events-none relative size-full">
           {isCompiledVideo ? (
+            // eslint-disable-next-line jsx-a11y/media-has-caption -- muted preview; no caption data
             <video src={compiledUrl} className="size-full object-cover" muted={muted} loop playsInline autoPlay />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
@@ -1650,9 +1690,9 @@ function QueueLoading({ step, percent }: { step?: string; percent?: number }) {
       <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-primary/10">
         <Loader2 className="size-6 animate-spin text-primary" />
       </div>
-      <h3 className="text-base font-semibold text-foreground">Building today&rsquo;s queue</h3>
+      <h3 className="text-heading text-foreground">Building today&rsquo;s queue</h3>
       {stepLabel && (
-        <p className="mt-1 text-sm text-muted-foreground">{stepLabel}</p>
+        <p className="mt-1 text-body text-muted-foreground">{stepLabel}</p>
       )}
       {typeof percent === 'number' && percent > 0 && (
         <div className="mt-3 flex w-full max-w-[200px] items-center gap-2">
@@ -1679,13 +1719,13 @@ function QueueDone({ total, approved }: { total: number; approved: number }) {
       <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-emerald-500/10">
         <CheckCircle2 className="size-7 text-emerald-500" />
       </div>
-      <h3 className="text-base font-semibold text-foreground">You&rsquo;re done for today</h3>
-      <p className="mt-1.5 text-sm text-muted-foreground">
+      <h3 className="text-heading text-foreground">You&rsquo;re done for today</h3>
+      <p className="mt-1.5 text-body text-muted-foreground">
         {total > 0
           ? `You reviewed ${total} post${total === 1 ? '' : 's'} — ${approved} approved (${approvalRate}%).`
           : 'No posts left in the queue.'}
       </p>
-      <p className="mt-4 text-xs text-muted-foreground">
+      <p className="mt-4 text-meta text-muted-foreground">
         New posts unlock at midnight in your timezone.
       </p>
     </div>
@@ -1718,10 +1758,10 @@ function DailyLimitState({
       <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-emerald-500/10">
         <CheckCircle2 className="size-7 text-emerald-500" />
       </div>
-      <h3 className="text-base font-semibold text-foreground">
+      <h3 className="text-heading text-foreground">
         You&rsquo;ve reviewed today&rsquo;s Blitz
       </h3>
-      <p className="mt-1.5 text-sm text-muted-foreground">
+      <p className="mt-1.5 text-body text-muted-foreground">
         You&rsquo;ve seen
         {' '}
         {count}
@@ -1732,13 +1772,13 @@ function DailyLimitState({
         {' '}
         posts scheduled for today.
       </p>
-      <p className="mt-4 text-xs text-muted-foreground">
+      <p className="mt-4 text-meta text-muted-foreground">
         New posts unlock at
         {' '}
         {resetDate}
         .
       </p>
-      <p className="mt-2 text-[11px] text-muted-foreground/70">
+      <p className="mt-2 text-micro text-muted-foreground/70">
         Tip: adjust your daily cap in
         {' '}
         <span className="font-medium text-foreground/70">Settings</span>
@@ -1756,8 +1796,8 @@ function NoChannelsState() {
       <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-amber-500/10">
         <LinkIcon className="size-6 text-amber-500" />
       </div>
-      <h3 className="text-base font-semibold text-foreground">Connect a channel</h3>
-      <p className="mt-1.5 text-sm text-muted-foreground">
+      <h3 className="text-heading text-foreground">Connect a channel</h3>
+      <p className="mt-1.5 text-body text-muted-foreground">
         Connect Facebook, Instagram, or TikTok before generating Blitz posts.
       </p>
       <button
@@ -1827,7 +1867,7 @@ function BlitzProgressRing({
         onBlur={scheduleClose}
         onClick={() => setOpen(v => !v)}
         aria-label={`${approved} approved of ${limit} daily posts`}
-        className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted"
+        className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-2 py-0.5 text-meta text-muted-foreground transition-colors hover:bg-muted"
       >
         <svg width="28" height="28" viewBox="0 0 32 32" className="shrink-0">
           <circle
@@ -1929,7 +1969,7 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
         className="relative z-10 w-full max-w-sm rounded-2xl border border-border bg-background p-5 shadow-xl"
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-foreground">Keyboard shortcuts</h3>
+          <h3 className="text-heading text-foreground">Keyboard shortcuts</h3>
           <button
             type="button"
             onClick={onClose}
@@ -1959,6 +1999,12 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
             </kbd>
           </li>
           <li className="flex items-center justify-between">
+            <span className="text-foreground">Undo last skip</span>
+            <kbd className="inline-flex min-w-8 items-center justify-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+              U
+            </kbd>
+          </li>
+          <li className="flex items-center justify-between">
             <span className="text-foreground">Toggle this panel</span>
             <kbd className="inline-flex min-w-8 items-center justify-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
               ?
@@ -1971,7 +2017,7 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
             </kbd>
           </li>
         </ul>
-        <p className="mt-4 text-[11px] leading-snug text-muted-foreground">
+        <p className="mt-4 text-micro leading-snug text-muted-foreground">
           Shortcuts pause while a text field is focused or while Settings is open.
         </p>
       </div>

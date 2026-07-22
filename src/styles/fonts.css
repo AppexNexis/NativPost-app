@@ -1,0 +1,49 @@
+/*
+ * Brand fonts — Safiro (display) + Geist Mono (labels, kbd, code).
+ *
+ * The .woff2 files are NOT committed (Safiro is a licensed font). Drop
+ * them into /public/assets/fonts/ (see the README there) and these
+ * declarations activate automatically. Until then the fallback stacks
+ * render: Inter Tight for display, the system mono stack for mono —
+ * so nothing breaks when the files are absent.
+ */
+
+@font-face {
+  font-family: 'Safiro';
+  src: url('/assets/fonts/Safiro-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Safiro';
+  src: url('/assets/fonts/Safiro-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Safiro';
+  src: url('/assets/fonts/Safiro-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'GeistMono';
+  src: url('/assets/fonts/GeistMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'GeistMono';
+  src: url('/assets/fonts/GeistMono-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}

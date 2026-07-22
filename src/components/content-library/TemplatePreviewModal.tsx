@@ -244,7 +244,7 @@ function Stat({
     <div className="rounded-xl bg-muted p-3 text-center">
       <Icon className="mx-auto mb-1 size-4 text-muted-foreground" />
       <div className="text-lg font-bold text-card-foreground">{value}</div>
-      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-meta text-muted-foreground">{label}</div>
     </div>
   );
 }

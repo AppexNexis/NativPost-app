@@ -81,9 +81,13 @@ export function ApiKeysPanel() {
     let cancelled = false;
     (async () => {
       const keysOk = await loadKeys();
-      if (cancelled || !keysOk) return;
+      if (cancelled || !keysOk) {
+        return;
+      }
       const hooksOk = await loadWebhooks();
-      if (cancelled || !hooksOk) return;
+      if (cancelled || !hooksOk) {
+        return;
+      }
       setGate({ kind: 'ok' });
     })();
     return () => {
@@ -132,8 +136,8 @@ export function ApiKeysPanel() {
               <KeyRound className="size-4" />
             </div>
             <div>
-              <h3 className="text-base font-semibold">API keys</h3>
-              <p className="mt-0.5 text-sm text-muted-foreground">
+              <h3 className="text-heading">API keys</h3>
+              <p className="mt-0.5 text-body text-muted-foreground">
                 Bearer tokens used to authenticate calls to
                 {' '}
                 <code className="rounded bg-muted px-1 py-0.5 text-xs">/api/v1</code>
@@ -158,8 +162,8 @@ export function ApiKeysPanel() {
               <Webhook className="size-4" />
             </div>
             <div>
-              <h3 className="text-base font-semibold">Webhook endpoints</h3>
-              <p className="mt-0.5 text-sm text-muted-foreground">
+              <h3 className="text-heading">Webhook endpoints</h3>
+              <p className="mt-0.5 text-body text-muted-foreground">
                 NativPost POSTs signed JSON to these URLs when events happen in your
                 workspace. Verify
                 {' '}
@@ -185,7 +189,7 @@ export function ApiKeysPanel() {
                   <Webhook className="size-5" />
                 </div>
                 <p className="text-sm font-medium">No webhook endpoints yet</p>
-                <p className="max-w-sm text-xs text-muted-foreground">
+                <p className="max-w-sm text-meta text-muted-foreground">
                   Add an endpoint to receive real-time events when content is created,
                   approved, published, or when a campaign launches.
                 </p>

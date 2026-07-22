@@ -9,10 +9,10 @@ import { Switch } from '@/components/ui/switch';
 import type { AiCreditWallet } from '@/lib/ai-studio/server';
 import { cn } from '@/utils/Helpers';
 
-interface Props {
+type Props = {
   wallet: AiCreditWallet;
   onConfigChanged: () => Promise<void>;
-}
+};
 
 function balanceUsd(wallet: AiCreditWallet): number {
   const monthlyRemaining = Math.max(0, wallet.monthly.limit - wallet.monthly.used);
@@ -60,7 +60,7 @@ function Cell({
       {value !== undefined && (
         <div className="text-2xl font-semibold tabular-nums">{value}</div>
       )}
-      {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
+      {hint && <div className="text-meta text-muted-foreground">{hint}</div>}
       {children}
     </div>
   );
@@ -123,7 +123,7 @@ export function BalanceGrid({ wallet, onConfigChanged }: Props) {
       <Cell label="Low balance email alert" className="gap-2">
         <div className="mt-1 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Alert at</span>
+            <span className="text-meta text-muted-foreground">Alert at</span>
             <Input
               type="number"
               min={0}

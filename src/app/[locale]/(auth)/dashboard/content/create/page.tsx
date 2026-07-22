@@ -25,12 +25,12 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useEffect, useRef, useState } from 'react';
 
-import { PLATFORMS } from '@/components/icons/PlatformIcons';
 import type { RemixEdits } from '@/components/content-library/RemixEditor';
 import { TrendingTemplateBrowser } from '@/components/content-library/TrendingTemplateBrowser';
-import type { ContentTemplate, MediaSlot } from '@/types/v2';
+import { PLATFORMS } from '@/components/icons/PlatformIcons';
 import { getOptimizedVideoUrl, getVideoPosterUrl, isCloudinaryVideoUrl } from '@/lib/cloudinary';
 import { isMultiSlideTemplate, parseTemplateSlides } from '@/lib/content/template-slides';
+import type { ContentTemplate, MediaSlot } from '@/types/v2';
 
 // -----------------------------------------------------------
 // TYPES
@@ -167,17 +167,27 @@ const REMIX_TYPE_MAP: Record<string, string> = {
 // HELPERS
 // -----------------------------------------------------------
 function scoreLabel(score: number): { text: string; color: string } {
-  if (score >= 0.9) return { text: 'Excellent', color: 'bg-emerald-50 text-emerald-700' };
-  if (score >= 0.8) return { text: 'Great', color: 'bg-green-50 text-green-700' };
-  if (score >= 0.7) return { text: 'Good', color: 'bg-yellow-50 text-yellow-700' };
-  if (score >= 0.5) return { text: 'Needs work', color: 'bg-orange-50 text-orange-700' };
+  if (score >= 0.9) {
+    return { text: 'Excellent', color: 'bg-emerald-50 text-emerald-700' };
+  }
+  if (score >= 0.8) {
+    return { text: 'Great', color: 'bg-green-50 text-green-700' };
+  }
+  if (score >= 0.7) {
+    return { text: 'Good', color: 'bg-yellow-50 text-yellow-700' };
+  }
+  if (score >= 0.5) {
+    return { text: 'Needs work', color: 'bg-orange-50 text-orange-700' };
+  }
   return { text: 'Poor', color: 'bg-red-50 text-red-700' };
 }
 
 function getProgressMessage(percent: number): string {
   let msg = PROGRESS_MESSAGES[0]!.message;
   for (const entry of PROGRESS_MESSAGES) {
-    if (percent >= entry.at) msg = entry.message;
+    if (percent >= entry.at) {
+      msg = entry.message;
+    }
   }
   return msg;
 }
@@ -201,7 +211,7 @@ function TemplatePreviewMedia({ template }: { template: ContentTemplate }) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 bg-muted/50">
         <Video className="size-8 text-muted-foreground/30" strokeWidth={1} />
-        <p className="text-[11px] text-muted-foreground">Preview unavailable</p>
+        <p className="text-micro text-muted-foreground">Preview unavailable</p>
       </div>
     );
   }
@@ -232,7 +242,9 @@ function TemplatePreviewMedia({ template }: { template: ContentTemplate }) {
     />
   );
 }
-export default function ContentCreatePage() { return <Suspense fallback={<div className="flex items-center justify-center py-20 text-sm text-muted-foreground">Loading...</div>}><ContentCreatePageInner /></Suspense>; } function ContentCreatePageInner() {
+export default function ContentCreatePage() {
+  return <Suspense fallback={<div className="flex items-center justify-center py-20 text-body text-muted-foreground">Loading...</div>}><ContentCreatePageInner /></Suspense>;
+} function ContentCreatePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const scheduledDate = searchParams.get('scheduledDate') || '';
@@ -295,7 +307,9 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
 
   // Load template if templateId is present
   useEffect(() => {
-    if (!templateId || editId) return;
+    if (!templateId || editId) {
+      return;
+    }
     async function loadTemplate() {
       try {
         const res = await fetch(`/api/templates/${templateId}`);
@@ -338,7 +352,9 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
   useEffect(() => {
     return () => {
       streamAbortRef.current?.abort();
-      if (progressTimerRef.current) clearTimeout(progressTimerRef.current);
+      if (progressTimerRef.current) {
+        clearTimeout(progressTimerRef.current);
+      }
     };
   }, []);
 
@@ -379,7 +395,9 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
 
   const addMention = () => {
     let handle = mentionInput.trim();
-    if (handle && !handle.startsWith('@')) handle = `@${handle}`;
+    if (handle && !handle.startsWith('@')) {
+      handle = `@${handle}`;
+    }
     if (handle && !enrichment.custom_mentions.includes(handle)) {
       setEnrichment(prev => ({ ...prev, custom_mentions: [...prev.custom_mentions, handle] }));
       setMentionInput('');
@@ -399,7 +417,9 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error('Failed to create edit session');
+    if (!res.ok) {
+      throw new Error('Failed to create edit session');
+    }
     const data = await res.json();
     return data.edit.id as string;
   };
@@ -412,7 +432,9 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
       setError('Select at least one platform.');
       return;
     }
-    if (!templateId || !template) return;
+    if (!templateId || !template) {
+      return;
+    }
 
     setIsApproving(true);
     try {
@@ -437,7 +459,7 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
       const editId = await createEditSession({
         source: 'remix',
         templateId,
-        contentType: contentType,
+        contentType,
         targetPlatforms: selectedPlatforms,
         aspectRatio: '9:16',
         script: {
@@ -547,7 +569,9 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
       targetPlatforms: selectedPlatforms,
       numVariants,
     };
-    if (hasEnrichment()) payload.enrichment = enrichment;
+    if (hasEnrichment()) {
+      payload.enrichment = enrichment;
+    }
 
     try {
       const streamUrl = `/api/content/generate?body=${encodeURIComponent(JSON.stringify(payload))}`;
@@ -570,16 +594,24 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n\n');
         buffer = lines.pop() ?? '';
 
         for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
+          if (!line.startsWith('data: ')) {
+            continue;
+          }
           let event: any;
-          try { event = JSON.parse(line.slice(6)); } catch { continue; }
+          try {
+            event = JSON.parse(line.slice(6));
+          } catch {
+            continue;
+          }
 
           if (event.type === 'progress') {
             setProgress({
@@ -601,7 +633,9 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
             };
             receivedVariants = [...receivedVariants, mapped];
             setVariants([...receivedVariants]);
-            if (receivedVariants.length === 1) setStep('review');
+            if (receivedVariants.length === 1) {
+              setStep('review');
+            }
           } else if (event.type === 'done') {
             setProgress({ completed: event.total ?? numVariants, total: numVariants, percent: 100 });
             setDisplayPercent(100);
@@ -613,9 +647,13 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
         }
       }
 
-      if (receivedVariants.length > 0) setIsGenerating(false);
+      if (receivedVariants.length > 0) {
+        setIsGenerating(false);
+      }
     } catch (err: any) {
-      if (err?.name === 'AbortError') return;
+      if (err?.name === 'AbortError') {
+        return;
+      }
       setError('Network error. Please check your connection.');
       setIsGenerating(false);
     }
@@ -625,7 +663,9 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
   // Approve variant → continue to editor
   // -----------------------------------------------------------
   const handleApprove = async () => {
-    if (!selectedVariant) return;
+    if (!selectedVariant) {
+      return;
+    }
 
     // Text-only posts can be approved directly
     if (contentType === 'text_only') {
@@ -683,8 +723,12 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
             <button
               type="button"
               onClick={() => {
-                if (step === 'review') return setStep('configure');
-                if (step === 'browse') return setStep('type');
+                if (step === 'review') {
+                  return setStep('configure');
+                }
+                if (step === 'browse') {
+                  return setStep('type');
+                }
                 // step === 'configure'
                 if (pickedFromBrowseRef.current) {
                   // User picked a template from the in-flow browser — undo the
@@ -694,7 +738,9 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                   setStep('browse');
                   return;
                 }
-                if (isRemix) return router.push('/dashboard/content-library');
+                if (isRemix) {
+                  return router.push('/dashboard/content-library');
+                }
                 setStep('type');
               }}
               className="inline-flex items-center gap-1.5 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -703,18 +749,18 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
             </button>
           )}
           <div>
-            <h1 className="text-lg font-semibold tracking-tight">
+            <h1 className="font-display text-heading">
               {isRemix ? 'Remix Template' : 'Create Post'}
             </h1>
             {step === 'configure' && (
-              <p className="mt-0.5 text-sm text-muted-foreground">
+              <p className="mt-0.5 text-body text-muted-foreground">
                 {isRemix
                   ? 'Customize before opening the editor'
                   : 'Configure your post and generate variants'}
               </p>
             )}
             {step === 'review' && (
-              <p className="mt-0.5 text-sm text-muted-foreground">
+              <p className="mt-0.5 text-body text-muted-foreground">
                 Select the best variant
               </p>
             )}
@@ -734,13 +780,16 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
       {/* ── Scheduled date banner ─────────────────────────── */}
       {scheduledDate && (
         <div className="mb-5 flex items-center gap-3 rounded-xl border border-violet-200/60 bg-violet-50/60 px-4 py-3 dark:border-violet-800/40 dark:bg-violet-950/30">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-white">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 px-2.5 py-1 text-micro font-semibold uppercase tracking-wider text-white">
             <span className="size-1.5 rounded-full bg-white" />
             Scheduled
           </span>
           <p className="text-sm font-medium text-violet-900 dark:text-violet-100">
             {new Date(`${scheduledDate}T12:00:00`).toLocaleDateString('en-US', {
-              weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric',
+              year: 'numeric',
             })}
           </p>
         </div>
@@ -754,417 +803,426 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
           </label>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {CONTENT_TYPES.map((type) => {
-                    const Icon = type.icon;
-                    return (
-                      <button
-                        key={type.id}
-                        type="button"
-                        onClick={() => {
-                          setContentType(type.id);
-                          // Text-only has no visual trending templates — skip
-                          // straight to configure. Everything else browses.
-                          setStep(type.id === 'text_only' ? 'configure' : 'browse');
-                        }}
-                        className="group flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-border/50 bg-card p-4 text-center transition-all hover:border-primary/40 hover:bg-primary/5"
-                      >
-                        <Icon className="size-7 text-muted-foreground/30 transition-colors group-hover:text-muted-foreground" strokeWidth={1.2} />
-                        <div>
-                          <p className="text-sm font-semibold">{type.label}</p>
-                          <p className="mt-0.5 text-xs text-muted-foreground">{type.description}</p>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {connectedAndActive.length === 0 && (
-                  <div className="mt-6 flex flex-col gap-3 rounded-xl bg-muted/50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm text-muted-foreground">Connect your social accounts to publish content.</p>
-                    <Link href="/dashboard/social-accounts" className="self-start rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 sm:self-auto">
-                      Connect accounts
-                    </Link>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── Browse Trending Templates (step 1.5) ────────── */}
-            {step === 'browse' && typeDef && (
-              <div className="space-y-5">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 text-sm font-medium">
-                      <typeDef.icon className="size-4" strokeWidth={1.5} />
-                      {typeDef.label}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setStep('type')}
-                      className="text-xs text-muted-foreground underline hover:text-foreground"
-                    >
-                      Change
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setStep('configure')}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
-                  >
-                    Start from scratch
-                  </button>
-                </div>
-                <div>
-                  <h2 className="text-sm font-semibold">
-                    Trending {typeDef.label.toLowerCase()} templates
-                  </h2>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Pick one to remix, or start from scratch above.
-                  </p>
-                </div>
-                <TrendingTemplateBrowser
-                  contentType={contentType}
-                  onRemix={(t) => {
-                    pickedFromBrowseRef.current = true;
-                    // Optimistic template hydration eliminates the empty
-                    // frame between browse and configure. The URL fetch
-                    // effect at loadTemplate() still runs and refreshes
-                    // the object from /api/templates/[id] when it lands.
-                    setTemplate(t);
-                    // Pre-seed the fields the loadTemplate effect derives,
-                    // so the configure form renders complete on the first
-                    // paint instead of populating fields one-by-one.
-                    const structure = t.structure || {};
-                    const derivedTopic = [structure.hook?.text, structure.body?.text, structure.cta?.text]
-                      .filter(Boolean)
-                      .join(' ') || t.sourceCreator || '';
-                    setTopic(derivedTopic);
-                    setContentType(REMIX_TYPE_MAP[t.contentType] || 'reel');
-                    setSelectedPlatforms([t.sourcePlatform === 'tiktok' ? 'tiktok' : 'instagram']);
-                    setStep('configure');
-                    router.push(`/dashboard/content/create?templateId=${t.id}`);
+              const Icon = type.icon;
+              return (
+                <button
+                  key={type.id}
+                  type="button"
+                  onClick={() => {
+                    setContentType(type.id);
+                    // Text-only has no visual trending templates — skip
+                    // straight to configure. Everything else browses.
+                    setStep(type.id === 'text_only' ? 'configure' : 'browse');
                   }}
-                />
-              </div>
-            )}
+                  className="group flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-border/50 bg-card p-4 text-center transition-all hover:border-primary/40 hover:bg-primary/5"
+                >
+                  <Icon className="size-7 text-muted-foreground/30 transition-colors group-hover:text-muted-foreground" strokeWidth={1.2} />
+                  <div>
+                    <p className="text-sm font-semibold">{type.label}</p>
+                    <p className="mt-0.5 text-meta text-muted-foreground">{type.description}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
 
-            {/* Template-loading skeleton — the Remix redirect from the
+          {connectedAndActive.length === 0 && (
+            <div className="mt-6 flex flex-col gap-3 rounded-xl bg-muted/50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-body text-muted-foreground">Connect your social accounts to publish content.</p>
+              <Link href="/dashboard/social-accounts" className="self-start rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 sm:self-auto">
+                Connect accounts
+              </Link>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Browse Trending Templates (step 1.5) ────────── */}
+      {step === 'browse' && typeDef && (
+        <div className="space-y-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 text-sm font-medium">
+                <typeDef.icon className="size-4" strokeWidth={1.5} />
+                {typeDef.label}
+              </span>
+              <button
+                type="button"
+                onClick={() => setStep('type')}
+                className="text-meta text-muted-foreground underline hover:text-foreground"
+              >
+                Change
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStep('configure')}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
+            >
+              Start from scratch
+            </button>
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold">
+              Trending
+              {' '}
+              {typeDef.label.toLowerCase()}
+              {' '}
+              templates
+            </h2>
+            <p className="mt-0.5 text-meta text-muted-foreground">
+              Pick one to remix, or start from scratch above.
+            </p>
+          </div>
+          <TrendingTemplateBrowser
+            contentType={contentType}
+            onRemix={(t) => {
+              pickedFromBrowseRef.current = true;
+              // Optimistic template hydration eliminates the empty
+              // frame between browse and configure. The URL fetch
+              // effect at loadTemplate() still runs and refreshes
+              // the object from /api/templates/[id] when it lands.
+              setTemplate(t);
+              // Pre-seed the fields the loadTemplate effect derives,
+              // so the configure form renders complete on the first
+              // paint instead of populating fields one-by-one.
+              const structure = t.structure || {};
+              const derivedTopic = [structure.hook?.text, structure.body?.text, structure.cta?.text]
+                .filter(Boolean)
+                .join(' ') || t.sourceCreator || '';
+              setTopic(derivedTopic);
+              setContentType(REMIX_TYPE_MAP[t.contentType] || 'reel');
+              setSelectedPlatforms([t.sourcePlatform === 'tiktok' ? 'tiktok' : 'instagram']);
+              setStep('configure');
+              router.push(`/dashboard/content/create?templateId=${t.id}`);
+            }}
+          />
+        </div>
+      )}
+
+      {/* Template-loading skeleton — the Remix redirect from the
                 Trending Template Browser previously flashed empty state for
                 ~500ms while /api/templates/[id] resolved. Show a low-jitter
                 shimmer so the transition into the configure form feels smooth. */}
-            {step === 'configure' && isRemix && !template && (
-              <div className="grid gap-6 lg:grid-cols-5" aria-label="Loading template">
-                <div className="space-y-4 lg:col-span-3">
-                  <div className="h-8 w-40 animate-pulse rounded bg-muted" />
-                  <div className="h-24 w-full animate-pulse rounded-lg bg-muted/70" />
-                  <div className="h-24 w-full animate-pulse rounded-lg bg-muted/60" />
-                  <div className="h-32 w-full animate-pulse rounded-lg bg-muted/50" />
-                </div>
-                <div className="space-y-3 lg:col-span-2">
-                  <div className="h-40 w-full animate-pulse rounded-lg bg-muted/70" />
-                  <div className="h-6 w-3/4 animate-pulse rounded bg-muted/60" />
-                  <div className="h-6 w-1/2 animate-pulse rounded bg-muted/50" />
-                </div>
+      {step === 'configure' && isRemix && !template && (
+        <div className="grid gap-6 lg:grid-cols-5" aria-label="Loading template">
+          <div className="space-y-4 lg:col-span-3">
+            <div className="h-8 w-40 animate-pulse rounded bg-muted" />
+            <div className="h-24 w-full animate-pulse rounded-lg bg-muted/70" />
+            <div className="h-24 w-full animate-pulse rounded-lg bg-muted/60" />
+            <div className="h-32 w-full animate-pulse rounded-lg bg-muted/50" />
+          </div>
+          <div className="space-y-3 lg:col-span-2">
+            <div className="h-40 w-full animate-pulse rounded-lg bg-muted/70" />
+            <div className="h-6 w-3/4 animate-pulse rounded bg-muted/60" />
+            <div className="h-6 w-1/2 animate-pulse rounded bg-muted/50" />
+          </div>
+        </div>
+      )}
+
+      {step === 'configure' && (!isRemix || template) && (
+        <div className="grid gap-6 lg:grid-cols-5">
+          <div className="space-y-4 lg:col-span-3">
+            {/* Content type badge */}
+            {typeDef && (
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 text-sm font-medium">
+                  <typeDef.icon className="size-4" strokeWidth={1.5} />
+                  {typeDef.label}
+                </span>
+                {!fromMonthlyPlan && !isRemix && (
+                  <button
+                    type="button"
+                    onClick={() => setStep('type')}
+                    className="text-meta text-muted-foreground underline hover:text-foreground"
+                  >
+                    Change
+                  </button>
+                )}
+                {isRemix && template && (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700">
+                    <Wand2 className="size-3.5" />
+                    {template.sourceCreator || 'Trending'}
+                  </span>
+                )}
               </div>
             )}
 
-            {step === 'configure' && (!isRemix || template) && (
-              <div className="grid gap-6 lg:grid-cols-5">
-              <div className="space-y-4 lg:col-span-3">
-                {/* Content type badge */}
-                {typeDef && (
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 text-sm font-medium">
-                      <typeDef.icon className="size-4" strokeWidth={1.5} />
-                      {typeDef.label}
+            {/* Topic */}
+            <div>
+              <label className="mb-1.5 block text-sm font-medium">
+                Topic
+                <span className="ml-1 font-normal text-muted-foreground">(optional)</span>
+              </label>
+              <textarea
+                value={topic}
+                onChange={e => setTopic(e.target.value)}
+                placeholder="e.g. New product launch, Behind the scenes, Industry tip..."
+                rows={3}
+                className="w-full resize-none rounded-lg border bg-background px-3.5 py-2.5 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              />
+              <p className="mt-1 text-meta text-muted-foreground">
+                Leave blank to auto-select from your Brand Profile.
+              </p>
+            </div>
+
+            {/* Platforms (collapsible) */}
+            <div className="overflow-hidden rounded-xl border bg-card">
+              <button
+                type="button"
+                onClick={() => setShowPlatforms(p => !p)}
+                className="flex w-full items-center justify-between px-4 py-3.5 text-left"
+              >
+                <div className="flex items-center gap-2">
+                  <Megaphone className="size-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Target platforms</span>
+                  {selectedPlatforms.length > 0 && (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                      {selectedPlatforms.length}
+                      {' '}
+                      selected
                     </span>
-                    {!fromMonthlyPlan && !isRemix && (
+                  )}
+                </div>
+                {showPlatforms ? (
+                  <ChevronUp className="size-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="size-4 text-muted-foreground" />
+                )}
+              </button>
+
+              {showPlatforms && (
+                <div className="border-t p-4">
+                  {connectedPlatformIds.length === 0 ? (
+                    <div className="rounded-lg bg-muted/50 p-3 text-meta text-muted-foreground">
+                      No accounts connected.
+                      {' '}
+                      <Link href="/dashboard/social-accounts" className="text-primary underline">
+                        Connect platforms
+                      </Link>
+                      {' '}
+                      to select them here.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      {PLATFORMS.filter(p => connectedPlatformIds.includes(p.id)).map((platform) => {
+                        const PIcon = platform.icon;
+                        const isSelected = selectedPlatforms.includes(platform.id);
+                        return (
+                          <button
+                            key={platform.id}
+                            type="button"
+                            onClick={() => togglePlatform(platform.id)}
+                            className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-sm transition-all ${
+                              isSelected
+                                ? 'border-primary bg-primary/5'
+                                : 'border-border hover:bg-muted'
+                            }`}
+                          >
+                            <PIcon className={`size-4 shrink-0 ${
+                              isSelected ? 'text-primary' : 'text-muted-foreground'
+                            }`}
+                            />
+                            <span className={`flex-1 truncate ${isSelected ? 'font-medium' : ''}`}>{platform.name}</span>
+                            {isSelected && <Check className="size-4 shrink-0 text-primary" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Enrichment (collapsible) */}
+            <div className="overflow-hidden rounded-xl border bg-card">
+              <button
+                type="button"
+                onClick={() => setShowEnrichment(p => !p)}
+                className="flex w-full items-center justify-between px-4 py-3.5 text-left"
+              >
+                <div className="flex items-center gap-2">
+                  <Link2 className="size-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Post enrichment</span>
+                  {hasEnrichment() && (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                      Active
+                    </span>
+                  )}
+                </div>
+                {showEnrichment ? (
+                  <ChevronUp className="size-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="size-4 text-muted-foreground" />
+                )}
+              </button>
+
+              {showEnrichment && (
+                <div className="space-y-4 border-t p-4">
+                  <p className="text-meta text-muted-foreground">
+                    Add links, promo codes, contact info, and other elements to weave into your post.
+                  </p>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted-foreground">CTA URL</label>
+                      <input
+                        type="url"
+                        value={enrichment.cta_url}
+                        onChange={e => setEnrichment(prev => ({ ...prev, cta_url: e.target.value }))}
+                        placeholder="https://example.com/sale"
+                        className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted-foreground">CTA label</label>
+                      <input
+                        type="text"
+                        value={enrichment.cta_label}
+                        onChange={e => setEnrichment(prev => ({ ...prev, cta_label: e.target.value }))}
+                        placeholder="Shop the collection"
+                        className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">Promo code</label>
+                    <input
+                      type="text"
+                      value={enrichment.promo_code}
+                      onChange={e => setEnrichment(prev => ({ ...prev, promo_code: e.target.value }))}
+                      placeholder="SAVE20"
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">Contact info</label>
+                    <input
+                      type="text"
+                      value={enrichment.contact_info}
+                      onChange={e => setEnrichment(prev => ({ ...prev, contact_info: e.target.value }))}
+                      placeholder="email@company.com or booking link"
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">Event details</label>
+                    <input
+                      type="text"
+                      value={enrichment.event_details}
+                      onChange={e => setEnrichment(prev => ({ ...prev, event_details: e.target.value }))}
+                      placeholder="March 15, 2026 at 7pm — Eko Hotel, Lagos"
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">Reference links</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={refLinkInput}
+                        onChange={e => setRefLinkInput(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addRefLink())}
+                        placeholder="https://..."
+                        className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
                       <button
                         type="button"
-                        onClick={() => setStep('type')}
-                        className="text-xs text-muted-foreground underline hover:text-foreground"
+                        onClick={addRefLink}
+                        className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
                       >
-                        Change
+                        Add
                       </button>
-                    )}
-                    {isRemix && template && (
-                      <span className="inline-flex items-center gap-1.5 rounded-lg bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700">
-                        <Wand2 className="size-3.5" />
-                        {template.sourceCreator || 'Trending'}
-                      </span>
+                    </div>
+                    {enrichment.reference_links.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {enrichment.reference_links.map(link => (
+                          <span key={link} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-micro">
+                            {link.length > 35 ? `${link.slice(0, 35)}...` : link}
+                            <button type="button" onClick={() => removeRefLink(link)} className="ml-0.5 opacity-50 hover:opacity-100">
+                              &times;
+                            </button>
+                          </span>
+                        ))}
+                      </div>
                     )}
                   </div>
-                )}
 
-                {/* Topic */}
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium">
-                    Topic
-                    <span className="ml-1 font-normal text-muted-foreground">(optional)</span>
-                  </label>
-                  <textarea
-                    value={topic}
-                    onChange={e => setTopic(e.target.value)}
-                    placeholder="e.g. New product launch, Behind the scenes, Industry tip..."
-                    rows={3}
-                    className="w-full resize-none rounded-lg border bg-background px-3.5 py-2.5 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Leave blank to auto-select from your Brand Profile.
-                  </p>
-                </div>
-
-                {/* Platforms (collapsible) */}
-                <div className="overflow-hidden rounded-xl border bg-card">
-                  <button
-                    type="button"
-                    onClick={() => setShowPlatforms(p => !p)}
-                    className="flex w-full items-center justify-between px-4 py-3.5 text-left"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Megaphone className="size-4 text-muted-foreground" />
-                      <span className="text-sm font-medium">Target platforms</span>
-                      {selectedPlatforms.length > 0 && (
-                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                          {selectedPlatforms.length} selected
-                        </span>
-                      )}
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">Mentions</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={mentionInput}
+                        onChange={e => setMentionInput(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addMention())}
+                        placeholder="@handle"
+                        className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                      <button
+                        type="button"
+                        onClick={addMention}
+                        className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
+                      >
+                        Add
+                      </button>
                     </div>
-                    {showPlatforms ? (
-                      <ChevronUp className="size-4 text-muted-foreground" />
-                    ) : (
-                      <ChevronDown className="size-4 text-muted-foreground" />
+                    {enrichment.custom_mentions.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {enrichment.custom_mentions.map(handle => (
+                          <span key={handle} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-micro">
+                            {handle}
+                            <button type="button" onClick={() => removeMention(handle)} className="ml-0.5 opacity-50 hover:opacity-100">
+                              &times;
+                            </button>
+                          </span>
+                        ))}
+                      </div>
                     )}
-                  </button>
-
-                  {showPlatforms && (
-                    <div className="border-t p-4">
-                      {connectedPlatformIds.length === 0 ? (
-                        <div className="rounded-lg bg-muted/50 px-3 py-3 text-xs text-muted-foreground">
-                          No accounts connected.{' '}
-                          <Link href="/dashboard/social-accounts" className="text-primary underline">
-                            Connect platforms
-                          </Link>{' '}
-                          to select them here.
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-2 gap-2">
-                          {PLATFORMS.filter(p => connectedPlatformIds.includes(p.id)).map((platform) => {
-                            const PIcon = platform.icon;
-                            const isSelected = selectedPlatforms.includes(platform.id);
-                            return (
-                              <button
-                                key={platform.id}
-                                type="button"
-                                onClick={() => togglePlatform(platform.id)}
-                                className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-sm transition-all ${
-                                  isSelected
-                                    ? 'border-primary bg-primary/5'
-                                    : 'border-border hover:bg-muted'
-                                }`}
-                              >
-                                <PIcon className={`size-4 shrink-0 ${
-                                  isSelected ? 'text-primary' : 'text-muted-foreground'
-                                }`} />
-                                <span className={`flex-1 truncate ${isSelected ? 'font-medium' : ''}`}>{platform.name}</span>
-                                {isSelected && <Check className="size-4 shrink-0 text-primary" />}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Enrichment (collapsible) */}
-                <div className="overflow-hidden rounded-xl border bg-card">
-                  <button
-                    type="button"
-                    onClick={() => setShowEnrichment(p => !p)}
-                    className="flex w-full items-center justify-between px-4 py-3.5 text-left"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Link2 className="size-4 text-muted-foreground" />
-                      <span className="text-sm font-medium">Post enrichment</span>
-                      {hasEnrichment() && (
-                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                          Active
-                        </span>
-                      )}
-                    </div>
-                    {showEnrichment ? (
-                      <ChevronUp className="size-4 text-muted-foreground" />
-                    ) : (
-                      <ChevronDown className="size-4 text-muted-foreground" />
-                    )}
-                  </button>
-
-                  {showEnrichment && (
-                    <div className="space-y-4 border-t p-4">
-                      <p className="text-xs text-muted-foreground">
-                        Add links, promo codes, contact info, and other elements to weave into your post.
-                      </p>
-
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div>
-                          <label className="mb-1 block text-xs font-medium text-muted-foreground">CTA URL</label>
-                          <input
-                            type="url"
-                            value={enrichment.cta_url}
-                            onChange={e => setEnrichment(prev => ({ ...prev, cta_url: e.target.value }))}
-                            placeholder="https://example.com/sale"
-                            className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                          />
-                        </div>
-                        <div>
-                          <label className="mb-1 block text-xs font-medium text-muted-foreground">CTA label</label>
-                          <input
-                            type="text"
-                            value={enrichment.cta_label}
-                            onChange={e => setEnrichment(prev => ({ ...prev, cta_label: e.target.value }))}
-                            placeholder="Shop the collection"
-                            className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Promo code</label>
-                        <input
-                          type="text"
-                          value={enrichment.promo_code}
-                          onChange={e => setEnrichment(prev => ({ ...prev, promo_code: e.target.value }))}
-                          placeholder="SAVE20"
-                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Contact info</label>
-                        <input
-                          type="text"
-                          value={enrichment.contact_info}
-                          onChange={e => setEnrichment(prev => ({ ...prev, contact_info: e.target.value }))}
-                          placeholder="email@company.com or booking link"
-                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Event details</label>
-                        <input
-                          type="text"
-                          value={enrichment.event_details}
-                          onChange={e => setEnrichment(prev => ({ ...prev, event_details: e.target.value }))}
-                          placeholder="March 15, 2026 at 7pm — Eko Hotel, Lagos"
-                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Reference links</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="url"
-                            value={refLinkInput}
-                            onChange={e => setRefLinkInput(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addRefLink())}
-                            placeholder="https://..."
-                            className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                          />
-                          <button
-                            type="button"
-                            onClick={addRefLink}
-                            className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
-                          >
-                            Add
-                          </button>
-                        </div>
-                        {enrichment.reference_links.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {enrichment.reference_links.map(link => (
-                              <span key={link} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-[11px]">
-                                {link.length > 35 ? `${link.slice(0, 35)}...` : link}
-                                <button type="button" onClick={() => removeRefLink(link)} className="ml-0.5 opacity-50 hover:opacity-100">
-                                  &times;
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Mentions</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={mentionInput}
-                            onChange={e => setMentionInput(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addMention())}
-                            placeholder="@handle"
-                            className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                          />
-                          <button
-                            type="button"
-                            onClick={addMention}
-                            className="rounded-lg border px-3 py-2 text-xs font-medium hover:bg-muted"
-                          >
-                            Add
-                          </button>
-                        </div>
-                        {enrichment.custom_mentions.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {enrichment.custom_mentions.map(handle => (
-                              <span key={handle} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-[11px]">
-                                {handle}
-                                <button type="button" onClick={() => removeMention(handle)} className="ml-0.5 opacity-50 hover:opacity-100">
-                                  &times;
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Error */}
-                {error && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {error}
                   </div>
-                )}
+                </div>
+              )}
+            </div>
 
-                {/* Primary action */}
-                <button
-                  type="button"
-                  onClick={isRemix ? handleContinueToEditor : handleGenerate}
-                  disabled={isGenerating || remixLoading || isApproving || selectedPlatforms.length === 0}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {isGenerating || remixLoading ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : isRemix ? (
-                    <Wand2 className="size-4" />
-                  ) : (
-                    <Sparkles className="size-4" />
-                  )}
-                  {isGenerating
-                    ? 'Generating...'
-                    : remixLoading
-                      ? 'Remixing...'
-                      : isRemix
-                        ? 'Continue to Editor'
-                        : 'Generate Content'}
-                </button>
+            {/* Error */}
+            {error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {error}
               </div>
+            )}
 
-              {/* ── RIGHT: Template preview / visual panel ────── */}
-              <div className="hidden lg:col-span-2 lg:block">
-                <div className="sticky top-6 space-y-4">
-                  {isRemix && template && (
+            {/* Primary action */}
+            <button
+              type="button"
+              onClick={isRemix ? handleContinueToEditor : handleGenerate}
+              disabled={isGenerating || remixLoading || isApproving || selectedPlatforms.length === 0}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              {isGenerating || remixLoading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : isRemix ? (
+                <Wand2 className="size-4" />
+              ) : (
+                <Sparkles className="size-4" />
+              )}
+              {isGenerating
+                ? 'Generating...'
+                : remixLoading
+                  ? 'Remixing...'
+                  : isRemix
+                    ? 'Continue to Editor'
+                    : 'Generate Content'}
+            </button>
+          </div>
+
+          {/* ── RIGHT: Template preview / visual panel ────── */}
+          <div className="hidden lg:col-span-2 lg:block">
+            <div className="sticky top-6 space-y-4">
+              {isRemix && template && (
                 <>
                   <div className="rounded-xl border bg-card p-4">
                     <h3 className="mb-3 text-sm font-semibold">Template Preview</h3>
@@ -1193,9 +1251,12 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                           {template.structure.hook && (
                             <div className="rounded-lg bg-muted/50 p-2.5">
                               <div className="text-[10px] font-medium uppercase tracking-wider text-purple-600 dark:text-purple-400">
-                                Hook &middot; {template.structure.hook.duration}s
+                                Hook &middot;
+                                {' '}
+                                {template.structure.hook.duration}
+                                s
                               </div>
-                              <p className="mt-0.5 text-sm text-foreground line-clamp-2">
+                              <p className="mt-0.5 line-clamp-2 text-sm text-foreground">
                                 {template.structure.hook.text}
                               </p>
                             </div>
@@ -1203,9 +1264,12 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                           {template.structure.body && (
                             <div className="rounded-lg bg-muted/50 p-2.5">
                               <div className="text-[10px] font-medium uppercase tracking-wider text-blue-600 dark:text-blue-400">
-                                Body &middot; {template.structure.body.duration}s
+                                Body &middot;
+                                {' '}
+                                {template.structure.body.duration}
+                                s
                               </div>
-                              <p className="mt-0.5 text-sm text-foreground line-clamp-2">
+                              <p className="mt-0.5 line-clamp-2 text-sm text-foreground">
                                 {template.structure.body.text}
                               </p>
                             </div>
@@ -1213,9 +1277,12 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                           {template.structure.cta && (
                             <div className="rounded-lg bg-muted/50 p-2.5">
                               <div className="text-[10px] font-medium uppercase tracking-wider text-green-600 dark:text-green-400">
-                                CTA &middot; {template.structure.cta.duration}s
+                                CTA &middot;
+                                {' '}
+                                {template.structure.cta.duration}
+                                s
                               </div>
-                              <p className="mt-0.5 text-sm text-foreground line-clamp-2">
+                              <p className="mt-0.5 line-clamp-2 text-sm text-foreground">
                                 {template.structure.cta.text}
                               </p>
                             </div>
@@ -1233,11 +1300,13 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                   <h3 className="mb-3 text-sm font-semibold">{typeDef.label}</h3>
                   <div className="flex flex-col items-center justify-center rounded-xl bg-muted/30 py-12">
                     <typeDef.icon className="mb-3 size-12 text-muted-foreground/30" strokeWidth={1} />
-                    <p className="text-sm text-muted-foreground">{typeDef.description}</p>
+                    <p className="text-body text-muted-foreground">{typeDef.description}</p>
                     <div className="mt-4 flex items-center gap-1.5">
-                      {typeDef.platforms.map(p => {
+                      {typeDef.platforms.map((p) => {
                         const platform = PLATFORMS.find(pl => pl.id === p);
-                        if (!platform) return null;
+                        if (!platform) {
+                          return null;
+                        }
                         const PIcon = platform.icon;
                         return <PIcon key={p} className="size-4 text-muted-foreground/40" />;
                       })}
@@ -1257,13 +1326,14 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
             <div className="mb-4 flex items-end justify-between">
               <p className="text-sm font-medium text-foreground">{getProgressMessage(displayPercent)}</p>
               <span className="text-2xl font-bold tabular-nums text-primary">
-                {displayPercent}<span className="text-base font-medium">%</span>
+                {displayPercent}
+                <span className="text-base font-medium">%</span>
               </span>
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
               <div className="h-full rounded-full bg-primary transition-all duration-300 ease-out" style={{ width: `${displayPercent}%` }} />
             </div>
-            <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+            <div className="mt-4 flex items-center justify-between text-meta text-muted-foreground">
               <span>{progress.completed > 0 ? `${progress.completed} of ${progress.total} variants ready` : 'Generating variants...'}</span>
               {variants.length > 0 && (
                 <span className="text-primary">{variants.length > 1 ? `${variants.length} variants below` : '1 variant below — more coming'}</span>
@@ -1280,13 +1350,20 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-semibold">
-                  {variants.length} variant{variants.length !== 1 ? 's' : ''} generated
+                  {variants.length}
+                  {' '}
+                  variant
+                  {variants.length !== 1 ? 's' : ''}
+                  {' '}
+                  generated
                 </h2>
-                <p className="text-xs text-muted-foreground">Select the best one, then continue.</p>
+                <p className="text-meta text-muted-foreground">Select the best one, then continue.</p>
               </div>
               <button
                 type="button"
-                onClick={() => { setStep('configure'); setVariants([]); }}
+                onClick={() => {
+                  setStep('configure'); setVariants([]);
+                }}
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
               >
                 <RefreshCw className="size-3" />
@@ -1311,20 +1388,27 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                   <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-semibold">
                     {variant.variantNumber}
                   </span>
-                  <span className="text-xs text-muted-foreground">Variant {variant.variantNumber}</span>
+                  <span className="text-meta text-muted-foreground">
+                    Variant
+                    {variant.variantNumber}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   {variant.antiSlopScore !== null && (() => {
                     const sl = scoreLabel(variant.antiSlopScore!);
                     return (
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${sl.color}`}>
-                        {Math.round(variant.antiSlopScore! * 100)}% {sl.text}
+                      <span className={`rounded-full px-2 py-0.5 text-micro font-medium ${sl.color}`}>
+                        {Math.round(variant.antiSlopScore! * 100)}
+                        %
+                        {sl.text}
                       </span>
                     );
                   })()}
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(variant.caption); }}
+                    onClick={(e) => {
+                      e.stopPropagation(); navigator.clipboard.writeText(variant.caption);
+                    }}
                     className="rounded p-1.5 hover:bg-muted"
                     title="Copy"
                   >
@@ -1336,15 +1420,17 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
               {variant.hashtags.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {variant.hashtags.map(tag => (
-                    <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{tag}</span>
+                    <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">{tag}</span>
                   ))}
                 </div>
               )}
               {variant.enrichmentApplied && variant.enrichmentApplied.length > 0 && (
                 <div className="mt-3 flex items-center gap-1.5 border-t pt-3">
                   <Link2 className="size-3 text-muted-foreground" />
-                  <span className="text-[11px] text-muted-foreground">
-                    Enrichment applied: {variant.enrichmentApplied.map(e => e.replace(/_/g, ' ')).join(', ')}
+                  <span className="text-micro text-muted-foreground">
+                    Enrichment applied:
+                    {' '}
+                    {variant.enrichmentApplied.map(e => e.replace(/_/g, ' ')).join(', ')}
                   </span>
                 </div>
               )}
@@ -1352,7 +1438,7 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                 <div className="mt-2 space-y-1 border-t pt-3">
                   <span className="text-[10px] font-medium uppercase tracking-wider text-orange-500/70">Quality notes</span>
                   {variant.qualityFlags.slice(0, 3).map((flag, i) => (
-                    <p key={i} className="text-[11px] text-muted-foreground">{flag}</p>
+                    <p key={i} className="text-micro text-muted-foreground">{flag}</p>
                   ))}
                 </div>
               )}
@@ -1391,8 +1477,7 @@ export default function ContentCreatePage() { return <Suspense fallback={<div cl
                 ? 'Opening editor...'
                 : contentType === 'text_only'
                   ? scheduledDate ? 'Approve and set schedule' : 'Approve selected variant'
-                  : 'Continue to editor'
-              }
+                  : 'Continue to editor'}
             </button>
           )}
 

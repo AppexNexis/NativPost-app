@@ -12,8 +12,6 @@ import {
 } from 'lucide-react';
 import React, { useState } from 'react';
 
-import { useInView } from '@/hooks/useInView';
-
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -30,6 +28,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useInView } from '@/hooks/useInView';
 import type { Campaign, ContentItem } from '@/types/v2';
 
 import { CampaignPostEditModal } from './CampaignPostEditModal';
@@ -244,7 +243,7 @@ export function CampaignReviewGrid({
       <div className="space-y-4">
         {/* ── Header ── */}
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold">Review your campaign</h3>
+          <h3 className="text-heading">Review your campaign</h3>
           <div className="flex items-center gap-3">
             <span className={`text-sm font-medium ${reRolls <= 3 ? 'text-destructive' : 'text-foreground'}`}>
               {reRolls}
@@ -312,7 +311,7 @@ export function CampaignReviewGrid({
 
         {/* ── Bulk approve ── */}
         <div className="flex items-center justify-between rounded-xl border bg-muted/30 px-4 py-3">
-          <span className="text-sm text-muted-foreground">
+          <span className="text-body text-muted-foreground">
             {contentItems.filter(i => i.status === 'approved').length}
             {' '}
             /
@@ -387,7 +386,7 @@ function SchedulePicker({
         />
         <Separator />
         <div className="flex items-center gap-2 p-3">
-          <label className="text-xs text-muted-foreground">Time</label>
+          <label className="text-meta text-muted-foreground">Time</label>
           <input
             type="time"
             defaultValue={time ?? '09:00'}
@@ -544,7 +543,7 @@ function PostCard({
         {overlayText && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-2.5">
             <p
-              className="line-clamp-4 text-center text-[11px] font-semibold leading-tight text-white"
+              className="line-clamp-4 text-center text-micro font-semibold leading-tight text-white"
               style={{
                 textShadow:
                   '1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000, 0 0 4px rgba(0,0,0,0.55)',
@@ -708,11 +707,15 @@ function CalendarView({
   }
 
   const getItems = (day: Date) =>
-    contentItems.filter(it => {
-      if (!it.scheduledDate) return false;
+    contentItems.filter((it) => {
+      if (!it.scheduledDate) {
+        return false;
+      }
       try {
         const d = parseISO(it.scheduledDate);
-        if (!isValidDate(d)) return false;
+        if (!isValidDate(d)) {
+          return false;
+        }
         return isSameDay(d, day);
       } catch {
         return false;
@@ -744,7 +747,7 @@ function CalendarView({
                   style={{ gridTemplateColumns: `repeat(${week.length}, minmax(0, 1fr))` }}
                 >
                   {week.map((day, di) => (
-                    <div key={di} className="text-center text-[11px] font-semibold text-muted-foreground">
+                    <div key={di} className="text-center text-micro font-semibold text-muted-foreground">
                       {format(day, 'EEE')}
                     </div>
                   ))}

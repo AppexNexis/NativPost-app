@@ -49,7 +49,7 @@ export default async function Page() {
   const { error, orgId } = await getAuthContext();
 
   if (error || !orgId) {
-    return <p className="py-8 text-sm text-muted-foreground">Please sign in to view Blitz.</p>;
+    return <p className="py-8 text-body text-muted-foreground">Please sign in to view Blitz.</p>;
   }
 
   const today = new Date();
@@ -131,7 +131,7 @@ export default async function Page() {
   }
 
   if (!campaign) {
-    return <p className="py-8 text-sm text-muted-foreground">Could not initialize Blitz.</p>;
+    return <p className="py-8 text-body text-muted-foreground">Could not initialize Blitz.</p>;
   }
 
   // ── Effective publish targets (derive-on-read) ────────────────────────
@@ -178,10 +178,6 @@ export default async function Page() {
     }
     await db.update(campaignSchema).set({ contentMix: existingMix }).where(eq(campaignSchema.id, campaign.id));
     campaign.contentMix = existingMix;
-  }
-
-  if (!campaign) {
-    return <p className="py-8 text-sm text-muted-foreground">Could not initialize Blitz.</p>;
   }
 
   // Fetch content items for the campaign

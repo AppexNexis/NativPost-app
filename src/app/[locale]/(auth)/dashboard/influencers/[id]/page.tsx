@@ -701,7 +701,7 @@ export default function InfluencerDetailPage() {
             </div>
             {refs.length === 0
               ? (
-                  <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                  <div className="rounded-md border border-dashed border-border p-6 text-center text-body text-muted-foreground">
                     No reference photos.
                   </div>
                 )
@@ -863,7 +863,7 @@ export default function InfluencerDetailPage() {
                   </div>
                 )
               : (
-                  <div className="text-sm text-muted-foreground">No voice selected.</div>
+                  <div className="text-body text-muted-foreground">No voice selected.</div>
                 )}
           </section>
 
@@ -898,7 +898,7 @@ export default function InfluencerDetailPage() {
                       .filter(a => !angleSearchQ || a.name.toLowerCase().includes(angleSearchQ.toLowerCase()))
                       .filter(a => !assignedAngles.some(aa => aa.angleId === a.id))
                       .length === 0
-                      ? <div className="px-2 py-1.5 text-xs text-muted-foreground">No angles found. Create angles in Campaigns.</div>
+                      ? <div className="px-2 py-1.5 text-meta text-muted-foreground">No angles found. Create angles in Campaigns.</div>
                       : availableAngles
                           .filter(a => !angleSearchQ || a.name.toLowerCase().includes(angleSearchQ.toLowerCase()))
                           .filter(a => !assignedAngles.some(aa => aa.angleId === a.id))
@@ -920,7 +920,7 @@ export default function InfluencerDetailPage() {
                 </div>
               )}
               {assignedAngles.length === 0
-                ? <div className="text-xs text-muted-foreground">No angles assigned. Assign angles to help script generation.</div>
+                ? <div className="text-meta text-muted-foreground">No angles assigned. Assign angles to help script generation.</div>
                 : (
                     <div className="flex flex-wrap gap-1">
                       {assignedAngles.map(a => (
@@ -1029,7 +1029,7 @@ export default function InfluencerDetailPage() {
                   </div>
                 )
               : (
-                  <div className="text-sm text-muted-foreground">
+                  <div className="text-body text-muted-foreground">
                     {item.loraStatus !== 'ready'
                       ? 'Complete identity training first to enable video generation.'
                       : 'Assign a voice to enable video generation.'}
@@ -1072,7 +1072,7 @@ export default function InfluencerDetailPage() {
                             </span>
                           )}
                         </div>
-                        <div className="mt-1 truncate text-xs text-muted-foreground">{s.hookText}</div>
+                        <div className="mt-1 truncate text-meta text-muted-foreground">{s.hookText}</div>
                       </button>
                     ))}
                   </div>
@@ -1097,10 +1097,10 @@ export default function InfluencerDetailPage() {
             </div>
             {item.personaPrompt
               ? (
-                  <p className="whitespace-pre-wrap text-sm text-muted-foreground">{item.personaPrompt}</p>
+                  <p className="whitespace-pre-wrap text-body text-muted-foreground">{item.personaPrompt}</p>
                 )
               : (
-                  <div className="text-sm text-muted-foreground">No persona prompt.</div>
+                  <div className="text-body text-muted-foreground">No persona prompt.</div>
                 )}
           </section>
 
@@ -1232,15 +1232,15 @@ export default function InfluencerDetailPage() {
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div>
                   <div className="text-lg font-semibold">{analytics.totalPosts}</div>
-                  <div className="text-[11px] text-muted-foreground">Posts</div>
+                  <div className="text-micro text-muted-foreground">Posts</div>
                 </div>
                 <div>
                   <div className="text-lg font-semibold">{analytics.totalEngagement.toLocaleString()}</div>
-                  <div className="text-[11px] text-muted-foreground">Engagement</div>
+                  <div className="text-micro text-muted-foreground">Engagement</div>
                 </div>
                 <div>
                   <div className="text-lg font-semibold">{analytics.topPlatform}</div>
-                  <div className="text-[11px] text-muted-foreground">Top platform</div>
+                  <div className="text-micro text-muted-foreground">Top platform</div>
                 </div>
               </div>
             </section>
@@ -1288,7 +1288,7 @@ function TrainingBanner({ status, trainingMode: tm }: { status: string | null; t
   const modeLabel = tm === 'nano_banana' ? 'Instant Identity' : 'Identity Lock';
   if (!status || status === 'pending') {
     return (
-      <div className="mb-4 flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+      <div className="mb-4 flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-body text-muted-foreground">
         <Sparkles size={14} />
         Identity not set up yet. Add reference photos and select a training mode below.
       </div>

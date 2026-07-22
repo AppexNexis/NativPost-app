@@ -4,11 +4,13 @@
  * src/app/[locale]/(auth)/dashboard/support/page.tsx
  */
 
+import { useQuery } from '@tanstack/react-query';
 import {
   AlertCircle,
   ArrowRight,
   Bot,
   CheckCircle2,
+  ChevronRight,
   Clock,
   Loader2,
   MessageSquare,
@@ -16,10 +18,9 @@ import {
   RefreshCw,
   X,
   Zap,
-  ChevronRight,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { EmptyState } from '@/features/dashboard/EmptyState';
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
@@ -91,7 +92,7 @@ function StatusBadge({ status }: { status: string }) {
   const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.open!;
   const Icon = cfg.icon;
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${cfg.classes}`}>
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-micro font-medium ${cfg.classes}`}>
       <Icon className="size-3 shrink-0" />
       {cfg.label}
     </span>
@@ -112,8 +113,8 @@ function StatCard({
   return (
     <div className="rounded-2xl border bg-card p-5">
       <div className={`mb-3 inline-flex rounded-xl p-2.5 ${color}`}>{icon}</div>
-      <p className="text-2xl font-bold">{value}</p>
-      <p className="mt-0.5 text-sm text-muted-foreground">{label}</p>
+      <p className="text-2xl font-semibold tabular-nums tracking-tight">{value}</p>
+      <p className="mt-0.5 text-body text-muted-foreground">{label}</p>
     </div>
   );
 }
@@ -148,7 +149,9 @@ function CreateTicketModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subject: subject.trim(), body: body.trim() }),
       });
-      if (!res.ok) throw new Error('Failed to create ticket');
+      if (!res.ok) {
+        throw new Error('Failed to create ticket');
+      }
       setSubject('');
       setBody('');
       onCreated();
@@ -160,7 +163,9 @@ function CreateTicketModal({
     }
   };
 
-  if (!open) return null;
+  if (!open) {
+    return null;
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 backdrop-blur-sm sm:items-center">
@@ -168,8 +173,8 @@ function CreateTicketModal({
         {/* Header */}
         <div className="flex items-start justify-between border-b p-5">
           <div>
-            <h2 className="text-base font-semibold">Open a support ticket</h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">
+            <h2 className="text-heading">Open a support ticket</h2>
+            <p className="mt-0.5 text-body text-muted-foreground">
               Our team usually responds within 4 hours.
             </p>
           </div>
@@ -189,7 +194,7 @@ function CreateTicketModal({
             <input
               type="text"
               value={subject}
-              onChange={(e) => setSubject(e.target.value)}
+              onChange={e => setSubject(e.target.value)}
               placeholder="e.g. My Instagram post did not publish"
               className="w-full rounded-xl border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-foreground/20"
             />
@@ -198,12 +203,12 @@ function CreateTicketModal({
             <label className="mb-1.5 block text-sm font-medium">Describe your issue</label>
             <textarea
               value={body}
-              onChange={(e) => setBody(e.target.value)}
+              onChange={e => setBody(e.target.value)}
               placeholder="Include as much detail as possible — what you tried, what you expected, and what happened instead."
               rows={5}
               className="w-full resize-none rounded-xl border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-foreground/20"
             />
-            <p className="mt-1.5 text-xs text-muted-foreground">
+            <p className="mt-1.5 text-meta text-muted-foreground">
               Our AI will instantly try to resolve common issues. If it cannot, a human takes over.
             </p>
           </div>
@@ -249,14 +254,18 @@ function TicketRow({ ticket }: { ticket: Ticket }) {
   const timeAgo = (date: string) => {
     const diff = Date.now() - new Date(date).getTime();
     const h = Math.floor(diff / 3_600_000);
-    if (h < 1) return 'just now';
-    if (h < 24) return `${h}h ago`;
+    if (h < 1) {
+      return 'just now';
+    }
+    if (h < 24) {
+      return `${h}h ago`;
+    }
     const d = Math.floor(h / 24);
     return `${d}d ago`;
   };
 
-  const priorityColor =
-    ticket.aiPriority === 'urgent'
+  const priorityColor
+    = ticket.aiPriority === 'urgent'
       ? 'bg-red-500'
       : ticket.aiPriority === 'high'
         ? 'bg-orange-400'
@@ -267,7 +276,7 @@ function TicketRow({ ticket }: { ticket: Ticket }) {
   return (
     <Link
       href={`/dashboard/support/${ticket.id}`}
-      className="group flex items-start gap-3 border-b px-4 py-4 transition-colors last:border-b-0 hover:bg-muted/40 sm:gap-4 sm:px-5"
+      className="group flex items-start gap-3 border-b p-4 transition-colors last:border-b-0 hover:bg-muted/40 sm:gap-4 sm:px-5"
     >
       {/* Priority dot */}
       <div className={`mt-1.5 size-2 shrink-0 rounded-full ${priorityColor}`} />
@@ -283,7 +292,7 @@ function TicketRow({ ticket }: { ticket: Ticket }) {
         </div>
 
         {ticket.aiSummary && (
-          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{ticket.aiSummary}</p>
+          <p className="mt-0.5 line-clamp-1 text-meta text-muted-foreground">{ticket.aiSummary}</p>
         )}
 
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -299,7 +308,7 @@ function TicketRow({ ticket }: { ticket: Ticket }) {
               AI resolved
             </span>
           )}
-          <span className="text-[11px] text-muted-foreground">{timeAgo(ticket.createdAt)}</span>
+          <span className="text-micro text-muted-foreground">{timeAgo(ticket.createdAt)}</span>
         </div>
       </div>
     </Link>
@@ -310,40 +319,27 @@ function TicketRow({ ticket }: { ticket: Ticket }) {
 // MAIN PAGE
 // -----------------------------------------------------------
 export default function SupportPage() {
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [stats, setStats] = useState<Stats>([]);
-  const [loading, setLoading] = useState(true);
+  const [errorDismissed, setErrorDismissed] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [showCreate, setShowCreate] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-
-  const fetchTickets = useCallback(async () => {
-    setLoading(true);
-    setFetchError(null);
-    try {
+  // Tickets + stats through the query cache, keyed by the status filter.
+  const { data, isLoading: loading, error: queryError, refetch } = useQuery({
+    queryKey: ['support-tickets', statusFilter],
+    queryFn: async (): Promise<{ tickets?: Ticket[]; stats?: Stats }> => {
       const params = new URLSearchParams({ status: statusFilter, limit: '50' });
       const res = await fetch(`/api/support/tickets?${params}`);
       if (!res.ok) {
-        setFetchError(`Server returned ${res.status}. Please try again.`);
-        return;
+        throw new Error(`Server returned ${res.status}. Please try again.`);
       }
-      const data = await res.json();
-      setTickets(data.tickets ?? []);
-      setStats(data.stats ?? []);
-    } catch (err) {
-      console.error('[Support] fetch failed:', err);
-      setFetchError(err instanceof Error ? err.message : 'Network request failed');
-    } finally {
-      setLoading(false);
-    }
-  }, [statusFilter]);
-
-  useEffect(() => {
-    fetchTickets();
-  }, [fetchTickets]);
+      return res.json();
+    },
+  });
+  const tickets = data?.tickets ?? [];
+  const stats = data?.stats ?? [];
+  const fetchError = !errorDismissed && queryError ? queryError.message : null;
 
   const getStatCount = (status: string) =>
-    Number(stats.find((s) => s.status === status)?.count ?? 0);
+    Number(stats.find(s => s.status === status)?.count ?? 0);
 
   const openCount = getStatCount('open') + getStatCount('in_progress');
   const aiResolvedCount = getStatCount('auto_resolved');
@@ -363,7 +359,7 @@ export default function SupportPage() {
         <PageHeader
           title="Support"
           description="Get help with your NativPost account."
-          actions={
+          actions={(
             <button
               type="button"
               onClick={() => setShowCreate(true)}
@@ -372,7 +368,7 @@ export default function SupportPage() {
               <Plus className="size-4" />
               Open ticket
             </button>
-          }
+          )}
         />
 
         {/* Stats */}
@@ -400,8 +396,8 @@ export default function SupportPage() {
         {/* Ticket list */}
         <div className="overflow-hidden rounded-2xl border bg-card">
           {/* Filter tabs — scrollable on mobile */}
-          <div className="flex items-center gap-0.5 overflow-x-auto border-b px-3 py-2.5 scrollbar-none sm:px-4">
-            {STATUS_FILTERS.map((f) => (
+          <div className="scrollbar-none flex items-center gap-0.5 overflow-x-auto border-b px-3 py-2.5 sm:px-4">
+            {STATUS_FILTERS.map(f => (
               <button
                 key={f.value}
                 type="button"
@@ -424,8 +420,11 @@ export default function SupportPage() {
               <ErrorBanner
                 title="Couldn't load your tickets"
                 detail={fetchError}
-                onRetry={() => { void fetchTickets(); }}
-                onDismiss={() => setFetchError(null)}
+                onRetry={() => {
+                  setErrorDismissed(false);
+                  void refetch();
+                }}
+                onDismiss={() => setErrorDismissed(true)}
               />
             </div>
           ) : tickets.length === 0 ? (
@@ -446,7 +445,7 @@ export default function SupportPage() {
             />
           ) : (
             <div>
-              {tickets.map((t) => (
+              {tickets.map(t => (
                 <TicketRow key={t.id} ticket={t} />
               ))}
             </div>
@@ -463,7 +462,7 @@ export default function SupportPage() {
               { label: 'Connect a platform', href: '/dashboard/social-accounts' },
               { label: 'Billing and plans', href: '/dashboard/billing' },
               { label: 'Brand profile', href: '/dashboard/brand-profile' },
-            ].map((link) => (
+            ].map(link => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -480,7 +479,9 @@ export default function SupportPage() {
       <CreateTicketModal
         open={showCreate}
         onClose={() => setShowCreate(false)}
-        onCreated={fetchTickets}
+        onCreated={() => {
+          void refetch();
+        }}
       />
     </>
   );

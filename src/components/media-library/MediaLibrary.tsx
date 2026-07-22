@@ -149,7 +149,7 @@ export function MediaLibrary({ assets, onUpload, onSelect, onDelete, selectedIds
                 setFilters({});
                 setSearchQuery('');
               }}
-              className="text-sm text-muted-foreground hover:text-foreground"
+              className="text-body text-muted-foreground hover:text-foreground"
             >
               Clear all
             </button>
@@ -424,21 +424,21 @@ function AssetDetailModal({
 
             <div className="mt-6 grid grid-cols-2 gap-4">
               <div className="rounded-lg bg-muted/30 p-3">
-                <div className="text-xs text-muted-foreground">Dimensions</div>
+                <div className="text-meta text-muted-foreground">Dimensions</div>
                 <div className="text-sm font-medium text-foreground">
                   {asset.width && asset.height ? `${asset.width} × ${asset.height}` : 'Unknown'}
                 </div>
               </div>
               <div className="rounded-lg bg-muted/30 p-3">
-                <div className="text-xs text-muted-foreground">Aspect Ratio</div>
+                <div className="text-meta text-muted-foreground">Aspect Ratio</div>
                 <div className="text-sm font-medium text-foreground">{asset.aspectRatio || 'Unknown'}</div>
               </div>
               <div className="rounded-lg bg-muted/30 p-3">
-                <div className="text-xs text-muted-foreground">File Size</div>
+                <div className="text-meta text-muted-foreground">File Size</div>
                 <div className="text-sm font-medium text-foreground">{formatFileSize(asset.fileSize)}</div>
               </div>
               <div className="rounded-lg bg-muted/30 p-3">
-                <div className="text-xs text-muted-foreground">Duration</div>
+                <div className="text-meta text-muted-foreground">Duration</div>
                 <div className="text-sm font-medium text-foreground">
                   {asset.durationSeconds ? formatDuration(asset.durationSeconds) : 'N/A'}
                 </div>
@@ -449,7 +449,7 @@ function AssetDetailModal({
               <div className="mt-6">
                 <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI Generation Metadata</h4>
                 <div className="mt-2 rounded-lg bg-muted/30 p-3">
-                  <pre className="whitespace-pre-wrap text-xs text-muted-foreground">{JSON.stringify(asset.aiMetadata, null, 2)}</pre>
+                  <pre className="whitespace-pre-wrap text-meta text-muted-foreground">{JSON.stringify(asset.aiMetadata, null, 2)}</pre>
                 </div>
               </div>
             )}

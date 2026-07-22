@@ -1,5 +1,6 @@
 'use client';
 
+import { useQuery } from '@tanstack/react-query';
 import {
   BarChart3,
   Eye,
@@ -12,12 +13,14 @@ import {
   Video,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { EmptyState } from '@/features/dashboard/EmptyState';
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
-import { LoadingState } from '@/features/dashboard/LoadingState';
 import { PageHeader } from '@/features/dashboard/PageHeader';
+import { AnalyticsSkeleton } from '@/features/dashboard/PageSkeletons';
+import { fetchJson } from '@/lib/fetch-json';
+import { PLATFORM_COLORS, PLATFORM_LABELS } from '@/lib/platforms';
 
 // -----------------------------------------------------------
 // TYPES
@@ -90,33 +93,6 @@ type Analytics = {
 };
 
 // -----------------------------------------------------------
-// CONFIG
-// -----------------------------------------------------------
-const PLATFORM_LABELS: Record<string, string> = {
-  instagram: 'Instagram',
-  linkedin: 'LinkedIn',
-  linkedin_page: 'LinkedIn Page',
-  twitter: 'X / Twitter',
-  facebook: 'Facebook',
-  tiktok: 'TikTok',
-  youtube: 'YouTube',
-  threads: 'Threads',
-  pinterest: 'Pinterest',
-};
-
-const PLATFORM_COLORS: Record<string, string> = {
-  instagram: 'bg-pink-500',
-  linkedin: 'bg-blue-600',
-  linkedin_page: 'bg-blue-700',
-  twitter: 'bg-zinc-900',
-  facebook: 'bg-blue-500',
-  tiktok: 'bg-black',
-  youtube: 'bg-red-600',
-  threads: 'bg-zinc-800',
-  pinterest: 'bg-red-500',
-};
-
-// -----------------------------------------------------------
 // HELPERS
 // -----------------------------------------------------------
 function fmt(n: number): string {
@@ -155,7 +131,7 @@ function PlatformBadge({ platform }: { platform: string }) {
 // Simple stat pill
 function StatPill({ label, value }: { label: string; value: string | number }) {
   return (
-    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+    <span className="inline-flex items-center gap-1 text-meta text-muted-foreground">
       <span className="font-medium text-foreground">{value}</span>
       {label}
     </span>
@@ -169,7 +145,7 @@ function PlatformMetricsRow({ platform, metrics }: { platform: string; metrics: 
     return (
       <div className="flex items-center gap-2">
         <PlatformBadge platform={platform} />
-        <span className="text-xs text-muted-foreground">No data yet</span>
+        <span className="text-meta text-muted-foreground">No data yet</span>
       </div>
     );
   }
@@ -203,8 +179,8 @@ function SummaryCard({
         </div>
         <span className="text-xs font-medium text-muted-foreground">{label}</span>
       </div>
-      <p className="text-2xl font-bold tracking-tight">{value}</p>
-      {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
+      <p className="text-2xl font-semibold tabular-nums tracking-tight">{value}</p>
+      {sub && <p className="mt-0.5 text-meta text-muted-foreground">{sub}</p>}
     </div>
   );
 }
@@ -213,34 +189,15 @@ function SummaryCard({
 // PAGE
 // -----------------------------------------------------------
 export default function AnalyticsPage() {
-  const [analytics, setAnalytics] = useState<Analytics | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedPost, setExpandedPost] = useState<string | null>(null);
 
-  const loadAnalytics = useCallback(async () => {
-    setLoadError(null);
-    try {
-      const res = await fetch('/api/analytics');
-      if (res.ok) {
-        const data = await res.json();
-        setAnalytics(data);
-      } else {
-        setLoadError(`Server returned ${res.status}. Please try again.`);
-      }
-    } catch (err) {
-      console.error('Failed to load analytics:', err);
-      setLoadError(err instanceof Error ? err.message : 'Network request failed');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadAnalytics();
-  }, [loadAnalytics]);
+  // Cached server state — back-navigation paints instantly, revalidates quietly.
+  const { data: analytics, isLoading, error: loadError, refetch } = useQuery({
+    queryKey: ['analytics'],
+    queryFn: () => fetchJson<Analytics>('/api/analytics'),
+  });
 
   const syncNow = async () => {
     setIsSyncing(true);
@@ -250,7 +207,7 @@ export default function AnalyticsPage() {
       const res = await fetch('/api/analytics/sync', { method: 'POST' });
       if (res.ok) {
         // Reload analytics data after sync
-        await loadAnalytics();
+        await refetch();
       } else {
         setSyncError('Sync failed. Try again.');
       }
@@ -265,7 +222,7 @@ export default function AnalyticsPage() {
     return (
       <>
         <PageHeader title="Analytics" description="Track how your content performs across all platforms." />
-        <LoadingState message="Loading your analytics" hint="Fetching engagement from every connected platform" />
+        <AnalyticsSkeleton />
       </>
     );
   }
@@ -276,8 +233,10 @@ export default function AnalyticsPage() {
         <PageHeader title="Analytics" description="Track how your content performs across all platforms." />
         <ErrorBanner
           title="Couldn't load analytics"
-          detail={loadError}
-          onRetry={() => { void loadAnalytics(); }}
+          detail={loadError.message}
+          onRetry={() => {
+            void refetch();
+          }}
         />
       </>
     );
@@ -312,7 +271,7 @@ export default function AnalyticsPage() {
         actions={(
           <div className="flex items-center gap-3">
             {lastSyncedAt && (
-              <span className="hidden text-xs text-muted-foreground sm:block">
+              <span className="hidden text-meta text-muted-foreground sm:block">
                 Synced
                 {' '}
                 {relativeTime(lastSyncedAt)}
@@ -336,7 +295,9 @@ export default function AnalyticsPage() {
           <ErrorBanner
             title="Sync failed"
             detail={syncError}
-            onRetry={() => { void syncNow(); }}
+            onRetry={() => {
+              void syncNow();
+            }}
             onDismiss={() => setSyncError(null)}
           />
         </div>
@@ -391,7 +352,7 @@ export default function AnalyticsPage() {
                     href={`/dashboard/content/${post.id}`}
                     className="flex items-start gap-3 rounded-lg p-2.5 transition-colors hover:bg-muted/40"
                   >
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-bold text-muted-foreground">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-micro font-bold text-muted-foreground">
                       {i + 1}
                     </span>
                     <div className="min-w-0 flex-1">
@@ -421,7 +382,7 @@ export default function AnalyticsPage() {
           <div className="rounded-xl border bg-card">
             <div className="flex items-center justify-between border-b px-5 py-4">
               <h3 className="text-sm font-semibold">All published posts</h3>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-meta text-muted-foreground">
                 {posts.length}
                 {' '}
                 posts
@@ -464,7 +425,7 @@ export default function AnalyticsPage() {
 
                             {/* Date */}
                             {post.publishedAt && (
-                              <span className="text-xs text-muted-foreground">
+                              <span className="text-meta text-muted-foreground">
                                 {new Date(post.publishedAt).toLocaleDateString()}
                               </span>
                             )}
@@ -480,7 +441,7 @@ export default function AnalyticsPage() {
                                 <span className="ml-1 text-xs font-normal text-muted-foreground">interactions</span>
                               </span>
                               {post.totals.impressions > 0 && (
-                                <span className="text-xs text-muted-foreground">
+                                <span className="text-meta text-muted-foreground">
                                   {fmt(post.totals.impressions)}
                                   {' '}
                                   impressions
@@ -488,7 +449,7 @@ export default function AnalyticsPage() {
                               )}
                             </>
                           ) : (
-                            <span className="text-xs text-muted-foreground">Pending sync</span>
+                            <span className="text-meta text-muted-foreground">Pending sync</span>
                           )}
                         </div>
                       </div>
@@ -520,7 +481,7 @@ export default function AnalyticsPage() {
                         </div>
 
                         {post.platforms.length === 0 ? (
-                          <p className="text-xs text-muted-foreground">No platform data.</p>
+                          <p className="text-meta text-muted-foreground">No platform data.</p>
                         ) : (
                           <div className="space-y-2.5">
                             {post.platforms.map(platform => (
@@ -534,7 +495,7 @@ export default function AnalyticsPage() {
                         )}
 
                         {platformsWithData.length === 0 && post.platforms.length > 0 && (
-                          <p className="mt-2 text-xs text-muted-foreground">
+                          <p className="mt-2 text-meta text-muted-foreground">
                             No engagement data yet. Metrics sync automatically every 6 hours.
                           </p>
                         )}
@@ -554,7 +515,7 @@ export default function AnalyticsPage() {
           <div className="rounded-xl border bg-card p-5">
             <h3 className="mb-4 border-b pb-3 text-sm font-semibold">By platform</h3>
             {Object.keys(platformTotals).length === 0 ? (
-              <p className="text-xs text-muted-foreground">No platform data yet.</p>
+              <p className="text-meta text-muted-foreground">No platform data yet.</p>
             ) : (
               <div className="space-y-3">
                 {Object.entries(platformTotals)
@@ -566,7 +527,7 @@ export default function AnalyticsPage() {
                       <div key={platform}>
                         <div className="mb-1 flex items-center justify-between">
                           <span className="text-xs font-medium">{PLATFORM_LABELS[platform] || platform}</span>
-                          <span className="text-xs text-muted-foreground">
+                          <span className="text-meta text-muted-foreground">
                             {totals.posts}
                             {' '}
                             {totals.posts === 1 ? 'post' : 'posts'}
@@ -624,7 +585,7 @@ export default function AnalyticsPage() {
                 <div key={label} className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Icon className="size-3.5 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">{label}</span>
+                    <span className="text-body text-muted-foreground">{label}</span>
                   </div>
                   <span className="text-sm font-semibold">{fmt(value)}</span>
                 </div>
@@ -633,7 +594,7 @@ export default function AnalyticsPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Video className="size-3.5 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Video views</span>
+                    <span className="text-body text-muted-foreground">Video views</span>
                   </div>
                   <span className="text-sm font-semibold">{fmt(summary.totalViews)}</span>
                 </div>
@@ -645,17 +606,17 @@ export default function AnalyticsPage() {
           <div className="rounded-xl border bg-card p-5">
             <h3 className="mb-3 border-b pb-3 text-sm font-semibold">Data sync</h3>
             <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">
+              <p className="text-meta text-muted-foreground">
                 Engagement metrics are fetched automatically from your connected platforms every 6 hours.
               </p>
               {lastSyncedAt && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-meta text-muted-foreground">
                   Last synced:
                   {' '}
                   <span className="font-medium text-foreground">{relativeTime(lastSyncedAt)}</span>
                 </p>
               )}
-              <p className="text-xs text-muted-foreground">
+              <p className="text-meta text-muted-foreground">
                 Supported:
                 {' '}
                 <span className="font-medium text-foreground">Instagram, Facebook, X, YouTube, TikTok, LinkedIn, Threads, Pinterest</span>

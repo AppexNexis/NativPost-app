@@ -65,7 +65,9 @@ export function InlineEditorOverlay({
     <Dialog.Root
       open
       onOpenChange={(open) => {
-        if (!open) handleDismiss();
+        if (!open) {
+          handleDismiss();
+        }
       }}
     >
       <Dialog.Portal>
@@ -117,7 +119,9 @@ function InlineEditorBody({
   const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   const handleDone = useCallback(async () => {
-    if (saving) return;
+    if (saving) {
+      return;
+    }
     setSaving(true);
     try {
       // Save the edit row (no-op if autosave already saved since isDirty is false).
@@ -158,7 +162,9 @@ function InlineEditorBody({
   }, [saving, saveEdit, mirrorEdit, contentItemId, onDone]);
 
   const handleCancelClick = useCallback(() => {
-    if (saving) return;
+    if (saving) {
+      return;
+    }
     if (state.isDirty) {
       setConfirmDiscard(true);
       return;
@@ -265,7 +271,7 @@ function InlineEditorBody({
       {confirmDiscard && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-sm rounded-xl border border-border bg-card p-5 shadow-xl">
-            <h2 className="text-sm font-semibold text-foreground">
+            <h2 className="text-body font-semibold text-foreground">
               Discard unsaved changes?
             </h2>
             <p className="mt-2 text-xs text-muted-foreground">

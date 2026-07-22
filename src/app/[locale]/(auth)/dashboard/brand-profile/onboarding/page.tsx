@@ -23,13 +23,12 @@ import { useRouter } from 'next/navigation';
 import { parseAsInteger, useQueryState } from 'nuqs';
 import { useCallback, useEffect, useState } from 'react';
 
-import type { ContentAngle } from '@/types/v2';
-
 import { OnboardingLogoUploader } from '@/components/onboarding/OnboardingLogoUploader';
 import {
   type BrandProfileData,
   useBrandProfile,
 } from '@/features/brand-profile/useBrandProfile';
+import type { ContentAngle } from '@/types/v2';
 
 // -----------------------------------------------------------
 // STEPS CONFIG
@@ -163,7 +162,7 @@ export default function OnboardingPage() {
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Brand Profile</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-body text-muted-foreground">
           NativPost uses this information to generate content that matches your brand's voice, visuals, and strategy.
         </p>
       </div>
@@ -249,7 +248,7 @@ export default function OnboardingPage() {
         <div className="mb-6 flex items-center gap-2 border-b pb-4">
           <step.icon className="size-4 text-muted-foreground" />
           <span className="text-sm font-semibold">{step.label}</span>
-          <span className="ml-auto text-xs text-muted-foreground">
+          <span className="ml-auto text-meta text-muted-foreground">
             {safeStep + 1}
             {' '}
             of
@@ -281,7 +280,7 @@ export default function OnboardingPage() {
 
         <div className="flex items-center gap-3">
           {hasDraft && !isSaving && (
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5 text-meta text-muted-foreground">
               <RefreshCw className="size-3" />
               Draft saved
             </span>
@@ -387,7 +386,7 @@ function StepBusinessBasics({ data, onChange, errors }: StepProps) {
       {/* Growth Stage Selector */}
       <div>
         <label className="mb-1 block text-sm font-medium">Growth stage</label>
-        <p className="mb-3 text-xs text-muted-foreground">
+        <p className="mb-3 text-meta text-muted-foreground">
           Where your brand is in its social media journey. This shapes the language, strategy, and content formats NativPost generates.
         </p>
         <div className="grid gap-2 sm:grid-cols-2">
@@ -407,7 +406,7 @@ function StepBusinessBasics({ data, onChange, errors }: StepProps) {
                 {' '}
                 followers
               </span>
-              <p className="mt-0.5 text-xs text-muted-foreground">{stage.description}</p>
+              <p className="mt-0.5 text-meta text-muted-foreground">{stage.description}</p>
             </button>
           ))}
         </div>
@@ -489,7 +488,7 @@ function StepVisualIdentity({ data, onChange }: StepProps) {
     <div className="space-y-6">
       <div>
         <p className="mb-1 text-sm font-medium">Brand colors</p>
-        <p className="mb-3 text-xs text-muted-foreground">
+        <p className="mb-3 text-meta text-muted-foreground">
           Used in video templates, overlays, and branded graphics.
         </p>
         <div className="grid gap-4 sm:grid-cols-3">
@@ -501,7 +500,7 @@ function StepVisualIdentity({ data, onChange }: StepProps) {
 
       <div>
         <p className="mb-1 text-sm font-medium">Image aesthetic</p>
-        <p className="mb-3 text-xs text-muted-foreground">
+        <p className="mb-3 text-meta text-muted-foreground">
           Controls the visual direction for AI-selected or generated imagery.
         </p>
         <div className="grid gap-2 sm:grid-cols-3">
@@ -601,7 +600,7 @@ function StepPlatformVoices({ data, onChange }: StepProps) {
 
   return (
     <div className="space-y-5">
-      <p className="text-sm text-muted-foreground">
+      <p className="text-body text-muted-foreground">
         Describe how your brand voice should adapt per platform. Leave any platform blank if you do not post there.
       </p>
       {platforms.map(p => (
@@ -625,7 +624,9 @@ function StepPlatformVoices({ data, onChange }: StepProps) {
 const ANGLE_COLORS = ['#f97316', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#eab308'];
 
 function parseAngleDesc(raw: string | null): { description: string; targetAudience: string } {
-  if (!raw) return { description: '', targetAudience: '' };
+  if (!raw) {
+    return { description: '', targetAudience: '' };
+  }
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (parsed && typeof parsed === 'object') {
@@ -658,7 +659,9 @@ function StepContentAngles() {
   const fetchAngles = useCallback(async () => {
     try {
       const res = await fetch('/api/content-angles', { cache: 'no-store' });
-      if (!res.ok) throw new Error('Failed to load angles');
+      if (!res.ok) {
+        throw new Error('Failed to load angles');
+      }
       const data = (await res.json()) as { angles: ContentAngle[] };
       setAngles(data.angles ?? []);
     } catch (err: unknown) {
@@ -668,7 +671,9 @@ function StepContentAngles() {
     }
   }, []);
 
-  useEffect(() => { void fetchAngles(); }, [fetchAngles]);
+  useEffect(() => {
+    void fetchAngles();
+  }, [fetchAngles]);
 
   const openAdd = () => {
     setForm({ name: '', description: '', targetAudience: '', color: ANGLE_COLORS[0]! });
@@ -683,10 +688,14 @@ function StepContentAngles() {
     setFormTarget(angle.id);
   };
 
-  const closeForm = () => { setFormTarget(null); setSaveError(null); };
+  const closeForm = () => {
+    setFormTarget(null); setSaveError(null);
+  };
 
   const handleSave = async () => {
-    if (!form.name.trim() || isSaving) return;
+    if (!form.name.trim() || isSaving) {
+      return;
+    }
     setIsSaving(true);
     setSaveError(null);
     try {
@@ -698,10 +707,15 @@ function StepContentAngles() {
         body: JSON.stringify({ name: form.name, description: form.description, targetAudience: form.targetAudience, color: form.color }),
       });
       const data = (await res.json()) as { angle?: ContentAngle; error?: string };
-      if (!res.ok) throw new Error(data.error ?? 'Save failed');
+      if (!res.ok) {
+        throw new Error(data.error ?? 'Save failed');
+      }
       if (data.angle) {
-        if (isNew) setAngles(prev => [...prev, data.angle!]);
-        else setAngles(prev => prev.map(a => (a.id === formTarget ? data.angle! : a)));
+        if (isNew) {
+          setAngles(prev => [...prev, data.angle!]);
+        } else {
+          setAngles(prev => prev.map(a => (a.id === formTarget ? data.angle! : a)));
+        }
       }
       closeForm();
     } catch (err: unknown) {
@@ -714,7 +728,9 @@ function StepContentAngles() {
   const handleDelete = async (id: string) => {
     try {
       const res = await fetch(`/api/content-angles/${id}`, { method: 'DELETE' });
-      if (!res.ok) return;
+      if (!res.ok) {
+        return;
+      }
       setAngles(prev => prev.filter(a => a.id !== id));
     } catch { /* silent */ }
   };
@@ -722,14 +738,17 @@ function StepContentAngles() {
   return (
     <div className="space-y-5">
       <div>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           Angles define the recurring perspectives and topics we use across campaign posts. You can add or edit these any time from your Brand Profile.
         </p>
       </div>
 
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {angles.length} angle{angles.length === 1 ? '' : 's'}
+          {angles.length}
+          {' '}
+          angle
+          {angles.length === 1 ? '' : 's'}
         </span>
         {formTarget === null && (
           <button
@@ -792,7 +811,7 @@ function StepContentAngles() {
                     key={c}
                     type="button"
                     onClick={() => setForm(f => ({ ...f, color: c }))}
-                    className={`size-6 rounded-full border-2 transition-transform hover:scale-110 ${form.color === c ? 'border-foreground scale-110' : 'border-transparent'}`}
+                    className={`size-6 rounded-full border-2 transition-transform hover:scale-110 ${form.color === c ? 'scale-110 border-foreground' : 'border-transparent'}`}
                     style={{ backgroundColor: c }}
                   />
                 ))}
@@ -828,7 +847,7 @@ function StepContentAngles() {
       ) : loadError ? (
         <p className="text-xs text-destructive">{loadError}</p>
       ) : angles.length === 0 ? (
-        <p className="rounded-lg border border-dashed py-6 text-center text-sm text-muted-foreground">
+        <p className="rounded-lg border border-dashed py-6 text-center text-body text-muted-foreground">
           No angles yet. This step is optional. You can add angles now or later.
         </p>
       ) : (
@@ -848,10 +867,13 @@ function StepContentAngles() {
                     )}
                   </div>
                   {parsed.description && (
-                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{parsed.description}</p>
+                    <p className="mt-0.5 line-clamp-2 text-meta text-muted-foreground">{parsed.description}</p>
                   )}
                   {parsed.targetAudience && (
-                    <p className="mt-0.5 text-[11px] text-muted-foreground/70">For: {parsed.targetAudience}</p>
+                    <p className="mt-0.5 text-micro text-muted-foreground/70">
+                      For:
+                      {parsed.targetAudience}
+                    </p>
                   )}
                 </div>
                 {!angle.isSystem && (
@@ -889,7 +911,7 @@ function StepReview({ data }: { data: BrandProfileData }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
+      <p className="text-body text-muted-foreground">
         Review your entries before saving. You can return to any step using the Back button or the step indicators above.
       </p>
 
@@ -915,11 +937,11 @@ function StepReview({ data }: { data: BrandProfileData }) {
 
       <ReviewSection title="Visual identity">
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Colors</span>
+          <span className="text-meta text-muted-foreground">Colors</span>
           {[data.primaryColor, data.secondaryColor, data.accentColor].filter(Boolean).map(c => (
             <div key={c} className="flex items-center gap-1">
               <div className="size-5 rounded border" style={{ backgroundColor: c }} />
-              <span className="font-mono text-xs text-muted-foreground">{c}</span>
+              <span className="font-mono text-meta text-muted-foreground">{c}</span>
             </div>
           ))}
         </div>
@@ -927,7 +949,7 @@ function StepReview({ data }: { data: BrandProfileData }) {
         {data.fontPreference && <ReviewItem label="Typography" value={data.fontPreference} />}
         {data.logoUrl && (
           <div>
-            <span className="text-xs text-muted-foreground">Logo</span>
+            <span className="text-meta text-muted-foreground">Logo</span>
             <div className="mt-1">
               <Image src={data.logoUrl} alt="Brand logo" width={80} height={40} unoptimized className="rounded border object-contain" />
             </div>
@@ -986,7 +1008,7 @@ function FormField({
         {label}
         {required && <span className="ml-0.5 text-red-500">*</span>}
       </label>
-      {hint && <p className="mb-1.5 text-xs text-muted-foreground">{hint}</p>}
+      {hint && <p className="mb-1.5 text-meta text-muted-foreground">{hint}</p>}
       <input
         id={id}
         type={type}
@@ -1026,7 +1048,7 @@ function FormTextarea({
         {label}
         {required && <span className="ml-0.5 text-red-500">*</span>}
       </label>
-      {hint && <p className="mb-1.5 text-xs text-muted-foreground">{hint}</p>}
+      {hint && <p className="mb-1.5 text-meta text-muted-foreground">{hint}</p>}
       <textarea
         id={id}
         value={value}
@@ -1064,7 +1086,7 @@ function ToneSlider({
           /10
         </span>
       </div>
-      {hint && <p className="mb-2 text-xs text-muted-foreground">{hint}</p>}
+      {hint && <p className="mb-2 text-meta text-muted-foreground">{hint}</p>}
       <input
         type="range"
         min={1}
@@ -1073,7 +1095,7 @@ function ToneSlider({
         onChange={e => onChange(Number(e.target.value))}
         className="h-2 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary"
       />
-      <div className="mt-1 flex justify-between text-xs text-muted-foreground">
+      <div className="mt-1 flex justify-between text-meta text-muted-foreground">
         <span>{leftLabel}</span>
         <span>{rightLabel}</span>
       </div>
@@ -1114,7 +1136,7 @@ function TagInput({
   return (
     <div>
       <label className="mb-1 block text-sm font-medium">{label}</label>
-      {hint && <p className="mb-1.5 text-xs text-muted-foreground">{hint}</p>}
+      {hint && <p className="mb-1.5 text-meta text-muted-foreground">{hint}</p>}
       <div className="flex min-h-[42px] flex-wrap gap-1.5 rounded-lg border bg-background p-2 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
         {tags.map(tag => (
           <span key={tag} className="inline-flex items-center gap-1 rounded border bg-muted px-2 py-0.5 text-xs font-medium">
@@ -1182,7 +1204,7 @@ function LogoUploader({ value, onChange }: { value: string; onChange: (v: string
   return (
     <div>
       <p className="mb-1 text-sm font-medium">Logo</p>
-      <p className="mb-2 text-xs text-muted-foreground">
+      <p className="mb-2 text-meta text-muted-foreground">
         Used in branded video outros and profile pages. PNG, SVG, JPG or WebP, max 2MB.
       </p>
       <OnboardingLogoUploader value={value} onChange={onChange} />

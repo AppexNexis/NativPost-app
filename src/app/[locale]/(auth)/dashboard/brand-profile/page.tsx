@@ -18,13 +18,13 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
-import type { ContentAngle } from '@/types/v2';
-
 import { useBrandProfile } from '@/features/brand-profile/useBrandProfile';
 import { EmptyState } from '@/features/dashboard/EmptyState';
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
 import { LoadingState } from '@/features/dashboard/LoadingState';
 import { PageHeader } from '@/features/dashboard/PageHeader';
+import { ListPageSkeleton } from '@/features/dashboard/PageSkeletons';
+import type { ContentAngle } from '@/types/v2';
 
 const GROWTH_STAGE_LABELS: Record<string, string> = {
   early: '0 – 1K followers',
@@ -37,7 +37,7 @@ export default function BrandProfilePage() {
   const { data, isLoading, hasProfile, profileCompleteness } = useBrandProfile();
 
   if (isLoading) {
-    return <LoadingState message="Loading your brand profile" />;
+    return <ListPageSkeleton rows={4} />;
   }
 
   if (!hasProfile) {
@@ -92,7 +92,7 @@ export default function BrandProfilePage() {
           />
         </div>
         {profileCompleteness < 80 && (
-          <p className="mt-2 text-xs text-muted-foreground">
+          <p className="mt-2 text-meta text-muted-foreground">
             A more complete profile produces higher-quality content.
             {' '}
             <Link href="/dashboard/brand-profile/onboarding" className="font-medium underline underline-offset-2">
@@ -111,7 +111,7 @@ export default function BrandProfilePage() {
           <ProfileField label="Industry" value={data.industry} />
           {data.websiteUrl && (
             <div>
-              <span className="text-xs text-muted-foreground">Website</span>
+              <span className="text-meta text-muted-foreground">Website</span>
               <a
                 href={data.websiteUrl}
                 target="_blank"
@@ -127,7 +127,7 @@ export default function BrandProfilePage() {
           {data.companyDescription && <ProfileField label="Description" value={data.companyDescription} truncate />}
           {data.growthStage && (
             <div>
-              <span className="text-xs text-muted-foreground">Growth stage</span>
+              <span className="text-meta text-muted-foreground">Growth stage</span>
               <p className="mt-0.5 text-sm">
                 {GROWTH_STAGE_LABELS[data.growthStage] || data.growthStage}
               </p>
@@ -155,12 +155,12 @@ export default function BrandProfilePage() {
         <ProfileCard icon={Palette} title="Visual identity">
           {[data.primaryColor, data.secondaryColor, data.accentColor].some(Boolean) && (
             <div>
-              <span className="text-xs text-muted-foreground">Colors</span>
+              <span className="text-meta text-muted-foreground">Colors</span>
               <div className="mt-1.5 flex items-center gap-3">
                 {[data.primaryColor, data.secondaryColor, data.accentColor].filter(Boolean).map((c, i) => (
                   <div key={i} className="flex items-center gap-1.5">
                     <div className="size-6 rounded border shadow-sm" style={{ backgroundColor: c }} />
-                    <span className="font-mono text-xs text-muted-foreground">{c}</span>
+                    <span className="font-mono text-meta text-muted-foreground">{c}</span>
                   </div>
                 ))}
               </div>
@@ -170,7 +170,7 @@ export default function BrandProfilePage() {
           {data.fontPreference && <ProfileField label="Typography" value={data.fontPreference} />}
           {data.logoUrl && (
             <div>
-              <span className="text-xs text-muted-foreground">Logo</span>
+              <span className="text-meta text-muted-foreground">Logo</span>
               <div className="mt-1.5">
                 <Image
                   src={data.logoUrl}
@@ -197,7 +197,7 @@ export default function BrandProfilePage() {
             <ProfileField label="Hashtag strategy" value={data.hashtagStrategy} truncate />
           )}
           {!data.contentExamples.length && !data.antiPatterns.length && !data.hashtagStrategy && (
-            <p className="text-xs text-muted-foreground">No content preferences configured.</p>
+            <p className="text-meta text-muted-foreground">No content preferences configured.</p>
           )}
         </ProfileCard>
 
@@ -224,13 +224,13 @@ export default function BrandProfilePage() {
                       .map(p => (
                         <div key={p.label} className="rounded-lg border bg-muted/30 p-3">
                           <span className="text-xs font-semibold">{p.label}</span>
-                          <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">{p.value}</p>
+                          <p className="mt-1 line-clamp-3 text-meta text-muted-foreground">{p.value}</p>
                         </div>
                       ))}
                   </div>
                 )
               : (
-                  <p className="text-xs text-muted-foreground">No platform-specific voices configured.</p>
+                  <p className="text-meta text-muted-foreground">No platform-specific voices configured.</p>
                 )}
           </ProfileCard>
         </div>
@@ -251,7 +251,7 @@ function SetupCallBanner() {
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">Need help filling in your Brand Profile?</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
+        <p className="mt-0.5 text-meta text-muted-foreground">
           Book a 20-minute setup call and a member of the NativPost team will complete it with you.
         </p>
       </div>
@@ -306,7 +306,7 @@ function ProfileField({
   }
   return (
     <div>
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-meta text-muted-foreground">{label}</span>
       <p className={`mt-0.5 text-sm ${truncate ? 'line-clamp-2' : ''}`}>{value}</p>
     </div>
   );
@@ -337,7 +337,7 @@ function ToneMeter({ label, value }: { label: string; value: number }) {
         </svg>
         <span className="absolute inset-0 flex items-center justify-center text-xs font-bold tabular-nums">{value}</span>
       </div>
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-meta text-muted-foreground">{label}</span>
     </div>
   );
 }
@@ -357,7 +357,7 @@ function TagList({
 
   return (
     <div>
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-meta text-muted-foreground">{label}</span>
       <div className="mt-1 flex flex-wrap gap-1">
         {tags.slice(0, 8).map(tag => (
           <span key={tag} className={`rounded border px-2 py-0.5 text-xs font-medium ${tagClass}`}>
@@ -365,7 +365,7 @@ function TagList({
           </span>
         ))}
         {tags.length > 8 && (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-meta text-muted-foreground">
             +
             {tags.length - 8}
             {' '}
@@ -384,7 +384,9 @@ function TagList({
 const ANGLE_COLORS = ['#f97316', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#eab308'];
 
 function parseAngleDesc(raw: string | null): { description: string; targetAudience: string } {
-  if (!raw) return { description: '', targetAudience: '' };
+  if (!raw) {
+    return { description: '', targetAudience: '' };
+  }
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (parsed && typeof parsed === 'object') {
@@ -418,7 +420,9 @@ function ContentAnglesSection() {
   const fetchAngles = useCallback(async () => {
     try {
       const res = await fetch('/api/content-angles', { cache: 'no-store' });
-      if (!res.ok) throw new Error('Failed to load angles');
+      if (!res.ok) {
+        throw new Error('Failed to load angles');
+      }
       const data = (await res.json()) as { angles: ContentAngle[] };
       setAngles(data.angles ?? []);
     } catch (err: unknown) {
@@ -428,7 +432,9 @@ function ContentAnglesSection() {
     }
   }, []);
 
-  useEffect(() => { void fetchAngles(); }, [fetchAngles]);
+  useEffect(() => {
+    void fetchAngles();
+  }, [fetchAngles]);
 
   const openAdd = () => {
     setForm({ name: '', description: '', targetAudience: '', color: ANGLE_COLORS[0]! });
@@ -443,10 +449,14 @@ function ContentAnglesSection() {
     setFormTarget(angle.id);
   };
 
-  const closeForm = () => { setFormTarget(null); setSaveError(null); };
+  const closeForm = () => {
+    setFormTarget(null); setSaveError(null);
+  };
 
   const handleSave = async () => {
-    if (!form.name.trim() || isSaving) return;
+    if (!form.name.trim() || isSaving) {
+      return;
+    }
     setIsSaving(true);
     setSaveError(null);
     try {
@@ -458,12 +468,14 @@ function ContentAnglesSection() {
         body: JSON.stringify({ name: form.name, description: form.description, targetAudience: form.targetAudience, color: form.color }),
       });
       const data = (await res.json()) as { angle?: ContentAngle; error?: string };
-      if (!res.ok) throw new Error(data.error ?? 'Save failed');
+      if (!res.ok) {
+        throw new Error(data.error ?? 'Save failed');
+      }
       if (data.angle) {
         if (isNew) {
-          setAngles((prev) => [...prev, data.angle!]);
+          setAngles(prev => [...prev, data.angle!]);
         } else {
-          setAngles((prev) => prev.map((a) => (a.id === formTarget ? data.angle! : a)));
+          setAngles(prev => prev.map(a => (a.id === formTarget ? data.angle! : a)));
         }
       }
       closeForm();
@@ -481,7 +493,7 @@ function ContentAnglesSection() {
         const data = (await res.json()) as { error?: string };
         throw new Error(data.error ?? 'Delete failed');
       }
-      setAngles((prev) => prev.filter((a) => a.id !== id));
+      setAngles(prev => prev.filter(a => a.id !== id));
     } catch { /* silent — non-destructive, user sees the item stay */ }
   };
 
@@ -491,7 +503,7 @@ function ContentAnglesSection() {
       <div className="flex items-center justify-between border-b px-5 py-4">
         <div>
           <h3 className="text-sm font-semibold text-foreground">Content Angles</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <p className="mt-0.5 text-meta text-muted-foreground">
             Angles define the recurring perspectives and topics used across your campaign posts.
           </p>
         </div>
@@ -525,7 +537,7 @@ function ContentAnglesSection() {
               <input
                 type="text"
                 value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                 placeholder="e.g. Educational tips"
                 className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
@@ -535,7 +547,7 @@ function ContentAnglesSection() {
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Description</label>
               <textarea
                 value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                 placeholder="What kind of content goes under this angle?"
                 rows={2}
                 className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
@@ -547,7 +559,7 @@ function ContentAnglesSection() {
               <input
                 type="text"
                 value={form.targetAudience}
-                onChange={(e) => setForm((f) => ({ ...f, targetAudience: e.target.value }))}
+                onChange={e => setForm(f => ({ ...f, targetAudience: e.target.value }))}
                 placeholder="e.g. New business owners, 25-40"
                 className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
@@ -556,13 +568,13 @@ function ContentAnglesSection() {
             <div>
               <label className="mb-2 block text-xs font-medium text-muted-foreground">Color</label>
               <div className="flex gap-2">
-                {ANGLE_COLORS.map((c) => (
+                {ANGLE_COLORS.map(c => (
                   <button
                     key={c}
                     type="button"
-                    onClick={() => setForm((f) => ({ ...f, color: c }))}
+                    onClick={() => setForm(f => ({ ...f, color: c }))}
                     className={`size-6 rounded-full border-2 transition-transform hover:scale-110 ${
-                      form.color === c ? 'border-foreground scale-110' : 'border-transparent'
+                      form.color === c ? 'scale-110 border-foreground' : 'border-transparent'
                     }`}
                     style={{ backgroundColor: c }}
                   />
@@ -602,13 +614,15 @@ function ContentAnglesSection() {
           <ErrorBanner
             title="Couldn't load content angles"
             detail={loadError}
-            onRetry={() => { void fetchAngles(); }}
+            onRetry={() => {
+              void fetchAngles();
+            }}
             onDismiss={() => setLoadError(null)}
             compact
           />
         </div>
       ) : angles.length === 0 ? (
-        <p className="px-5 py-6 text-center text-sm text-muted-foreground">
+        <p className="px-5 py-6 text-center text-body text-muted-foreground">
           No angles yet. Add one to get started.
         </p>
       ) : (
@@ -635,10 +649,10 @@ function ContentAnglesSection() {
                     )}
                   </div>
                   {parsed.description && (
-                    <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">{parsed.description}</p>
+                    <p className="mt-0.5 line-clamp-1 text-meta text-muted-foreground">{parsed.description}</p>
                   )}
                   {parsed.targetAudience && (
-                    <p className="mt-0.5 text-[11px] text-muted-foreground/70">{parsed.targetAudience}</p>
+                    <p className="mt-0.5 text-micro text-muted-foreground/70">{parsed.targetAudience}</p>
                   )}
                 </div>
 

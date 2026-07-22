@@ -89,7 +89,7 @@ export function ContentLibraryBrowser({
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Trending Content</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-body text-muted-foreground">
             Browse and remix high-performing short-form templates.
           </p>
         </div>
@@ -181,7 +181,7 @@ export function ContentLibraryBrowser({
       )}
 
       {/* Results count */}
-      <div className="text-sm text-muted-foreground">
+      <div className="text-body text-muted-foreground">
         {isLoading && templates.length === 0 ? 'Loading templates...' : (
           <>
             {total}

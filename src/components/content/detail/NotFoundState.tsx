@@ -15,7 +15,7 @@ export function NotFoundState() {
         </div>
         <div>
           <h2 className="text-lg font-semibold">Post not found</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-body text-muted-foreground">
             This post may have been deleted or you might not have permission to view it.
           </p>
         </div>

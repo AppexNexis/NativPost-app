@@ -16,8 +16,8 @@ export function UpgradeBanner({ currentPlan, inactive }: Props) {
   const body = inactive
     ? 'Your subscription is currently inactive, so API keys and webhooks are read-only. Reactivate to resume publishing and event delivery.'
     : `Programmatic content, webhooks and analytics are available on Pro, Agency and Enterprise${
-        currentPlan ? ` (you are on ${currentPlan})` : ''
-      }. Upgrade to generate a key.`;
+      currentPlan ? ` (you are on ${currentPlan})` : ''
+    }. Upgrade to generate a key.`;
 
   return (
     <div className="flex flex-col gap-4 rounded-xl border border-primary/30 bg-primary/5 p-6">
@@ -26,12 +26,12 @@ export function UpgradeBanner({ currentPlan, inactive }: Props) {
           <Sparkles className="size-5" />
         </div>
         <div className="flex flex-col gap-1">
-          <h3 className="text-base font-semibold text-foreground">{headline}</h3>
-          <p className="max-w-2xl text-sm text-muted-foreground">{body}</p>
+          <h3 className="text-heading text-foreground">{headline}</h3>
+          <p className="max-w-2xl text-body text-muted-foreground">{body}</p>
         </div>
       </div>
 
-      <ul className="grid grid-cols-1 gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+      <ul className="grid grid-cols-1 gap-2 text-body text-muted-foreground sm:grid-cols-2">
         <li className="flex items-start gap-2">
           <span className="mt-1 size-1.5 shrink-0 rounded-full bg-primary" />
           Bearer-authenticated REST API at

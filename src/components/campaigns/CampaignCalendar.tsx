@@ -52,7 +52,9 @@ const VIDEO_CONTENT_TYPES = new Set([
 ]);
 
 function resolveThumb(item: ContentItem | null): string | null {
-  if (!item) return null;
+  if (!item) {
+    return null;
+  }
 
   const enrichment = (item.enrichmentData ?? {}) as Record<string, unknown>;
   const slots = (enrichment.sourceMediaSlots ?? {}) as Record<string, unknown>;
@@ -79,7 +81,9 @@ function resolveThumb(item: ContentItem | null): string | null {
   }
   if (tus && typeof tus === 'object' && !Array.isArray(tus)) {
     const first = Object.values(tus as Record<string, unknown>)[0];
-    if (typeof first === 'string' && first && !VIDEO_EXT_RE.test(first)) return first;
+    if (typeof first === 'string' && first && !VIDEO_EXT_RE.test(first)) {
+      return first;
+    }
   }
 
   // 4. Background: explicit thumbnailUrl → image-only url.
@@ -103,7 +107,9 @@ function resolveThumb(item: ContentItem | null): string | null {
 
   // 6. graphicUrls — skip video URLs.
   const graphic = Array.isArray(item.graphicUrls) ? item.graphicUrls[0] : null;
-  if (graphic && typeof graphic === 'string' && !VIDEO_EXT_RE.test(graphic)) return graphic;
+  if (graphic && typeof graphic === 'string' && !VIDEO_EXT_RE.test(graphic)) {
+    return graphic;
+  }
 
   return null;
 }
@@ -111,7 +117,9 @@ function resolveThumb(item: ContentItem | null): string | null {
 // Returns the raw video URL for video-type content, so PostChip / DayPostRow
 // can render an autoplaying <video> element (matching ReviewGrid).
 function resolveVideoUrl(item: ContentItem | null): string | null {
-  if (!item) return null;
+  if (!item) {
+    return null;
+  }
   const enrichment = (item.enrichmentData ?? {}) as Record<string, unknown>;
   const slots = (enrichment.sourceMediaSlots ?? {}) as Record<string, unknown>;
   const bg = (slots.background ?? {}) as Record<string, unknown>;
@@ -119,21 +127,31 @@ function resolveVideoUrl(item: ContentItem | null): string | null {
     return bg.url;
   }
   const hook = (slots.hookVideo ?? {}) as Record<string, unknown>;
-  if (typeof hook.url === 'string' && hook.url && VIDEO_EXT_RE.test(hook.url)) return hook.url;
+  if (typeof hook.url === 'string' && hook.url && VIDEO_EXT_RE.test(hook.url)) {
+    return hook.url;
+  }
   const demo = (slots.demoVideo ?? {}) as Record<string, unknown>;
-  if (typeof demo.url === 'string' && demo.url && VIDEO_EXT_RE.test(demo.url)) return demo.url;
+  if (typeof demo.url === 'string' && demo.url && VIDEO_EXT_RE.test(demo.url)) {
+    return demo.url;
+  }
   const snapshot = (enrichment.templateSnapshot ?? {}) as Record<string, unknown>;
   const src = (typeof snapshot.sourceUrl === 'string' ? snapshot.sourceUrl : null)
     ?? (typeof snapshot.mediaUrl === 'string' ? snapshot.mediaUrl : null);
-  if (src && VIDEO_EXT_RE.test(src)) return src;
+  if (src && VIDEO_EXT_RE.test(src)) {
+    return src;
+  }
   // Some engine-supplement rows tuck the video into graphicUrls[0].
   const graphic = Array.isArray(item.graphicUrls) ? item.graphicUrls[0] : null;
-  if (graphic && typeof graphic === 'string' && VIDEO_EXT_RE.test(graphic)) return graphic;
+  if (graphic && typeof graphic === 'string' && VIDEO_EXT_RE.test(graphic)) {
+    return graphic;
+  }
   return null;
 }
 
 function isVideoContentType(item: ContentItem | null): boolean {
-  if (!item) return false;
+  if (!item) {
+    return false;
+  }
   return VIDEO_CONTENT_TYPES.has(item.contentType ?? '');
 }
 
@@ -310,7 +328,9 @@ export function CampaignCalendar({ campaign, locale }: Props) {
 
   const byDay = useMemo(() => {
     const map = new Map<string, CampaignContentRow[]>();
-    for (const g of groups) map.set(g.date, g.contentItems);
+    for (const g of groups) {
+      map.set(g.date, g.contentItems);
+    }
     return map;
   }, [groups]);
 
@@ -318,26 +338,30 @@ export function CampaignCalendar({ campaign, locale }: Props) {
   const weekdays = useMemo(() => weekdayHeaders(locale), [locale]);
   const today = todayKey();
 
-  const goPrev = () => setCurrentMonth((m) => shiftMonth(m, -1));
-  const goNext = () => setCurrentMonth((m) => shiftMonth(m, +1));
+  const goPrev = () => setCurrentMonth(m => shiftMonth(m, -1));
+  const goNext = () => setCurrentMonth(m => shiftMonth(m, +1));
   const goToday = () => {
     const now = new Date();
     setCurrentMonth(monthKey(now.getUTCFullYear(), now.getUTCMonth()));
   };
 
   const reschedule = useCallback(async (row: CampaignContentRow, newDate: string) => {
-    if (!row.contentItemId) return;
-    if (row.scheduledDate?.slice(0, 10) === newDate) return;
+    if (!row.contentItemId) {
+      return;
+    }
+    if (row.scheduledDate?.slice(0, 10) === newDate) {
+      return;
+    }
 
     // Optimistic: move row into new date's list.
     const prevGroups = groups;
-    setReschedulingIds((s) => new Set(s).add(row.id));
+    setReschedulingIds(s => new Set(s).add(row.id));
     setGroups((old) => {
-      const next = old.map((g) => ({
+      const next = old.map(g => ({
         date: g.date,
-        contentItems: g.contentItems.filter((it) => it.id !== row.id),
-      })).filter((g) => g.contentItems.length > 0);
-      const existing = next.find((g) => g.date === newDate);
+        contentItems: g.contentItems.filter(it => it.id !== row.id),
+      })).filter(g => g.contentItems.length > 0);
+      const existing = next.find(g => g.date === newDate);
       const patched: CampaignContentRow = {
         ...row,
         scheduledDate: `${newDate}T00:00:00.000Z`,
@@ -392,32 +416,36 @@ export function CampaignCalendar({ campaign, locale }: Props) {
         <div className="min-w-0">
           <Link
             href={`/${locale}/dashboard/campaigns`}
-            className="mb-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            className="mb-2 inline-flex items-center gap-1.5 text-meta text-muted-foreground transition-colors hover:text-foreground"
           >
-            <ArrowLeft className="h-3.5 w-3.5" />
+            <ArrowLeft className="size-3.5" />
             All campaigns
           </Link>
           <h1 className="truncate text-2xl font-semibold tracking-tight">
             {campaign.name}
           </h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
+          <p className="mt-0.5 text-body text-muted-foreground">
             Calendar view. Drag posts to reschedule, click any day to see details.
           </p>
         </div>
 
         <div className="flex flex-shrink-0 items-center gap-3">
-          <div className="hidden text-right text-xs text-muted-foreground sm:block">
-            <div>{totalScheduled} scheduled this month</div>
+          <div className="hidden text-right text-meta text-muted-foreground sm:block">
+            <div>
+              {totalScheduled}
+              {' '}
+              scheduled this month
+            </div>
             <div className="capitalize">{campaign.status}</div>
           </div>
           <button
             type="button"
             onClick={() => fetchMonth(currentMonth)}
             disabled={loading}
-            className="inline-flex h-9 items-center gap-2 rounded-lg border bg-card px-3 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+            className="inline-flex h-9 items-center gap-2 rounded-lg border bg-card px-3 text-body text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
             title="Refresh"
           >
-            <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCcw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">Refresh</span>
           </button>
         </div>
@@ -426,7 +454,7 @@ export function CampaignCalendar({ campaign, locale }: Props) {
       {/* Error */}
       {error && (
         <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <AlertTriangle className="mt-0.5 size-4 flex-shrink-0" />
           <div className="flex-1">{error}</div>
           <button
             type="button"
@@ -444,18 +472,18 @@ export function CampaignCalendar({ campaign, locale }: Props) {
           <button
             type="button"
             onClick={goPrev}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border bg-background text-muted-foreground transition-colors hover:text-foreground"
+            className="flex size-8 items-center justify-center rounded-lg border bg-background text-muted-foreground transition-colors hover:text-foreground"
             aria-label="Previous month"
           >
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronLeft className="size-4" />
           </button>
           <button
             type="button"
             onClick={goNext}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border bg-background text-muted-foreground transition-colors hover:text-foreground"
+            className="flex size-8 items-center justify-center rounded-lg border bg-background text-muted-foreground transition-colors hover:text-foreground"
             aria-label="Next month"
           >
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="size-4" />
           </button>
           <button
             type="button"
@@ -475,9 +503,9 @@ export function CampaignCalendar({ campaign, locale }: Props) {
 
       {/* Calendar grid */}
       <div className="overflow-hidden rounded-xl border bg-card">
-        <div className="grid grid-cols-7 border-b bg-muted/40 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          {weekdays.map((w) => (
-            <div key={w} className="px-2 py-2 text-center">{w}</div>
+        <div className="grid grid-cols-7 border-b bg-muted/40 text-micro font-medium uppercase tracking-wide text-muted-foreground">
+          {weekdays.map(w => (
+            <div key={w} className="p-2 text-center">{w}</div>
           ))}
         </div>
         <div className="grid grid-cols-7">
@@ -494,18 +522,26 @@ export function CampaignCalendar({ campaign, locale }: Props) {
                 onDragOver={(e) => {
                   e.preventDefault();
                   e.dataTransfer.dropEffect = 'move';
-                  if (dragOverKey !== cell.key) setDragOverKey(cell.key);
+                  if (dragOverKey !== cell.key) {
+                    setDragOverKey(cell.key);
+                  }
                 }}
                 onDragLeave={() => {
-                  if (dragOverKey === cell.key) setDragOverKey(null);
+                  if (dragOverKey === cell.key) {
+                    setDragOverKey(null);
+                  }
                 }}
                 onDrop={(e) => {
                   e.preventDefault();
                   setDragOverKey(null);
                   const rowId = e.dataTransfer.getData('text/campaign-content-id');
-                  if (!rowId) return;
-                  const source = groups.flatMap((g) => g.contentItems).find((it) => it.id === rowId);
-                  if (source) reschedule(source, cell.key);
+                  if (!rowId) {
+                    return;
+                  }
+                  const source = groups.flatMap(g => g.contentItems).find(it => it.id === rowId);
+                  if (source) {
+                    reschedule(source, cell.key);
+                  }
                 }}
                 className={`group relative flex min-h-[112px] cursor-pointer flex-col gap-1 border-b border-r p-2 transition-colors ${
                   cell.inMonth ? 'bg-card' : 'bg-muted/20'
@@ -533,7 +569,7 @@ export function CampaignCalendar({ campaign, locale }: Props) {
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  {rows.slice(0, 3).map((row) => (
+                  {rows.slice(0, 3).map(row => (
                     <PostChip
                       key={row.id}
                       row={row}
@@ -542,7 +578,10 @@ export function CampaignCalendar({ campaign, locale }: Props) {
                   ))}
                   {rows.length > 3 && (
                     <span className="pl-1 text-[10px] font-medium text-muted-foreground">
-                      +{rows.length - 3} more
+                      +
+                      {rows.length - 3}
+                      {' '}
+                      more
                     </span>
                   )}
                 </div>
@@ -555,8 +594,11 @@ export function CampaignCalendar({ campaign, locale }: Props) {
       {/* Empty state — only when API returns nothing and not loading */}
       {!loading && groups.length === 0 && !error && (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-14 text-muted-foreground">
-          <CalendarDays className="mb-3 h-8 w-8 text-muted-foreground/50" />
-          <p className="text-sm font-medium text-foreground">No posts scheduled in {monthLabel(currentMonth, locale)}</p>
+          <CalendarDays className="mb-3 size-8 text-muted-foreground/50" />
+          <p className="text-sm font-medium text-foreground">
+            No posts scheduled in
+            {monthLabel(currentMonth, locale)}
+          </p>
           <p className="mt-1 text-xs">Generate or launch this campaign to populate the calendar.</p>
         </div>
       )}
@@ -612,18 +654,18 @@ function PostChip({ row, dimmed }: { row: CampaignContentRow; dimmed: boolean })
         // Prevent day-cell click when interacting with the chip itself.
         e.stopPropagation();
       }}
-      className={`flex items-center gap-1.5 truncate rounded-md border bg-background/70 px-1.5 py-1 text-[11px] transition-opacity hover:border-primary/50 ${
+      className={`flex items-center gap-1.5 truncate rounded-md border bg-background/70 px-1.5 py-1 text-micro transition-opacity hover:border-primary/50 ${
         dimmed ? 'opacity-50' : ''
       }`}
       title={label}
     >
-      <span className="relative flex h-4 w-4 flex-shrink-0 overflow-hidden rounded-sm bg-muted">
+      <span className="relative flex size-4 flex-shrink-0 overflow-hidden rounded-sm bg-muted">
         {isVideo && videoUrl ? (
-          // eslint-disable-next-line jsx-a11y/media-has-caption
+
           <video
             src={videoUrl}
             poster={thumb ?? undefined}
-            className="h-full w-full object-cover"
+            className="size-full object-cover"
             autoPlay
             muted
             loop
@@ -632,7 +674,7 @@ function PostChip({ row, dimmed }: { row: CampaignContentRow; dimmed: boolean })
           />
         ) : thumb ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={thumb} alt="" className="h-full w-full object-cover" />
+          <img src={thumb} alt="" className="size-full object-cover" />
         ) : null}
       </span>
       <span className="truncate">{row.scheduledTime?.slice(0, 5) || '—'}</span>
@@ -664,7 +706,9 @@ function DaySidebar({
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -688,14 +732,14 @@ function DaySidebar({
             <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Scheduled
             </div>
-            <div className="mt-0.5 truncate text-base font-semibold text-foreground">
+            <div className="mt-0.5 truncate text-heading text-foreground">
               {dayLabel(dateKey, locale)}
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="rounded-lg px-2 py-1 text-meta text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             Close
           </button>
@@ -704,13 +748,13 @@ function DaySidebar({
         <div className="flex-1 overflow-y-auto p-4">
           {rows.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-10 text-muted-foreground">
-              <CalendarDays className="mb-2 h-6 w-6 text-muted-foreground/50" />
+              <CalendarDays className="mb-2 size-6 text-muted-foreground/50" />
               <p className="text-sm">No posts scheduled</p>
               <p className="mt-0.5 text-xs">Drag a post from another day onto this cell to move it here.</p>
             </div>
           ) : (
             <ul className="space-y-3">
-              {rows.map((row) => (
+              {rows.map(row => (
                 <DayPostRow
                   key={row.id}
                   campaignId={campaignId}
@@ -750,7 +794,9 @@ function DayPostRow({
   const [actionError, setActionError] = useState<string | null>(null);
 
   const handleReroll = async () => {
-    if (!item || isRerolling) return;
+    if (!item || isRerolling) {
+      return;
+    }
     setIsRerolling(true);
     setActionError(null);
     try {
@@ -772,8 +818,12 @@ function DayPostRow({
   };
 
   const handleDelete = async () => {
-    if (!item || isDeleting) return;
-    if (!window.confirm('Delete this post from the campaign?')) return;
+    if (!item || isDeleting) {
+      return;
+    }
+    if (!window.confirm('Delete this post from the campaign?')) {
+      return;
+    }
     setIsDeleting(true);
     setActionError(null);
     try {
@@ -792,13 +842,13 @@ function DayPostRow({
   return (
     <li className="rounded-xl border bg-card p-3">
       <div className="flex gap-3">
-        <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
+        <div className="relative size-16 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
           {isVideo && videoUrl ? (
-            // eslint-disable-next-line jsx-a11y/media-has-caption
+
             <video
               src={videoUrl}
               poster={thumb ?? undefined}
-              className="h-full w-full object-cover"
+              className="size-full object-cover"
               autoPlay
               muted
               loop
@@ -807,16 +857,16 @@ function DayPostRow({
             />
           ) : thumb ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={thumb} alt="" className="h-full w-full object-cover" />
+            <img src={thumb} alt="" className="size-full object-cover" />
           ) : (
-            <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">
+            <div className="flex size-full items-center justify-center text-[10px] text-muted-foreground">
               No media
             </div>
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Clock className="h-3 w-3" />
+          <div className="flex items-center gap-2 text-meta text-muted-foreground">
+            <Clock className="size-3" />
             <span>{row.scheduledTime?.slice(0, 5) || 'Time not set'}</span>
             {item?.contentType && (
               <>
@@ -828,7 +878,7 @@ function DayPostRow({
           <p className="mt-1 line-clamp-3 text-sm text-foreground">{caption}</p>
           {platforms.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1">
-              {platforms.map((p) => (
+              {platforms.map(p => (
                 <span
                   key={p}
                   className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium capitalize text-muted-foreground"
@@ -852,7 +902,7 @@ function DayPostRow({
             onClick={() => onEdit(item)}
             className="inline-flex items-center gap-1.5 rounded-lg border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
           >
-            <Pencil className="h-3 w-3" />
+            <Pencil className="size-3" />
             Edit
           </button>
           <button
@@ -862,7 +912,7 @@ function DayPostRow({
             className="inline-flex items-center gap-1.5 rounded-lg border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
             title="Re-roll"
           >
-            {isRerolling ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            {isRerolling ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
             Re-roll
           </button>
           <button
@@ -872,7 +922,7 @@ function DayPostRow({
             className="inline-flex items-center gap-1.5 rounded-lg border bg-background px-3 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
             title="Delete"
           >
-            {isDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+            {isDeleting ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
             Delete
           </button>
         </div>

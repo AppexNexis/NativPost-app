@@ -9,10 +9,10 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import type { AiCreditWallet } from '@/lib/ai-studio/server';
 
-interface Props {
+type Props = {
   wallet: AiCreditWallet;
   onSaved: () => Promise<void>;
-}
+};
 
 export function AutoTopUpCard({ wallet, onSaved }: Props) {
   const [enabled, setEnabled] = useState(wallet.autoTopUp.enabled);
@@ -59,8 +59,8 @@ export function AutoTopUpCard({ wallet, onSaved }: Props) {
     <div className="flex flex-col gap-5 rounded-xl border bg-background p-5 dark:bg-neutral-950">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-base font-semibold">Auto top-up</h3>
-          <p className="mt-0.5 text-sm text-muted-foreground">
+          <h3 className="text-heading">Auto top-up</h3>
+          <p className="mt-0.5 text-body text-muted-foreground">
             Charge your saved card when your balance drops below a limit.
           </p>
         </div>
@@ -77,11 +77,11 @@ export function AutoTopUpCard({ wallet, onSaved }: Props) {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="topup-threshold" className="text-xs text-muted-foreground">
+          <Label htmlFor="topup-threshold" className="text-meta text-muted-foreground">
             When balance falls below
           </Label>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">$</span>
+            <span className="text-body text-muted-foreground">$</span>
             <Input
               id="topup-threshold"
               type="number"
@@ -93,11 +93,11 @@ export function AutoTopUpCard({ wallet, onSaved }: Props) {
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="topup-amount" className="text-xs text-muted-foreground">
+          <Label htmlFor="topup-amount" className="text-meta text-muted-foreground">
             Automatically add
           </Label>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">$</span>
+            <span className="text-body text-muted-foreground">$</span>
             <Input
               id="topup-amount"
               type="number"

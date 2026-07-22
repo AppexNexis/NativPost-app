@@ -83,7 +83,9 @@ export const STATUS_CONFIG: Record<string, StatusMeta> = {
 };
 
 export function getStatusMeta(status: string | null | undefined): StatusMeta {
-  if (!status) return STATUS_CONFIG.draft!;
+  if (!status) {
+    return STATUS_CONFIG.draft!;
+  }
   return STATUS_CONFIG[status] ?? {
     label: status.replace(/_/g, ' '),
     bg: 'bg-muted text-muted-foreground',
@@ -99,19 +101,9 @@ export const MODE_CONFIG: Record<string, { label: string; bg: string }> = {
   controversial: { label: 'Controversial', bg: 'bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-300' },
 };
 
-export const PLATFORM_LABELS: Record<string, string> = {
-  instagram: 'Instagram',
-  linkedin: 'LinkedIn',
-  linkedin_page: 'LinkedIn Page',
-  twitter: 'X (Twitter)',
-  facebook: 'Facebook',
-  tiktok: 'TikTok',
-  youtube: 'YouTube',
-  threads: 'Threads',
-  pinterest: 'Pinterest',
-  snapchat: 'Snapchat',
-  whatsapp: 'WhatsApp',
-};
+// Canonical platform labels live in @/lib/platforms — re-exported here so the
+// detail panels keep their existing import path.
+export { PLATFORM_LABELS } from '@/lib/platforms';
 
 export const ASPECT_RATIO_LABELS: Record<string, string> = {
   '9:16': '9:16 Vertical (Stories, Reels)',
@@ -125,21 +117,33 @@ export const ASPECT_RATIO_LABELS: Record<string, string> = {
 };
 
 export function ctLabel(contentType: string | null | undefined): string {
-  if (!contentType) return '-';
+  if (!contentType) {
+    return '-';
+  }
   return contentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 export function formatDuration(seconds: number | null | undefined): string {
-  if (!seconds) return '-';
-  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (!seconds) {
+    return '-';
+  }
+  if (seconds < 60) {
+    return `${Math.round(seconds)}s`;
+  }
   const m = Math.floor(seconds / 60);
   const s = Math.round(seconds % 60);
   return `${m}m ${s}s`;
 }
 
 export function formatCount(n: number | null | undefined): string {
-  if (n == null) return '-';
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}K`;
+  if (n == null) {
+    return '-';
+  }
+  if (n < 1000) {
+    return String(n);
+  }
+  if (n < 1_000_000) {
+    return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}K`;
+  }
   return `${(n / 1_000_000).toFixed(1)}M`;
 }

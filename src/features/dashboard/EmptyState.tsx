@@ -20,7 +20,7 @@ type CTA = {
   onClick?: () => void;
 };
 
-interface EmptyStateProps {
+type EmptyStateProps = {
   icon: LucideIcon;
   title: string;
   description: string;
@@ -34,16 +34,18 @@ interface EmptyStateProps {
   actionLabel?: string;
   actionHref?: string;
   onAction?: () => void;
-}
+};
 
 const PRIMARY_CLS
-  = 'inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90';
+  = 'inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
 const SECONDARY_CLS
-  = 'inline-flex items-center justify-center rounded-lg border bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted';
+  = 'inline-flex items-center justify-center rounded-lg border bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 function renderCTA(cta: CTA | undefined, cls: string) {
-  if (!cta) return null;
+  if (!cta) {
+    return null;
+  }
   if (cta.href) {
     return (
       <Link href={cta.href} className={cls}>
@@ -82,8 +84,8 @@ export function EmptyState({
       <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-muted">
         <Icon className="size-6 text-muted-foreground" />
       </div>
-      <h3 className="mb-1 text-base font-semibold">{title}</h3>
-      <p className="mb-6 max-w-sm text-sm text-muted-foreground">
+      <h3 className="mb-1 text-heading">{title}</h3>
+      <p className="mb-6 max-w-sm text-body text-muted-foreground">
         {description}
       </p>
       {(primaryCTA || secondary) && (

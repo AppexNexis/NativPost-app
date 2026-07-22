@@ -58,6 +58,7 @@
     "@sentry/nextjs": "^8.34.0",
     "@spotlightjs/spotlight": "^2.5.0",
     "@t3-oss/env-nextjs": "^0.11.1",
+    "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-table": "^8.20.5",
     "@uploadcare/react-uploader": "^1.13.0",
     "@vercel/functions": "^3.5.1",

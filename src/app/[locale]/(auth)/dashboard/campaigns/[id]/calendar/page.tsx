@@ -1,6 +1,6 @@
+import { and, eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { and, eq } from 'drizzle-orm';
 
 import { CampaignCalendar } from '@/components/campaigns/CampaignCalendar';
 import { getAuthContext } from '@/lib/auth';
@@ -21,7 +21,7 @@ export default async function Page({ params }: PageProps) {
 
   if (error || !orgId) {
     return (
-      <p className="py-8 text-sm text-muted-foreground">
+      <p className="py-8 text-body text-muted-foreground">
         Please sign in to view this campaign.
       </p>
     );

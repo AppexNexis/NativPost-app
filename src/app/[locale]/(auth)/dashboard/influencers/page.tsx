@@ -202,7 +202,7 @@ export default function InfluencersPage() {
           <button
             type="button"
             onClick={clearAll}
-            className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+            className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-2 text-body text-muted-foreground hover:text-foreground"
           >
             <X size={14} />
             Clear (
@@ -342,8 +342,8 @@ function InfluencerCard({ item }: { item: Influencer }) {
       </div>
       <div className="p-3">
         <div className="truncate text-sm font-medium">{item.name}</div>
-        {traitLine && <div className="mt-0.5 truncate text-xs text-muted-foreground">{traitLine}</div>}
-        <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+        {traitLine && <div className="mt-0.5 truncate text-meta text-muted-foreground">{traitLine}</div>}
+        <div className="mt-2 flex items-center justify-between text-meta text-muted-foreground">
           <span>
             {item.usageCount ?? 0}
             {' '}
