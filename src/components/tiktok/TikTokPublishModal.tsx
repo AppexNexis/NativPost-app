@@ -168,6 +168,22 @@ export function TikTokPublishModal({
   >('idle');
   const [publishId, setPublishId] = useState<string | null>(null);
 
+  const MUSIC_USAGE_URL = 'https://www.tiktok.com/legal/page/global/music-usage-confirmation/en';
+
+  function MusicUsageLink() {
+    return (
+      <a
+        href={MUSIC_USAGE_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline underline-offset-2 hover:text-foreground"
+        onClick={(e) => e.stopPropagation()}
+      >
+        Music Usage Confirmation
+      </a>
+    );
+  }
+
   // ── Poll for publish status after getting a publishId (Guideline 5e) ───────
   // Stops when modal closes or component unmounts (AbortController + canceled flag)
   useEffect(() => {
@@ -284,12 +300,16 @@ export function TikTokPublishModal({
 
   // ── Validation helpers ─────────────────────────────────────────────────────
   const brandTogglesActive = settings.commercialDisclosure;
-  const standardDeclaration = "By posting, you agree to TikTok's Music Usage Confirmation.";
-  const brandedDeclaration = "By posting, you agree to TikTok's Branded Content Policy and Music Usage Confirmation.";
+  // const standardDeclaration = "By posting, you agree to TikTok's Music Usage Confirmation.";
+  // const brandedDeclaration = "By posting, you agree to TikTok's Branded Content Policy and Music Usage Confirmation.";
+
+  // const consentText = (brandTogglesActive && settings.brandContentToggle)
+  //   ? brandedDeclaration
+  //   : standardDeclaration;
 
   const consentText = (brandTogglesActive && settings.brandContentToggle)
-    ? brandedDeclaration
-    : standardDeclaration;
+    ? <>By posting, you agree to TikTok's Branded Content Policy and <MusicUsageLink />.</>
+    : <>By posting, you agree to TikTok's <MusicUsageLink />.</>;
 
   const commercialDisclosureIncomplete = brandTogglesActive && !settings.brandOrganicToggle && !settings.brandContentToggle;
   const privacyIsPrivate = settings.privacyLevel === 'SELF_ONLY';
@@ -579,8 +599,10 @@ export function TikTokPublishModal({
                 {/* Interaction settings (Guideline 2c) — hidden in Inbox mode */}
                 <div className={`space-y-3 ${settings.publishMethod !== 'DIRECT' ? 'hidden' : ''}`}>
                   <label className="text-sm font-medium text-foreground">Allow users to</label>
-                  <div className="flex flex-wrap gap-4">
-                    <label className={`flex items-center gap-2 text-sm ${creatorInfo?.commentDisabled ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'}`}>
+                  {/* <div className="flex flex-wrap gap-4">
+                    <label className={`flex items-center gap-2 text-sm ${creatorInfo?.commentDisabled ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'}`}> */}
+                  <div className="grid grid-cols-1 items-start gap-x-4 gap-y-3 sm:grid-cols-3">
+                    <label className={`flex items-start gap-2 text-sm ${creatorInfo?.commentDisabled ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'}`}>
                       <div>
                         <div className="flex items-center gap-2">
                           <input
@@ -600,7 +622,8 @@ export function TikTokPublishModal({
                     </label>
 
                     {!isPhotoPost && (
-                      <label className={`flex items-center gap-2 text-sm ${creatorInfo?.duetDisabled ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'}`}>
+                      // <label className={`flex items-center gap-2 text-sm ${creatorInfo?.duetDisabled ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'}`}>
+                      <label className={`flex items-start gap-2 text-sm ${creatorInfo?.duetDisabled ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'}`}>
                         <div>
                           <div className="flex items-center gap-2">
                             <input
@@ -621,7 +644,8 @@ export function TikTokPublishModal({
                     )}
 
                     {!isPhotoPost && (
-                      <label className={`flex items-center gap-2 text-sm ${creatorInfo?.stitchDisabled ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'}`}>
+                      // <label className={`flex items-center gap-2 text-sm ${creatorInfo?.stitchDisabled ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'}`}>
+                      <label className={`flex items-start gap-2 text-sm ${creatorInfo?.stitchDisabled ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'}`}>
                         <div>
                           <div className="flex items-center gap-2">
                             <input
