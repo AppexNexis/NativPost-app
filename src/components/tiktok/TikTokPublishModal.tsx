@@ -27,6 +27,7 @@ import {
 import { useEffect, useState } from 'react';
 
 import { RemotionPreviewPlayer } from '@/components/editor/RemotionPreviewPlayer';
+import { isVideoContentType } from '@/types/v2';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -157,7 +158,8 @@ export function TikTokPublishModal({
     musicConsent: false,     // Must be actively checked — no default
   });
 
-  const isPhotoPost = contentItem.contentType === 'image';
+  // const isPhotoPost = contentItem.contentType === 'image';
+   const isPhotoPost = !isVideoContentType(contentItem.contentType);
 
   const [publishStatus, setPublishStatus] = useState<
     'idle' | 'uploading' | 'processing' | 'success' | 'failed'
@@ -254,7 +256,8 @@ export function TikTokPublishModal({
         setFreshnessTimestamp(Date.now());
 
         // Guideline 1c: Check video duration limits
-        if (contentItem.contentType === 'video' && contentItem.videoDuration && creatorData.maxVideoDurationSec) {
+        // if (contentItem.contentType === 'video' && contentItem.videoDuration && creatorData.maxVideoDurationSec) {
+           if (isVideoContentType(contentItem.contentType) && contentItem.videoDuration && creatorData.maxVideoDurationSec) {
           if (contentItem.videoDuration > creatorData.maxVideoDurationSec) {
             setError(`Your video duration (${contentItem.videoDuration}s) exceeds your TikTok account's maximum allowed limit of ${creatorData.maxVideoDurationSec}s.`);
           }
