@@ -19,6 +19,9 @@ export const Env = createEnv({
     // POST back to /api/webhooks/cloudinary-moderation.
     // Format: https://<prod-host>/api/webhooks/cloudinary-moderation
     CLOUDINARY_MODERATION_WEBHOOK: z.string().url().optional(),
+    // Optional Discord webhook for in-app feedback notifications.
+    // Set the URL in Vercel env vars; leave unset to skip.
+    FEEDBACK_DISCORD_WEBHOOK_URL: z.string().url().optional(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().optional(),
@@ -42,6 +45,7 @@ export const Env = createEnv({
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     NATIVPOST_TEAM_ORG_ID: process.env.NATIVPOST_TEAM_ORG_ID,
     CLOUDINARY_MODERATION_WEBHOOK: process.env.CLOUDINARY_MODERATION_WEBHOOK,
+    FEEDBACK_DISCORD_WEBHOOK_URL: process.env.FEEDBACK_DISCORD_WEBHOOK_URL,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
     NEXT_PUBLIC_CLERK_SIGN_IN_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL,

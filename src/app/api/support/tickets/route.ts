@@ -27,6 +27,7 @@ import {
 } from '@/models/Schema';
 import { classifyTicket, generateAutoReply } from '@/lib/support-ai';
 import { sendTicketConfirmation, sendAutoResolvedNotification } from '@/lib/support-email';
+import { sendFeedbackToDiscord } from '@/lib/support-discord';
 
 // -----------------------------------------------------------
 // GET — List tickets for the current org
@@ -150,6 +151,18 @@ export async function POST(req: NextRequest) {
   // Without this, Vercel kills the function and the AI work is discarded.
   waitUntil(
     processTicketWithAI(ticket.id, body.subject, body.body, submitterName, submitterEmail),
+  );
+
+  // Fire the Discord webhook in the background if configured (doesn't block).
+  waitUntil(
+    sendFeedbackToDiscord({
+      id: ticket.id,
+      subject: body.subject,
+      body: body.body,
+      submitterName,
+      submitterEmail,
+      source: body.source,
+    }),
   );
 
   return NextResponse.json({ ticket }, { status: 201 });
