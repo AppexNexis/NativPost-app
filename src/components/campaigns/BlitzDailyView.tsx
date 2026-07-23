@@ -217,6 +217,7 @@ export function BlitzDailyView({
   effectiveTargetAccountIds = NO_IDS,
   disabledAccountIds = NO_IDS,
 }: BlitzDailyViewProps) {
+  const router = useRouter();
   const [items, setItems] = useState<BlitzItem[]>(initialContentItems);
   const [isGenerating, setIsGenerating] = useState(false);
   const [actionPending, setActionPending] = useState<string | null>(null);
@@ -545,11 +546,10 @@ export function BlitzDailyView({
     setError(null);
     try {
       await patchStatus(item.id, 'approved');
-      removeFromQueue(item.id);
-      // Stay in the swipe flow — momentum is the whole point of Blitz.
-      // (Navigating to the content page after every approve made reviewing
-      // a 10-post queue take 10 round-trips and left QueueDone unreachable.)
-      showToast('Approved', 'ok');
+      // Navigate to the content detail page so the user can review the
+      // approved post, configure publish settings (channels, schedule),
+      // or make last-minute edits before it goes out.
+      router.push(`/dashboard/content/${item.id}`);
     } catch (err: any) {
       setError(err?.message || 'Approve failed');
     } finally {
