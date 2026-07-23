@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
-import { getFalResult, getFalStatus } from '@/lib/ai-studio/fal';
+import { getFalResult, getFalStatus, parseFalErrorPayload } from '@/lib/ai-studio/fal';
 import { getModel } from '@/lib/ai-studio/models';
 import { reconcileFalJob } from '@/lib/ai-studio/reconcile';
 import { getAuthContext } from '@/lib/auth';
@@ -61,7 +61,28 @@ export async function GET(request: Request) {
         await reconcileFalJob({ job, ok: true, output: result });
         reconciledIds.push(job.id);
       } else if (status.status === 'FAILED') {
-        await reconcileFalJob({ job, ok: false, error: 'Fal reported FAILED via polling' });
+        // Try to get the actual error detail from Fal's result endpoint.
+        // The webhook error string is often generic ("Unexpected status code:
+        // 422") while the result endpoint has the full model detail array.
+        let errorMsg = 'Fal reported FAILED via polling';
+        try {
+          const result = await getFalResult<Record<string, unknown>>(model.falModel, job.falRequestId);
+          const errField = result?.error;
+          if (typeof errField === 'string') {
+            const parsed = parseFalErrorPayload(errField);
+            errorMsg = parsed.type ? `${parsed.message} (${parsed.type})` : parsed.message;
+          } else if (errField && typeof errField === 'object') {
+            const parsed = parseFalErrorPayload(JSON.stringify(errField));
+            errorMsg = parsed.type ? `${parsed.message} (${parsed.type})` : parsed.message;
+          } else if (result?.detail) {
+            // Some models return { detail: [...] } at top level
+            const parsed = parseFalErrorPayload(JSON.stringify(result));
+            errorMsg = parsed.type ? `${parsed.message} (${parsed.type})` : parsed.message;
+          }
+        } catch {
+          // getFalResult threw (e.g. 404); keep the generic fallback
+        }
+        await reconcileFalJob({ job, ok: false, error: errorMsg });
         reconciledIds.push(job.id);
       }
     } catch {

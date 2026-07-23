@@ -4,30 +4,38 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import {
   ArrowUpRight,
   BarChart3,
+  Bell,
   BookOpen,
   Calendar,
   CheckCircle2,
   CircleCheck,
+  CircleDashed,
   Clock,
+  Coins,
   CornerDownLeft,
   CreditCard,
   ExternalLink,
+  FileEdit,
   FileText,
   Fingerprint,
   Gift,
   History,
   Image,
+  KeyRound,
   LayoutList,
   LifeBuoy,
   Link2,
   Megaphone,
   MessageCircle,
+  Palette,
   PenLine,
   Search,
   Settings,
   Sparkles,
+  ThumbsUp,
   UserRound,
   Users,
+  XCircle,
   Zap,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -43,27 +51,35 @@ type LucideIcon = typeof Search;
 
 const ICONS: Record<string, LucideIcon> = {
   BarChart3,
+  Bell,
   BookOpen,
   Calendar,
   CheckCircle2,
   CircleCheck,
+  CircleDashed,
   Clock,
+  Coins,
   CreditCard,
   ExternalLink,
+  FileEdit,
   FileText,
   Fingerprint,
   Gift,
   Image,
+  KeyRound,
   LayoutList,
   LifeBuoy,
   Link2,
   Megaphone,
   MessageCircle,
+  Palette,
   PenLine,
   Settings,
   Sparkles,
+  ThumbsUp,
   UserRound,
   Users,
+  XCircle,
   Zap,
 };
 
@@ -139,7 +155,23 @@ export function CommandPalette({ open, onOpenChange, role, currentPlan, isTeam }
           { id: 'action:ai-studio', label: 'Generate with AI Studio', group: 'Actions', href: '/dashboard/ai-studio', icon: Sparkles, keywords: 'image video ai generate' },
         ]
       : [];
-    return [...actions, ...pages];
+    // Setting tab deep-links — always available (settings page is all roles).
+    const settingsTabs: CommandEntry[] = [
+      { id: 'settings:notifications', label: 'Notifications', group: 'Settings', href: '/dashboard/settings?tab=notifications', icon: Bell, keywords: 'alerts email notify preferences' },
+      { id: 'settings:publishing', label: 'Publishing', group: 'Settings', href: '/dashboard/settings?tab=publishing', icon: PenLine, keywords: 'default post schedule auto' },
+      { id: 'settings:content', label: 'Content', group: 'Settings', href: '/dashboard/settings?tab=content', icon: FileEdit, keywords: 'default template style formatting' },
+      { id: 'settings:credits', label: 'Credits', group: 'Settings', href: '/dashboard/settings?tab=credits', icon: Coins, keywords: 'buy purchase wallet balance top-up ai studio' },
+      { id: 'settings:api-keys', label: 'API Keys', group: 'Settings', href: '/dashboard/settings?tab=api-keys', icon: KeyRound, keywords: 'api token integration key third-party' },
+      { id: 'settings:appearance', label: 'Appearance', group: 'Settings', href: '/dashboard/settings?tab=appearance', icon: Palette, keywords: 'theme dark mode sidebar density display' },
+    ];
+    // Post status deep-links — supplement the nav items (Drafts/Scheduled/
+    // Published already exist in the sidebar nav) with the full filter set.
+    const postFilters: CommandEntry[] = [
+      { id: 'posts:pending', label: 'Pending review', group: 'Posts', href: '/dashboard/posts?status=pending_review', icon: CircleDashed, keywords: 'pending review approval queue moderate' },
+      { id: 'posts:approved', label: 'Approved', group: 'Posts', href: '/dashboard/posts?status=approved', icon: ThumbsUp, keywords: 'approved accepted ready confirm' },
+      { id: 'posts:rejected', label: 'Rejected', group: 'Posts', href: '/dashboard/posts?status=rejected', icon: XCircle, keywords: 'rejected declined denied removed failed' },
+    ];
+    return [...actions, ...settingsTabs, ...postFilters, ...pages];
   }, [role, currentPlan, isTeam]);
 
   // Reset state each time the palette opens; load recents lazily.

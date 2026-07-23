@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
-import { getFalResult, getFalStatus } from '@/lib/ai-studio/fal';
+import { getFalResult, getFalStatus, parseFalErrorPayload } from '@/lib/ai-studio/fal';
 import { getModel } from '@/lib/ai-studio/models';
 import { reconcileFalJob } from '@/lib/ai-studio/reconcile';
 import { getAuthContext } from '@/lib/auth';
@@ -62,10 +62,29 @@ export async function GET(
           return res;
         }
         if (status.status === 'FAILED') {
+          // Try to get the actual error detail from Fal's result endpoint
+          // instead of a generic message.
+          let errorMsg = 'Fal reported FAILED via polling';
+          try {
+            const result = await getFalResult<Record<string, unknown>>(model.falModel, job.falRequestId);
+            const errField = result?.error;
+            if (typeof errField === 'string') {
+              const parsed = parseFalErrorPayload(errField);
+              errorMsg = parsed.type ? `${parsed.message} (${parsed.type})` : parsed.message;
+            } else if (errField && typeof errField === 'object') {
+              const parsed = parseFalErrorPayload(JSON.stringify(errField));
+              errorMsg = parsed.type ? `${parsed.message} (${parsed.type})` : parsed.message;
+            } else if (result?.detail) {
+              const parsed = parseFalErrorPayload(JSON.stringify(result));
+              errorMsg = parsed.type ? `${parsed.message} (${parsed.type})` : parsed.message;
+            }
+          } catch {
+            // fall through with generic message
+          }
           await reconcileFalJob({
             job,
             ok: false,
-            error: 'Fal reported FAILED via polling',
+            error: errorMsg,
           });
           const [updated] = await db
             .select()

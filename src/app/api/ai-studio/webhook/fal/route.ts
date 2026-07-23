@@ -4,7 +4,14 @@ import { eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-import { type FalWebhookPayload, friendlyFalWebhookError, verifyFalWebhook } from '@/lib/ai-studio/fal';
+import {
+  type FalWebhookPayload,
+  friendlyFalWebhookError,
+  getFalResult,
+  parseFalErrorPayload,
+  verifyFalWebhook,
+} from '@/lib/ai-studio/fal';
+import { getModel } from '@/lib/ai-studio/models';
 import { reconcileFalJob } from '@/lib/ai-studio/reconcile';
 import { getDb } from '@/libs/DB';
 import { aiStudioJobSchema } from '@/models/Schema';
@@ -27,6 +34,49 @@ export const maxDuration = 300;
  * The polling fallback in GET /api/ai-studio/jobs/[id] uses the same
  * reconcileFalJob helper, so a missed webhook never strands a job.
  */
+/**
+ * Resolve a Fal webhook error to a user-facing message. Falls back to
+ * fetching the full result from Fal's REST endpoint when the webhook
+ * error field is generic (e.g. just "Unexpected status code: 422") so
+ * the user gets the model-level detail array.
+ */
+async function resolveFalError(
+  payload: FalWebhookPayload,
+  job: typeof aiStudioJobSchema.$inferSelect,
+): Promise<string> {
+  // First try the webhook error field directly.
+  const webhookMsg = friendlyFalWebhookError(payload.error);
+  if (webhookMsg !== 'Fal returned error') {
+    return webhookMsg;
+  }
+
+  // Webhook error was generic. Try fetching the full result from Fal.
+  const model = getModel(job.modelId);
+  if (!model?.falModel || !job.falRequestId) {
+    return webhookMsg;
+  }
+
+  try {
+    const result = await getFalResult<Record<string, unknown>>(model.falModel, job.falRequestId);
+    const errField = result?.error;
+    if (typeof errField === 'string') {
+      const parsed = parseFalErrorPayload(errField);
+      return parsed.type ? `${parsed.message} (${parsed.type})` : parsed.message;
+    }
+    if (errField && typeof errField === 'object') {
+      const parsed = parseFalErrorPayload(JSON.stringify(errField));
+      return parsed.type ? `${parsed.message} (${parsed.type})` : parsed.message;
+    }
+    if (result?.detail) {
+      const parsed = parseFalErrorPayload(JSON.stringify(result));
+      return parsed.type ? `${parsed.message} (${parsed.type})` : parsed.message;
+    }
+    return webhookMsg;
+  } catch {
+    return webhookMsg;
+  }
+}
+
 export async function POST(request: NextRequest) {
   const rawBodyBuf = Buffer.from(await request.arrayBuffer());
   const insecure = process.env.FAL_WEBHOOK_INSECURE === '1';
@@ -96,7 +146,7 @@ export async function POST(request: NextRequest) {
   const outcome = await reconcileFalJob({
     job,
     ok: payload.status === 'OK',
-    error: payload.status === 'OK' ? undefined : friendlyFalWebhookError(payload.error),
+    error: payload.status === 'OK' ? undefined : await resolveFalError(payload, job),
     output: payload.payload,
   });
 

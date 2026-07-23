@@ -1,20 +1,49 @@
 /*
  * Brand fonts — Safiro (display) + Geist Mono (labels, kbd, code).
  *
- * Files live in /public/assets/fonts/ (see the README there).
- * - Safiro Medium is the licensed file currently available; it serves the
- *   whole 400–600 range so semibold headings render Medium rather than a
- *   faux-bold synthesis. Drop in Regular/SemiBold later and split the
- *   declarations for finer weight control.
+ * Files live in /public/assets/fonts/.
+ * - Safiro is the licensed brand font from Atipo Foundry. All weights are
+ *   declared as separate @font-face blocks with matching font-weight values
+ *   so the browser picks the exact file instead of faux-bold synthesis.
  * - Geist Mono is open source (SIL OFL, via the `geist` npm package).
  */
 
 @font-face {
   font-family: 'Safiro';
-  src:
-    url('/assets/fonts/safiro-medium-webfont.woff2') format('woff2'),
-    url('/assets/fonts/safiro-medium-webfont.woff') format('woff');
-  font-weight: 400 600;
+  src: url('/assets/fonts/Safiro-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Safiro';
+  src: url('/assets/fonts/Safiro-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Safiro';
+  src: url('/assets/fonts/Safiro-MediumItalic.woff2') format('woff2');
+  font-weight: 500;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Safiro';
+  src: url('/assets/fonts/Safiro-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Safiro';
+  src: url('/assets/fonts/Safiro-Bold.woff2') format('woff2');
+  font-weight: 700;
   font-style: normal;
   font-display: swap;
 }

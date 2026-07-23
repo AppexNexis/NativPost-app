@@ -246,7 +246,17 @@ const FRIENDLY_BY_TYPE: Record<string, string> = {
   rate_limit_exceeded: 'Rate limit hit at the model provider. Try again in a minute.',
   insufficient_balance: 'Provider account is out of credits.',
   authentication_error: 'Provider authentication failed. Contact support.',
+  sequence_too_long: 'Your prompt is too long for this model. Try a shorter prompt with fewer details.',
+  invalid_aspect_ratio: 'The selected aspect ratio is not supported by this model.',
+  invalid_duration: 'The selected duration is not supported by this model.',
+  invalid_resolution: 'The selected resolution is not supported by this model.',
+  internal_server_error: 'The model provider encountered an internal error. Try again.',
 };
+
+/** Strip Fal internal URLs from user-facing error messages. */
+function stripFalUrls(text: string): string {
+  return text.replace(/https?:\/\/docs\.fal\.ai\S*/gi, '').replace(/\s{2,}/g, ' ').trim();
+}
 
 export function parseFalErrorPayload(raw: string | undefined | null): { message: string; type?: string } {
   if (!raw) {
@@ -261,7 +271,7 @@ export function parseFalErrorPayload(raw: string | undefined | null): { message:
   try {
     parsed = JSON.parse(trimmed);
   } catch {
-    return { message: trimmed.slice(0, 300) };
+    return { message: stripFalUrls(trimmed).slice(0, 300) };
   }
 
   if (parsed && typeof parsed === 'object') {
@@ -270,23 +280,24 @@ export function parseFalErrorPayload(raw: string | undefined | null): { message:
       const first = obj.detail[0] as FalErrorDetailItem;
       const type = typeof first?.type === 'string' ? first.type : undefined;
       const friendly = type && FRIENDLY_BY_TYPE[type];
-      const msg = friendly || (typeof first?.msg === 'string' ? first.msg : undefined);
+      const rawMsg = typeof first?.msg === 'string' ? first.msg : undefined;
+      const msg = friendly || (rawMsg ? stripFalUrls(rawMsg) : undefined);
       if (msg) {
         return { message: msg, type };
       }
     }
     if (typeof obj.detail === 'string') {
-      return { message: obj.detail.slice(0, 300) };
+      return { message: stripFalUrls(obj.detail).slice(0, 300) };
     }
     if (typeof obj.message === 'string') {
-      return { message: obj.message.slice(0, 300) };
+      return { message: stripFalUrls(obj.message).slice(0, 300) };
     }
     if (typeof obj.error === 'string') {
-      return { message: obj.error.slice(0, 300) };
+      return { message: stripFalUrls(obj.error).slice(0, 300) };
     }
   }
 
-  return { message: trimmed.slice(0, 300) };
+  return { message: stripFalUrls(trimmed).slice(0, 300) };
 }
 
 export function formatFalError(status: number, body: string): string {
@@ -301,17 +312,21 @@ export function formatFalError(status: number, body: string): string {
 }
 
 // Fal delivers webhook errors as either a string or a JSON blob depending on
-// the model. This normalizer accepts both shapes.
+// the model. This normalizer accepts both shapes and tags the type when
+// available so the UI shows, e.g., "Content flagged by moderation"
+// instead of "Unexpected status code: 422".
 export function friendlyFalWebhookError(error: unknown): string {
   if (!error) {
     return 'Fal returned error';
   }
   if (typeof error === 'string') {
-    return parseFalErrorPayload(error).message;
+    const parsed = parseFalErrorPayload(error);
+    return parsed.type ? `${parsed.message} (${parsed.type})` : parsed.message;
   }
   if (typeof error === 'object') {
     try {
-      return parseFalErrorPayload(JSON.stringify(error)).message;
+      const parsed = parseFalErrorPayload(JSON.stringify(error));
+      return parsed.type ? `${parsed.message} (${parsed.type})` : parsed.message;
     } catch {
       return 'Fal returned error';
     }

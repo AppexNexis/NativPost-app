@@ -20,7 +20,7 @@ export function JobGrid({ jobs, onCanceled, onRetried }: JobGridProps) {
         </div>
         <p className="text-heading">Your canvas is empty</p>
         <p className="mt-1 max-w-xs text-body text-muted-foreground">
-          Describe what you want in the prompt below — generations land here and sync to your Media Library.
+          Describe what you want in the prompt below, generations land here and sync to your Media Library.
         </p>
       </div>
     );
