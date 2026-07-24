@@ -5,7 +5,6 @@ import {
   Globe,
   Loader2,
   MessageSquare,
-  Mic,
   Palette,
   Pencil,
   Play,
@@ -19,7 +18,6 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
-import { BlitzVoicePicker } from '@/components/brand-profile/BlitzVoicePicker';
 import { useBrandProfile } from '@/features/brand-profile/useBrandProfile';
 import { EmptyState } from '@/features/dashboard/EmptyState';
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';

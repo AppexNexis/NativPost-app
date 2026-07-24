@@ -5,6 +5,7 @@ import {
   buildVideoMetadata,
   initiateResumableUpload,
   probeTotalSize,
+  probeYouTube,
   uploadChunk,
 } from './youtube-upload';
 
@@ -114,5 +115,24 @@ describe('uploadChunk', () => {
     await expect(
       uploadChunk('https://upload/session/1', new ArrayBuffer(1000), 0, 1000, 'tok', fetchImpl),
     ).rejects.toThrow(/YouTube chunk upload failed \(400\): bad range/);
+  });
+});
+
+describe('probeYouTube', () => {
+  it('valid token → channel title', async () => {
+    const fetchImpl = fakeFetch([
+      { match: 'channels?part=snippet', body: { items: [{ id: 'c1', snippet: { title: 'My Channel' } }] } },
+    ]);
+    const d = await probeYouTube('tok', fetchImpl);
+    expect(d.tokenValid).toBe(true);
+    expect(d.identity).toBe('My Channel');
+  });
+
+  it('invalid token', async () => {
+    const fetchImpl = fakeFetch([
+      { match: 'channels?part=snippet', ok: false, status: 401, body: { error: { message: 'invalid' } } },
+    ]);
+    const d = await probeYouTube('bad', fetchImpl);
+    expect(d.tokenValid).toBe(false);
   });
 });

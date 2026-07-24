@@ -19,10 +19,14 @@ import {
   revealAccountCredentials,
   storeAccountCredentials,
 } from '../credentials-service';
-import type { ExecutionContext, ExecutionOperation } from '../execution';
+import type {
+  ExecutionContext,
+  ExecutionOperation,
+  PlatformDiagnosis,
+} from '../execution';
 import type { PlatformCallResult, PlatformClient } from '../execution-api';
 import type { FetchLike } from './linkedin-posts';
-import { publishToLinkedIn } from './linkedin-posts';
+import { probeLinkedIn, publishToLinkedIn } from './linkedin-posts';
 import { needsRefresh, refreshLinkedInToken } from './token-refresh';
 
 /**
@@ -157,6 +161,11 @@ export function createLinkedInClient(
         evidenceUrl: `https://www.linkedin.com/feed/update/${postUrn}`,
         detail: `linkedin post ${postUrn}`,
       };
+    },
+
+    async diagnose(ctx: ExecutionContext): Promise<PlatformDiagnosis> {
+      const credentials = await freshLinkedInCredentials(ctx.managedAccountId, fetchImpl);
+      return probeLinkedIn(credentials.accessToken, fetchImpl);
     },
   };
 }

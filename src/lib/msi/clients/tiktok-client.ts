@@ -21,14 +21,18 @@ import {
   revealAccountCredentials,
   storeAccountCredentials,
 } from '../credentials-service';
-import type { ExecutionContext, ExecutionOperation } from '../execution';
+import type {
+  ExecutionContext,
+  ExecutionOperation,
+  PlatformDiagnosis,
+} from '../execution';
 import type {
   PlatformCallResult,
   PlatformClient,
   PlatformStatusResult,
 } from '../execution-api';
 import type { FetchLike } from './tiktok-content';
-import { fetchPublishStatus, initVideoPublish } from './tiktok-content';
+import { fetchPublishStatus, initVideoPublish, probeTikTok } from './tiktok-content';
 import { needsRefresh, refreshTikTokToken } from './token-refresh';
 
 /**
@@ -208,6 +212,11 @@ export function createTikTokClient(
         evidenceUrl: permalink,
         detail: `tiktok post ${platformPostId}`,
       };
+    },
+
+    async diagnose(ctx: ExecutionContext): Promise<PlatformDiagnosis> {
+      const credentials = await freshTikTokCredentials(ctx.managedAccountId, fetchImpl);
+      return probeTikTok(credentials.accessToken, fetchImpl);
     },
   };
 }

@@ -6,6 +6,7 @@ import {
   buildUgcPostBody,
   normalizeAuthorUrn,
   parseRegisterUpload,
+  probeLinkedIn,
   publishToLinkedIn,
 } from './linkedin-posts';
 
@@ -179,5 +180,22 @@ describe('publishToLinkedIn', () => {
         fetchImpl,
       ),
     ).rejects.toThrow(/LinkedIn publish failed \(422\): duplicate content/);
+  });
+});
+
+describe('probeLinkedIn', () => {
+  it('valid token → identity', async () => {
+    const fetchImpl = fakeFetch([
+      { match: '/me', body: { id: 'abc', localizedFirstName: 'Jo', localizedLastName: 'Lee' } },
+    ]);
+    const d = await probeLinkedIn('tok', fetchImpl);
+    expect(d.tokenValid).toBe(true);
+    expect(d.identity).toBe('Jo Lee (abc)');
+  });
+
+  it('invalid token', async () => {
+    const fetchImpl = fakeFetch([{ match: '/me', ok: false, status: 401, body: { message: 'invalid' } }]);
+    const d = await probeLinkedIn('bad', fetchImpl);
+    expect(d.tokenValid).toBe(false);
   });
 });

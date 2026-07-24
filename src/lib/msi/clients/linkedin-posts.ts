@@ -160,6 +160,31 @@ export async function createUgcPost(
 }
 
 /**
+ * Read-only health probe for the diagnostics page: confirm the token reaches
+ * /v2/me. Never throws.
+ */
+export async function probeLinkedIn(
+  accessToken: string,
+  fetchImpl: FetchLike,
+): Promise<{ reachable: boolean; tokenValid: boolean; identity?: string; detail?: string }> {
+  try {
+    const res = await fetchImpl(`${API}/me`, { method: 'GET', headers: jsonHeaders(accessToken) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.id) {
+      return {
+        reachable: true,
+        tokenValid: false,
+        detail: data?.message || `LinkedIn returned ${res.status}`,
+      };
+    }
+    const name = [data.localizedFirstName, data.localizedLastName].filter(Boolean).join(' ');
+    return { reachable: true, tokenValid: true, identity: name ? `${name} (${data.id})` : data.id };
+  } catch (err) {
+    return { reachable: false, tokenValid: false, detail: err instanceof Error ? err.message : 'network error' };
+  }
+}
+
+/**
  * Full publish. A `videoUrl` posts a single VIDEO; otherwise the images path
  * (register → upload → post) runs. Returns the post URN. Video uploads the bytes
  * in one PUT (Assets API) — fine for typical managed clips; large videos are a

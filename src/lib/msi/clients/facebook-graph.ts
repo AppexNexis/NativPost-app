@@ -149,6 +149,49 @@ export async function postFacebookCarousel(
   return data.id as string;
 }
 
+/**
+ * Read-only health probe for the diagnostics page: confirm the token reaches
+ * the Page + read the granted posting permissions. Never throws.
+ */
+export async function probeFacebookPage(
+  pageId: string,
+  accessToken: string,
+  fetchImpl: FetchLike,
+): Promise<{
+  reachable: boolean;
+  tokenValid: boolean;
+  identity?: string;
+  permissions?: Array<{ name: string; granted: boolean }>;
+  detail?: string;
+}> {
+  try {
+    const res = await fetchImpl(`${GRAPH}/${pageId}?fields=id,name&access_token=${accessToken}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { reachable: true, tokenValid: false, detail: data?.error?.message || `Graph returned ${res.status}` };
+    }
+    const identity = data?.name ? `${data.name} (${data.id})` : data?.id;
+
+    let permissions: Array<{ name: string; granted: boolean }> | undefined;
+    try {
+      const permRes = await fetchImpl(`${GRAPH}/me/permissions?access_token=${accessToken}`);
+      const permData = await permRes.json().catch(() => ({}));
+      const rows: Array<{ permission: string; status: string }> = permData?.data ?? [];
+      const want = ['pages_manage_posts', 'pages_read_engagement'];
+      permissions = want.map(name => ({
+        name,
+        granted: rows.some(r => r.permission === name && r.status === 'granted'),
+      }));
+    } catch {
+      permissions = undefined;
+    }
+
+    return { reachable: true, tokenValid: true, identity, permissions };
+  } catch (err) {
+    return { reachable: false, tokenValid: false, detail: err instanceof Error ? err.message : 'network error' };
+  }
+}
+
 /** Route to the right Facebook post type; returns the id + its permalink kind. */
 export async function publishToFacebook(
   params: {

@@ -17,7 +17,11 @@ import {
   revealAccountCredentials,
   storeAccountCredentials,
 } from '../credentials-service';
-import type { ExecutionContext, ExecutionOperation } from '../execution';
+import type {
+  ExecutionContext,
+  ExecutionOperation,
+  PlatformDiagnosis,
+} from '../execution';
 import type {
   PlatformCallResult,
   PlatformClient,
@@ -31,6 +35,7 @@ import {
   fetchByteRange,
   initiateResumableUpload,
   probeTotalSize,
+  probeYouTube,
   uploadChunk,
 } from './youtube-upload';
 
@@ -214,6 +219,11 @@ export function createYouTubeClient(
       // Advance the offset and hand the updated state back for the next tick.
       const next: UploadState = { ...state, offset: result.nextOffset };
       return { done: false, providerHandle: JSON.stringify(next) };
+    },
+
+    async diagnose(ctx: ExecutionContext): Promise<PlatformDiagnosis> {
+      const credentials = await freshYouTubeCredentials(ctx.managedAccountId, fetchImpl);
+      return probeYouTube(credentials.accessToken, fetchImpl);
     },
   };
 }

@@ -119,6 +119,34 @@ export async function fetchByteRange(
   return res.arrayBuffer();
 }
 
+/**
+ * Read-only health probe for the diagnostics page: confirm the token reaches
+ * the authenticated channel. Never throws.
+ */
+export async function probeYouTube(
+  accessToken: string,
+  fetchImpl: FetchLike,
+): Promise<{ reachable: boolean; tokenValid: boolean; identity?: string; detail?: string }> {
+  try {
+    const res = await fetchImpl(
+      'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true',
+      { method: 'GET', headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    const data = await res.json().catch(() => ({}));
+    const item = data?.items?.[0];
+    if (!res.ok || !item) {
+      return {
+        reachable: true,
+        tokenValid: false,
+        detail: data?.error?.message || `YouTube returned ${res.status}`,
+      };
+    }
+    return { reachable: true, tokenValid: true, identity: item.snippet?.title || item.id };
+  } catch (err) {
+    return { reachable: false, tokenValid: false, detail: err instanceof Error ? err.message : 'network error' };
+  }
+}
+
 export type ChunkResult =
   | { status: 'incomplete'; nextOffset: number }
   | { status: 'complete'; videoId: string };

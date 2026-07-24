@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { FetchLike } from './facebook-graph';
-import { fbPermalink, publishToFacebook } from './facebook-graph';
+import { fbPermalink, probeFacebookPage, publishToFacebook } from './facebook-graph';
 
 function fakeFetch(
   routes: Array<{ match: string; ok?: boolean; status?: number; body?: any }>,
@@ -91,5 +91,37 @@ describe('publishToFacebook routing', () => {
         fetchImpl,
       ),
     ).rejects.toThrow(/Facebook image post failed \(400\): bad image/);
+  });
+});
+
+describe('probeFacebookPage', () => {
+  it('reports reachable + valid token + identity + permissions', async () => {
+    const { fetchImpl } = fakeFetch([
+      { match: 'fields=id,name', body: { id: '123', name: 'Acme' } },
+      {
+        match: '/me/permissions',
+        body: {
+          data: [
+            { permission: 'pages_manage_posts', status: 'granted' },
+            { permission: 'pages_read_engagement', status: 'declined' },
+          ],
+        },
+      },
+    ]);
+    const d = await probeFacebookPage('123', 'tok', fetchImpl);
+    expect(d.reachable).toBe(true);
+    expect(d.tokenValid).toBe(true);
+    expect(d.identity).toBe('Acme (123)');
+    expect(d.permissions?.find(p => p.name === 'pages_manage_posts')?.granted).toBe(true);
+    expect(d.permissions?.find(p => p.name === 'pages_read_engagement')?.granted).toBe(false);
+  });
+
+  it('flags an invalid token', async () => {
+    const { fetchImpl } = fakeFetch([
+      { match: 'fields=id,name', ok: false, status: 400, body: { error: { message: 'Invalid token' } } },
+    ]);
+    const d = await probeFacebookPage('123', 'bad', fetchImpl);
+    expect(d.tokenValid).toBe(false);
+    expect(d.detail).toMatch(/Invalid token/);
   });
 });

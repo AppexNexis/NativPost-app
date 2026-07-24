@@ -97,3 +97,31 @@ export async function fetchPublishStatus(
   }
   return { status: 'PROCESSING' };
 }
+
+/**
+ * Read-only health probe for the diagnostics page: confirm the token reaches
+ * the TikTok user-info endpoint. Never throws.
+ */
+export async function probeTikTok(
+  accessToken: string,
+  fetchImpl: FetchLike,
+): Promise<{ reachable: boolean; tokenValid: boolean; identity?: string; detail?: string }> {
+  try {
+    const res = await fetchImpl(`${TIKTOK}/user/info/?fields=open_id,display_name`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    const user = data?.data?.user;
+    if (!res.ok || !user) {
+      return {
+        reachable: true,
+        tokenValid: false,
+        detail: data?.error?.message || `TikTok returned ${res.status}`,
+      };
+    }
+    return { reachable: true, tokenValid: true, identity: user.display_name || user.open_id };
+  } catch (err) {
+    return { reachable: false, tokenValid: false, detail: err instanceof Error ? err.message : 'network error' };
+  }
+}

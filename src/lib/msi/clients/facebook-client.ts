@@ -17,10 +17,14 @@ import {
   revealAccountCredentials,
   storeAccountCredentials,
 } from '../credentials-service';
-import type { ExecutionContext, ExecutionOperation } from '../execution';
+import type {
+  ExecutionContext,
+  ExecutionOperation,
+  PlatformDiagnosis,
+} from '../execution';
 import type { PlatformCallResult, PlatformClient } from '../execution-api';
 import type { FetchLike } from './facebook-graph';
-import { fbPermalink, publishToFacebook } from './facebook-graph';
+import { fbPermalink, probeFacebookPage, publishToFacebook } from './facebook-graph';
 import { needsRefresh, refreshMetaToken } from './token-refresh';
 
 /**
@@ -148,6 +152,11 @@ export function createFacebookClient(
         evidenceUrl: fbPermalink(credentials.pageId, postId, kind),
         detail: `facebook post ${postId}`,
       };
+    },
+
+    async diagnose(ctx: ExecutionContext): Promise<PlatformDiagnosis> {
+      const credentials = await freshFacebookCredentials(ctx.managedAccountId, fetchImpl);
+      return probeFacebookPage(credentials.pageId, credentials.accessToken, fetchImpl);
     },
   };
 }

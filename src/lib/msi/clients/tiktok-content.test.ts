@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { FetchLike } from './tiktok-content';
-import { fetchPublishStatus, initVideoPublish } from './tiktok-content';
+import { fetchPublishStatus, initVideoPublish, probeTikTok } from './tiktok-content';
 
 function oneResponse(body: any, ok = true, status = 200): FetchLike {
   return async () => ({ ok, status, json: async () => body });
@@ -63,5 +63,21 @@ describe('fetchPublishStatus', () => {
       oneResponse({ data: { status: 'PUBLISH_COMPLETE' } }),
     );
     expect(res).toEqual({ status: 'COMPLETE', postId: null });
+  });
+});
+
+describe('probeTikTok', () => {
+  it('valid token → identity', async () => {
+    const res = await probeTikTok(
+      'tok',
+      oneResponse({ data: { user: { open_id: 'o1', display_name: 'Brand' } } }),
+    );
+    expect(res.tokenValid).toBe(true);
+    expect(res.identity).toBe('Brand');
+  });
+
+  it('invalid token', async () => {
+    const res = await probeTikTok('bad', oneResponse({ error: { message: 'invalid' } }, false, 401));
+    expect(res.tokenValid).toBe(false);
   });
 });
