@@ -35,6 +35,7 @@ import {
   AdapterNotConfiguredError,
   getExecutionAdapter,
   registerExecutionAdapter,
+  resolveStrategy,
 } from './execution';
 import { createApiExecutionAdapter } from './execution-api';
 import type { JobState } from './job-workflow';
@@ -46,7 +47,6 @@ import {
   resolveStartOutcome,
   selectJobsToStart,
 } from './orchestration';
-import { resolveStrategy } from './execution';
 import type { WorkerJob } from './worker';
 import { deriveWorkerMutations, planWorkerTick } from './worker';
 
@@ -148,7 +148,16 @@ export async function runWorkerTick(now: Date = new Date()) {
   for (const retry of mutations.jobRetries) {
     await db
       .update(msiJobSchema)
-      .set({ state: 'queued', attempts: retry.attempts, failureReason: null })
+      .set({
+        state: 'queued',
+        attempts: retry.attempts,
+        failureReason: null,
+        // Clear the execution markers so the requeued job is re-startable —
+        // selectJobsToStart gates on startedAt === null.
+        startedAt: null,
+        completedAt: null,
+        executionHandle: null,
+      })
       .where(eq(msiJobSchema.id, retry.id));
   }
 
@@ -161,14 +170,14 @@ export async function runWorkerTick(now: Date = new Date()) {
   const jobAccountIds = [...new Set(jobRows.map(j => j.managedAccountId))];
   const accountRows = jobAccountIds.length > 0
     ? await db
-        .select({
-          id: managedAccountSchema.id,
-          country: managedAccountSchema.country,
-          platform: managedAccountSchema.platform,
-          executionStrategy: managedAccountSchema.executionStrategy,
-        })
-        .from(managedAccountSchema)
-        .where(inArray(managedAccountSchema.id, jobAccountIds))
+      .select({
+        id: managedAccountSchema.id,
+        country: managedAccountSchema.country,
+        platform: managedAccountSchema.platform,
+        executionStrategy: managedAccountSchema.executionStrategy,
+      })
+      .from(managedAccountSchema)
+      .where(inArray(managedAccountSchema.id, jobAccountIds))
     : [];
   const accountById = new Map(accountRows.map(a => [a.id, a]));
 
@@ -215,12 +224,12 @@ export async function runWorkerTick(now: Date = new Date()) {
       const deviceIds = devices.map(d => d.id);
       const activeAssignments = deviceIds.length > 0
         ? await db
-            .select({
-              deviceId: msiDeviceAssignmentSchema.deviceId,
-              managedAccountId: msiDeviceAssignmentSchema.managedAccountId,
-            })
-            .from(msiDeviceAssignmentSchema)
-            .where(and(inArray(msiDeviceAssignmentSchema.deviceId, deviceIds), isNull(msiDeviceAssignmentSchema.releasedAt)))
+          .select({
+            deviceId: msiDeviceAssignmentSchema.deviceId,
+            managedAccountId: msiDeviceAssignmentSchema.managedAccountId,
+          })
+          .from(msiDeviceAssignmentSchema)
+          .where(and(inArray(msiDeviceAssignmentSchema.deviceId, deviceIds), isNull(msiDeviceAssignmentSchema.releasedAt)))
         : [];
       const loadByDevice = new Map<string, number>();
       const existingDeviceByAccount = new Map<string, string>();

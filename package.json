@@ -27,6 +27,7 @@
     "msi:teardown-demo-jobs": "dotenv -c production -- tsx scripts/msi-seed-demo-jobs.ts teardown",
     "msi:seed-live-ig": "dotenv -c production -- tsx scripts/msi-seed-live-ig.ts seed",
     "msi:teardown-live-ig": "dotenv -c production -- tsx scripts/msi-seed-live-ig.ts teardown",
+    "msi:reset-live-ig": "dotenv -c production -- tsx scripts/msi-seed-live-ig.ts reset",
     "msi:live-ig-status": "dotenv -c production -- tsx scripts/msi-live-ig-status.ts",
     "commit": "cz",
     "db:generate": "drizzle-kit generate",

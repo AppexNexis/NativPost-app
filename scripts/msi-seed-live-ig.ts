@@ -26,7 +26,7 @@
  *   dotenv -c production -- npx tsx scripts/msi-seed-live-ig.ts teardown
  */
 
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 
@@ -244,9 +244,67 @@ async function seed(db: Db) {
   console.log('Clean up: npm run msi:teardown-live-ig');
 }
 
+/**
+ * Reset the account's failed/stuck publish job back to `assigned` (clearing the
+ * async handle, failure, timestamps + tasks) so the worker re-runs it against
+ * the current code — WITHOUT wiping the captured credentials. Test-loop helper.
+ */
+async function resetJobs(db: Db) {
+  const override = flag('account');
+  let accountIds: string[];
+  if (override) {
+    accountIds = [override];
+  } else {
+    const grants = await db
+      .select({ id: schema.authorizationGrantSchema.id })
+      .from(schema.authorizationGrantSchema)
+      .where(eq(schema.authorizationGrantSchema.signedByUserId, GRANT_MARKER));
+    if (grants.length === 0) {
+      console.log('No seeded live-IG account found. Run: npm run msi:seed-live-ig');
+      return;
+    }
+    const accts = await db
+      .select({ id: schema.managedAccountSchema.id })
+      .from(schema.managedAccountSchema)
+      .where(inArray(schema.managedAccountSchema.authorizationGrantId, grants.map(g => g.id)));
+    accountIds = accts.map(a => a.id);
+  }
+
+  // Any non-terminal publish job (failed / stuck assigned with a stale
+  // startedAt / mid-flight) → back to a clean `assigned` the worker will start.
+  const jobs = await db
+    .select({ id: schema.msiJobSchema.id })
+    .from(schema.msiJobSchema)
+    .where(
+      and(
+        inArray(schema.msiJobSchema.managedAccountId, accountIds),
+        eq(schema.msiJobSchema.jobType, 'publish_post'),
+        inArray(schema.msiJobSchema.state, ['failed', 'in_progress', 'assigned', 'queued']),
+      ),
+    );
+  if (jobs.length === 0) {
+    console.log('No resettable publish jobs (already completed, or none seeded).');
+    return;
+  }
+  const jobIds = jobs.map(j => j.id);
+
+  await db
+    .update(schema.msiJobSchema)
+    .set({ state: 'assigned', executionHandle: null, failureReason: null, startedAt: null, completedAt: null, attempts: 0 })
+    .where(inArray(schema.msiJobSchema.id, jobIds));
+  await db
+    .update(schema.msiTaskSchema)
+    .set({ status: 'pending', completedAt: null, completedByRole: null, completedByUserId: null })
+    .where(inArray(schema.msiTaskSchema.jobId, jobIds));
+
+  console.log(`Reset ${jobs.length} publish job(s) to 'assigned' (credentials untouched).`);
+  console.log('Now trigger the worker to re-run:');
+  console.log('  curl -X POST "https://app.nativpost.com/api/cron/msi-worker" -H "Authorization: Bearer $CRON_SECRET"');
+}
+
 async function main() {
-  if (mode !== 'seed' && mode !== 'teardown') {
-    console.error(`Unknown mode "${mode}". Use "seed" or "teardown".`);
+  if (mode !== 'seed' && mode !== 'teardown' && mode !== 'reset') {
+    console.error(`Unknown mode "${mode}". Use "seed", "teardown", or "reset".`);
     process.exit(1);
   }
   const pool = new Pool({ connectionString: DATABASE_URL, max: 2 });
@@ -254,6 +312,8 @@ async function main() {
   try {
     if (mode === 'seed') {
       await seed(db);
+    } else if (mode === 'reset') {
+      await resetJobs(db);
     } else {
       const removed = await teardownRows(db);
       console.log(
