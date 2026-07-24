@@ -1562,3 +1562,46 @@ export const msiCredentialSchema = pgTable(
     accountIdx: uniqueIndex('msi_credential_account_idx').on(t.managedAccountId),
   }),
 );
+
+// Billable publish events (docs §6). One immutable row per successfully
+// published post — the source of truth for future metered/usage billing. The
+// publishing pipeline only WRITES here; a separate reporter (behind the
+// MSI_METERED_BILLING_ENABLED flag) later ships un-reported rows to Stripe, so
+// billing can be turned on without touching the pipeline. Idempotent: unique on
+// jobId (a publish_post job maps 1:1 to a publish; retries reuse the job). Only
+// emitted on success — failed/retried publishes never reach the terminal state.
+export const msiBillablePublishEventSchema = pgTable(
+  'msi_billable_publish_event',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    managedAccountId: uuid('managed_account_id')
+      .references(() => managedAccountSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    // The publish_post job that produced this event — the idempotency anchor.
+    jobId: uuid('job_id')
+      .references(() => msiJobSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    contentItemId: uuid('content_item_id').references(
+      () => contentItemSchema.id,
+      { onDelete: 'set null' },
+    ),
+    platform: text('platform').notNull(),
+    // UTC billing month, 'YYYY-MM' — the aggregation bucket for invoicing.
+    billingPeriod: text('billing_period').notNull(),
+    occurredAt: timestamp('occurred_at', { mode: 'date' }).notNull(),
+    // Set once the event has been reported to the billing provider (null =
+    // pending). The reporter is a no-op until the feature flag is on.
+    reportedAt: timestamp('reported_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    jobIdx: uniqueIndex('msi_billable_publish_job_idx').on(t.jobId),
+    periodIdx: index('msi_billable_publish_period_idx').on(
+      t.orgId,
+      t.billingPeriod,
+    ),
+  }),
+);

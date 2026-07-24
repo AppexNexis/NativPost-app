@@ -3,6 +3,7 @@ import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 import { JobActions } from '@/components/admin/msi/JobActions';
+import { VaultActions } from '@/components/admin/msi/VaultActions';
 import { getDb } from '@/libs/DB';
 import { stateLabel, stateTone, toneBadgeClass } from '@/lib/msi/display';
 import {
@@ -13,6 +14,7 @@ import {
 import { PLATFORM_LABELS } from '@/lib/platforms';
 import {
   managedAccountSchema,
+  msiCredentialSchema,
   msiJobSchema,
   msiTaskSchema,
 } from '@/models/Schema';
@@ -45,6 +47,7 @@ export default async function AdminMsiAccountJobsPage({ params }: RouteParams) {
       country: managedAccountSchema.country,
       niche: managedAccountSchema.niche,
       lifecycleState: managedAccountSchema.lifecycleState,
+      credentialCustody: managedAccountSchema.credentialCustody,
     })
     .from(managedAccountSchema)
     .where(eq(managedAccountSchema.id, id))
@@ -64,6 +67,12 @@ export default async function AdminMsiAccountJobsPage({ params }: RouteParams) {
       </div>
     );
   }
+
+  const [credential] = await db
+    .select({ id: msiCredentialSchema.id })
+    .from(msiCredentialSchema)
+    .where(eq(msiCredentialSchema.managedAccountId, id))
+    .limit(1);
 
   const jobs = await db
     .select({
@@ -124,6 +133,12 @@ export default async function AdminMsiAccountJobsPage({ params }: RouteParams) {
           {stateLabel(account.lifecycleState)}
         </span>
       </div>
+
+      <VaultActions
+        accountId={account.id}
+        custody={account.credentialCustody}
+        hasCredentials={Boolean(credential)}
+      />
 
       <section className="mt-6">
         <h2 className="mb-3 text-sm font-semibold text-foreground">Jobs</h2>

@@ -35,7 +35,11 @@ export class SupabaseBlobStore implements SealedBlobStore {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.config.serviceKey}`,
-        'Content-Type': 'application/json',
+        // The blob is JSON, but we send it as an opaque octet-stream so a
+        // MIME-restricted bucket (allowed: application/octet-stream) accepts
+        // it. We parse the body ourselves on read, so the stored content-type
+        // is irrelevant.
+        'Content-Type': 'application/octet-stream',
         'x-upsert': 'true',
         'cache-control': 'no-store',
       },

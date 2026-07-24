@@ -15,6 +15,7 @@ import {
 } from '@/models/Schema';
 
 import { buildActivityEvent } from './audit';
+import { recordPublishEvent } from './billing-service';
 import { transitionJob } from './job-workflow';
 import type { AccountState } from './lifecycle';
 import { advanceAccountThrough, pathToCustomerReview } from './lifecycle-coordination';
@@ -146,6 +147,15 @@ export async function reviewJob(
     await audit('qa_passed');
     if (job.jobType === 'create_account') {
       await openCustomerReview(job.managedAccountId);
+    }
+    if (job.jobType === 'publish_post') {
+      // Emit the billable event on the terminal success path only. Best-effort:
+      // a billing hiccup must never fail the publish. Idempotent (unique jobId).
+      try {
+        await recordPublishEvent(jobId, now);
+      } catch (billingErr) {
+        console.error('[MSI] recordPublishEvent failed:', billingErr);
+      }
     }
     return { state: 'completed' as const };
   }

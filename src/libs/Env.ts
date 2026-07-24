@@ -34,6 +34,10 @@ export const Env = createEnv({
     SUPABASE_URL: z.string().url().optional(),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
     MSI_VAULT_BUCKET: z.string().min(1).optional(), // defaults to 'vault'
+    // Metered publish billing kill-switch. Off by default: billable events are
+    // still RECORDED, but nothing is reported to the billing provider until
+    // this is 'true'. Flip only after wiring the real Stripe usage call.
+    MSI_METERED_BILLING_ENABLED: z.string().optional(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().optional(),
@@ -62,6 +66,7 @@ export const Env = createEnv({
     SUPABASE_URL: process.env.SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     MSI_VAULT_BUCKET: process.env.MSI_VAULT_BUCKET,
+    MSI_METERED_BILLING_ENABLED: process.env.MSI_METERED_BILLING_ENABLED,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
     NEXT_PUBLIC_CLERK_SIGN_IN_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL,
