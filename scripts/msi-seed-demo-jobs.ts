@@ -92,6 +92,18 @@ function jobDefs(now: number): JobDef[] {
       failureReason: 'transient upload error',
       tasks: [{ taskType: 'update_bio', status: 'pending', sequence: 0 }],
     },
+    {
+      // Queued → a worker tick allocates an operator+device (queued → assigned,
+      // needs seeded inventory via `msi:seed-demo`) then starts it through the
+      // Execution Layer adapter (manual → pending_operator).
+      jobType: 'update_bio',
+      state: 'queued',
+      priority: 2,
+      attempts: 0,
+      maxAttempts: 3,
+      slaDueAt: future,
+      tasks: [{ taskType: 'update_bio', status: 'pending', sequence: 0 }],
+    },
   ];
 }
 

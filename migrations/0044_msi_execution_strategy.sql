@@ -1,0 +1,1 @@
+ALTER TABLE "managed_account" ADD COLUMN "execution_strategy" text;

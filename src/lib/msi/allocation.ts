@@ -75,3 +75,44 @@ export function allocate(
   }
   return { operatorId: op.id, deviceId: dev.id };
 }
+
+export type QueuedJob = { id: string; country: string };
+
+export type AllocationPlan = {
+  jobId: string;
+  operatorId: string;
+  deviceId: string;
+};
+
+/**
+ * Allocate a batch of queued jobs, consuming operator/device capacity as it
+ * goes so one tick can't over-assign a slot. Jobs with no available capacity in
+ * their country are simply left out (stay queued). Pure.
+ */
+export function planAllocations(
+  jobs: QueuedJob[],
+  operators: OperatorSlot[],
+  devices: DeviceSlot[],
+): AllocationPlan[] {
+  // Mutable copies — capacity is consumed across the batch.
+  const ops = operators.map(o => ({ ...o }));
+  const devs = devices.map(d => ({ ...d }));
+  const plans: AllocationPlan[] = [];
+
+  for (const job of jobs) {
+    const alloc = allocate(job.country, ops, devs);
+    if (!alloc) {
+      continue;
+    }
+    plans.push({ jobId: job.id, operatorId: alloc.operatorId, deviceId: alloc.deviceId });
+    const op = ops.find(o => o.id === alloc.operatorId);
+    if (op) {
+      op.activeLoad += 1;
+    }
+    const dev = devs.find(d => d.id === alloc.deviceId);
+    if (dev) {
+      dev.assignedCount += 1;
+    }
+  }
+  return plans;
+}

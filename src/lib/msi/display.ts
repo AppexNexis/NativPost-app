@@ -80,6 +80,9 @@ const ACTION_LABELS: Record<string, string> = {
   went_live: 'Account went live',
   first_post_published: 'First post published',
   sla_breach: 'Delivery running late — team notified',
+  execution_started: 'Work started — in progress',
+  execution_completed: 'Work completed',
+  execution_failed: 'A step failed — team notified',
 };
 
 export function humanizeAction(action: string): string {

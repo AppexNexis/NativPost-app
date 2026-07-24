@@ -5,6 +5,7 @@ import {
   type DeviceSlot,
   eligibleOperators,
   type OperatorSlot,
+  planAllocations,
 } from './allocation';
 
 const operators: OperatorSlot[] = [
@@ -50,5 +51,47 @@ describe('allocation', () => {
 
   it('returns null for a country with no inventory', () => {
     expect(allocate('JP', operators, devices)).toBeNull();
+  });
+});
+
+describe('planAllocations', () => {
+  const oneOperator = (capacity: number): OperatorSlot[] => [
+    { id: 'op', country: 'US', role: 'operator', status: 'active', capacity, activeLoad: 0 },
+  ];
+  const oneDevice = (capacity: number): DeviceSlot[] => [
+    { id: 'dev', country: 'US', status: 'active', capacity, assignedCount: 0 },
+  ];
+
+  it('assigns multiple jobs while capacity remains', () => {
+    const plans = planAllocations(
+      [{ id: 'j1', country: 'US' }, { id: 'j2', country: 'US' }],
+      oneOperator(2),
+      oneDevice(2),
+    );
+    expect(plans.map(p => p.jobId)).toEqual(['j1', 'j2']);
+  });
+
+  it('stops assigning once operator capacity is consumed', () => {
+    const plans = planAllocations(
+      [{ id: 'j1', country: 'US' }, { id: 'j2', country: 'US' }],
+      oneOperator(1),
+      oneDevice(5),
+    );
+    expect(plans.map(p => p.jobId)).toEqual(['j1']);
+  });
+
+  it('stops assigning once device capacity is consumed', () => {
+    const plans = planAllocations(
+      [{ id: 'j1', country: 'US' }, { id: 'j2', country: 'US' }],
+      oneOperator(5),
+      oneDevice(1),
+    );
+    expect(plans.map(p => p.jobId)).toEqual(['j1']);
+  });
+
+  it('skips jobs in countries with no inventory', () => {
+    expect(
+      planAllocations([{ id: 'j', country: 'JP' }], oneOperator(5), oneDevice(5)),
+    ).toEqual([]);
   });
 });

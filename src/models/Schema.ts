@@ -1258,6 +1258,11 @@ export const managedAccountSchema = pgTable(
     credentialCustody: text('credential_custody')
       .default('customer_owned')
       .notNull(),
+    // How this account is operated by the Execution Layer (docs §Execution
+    // Layer): 'official_api' | 'delegated_access' | 'manual'. Set at
+    // provisioning; null → resolver falls back to the platform default. An
+    // implementation detail — never surfaced to the customer.
+    executionStrategy: text('execution_strategy'),
     // Set when the account goes live → unified publishing.
     socialAccountId: uuid('social_account_id').references(
       () => socialAccountSchema.id,
