@@ -25,8 +25,14 @@ import {
 import type { DeviceSlot, OperatorSlot } from './allocation';
 import { planAllocations } from './allocation';
 import { buildActivityEvent } from './audit';
+import { metaInstagramClient } from './clients/meta-client';
 import type { ExecutionAdapter } from './execution';
-import { AdapterNotConfiguredError, getExecutionAdapter } from './execution';
+import {
+  AdapterNotConfiguredError,
+  getExecutionAdapter,
+  registerExecutionAdapter,
+} from './execution';
+import { createApiExecutionAdapter } from './execution-api';
 import type { JobState } from './job-workflow';
 import { transitionJob } from './job-workflow';
 import type { OrchestrationAccount } from './orchestration';
@@ -36,7 +42,34 @@ import { deriveWorkerMutations, planWorkerTick } from './worker';
 
 const TERMINAL_JOB_STATES = ['completed', 'cancelled'];
 
+// Production platform clients, keyed by `managed_account.platform`. Add a client
+// here as each platform is integrated + cleared. Platforms absent from this map
+// fail closed inside the API adapter (visible failure, never a silent no-op).
+const OFFICIAL_API_CLIENTS = new Map([['instagram', metaInstagramClient]]);
+
+let productionAdaptersRegistered = false;
+
+/**
+ * Wire the production execution adapters at the worker call site — the smallest
+ * possible integration, one call, no bootstrap module or plugin system.
+ * Idempotent, so it's safe to call every tick. Registering the `official_api`
+ * adapter routes each account to its platform client (e.g. Instagram → the Meta
+ * Graph client); strategies with no adapter (`delegated_access`) stay
+ * fail-closed, and `manual` is unaffected.
+ */
+export function ensureExecutionAdaptersRegistered(): void {
+  if (productionAdaptersRegistered) {
+    return;
+  }
+  registerExecutionAdapter(
+    createApiExecutionAdapter('official_api', OFFICIAL_API_CLIENTS),
+  );
+  productionAdaptersRegistered = true;
+}
+
 export async function runWorkerTick(now: Date = new Date()) {
+  ensureExecutionAdaptersRegistered();
+
   const [jobRows, reviewRows, reservationRows] = await Promise.all([
     db
       .select()
