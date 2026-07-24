@@ -29,6 +29,7 @@ import { facebookClient } from './clients/facebook-client';
 import { linkedinClient } from './clients/linkedin-client';
 import { metaInstagramClient } from './clients/meta-client';
 import { tiktokClient } from './clients/tiktok-client';
+import { youtubeClient } from './clients/youtube-client';
 import type { ExecutionAdapter } from './execution';
 import {
   AdapterNotConfiguredError,
@@ -59,6 +60,7 @@ const OFFICIAL_API_CLIENTS = new Map([
   ['tiktok', tiktokClient],
   ['linkedin', linkedinClient],
   ['facebook', facebookClient],
+  ['youtube', youtubeClient],
 ]);
 
 let productionAdaptersRegistered = false;

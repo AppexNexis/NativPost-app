@@ -4,6 +4,7 @@ import type { FetchLike } from './token-refresh';
 import {
   expiryFromNow,
   needsRefresh,
+  refreshGoogleToken,
   refreshLinkedInToken,
   refreshMetaToken,
   refreshTikTokToken,
@@ -109,5 +110,29 @@ describe('refreshLinkedInToken', () => {
         oneResponse({ error: 'invalid_grant', error_description: 'expired' }, false, 400),
       ),
     ).rejects.toThrow(/LinkedIn token refresh failed \(400\): expired/);
+  });
+});
+
+describe('refreshGoogleToken', () => {
+  it('refreshes and keeps the old refresh token (Google does not rotate it)', async () => {
+    const res = await refreshGoogleToken(
+      { refreshToken: 'r-old', clientId: 'c', clientSecret: 's' },
+      oneResponse({ access_token: 'a-new', expires_in: 3600 }),
+      5000,
+    );
+    expect(res).toEqual({
+      accessToken: 'a-new',
+      refreshToken: 'r-old',
+      expiresAt: 5000 + 3600 * 1000,
+    });
+  });
+
+  it('throws when Google rejects the refresh', async () => {
+    await expect(
+      refreshGoogleToken(
+        { refreshToken: 'r-old', clientId: 'c', clientSecret: 's' },
+        oneResponse({ error: 'invalid_grant', error_description: 'expired' }, false, 400),
+      ),
+    ).rejects.toThrow(/Google token refresh failed \(400\): expired/);
   });
 });

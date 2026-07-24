@@ -179,11 +179,38 @@ unfilled Phase-0 sign-off keeps the strategy fail-closed (`manual` only).
 - **Registered** in `worker-service.ts` `OFFICIAL_API_CLIENTS` (`['facebook', facebookClient]`).
 - Shares Meta's token refresh (`fb_exchange_token`, `META_APP_*`) — no separate refresh token.
 
-## YouTube — catalog-listed, client not built
+## YouTube — fifth integration
 
-Orderable in the configure flow (`MSI_PLATFORMS`), but **no execution client yet** —
-YouTube accounts run the `manual` (operator) strategy until a `PlatformClient` is
-built (resumable video upload + `videos.insert`). Copy the template when starting.
+| Field | Value |
+|---|---|
+| **Platform key** | `youtube` |
+| **API + version** | YouTube Data API v3 (`videos.insert`, resumable upload) |
+| **API documentation** | developers.google.com/youtube/v3/docs/videos/insert |
+| **OAuth flow** | Google OAuth; customer authorizes the channel (customer-owned). |
+| **Required scopes** | `https://www.googleapis.com/auth/youtube.upload`. |
+| **Required app review** | Yes — Google OAuth verification + (for public) a YouTube API audit. |
+| **Supported operations** | `publish_post` (video only — YouTube is a video platform). |
+| **Media handling** | Resumable upload: `POST /upload/youtube/v3/videos?uploadType=resumable` (metadata) → session URI in the `Location` header → PUT bytes → video id. **Byte upload** (no pull-from-URL). |
+| **Rate limits** | Daily quota (uploads cost ~1600 units); `uploadLimitExceeded`. |
+| **Token type + refresh** | Google access token (~1h) + refresh token. **Auto-refresh:** proactive by expiry via the `refresh_token` grant (needs `GOOGLE_CLIENT_ID`/`SECRET`; Google keeps the same refresh token). Vault blob JSON `{ accessToken, refreshToken?, expiresAt? }`. |
+| **Webhooks** | None used for publishing. |
+| **Error codes of note** | `401` invalid auth; `403` `forbidden`/`uploadLimitExceeded`; `400` bad metadata. |
+| **Retry strategy** | Any step throws → `execute` throws → job `failed` → worker retries. Synchronous, no confirmation pass. |
+| **Compliance notes** | Sanctioned API, customer-owned channel, customer-authorized token. Per-account Phase-0 sign-off before `official_api`. |
+| **MSI execution strategy** | `official_api` |
+| **Phase-0 legal sign-off** | _pending — record date + owner here_ |
+| **Client module** | `src/lib/msi/clients/youtube-client.ts` (+ `youtube-upload.ts`) |
+| **Status** | in-progress (client + tests built; registered in `OFFICIAL_API_CLIENTS`; needs creds + Phase-0 for prod traffic) |
+
+### Wiring notes (YouTube)
+- **Credentials:** capture `{ "accessToken": "…", "refreshToken": "…", "expiresAt": <ms?> }`
+  as JSON via the Operations **Credential vault → Capture** surface.
+- **Registered** in `worker-service.ts` `OFFICIAL_API_CLIENTS` (`['youtube', youtubeClient]`).
+- **Byte upload caveat:** the video is fetched into memory + PUT synchronously in
+  one `execute`. Fine for short managed videos; **large/long videos** may exceed the
+  worker's function budget — the follow-up is chunked resumable upload (byte-range
+  across ticks, using the same `execution_handle` async mechanism) and/or a
+  dedicated higher-timeout upload worker.
 
 ## Threads / Pinterest — not planned
 

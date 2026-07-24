@@ -143,3 +143,40 @@ export async function refreshLinkedInToken(
     expiresAt: expiryFromNow(data.expires_in, now),
   };
 }
+
+// --- Google (YouTube): refresh_token grant ---
+export type GoogleRefreshInput = {
+  refreshToken: string;
+  clientId: string;
+  clientSecret: string;
+};
+
+export async function refreshGoogleToken(
+  input: GoogleRefreshInput,
+  fetchImpl: FetchLike,
+  now: number = Date.now(),
+): Promise<{ accessToken: string; refreshToken: string; expiresAt?: number }> {
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: input.refreshToken,
+    client_id: input.clientId,
+    client_secret: input.clientSecret,
+  }).toString();
+  const res = await fetchImpl('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.access_token) {
+    throw new Error(
+      `Google token refresh failed (${res.status}): ${data?.error_description || data?.error || 'no access_token'}`,
+    );
+  }
+  return {
+    accessToken: data.access_token,
+    // Google does not return a new refresh token on refresh — keep the old one.
+    refreshToken: data.refresh_token || input.refreshToken,
+    expiresAt: expiryFromNow(data.expires_in, now),
+  };
+}

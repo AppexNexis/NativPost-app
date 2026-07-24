@@ -43,12 +43,12 @@ describe('worker execution wiring', () => {
 
     const result = await adapter.execute('publish_post', {
       managedAccountId: 'acc-1',
-      platform: 'youtube', // no client registered → must fail visibly
+      platform: 'pinterest', // no client registered → must fail visibly
       country: 'US',
       strategy: 'official_api',
     });
 
     expect(result.outcome).toBe('failed');
-    expect(result.detail).toContain('youtube');
+    expect(result.detail).toContain('pinterest');
   });
 });
