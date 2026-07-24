@@ -5,6 +5,7 @@ import { Boxes, CheckCircle2, Clock, Radio } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo } from 'react';
 
+import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/features/dashboard/EmptyState';
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
 import { PageHeader } from '@/features/dashboard/PageHeader';
@@ -121,6 +122,11 @@ export default function InfrastructurePage() {
       <PageHeader
         title="Infrastructure"
         description="Managed social accounts — created, warmed, and run by NativPost, owned by you."
+        actions={(
+          <Button asChild size="sm">
+            <Link href="/dashboard/infrastructure/new">Configure accounts</Link>
+          </Button>
+        )}
       />
 
       {isLoading
