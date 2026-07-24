@@ -25,6 +25,7 @@ import {
 import type { DeviceSlot, OperatorSlot } from './allocation';
 import { planAllocations } from './allocation';
 import { buildActivityEvent } from './audit';
+import { linkedinClient } from './clients/linkedin-client';
 import { metaInstagramClient } from './clients/meta-client';
 import { tiktokClient } from './clients/tiktok-client';
 import type { ExecutionAdapter } from './execution';
@@ -55,6 +56,7 @@ const TERMINAL_JOB_STATES = ['completed', 'cancelled'];
 const OFFICIAL_API_CLIENTS = new Map([
   ['instagram', metaInstagramClient],
   ['tiktok', tiktokClient],
+  ['linkedin', linkedinClient],
 ]);
 
 let productionAdaptersRegistered = false;

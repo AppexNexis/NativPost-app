@@ -119,6 +119,33 @@ unfilled Phase-0 sign-off keeps the strategy fail-closed (`manual` only).
 
 ## LinkedIn — _not started_
 
-## LinkedIn — _not started_
+## LinkedIn — third integration
 
-Copy the template. UGC / Posts API; `official_api`. Separate Phase-0.
+| Field | Value |
+|---|---|
+| **Platform key** | `linkedin` |
+| **API + version** | UGC Posts API (`api.linkedin.com/v2/ugcPosts`, `X-Restli-Protocol-Version: 2.0.0`) |
+| **API documentation** | learn.microsoft.com/linkedin/marketing/integrations/community-management/shares/ugc-post-api |
+| **OAuth flow** | LinkedIn OAuth; customer authorizes the member/organization identity (customer-owned). |
+| **Required scopes** | `w_member_social` (+ `w_organization_social` for pages). |
+| **Required app review** | Yes — Marketing Developer Platform access for posting scopes. |
+| **Supported operations** | `publish_post` (text, single + multi image up to 9). Video = follow-up (chunked upload). Profile/create stay `manual`. |
+| **Media handling** | `assets?action=registerUpload` → PUT bytes to the returned URL → `ugcPosts` with `shareMediaCategory: IMAGE`. **No pull-from-URL** — media is uploaded as bytes. **Synchronous** (no processing poll). |
+| **Rate limits** | Per-member/app daily throttles; duplicate-content rejection. |
+| **Token type + refresh** | Access token ~60d + refresh token ~1y. **Auto-refresh:** proactive by expiry via `refresh_token` grant (needs `LINKEDIN_CLIENT_ID`/`SECRET`). Vault blob JSON `{ accessToken, authorUrn, refreshToken?, expiresAt? }`. |
+| **Webhooks** | None used for publishing. |
+| **Error codes of note** | `401` invalid token; `422` duplicate/invalid share; `403` missing scope. |
+| **Retry strategy** | Any step throws → `execute` throws → job `failed` → worker retries (bounded). Synchronous, so no confirmation pass. |
+| **Compliance notes** | Sanctioned API, customer-owned identity, customer-authorized token. Per-account Phase-0 sign-off before `official_api`. |
+| **MSI execution strategy** | `official_api` |
+| **Phase-0 legal sign-off** | _pending — record date + owner here_ |
+| **Client module** | `src/lib/msi/clients/linkedin-client.ts` (+ `linkedin-posts.ts`) |
+| **Status** | in-progress (client + tests built; registered in `OFFICIAL_API_CLIENTS`; needs creds + Phase-0 for prod traffic) |
+
+### Wiring notes (LinkedIn)
+- **Credentials:** capture `{ "accessToken": "…", "authorUrn": "urn:li:person:…", "refreshToken": "…", "expiresAt": <ms?> }`
+  as JSON via the Operations **Credential vault → Capture** surface.
+- **Registered** in `worker-service.ts` `OFFICIAL_API_CLIENTS` (`['linkedin', linkedinClient]`).
+- **Synchronous client:** `execute` publishes and returns `completed` in one call —
+  no `checkStatus` (validates the model supports sync clients too).
+- **Follow-ups:** video (chunked upload); LinkedIn is image/text in v1.

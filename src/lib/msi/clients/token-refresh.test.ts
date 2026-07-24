@@ -4,6 +4,7 @@ import type { FetchLike } from './token-refresh';
 import {
   expiryFromNow,
   needsRefresh,
+  refreshLinkedInToken,
   refreshMetaToken,
   refreshTikTokToken,
 } from './token-refresh';
@@ -84,5 +85,29 @@ describe('refreshTikTokToken', () => {
         oneResponse({ error: 'invalid_grant', error_description: 'expired' }, false, 400),
       ),
     ).rejects.toThrow(/TikTok token refresh failed \(400\): expired/);
+  });
+});
+
+describe('refreshLinkedInToken', () => {
+  it('refreshes and derives an absolute expiry', async () => {
+    const res = await refreshLinkedInToken(
+      { refreshToken: 'r-old', clientId: 'c', clientSecret: 's' },
+      oneResponse({ access_token: 'a-new', refresh_token: 'r-new', expires_in: 5184000 }),
+      5000,
+    );
+    expect(res).toEqual({
+      accessToken: 'a-new',
+      refreshToken: 'r-new',
+      expiresAt: 5000 + 5184000 * 1000,
+    });
+  });
+
+  it('throws when LinkedIn rejects the refresh', async () => {
+    await expect(
+      refreshLinkedInToken(
+        { refreshToken: 'r-old', clientId: 'c', clientSecret: 's' },
+        oneResponse({ error: 'invalid_grant', error_description: 'expired' }, false, 400),
+      ),
+    ).rejects.toThrow(/LinkedIn token refresh failed \(400\): expired/);
   });
 });

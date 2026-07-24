@@ -107,3 +107,39 @@ export async function refreshTikTokToken(
     expiresAt: expiryFromNow(data.expires_in, now),
   };
 }
+
+// --- LinkedIn: refresh_token grant ---
+export type LinkedInRefreshInput = {
+  refreshToken: string;
+  clientId: string;
+  clientSecret: string;
+};
+
+export async function refreshLinkedInToken(
+  input: LinkedInRefreshInput,
+  fetchImpl: FetchLike,
+  now: number = Date.now(),
+): Promise<{ accessToken: string; refreshToken: string; expiresAt?: number }> {
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: input.refreshToken,
+    client_id: input.clientId,
+    client_secret: input.clientSecret,
+  }).toString();
+  const res = await fetchImpl('https://www.linkedin.com/oauth/v2/accessToken', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.access_token) {
+    throw new Error(
+      `LinkedIn token refresh failed (${res.status}): ${data?.error_description || data?.error || 'no access_token'}`,
+    );
+  }
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token || input.refreshToken,
+    expiresAt: expiryFromNow(data.expires_in, now),
+  };
+}
