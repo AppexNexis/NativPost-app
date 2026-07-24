@@ -6,7 +6,15 @@ describe('parseMetaCredentials', () => {
   it('parses a valid credential blob', () => {
     expect(
       parseMetaCredentials(JSON.stringify({ accessToken: 'tok', igUserId: 'ig-1' })),
-    ).toEqual({ accessToken: 'tok', igUserId: 'ig-1' });
+    ).toEqual({ accessToken: 'tok', igUserId: 'ig-1', expiresAt: undefined });
+  });
+
+  it('carries an optional expiresAt for proactive refresh', () => {
+    expect(
+      parseMetaCredentials(
+        JSON.stringify({ accessToken: 'tok', igUserId: 'ig-1', expiresAt: 123 }),
+      ).expiresAt,
+    ).toBe(123);
   });
 
   it('rejects an empty vault', () => {

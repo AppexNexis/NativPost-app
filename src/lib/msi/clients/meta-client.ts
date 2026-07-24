@@ -20,7 +20,10 @@ import { db } from '@/lib/db';
 import { isVideoContentType } from '@/types/v2';
 import { contentItemSchema } from '@/models/Schema';
 
-import { revealAccountCredentials } from '../credentials-service';
+import {
+  revealAccountCredentials,
+  storeAccountCredentials,
+} from '../credentials-service';
 import type { ExecutionContext, ExecutionOperation } from '../execution';
 import type {
   PlatformCallResult,
@@ -34,13 +37,19 @@ import {
   publishContainer,
   resolvePermalink,
 } from './meta-graph';
+import { needsRefresh, refreshMetaToken } from './token-refresh';
 
 /**
  * The credential blob a Meta official_api account stores in the vault — the
  * authorized IG Graph token + the IG Business user id. Captured via the
  * Operations vault surface as JSON, not a username/password.
  */
-export type MetaCredentials = { accessToken: string; igUserId: string };
+export type MetaCredentials = {
+  accessToken: string;
+  igUserId: string;
+  // Absolute token expiry (epoch ms), when known — drives proactive refresh.
+  expiresAt?: number;
+};
 
 export function parseMetaCredentials(raw: string | null): MetaCredentials {
   if (!raw) {
@@ -56,7 +65,47 @@ export function parseMetaCredentials(raw: string | null): MetaCredentials {
   if (!cred?.accessToken || !cred?.igUserId) {
     throw new Error('Instagram credentials missing accessToken or igUserId');
   }
-  return { accessToken: cred.accessToken, igUserId: cred.igUserId };
+  return {
+    accessToken: cred.accessToken,
+    igUserId: cred.igUserId,
+    expiresAt: cred.expiresAt,
+  };
+}
+
+/**
+ * Reveal the account credentials and proactively refresh the token if it is at
+ * or near expiry, persisting the new token back to the vault. No-ops (returns
+ * as-is) when the expiry is unknown or the app credentials aren't configured.
+ */
+async function freshMetaCredentials(
+  managedAccountId: string,
+  fetchImpl: FetchLike,
+): Promise<MetaCredentials> {
+  const creds = parseMetaCredentials(
+    await revealAccountCredentials(managedAccountId),
+  );
+  if (!needsRefresh(creds.expiresAt, Date.now())) {
+    return creds;
+  }
+  const appId = process.env.META_APP_ID;
+  const appSecret = process.env.META_APP_SECRET;
+  if (!appId || !appSecret) {
+    return creds; // cannot refresh without app credentials — use as-is
+  }
+  const refreshed = await refreshMetaToken(
+    { accessToken: creds.accessToken, appId, appSecret },
+    fetchImpl,
+  );
+  const updated: MetaCredentials = {
+    ...creds,
+    accessToken: refreshed.accessToken,
+    expiresAt: refreshed.expiresAt,
+  };
+  await storeAccountCredentials(managedAccountId, JSON.stringify(updated), 'system', {
+    actorType: 'system',
+    action: 'credentials_refreshed',
+  });
+  return updated;
 }
 
 type ContentToPublish = {
@@ -116,9 +165,7 @@ export function createMetaInstagramClient(
         throw new Error('publish_post is missing contentItemId in the payload');
       }
 
-      const credentials = parseMetaCredentials(
-        await revealAccountCredentials(ctx.managedAccountId),
-      );
+      const credentials = await freshMetaCredentials(ctx.managedAccountId, fetchImpl);
       const content = await loadContent(contentItemId);
 
       // Init only: create the media container and hand back its id. Publishing
@@ -141,9 +188,7 @@ export function createMetaInstagramClient(
       handle: string,
       ctx: ExecutionContext,
     ): Promise<PlatformStatusResult> {
-      const credentials = parseMetaCredentials(
-        await revealAccountCredentials(ctx.managedAccountId),
-      );
+      const credentials = await freshMetaCredentials(ctx.managedAccountId, fetchImpl);
 
       const status = await checkContainerStatus(
         handle,

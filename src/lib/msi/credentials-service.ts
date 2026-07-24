@@ -15,6 +15,7 @@ export async function storeAccountCredentials(
   managedAccountId: string,
   secret: string,
   byUserId: string,
+  opts?: { actorType?: 'operator' | 'system'; action?: string },
 ) {
   const vault = getInfrastructureVault();
   const { vaultRef, encryptedDek } = await vault.protect(secret, 'managed-account');
@@ -47,9 +48,9 @@ export async function storeAccountCredentials(
   await db.insert(msiActivityLogSchema).values(
     buildActivityEvent({
       managedAccountId,
-      actorType: 'operator',
+      actorType: opts?.actorType ?? 'operator',
       actorId: byUserId,
-      action: 'credentials_stored',
+      action: opts?.action ?? 'credentials_stored',
     }),
   );
 }

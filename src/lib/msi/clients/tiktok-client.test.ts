@@ -7,10 +7,21 @@ describe('parseTikTokCredentials', () => {
     expect(parseTikTokCredentials(JSON.stringify({ accessToken: 'tok' }))).toEqual({
       accessToken: 'tok',
       username: undefined,
+      refreshToken: undefined,
+      expiresAt: undefined,
     });
-    expect(
-      parseTikTokCredentials(JSON.stringify({ accessToken: 'tok', username: 'brand' })),
-    ).toEqual({ accessToken: 'tok', username: 'brand' });
+  });
+
+  it('carries refreshToken + expiresAt for proactive refresh', () => {
+    const cred = parseTikTokCredentials(
+      JSON.stringify({ accessToken: 'tok', username: 'brand', refreshToken: 'r', expiresAt: 99 }),
+    );
+    expect(cred).toEqual({
+      accessToken: 'tok',
+      username: 'brand',
+      refreshToken: 'r',
+      expiresAt: 99,
+    });
   });
 
   it('rejects an empty vault', () => {

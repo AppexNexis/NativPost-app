@@ -17,7 +17,10 @@ import { db } from '@/lib/db';
 import { isVideoContentType } from '@/types/v2';
 import { contentItemSchema } from '@/models/Schema';
 
-import { revealAccountCredentials } from '../credentials-service';
+import {
+  revealAccountCredentials,
+  storeAccountCredentials,
+} from '../credentials-service';
 import type { ExecutionContext, ExecutionOperation } from '../execution';
 import type {
   PlatformCallResult,
@@ -26,13 +29,20 @@ import type {
 } from '../execution-api';
 import type { FetchLike } from './tiktok-content';
 import { fetchPublishStatus, initVideoPublish } from './tiktok-content';
+import { needsRefresh, refreshTikTokToken } from './token-refresh';
 
 /**
  * The credential blob a TikTok official_api account stores in the vault: the
  * authorized Content Posting token (+ the @username, used only to build a
  * permalink). Captured as JSON via the Operations vault surface.
  */
-export type TikTokCredentials = { accessToken: string; username?: string };
+export type TikTokCredentials = {
+  accessToken: string;
+  username?: string;
+  refreshToken?: string;
+  // Absolute token expiry (epoch ms), when known — drives proactive refresh.
+  expiresAt?: number;
+};
 
 export function parseTikTokCredentials(raw: string | null): TikTokCredentials {
   if (!raw) {
@@ -48,7 +58,50 @@ export function parseTikTokCredentials(raw: string | null): TikTokCredentials {
   if (!cred?.accessToken) {
     throw new Error('TikTok credentials missing accessToken');
   }
-  return { accessToken: cred.accessToken, username: cred.username };
+  return {
+    accessToken: cred.accessToken,
+    username: cred.username,
+    refreshToken: cred.refreshToken,
+    expiresAt: cred.expiresAt,
+  };
+}
+
+/**
+ * Reveal the account credentials and proactively refresh the token if it is at
+ * or near expiry, persisting the rotated token(s) back to the vault. No-ops when
+ * the expiry is unknown, no refresh token is stored, or the client credentials
+ * aren't configured.
+ */
+async function freshTikTokCredentials(
+  managedAccountId: string,
+  fetchImpl: FetchLike,
+): Promise<TikTokCredentials> {
+  const creds = parseTikTokCredentials(
+    await revealAccountCredentials(managedAccountId),
+  );
+  if (!needsRefresh(creds.expiresAt, Date.now()) || !creds.refreshToken) {
+    return creds;
+  }
+  const clientKey = process.env.TIKTOK_CLIENT_KEY;
+  const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
+  if (!clientKey || !clientSecret) {
+    return creds; // cannot refresh without client credentials — use as-is
+  }
+  const refreshed = await refreshTikTokToken(
+    { refreshToken: creds.refreshToken, clientKey, clientSecret },
+    fetchImpl,
+  );
+  const updated: TikTokCredentials = {
+    ...creds,
+    accessToken: refreshed.accessToken,
+    refreshToken: refreshed.refreshToken,
+    expiresAt: refreshed.expiresAt,
+  };
+  await storeAccountCredentials(managedAccountId, JSON.stringify(updated), 'system', {
+    actorType: 'system',
+    action: 'credentials_refreshed',
+  });
+  return updated;
 }
 
 type VideoToPublish = { caption: string; videoUrl: string };
@@ -112,9 +165,7 @@ export function createTikTokClient(
         throw new Error('publish_post is missing contentItemId in the payload');
       }
 
-      const credentials = parseTikTokCredentials(
-        await revealAccountCredentials(ctx.managedAccountId),
-      );
+      const credentials = await freshTikTokCredentials(ctx.managedAccountId, fetchImpl);
       const video = await loadVideo(contentItemId);
 
       // Init only — TikTok processes asynchronously; the confirmation pass polls.
@@ -134,9 +185,7 @@ export function createTikTokClient(
       handle: string,
       ctx: ExecutionContext,
     ): Promise<PlatformStatusResult> {
-      const credentials = parseTikTokCredentials(
-        await revealAccountCredentials(ctx.managedAccountId),
-      );
+      const credentials = await freshTikTokCredentials(ctx.managedAccountId, fetchImpl);
       const status = await fetchPublishStatus(
         handle,
         credentials.accessToken,
