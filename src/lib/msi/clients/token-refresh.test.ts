@@ -5,6 +5,7 @@ import {
   expiryFromNow,
   needsRefresh,
   refreshGoogleToken,
+  refreshInstagramToken,
   refreshLinkedInToken,
   refreshMetaToken,
   refreshTikTokToken,
@@ -134,5 +135,22 @@ describe('refreshGoogleToken', () => {
         oneResponse({ error: 'invalid_grant', error_description: 'expired' }, false, 400),
       ),
     ).rejects.toThrow(/Google token refresh failed \(400\): expired/);
+  });
+});
+
+describe('refreshInstagramToken', () => {
+  it('refreshes a long-lived IG token via ig_refresh_token (no app secret)', async () => {
+    const res = await refreshInstagramToken(
+      'IGAAold',
+      oneResponse({ access_token: 'IGAAnew', expires_in: 5184000 }),
+      5000,
+    );
+    expect(res).toEqual({ accessToken: 'IGAAnew', expiresAt: 5000 + 5184000 * 1000 });
+  });
+
+  it('throws when the refresh is rejected', async () => {
+    await expect(
+      refreshInstagramToken('IGAAold', oneResponse({ error: { message: 'expired' } }, false, 400)),
+    ).rejects.toThrow(/Instagram token refresh failed \(400\): expired/);
   });
 });

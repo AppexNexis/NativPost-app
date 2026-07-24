@@ -1,11 +1,25 @@
-// Instagram Graph API publishing mechanics (docs §Execution Layer; Phase 0 §2,
-// strategy `official_api`). Mirrors the proven flow in lib/social-publish.ts —
-// create a media container → poll status → media_publish → resolve permalink —
-// but isolated behind an injectable `fetch` so it is unit-testable with no
-// network. The DB/credential wiring lives in ./meta-client; this file is only
-// the HTTP conversation with graph.facebook.com.
+// Instagram publishing mechanics (docs §Execution Layer; Phase 0 §2, strategy
+// `official_api`). Create a media container → poll status → media_publish →
+// resolve permalink, behind an injectable `fetch` so it is unit-testable.
+//
+// Supports BOTH Instagram publishing APIs, auto-detected from the token:
+//   - Facebook Login flow  → host graph.facebook.com  (token starts `EAA…`)
+//   - Instagram Business Login → host graph.instagram.com (token starts `IGAA…`/`IGQ…`)
+// The request paths + payloads are identical across hosts; only the base URL
+// (and token refresh, in ./token-refresh) differ.
 
-const GRAPH = 'https://graph.facebook.com/v21.0';
+const GRAPH_FB = 'https://graph.facebook.com/v21.0';
+const GRAPH_IG = 'https://graph.instagram.com/v21.0';
+
+/** True for Instagram Business Login / Basic Display tokens (graph.instagram.com). */
+export function isInstagramLoginToken(token: string): boolean {
+  return token.startsWith('IG');
+}
+
+/** Pick the Graph host from the token type. */
+function graphBase(accessToken: string): string {
+  return isInstagramLoginToken(accessToken) ? GRAPH_IG : GRAPH_FB;
+}
 
 export type FetchLike = (
   url: string,
@@ -61,7 +75,7 @@ export async function createMediaContainer(
     body.image_url = input.mediaUrl;
   }
 
-  const res = await fetchImpl(`${GRAPH}/${input.igUserId}/media`, {
+  const res = await fetchImpl(`${graphBase(input.accessToken)}/${input.igUserId}/media`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -80,7 +94,7 @@ export async function createCarouselItemContainer(
   accessToken: string,
   fetchImpl: FetchLike,
 ): Promise<string> {
-  const res = await fetchImpl(`${GRAPH}/${igUserId}/media`, {
+  const res = await fetchImpl(`${graphBase(accessToken)}/${igUserId}/media`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -108,7 +122,7 @@ export async function createCarouselContainer(
   accessToken: string,
   fetchImpl: FetchLike,
 ): Promise<string> {
-  const res = await fetchImpl(`${GRAPH}/${igUserId}/media`, {
+  const res = await fetchImpl(`${graphBase(accessToken)}/${igUserId}/media`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -136,7 +150,7 @@ export async function checkContainerStatus(
   fetchImpl: FetchLike,
 ): Promise<ContainerStatus> {
   const res = await fetchImpl(
-    `${GRAPH}/${containerId}?fields=status_code&access_token=${accessToken}`,
+    `${graphBase(accessToken)}/${containerId}?fields=status_code&access_token=${accessToken}`,
   );
   const data = await readJson(res, 'container status');
   const code: string = data.status_code || '';
@@ -156,7 +170,7 @@ export async function publishContainer(
   accessToken: string,
   fetchImpl: FetchLike,
 ): Promise<string> {
-  const res = await fetchImpl(`${GRAPH}/${igUserId}/media_publish`, {
+  const res = await fetchImpl(`${graphBase(accessToken)}/${igUserId}/media_publish`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ creation_id: creationId, access_token: accessToken }),
@@ -184,10 +198,15 @@ export async function probeInstagram(
   permissions?: Array<{ name: string; granted: boolean }>;
   detail?: string;
 }> {
+  const base = graphBase(accessToken);
+  const ig = isInstagramLoginToken(accessToken);
   try {
-    const res = await fetchImpl(
-      `${GRAPH}/${igUserId}?fields=id,username&access_token=${accessToken}`,
-    );
+    // IG-login tokens resolve their own user via /me; Facebook tokens read the
+    // linked IG business account node directly.
+    const identityUrl = ig
+      ? `${base}/me?fields=user_id,username&access_token=${accessToken}`
+      : `${base}/${igUserId}?fields=id,username&access_token=${accessToken}`;
+    const res = await fetchImpl(identityUrl);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       // e.g. code 190 = invalid/expired token; reachable but token rejected.
@@ -197,21 +216,26 @@ export async function probeInstagram(
         detail: data?.error?.message || `Graph returned ${res.status}`,
       };
     }
-    const identity = data?.username ? `@${data.username}` : data?.id;
+    const identity = data?.username
+      ? `@${data.username}`
+      : (data?.id || data?.user_id || igUserId);
 
-    // Permissions live on the user token; best-effort.
+    // Permissions are only queryable on the Facebook host (/me/permissions).
+    // IG-login tokens carry fixed scopes; there is no list endpoint.
     let permissions: Array<{ name: string; granted: boolean }> | undefined;
-    try {
-      const permRes = await fetchImpl(`${GRAPH}/me/permissions?access_token=${accessToken}`);
-      const permData = await permRes.json().catch(() => ({}));
-      const rows: Array<{ permission: string; status: string }> = permData?.data ?? [];
-      const want = ['instagram_content_publish', 'instagram_basic'];
-      permissions = want.map(name => ({
-        name,
-        granted: rows.some(r => r.permission === name && r.status === 'granted'),
-      }));
-    } catch {
-      permissions = undefined;
+    if (!ig) {
+      try {
+        const permRes = await fetchImpl(`${base}/me/permissions?access_token=${accessToken}`);
+        const permData = await permRes.json().catch(() => ({}));
+        const rows: Array<{ permission: string; status: string }> = permData?.data ?? [];
+        const want = ['instagram_content_publish', 'instagram_basic'];
+        permissions = want.map(name => ({
+          name,
+          granted: rows.some(r => r.permission === name && r.status === 'granted'),
+        }));
+      } catch {
+        permissions = undefined;
+      }
     }
 
     return { reachable: true, tokenValid: true, identity, permissions };
@@ -232,7 +256,7 @@ export async function resolvePermalink(
 ): Promise<string | null> {
   try {
     const res = await fetchImpl(
-      `${GRAPH}/${mediaId}?fields=permalink&access_token=${accessToken}`,
+      `${graphBase(accessToken)}/${mediaId}?fields=permalink&access_token=${accessToken}`,
     );
     if (!res.ok) {
       return null;

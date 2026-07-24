@@ -43,7 +43,7 @@ unfilled Phase-0 sign-off keeps the strategy fail-closed (`manual` only).
 | **Platform key** | `instagram` |
 | **API + version** | Instagram Content Publishing API (Graph) `v21.0` |
 | **API documentation** | developers.facebook.com/docs/instagram-api/guides/content-publishing |
-| **OAuth flow** | Facebook Login → Page + connected IG Business/Creator account; token authorized by the customer (account is customer-owned). |
+| **OAuth flow** | Either **Instagram Business Login** (token `IGAA…`, host `graph.instagram.com`) **or** **Facebook Login** (token `EAA…`, Page + connected IG Business account, host `graph.facebook.com`). The client auto-detects the host from the token prefix. |
 | **Required scopes** | `instagram_basic`, `instagram_content_publish`, `pages_show_list`, `pages_read_engagement` (+ `business_management` for delegated). |
 | **Required app review** | Yes — Meta App Review for `instagram_content_publish` + advanced access; Business Verification. |
 | **Supported operations** | `publish_post` (single image, REELS video, and multi-image carousel up to 10). Account create / profile edits stay `manual` (customer-owned). |

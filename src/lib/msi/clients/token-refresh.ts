@@ -71,6 +71,24 @@ export async function refreshMetaToken(
   };
 }
 
+// --- Instagram Business Login: long-lived token refresh (no app secret) ---
+export async function refreshInstagramToken(
+  accessToken: string,
+  fetchImpl: FetchLike,
+  now: number = Date.now(),
+): Promise<{ accessToken: string; expiresAt?: number }> {
+  const res = await fetchImpl(
+    `https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${encodeURIComponent(accessToken)}`,
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.access_token) {
+    throw new Error(
+      `Instagram token refresh failed (${res.status}): ${data?.error?.message || 'no access_token'}`,
+    );
+  }
+  return { accessToken: data.access_token, expiresAt: expiryFromNow(data.expires_in, now) };
+}
+
 // --- TikTok: refresh_token grant ---
 export type TikTokRefreshInput = {
   refreshToken: string;

@@ -168,3 +168,41 @@ describe('publishContainer + resolvePermalink', () => {
     expect(await resolvePermalink('media-99', 'tok', oneResponse({}, false, 500))).toBeNull();
   });
 });
+
+describe('host selection by token type', () => {
+  const recorder = () => {
+    const urls: string[] = [];
+    const fetchImpl: FetchLike = async (url) => {
+      urls.push(url);
+      return { ok: true, status: 200, json: async () => ({ id: 'c1', user_id: '178', username: 'brand' }) };
+    };
+    return { urls, fetchImpl };
+  };
+
+  it('uses graph.instagram.com for an IGAA (Instagram Login) token', async () => {
+    const { urls, fetchImpl } = recorder();
+    await createMediaContainer(
+      { igUserId: '178', accessToken: 'IGAAxyz', caption: 'hi', mediaUrl: 'https://cdn/i.jpg', isVideo: false },
+      fetchImpl,
+    );
+    expect(urls[0]).toContain('graph.instagram.com/v21.0/178/media');
+  });
+
+  it('uses graph.facebook.com for an EAA (Facebook Login) token', async () => {
+    const { urls, fetchImpl } = recorder();
+    await createMediaContainer(
+      { igUserId: '178', accessToken: 'EAAxyz', caption: 'hi', mediaUrl: 'https://cdn/i.jpg', isVideo: false },
+      fetchImpl,
+    );
+    expect(urls[0]).toContain('graph.facebook.com/v21.0/178/media');
+  });
+
+  it('probes an IG-login token via /me on the IG host, with no permissions call', async () => {
+    const { urls, fetchImpl } = recorder();
+    const d = await probeInstagram('178', 'IGAAxyz', fetchImpl);
+    expect(d.tokenValid).toBe(true);
+    expect(d.identity).toBe('@brand');
+    expect(urls[0]).toContain('graph.instagram.com/v21.0/me');
+    expect(urls.some(u => u.includes('/me/permissions'))).toBe(false);
+  });
+});

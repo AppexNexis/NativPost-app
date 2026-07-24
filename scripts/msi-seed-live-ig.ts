@@ -35,6 +35,7 @@ import * as schema from '../src/models/Schema';
 // Markers so teardown only ever removes what this script created.
 const GRANT_MARKER = 'live-ig-test-user'; // authorization_grant.signed_by_user_id
 const CONTENT_MARKER = 'LIVE-IG-TEST'; // content_item.topic
+const BRAND_MARKER = 'LIVE-IG-TEST Brand'; // only a demo brand we create for an org with none
 const HANDLE = '@nativpost_ig_test';
 // A publicly reachable JPEG is REQUIRED for IG. Replace via --image= with your
 // own hosted image if this placeholder is blocked.
@@ -96,6 +97,11 @@ async function teardownRows(db: Db) {
     .where(eq(schema.contentItemSchema.topic, CONTENT_MARKER))
     .returning({ id: schema.contentItemSchema.id });
 
+  // Only demo brands WE created (exact marker name) — never a real brand.
+  await db
+    .delete(schema.brandProfileSchema)
+    .where(eq(schema.brandProfileSchema.brandName, BRAND_MARKER));
+
   return { accounts, grants: grantIds.length, socials, content: content.length };
 }
 
@@ -110,10 +116,18 @@ async function resolveBrand(db: Db, argOrg?: string, argBrand?: string) {
   const rows = argOrg
     ? await db.select().from(schema.brandProfileSchema).where(eq(schema.brandProfileSchema.orgId, argOrg)).limit(1)
     : await db.select().from(schema.brandProfileSchema).limit(1);
-  if (!rows[0]) {
-    throw new Error('No brand_profile found. Create a brand first, or pass --brand=<id> / --org=<clerk_org_id>.');
+  if (rows[0]) {
+    return { orgId: rows[0].orgId, brandId: rows[0].id, brandName: rows[0].brandName };
   }
-  return { orgId: rows[0].orgId, brandId: rows[0].id, brandName: rows[0].brandName };
+  // No brand in the target org → create a marked one (teardown removes it).
+  if (argOrg) {
+    const [b] = await db
+      .insert(schema.brandProfileSchema)
+      .values({ orgId: argOrg, brandName: BRAND_MARKER, industry: 'Home & wellness' })
+      .returning();
+    return { orgId: argOrg, brandId: b!.id, brandName: b!.brandName };
+  }
+  throw new Error('No brand_profile found. Pass --org=<clerk_org_id> (it will create a demo brand) or --brand=<id>.');
 }
 
 async function seed(db: Db) {

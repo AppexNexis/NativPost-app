@@ -37,11 +37,16 @@ import {
   createCarouselContainer,
   createCarouselItemContainer,
   createMediaContainer,
+  isInstagramLoginToken,
   probeInstagram,
   publishContainer,
   resolvePermalink,
 } from './meta-graph';
-import { needsRefresh, refreshMetaToken } from './token-refresh';
+import {
+  needsRefresh,
+  refreshInstagramToken,
+  refreshMetaToken,
+} from './token-refresh';
 
 /**
  * The credential blob a Meta official_api account stores in the vault — the
@@ -91,15 +96,24 @@ async function freshMetaCredentials(
   if (!needsRefresh(creds.expiresAt, Date.now())) {
     return creds;
   }
-  const appId = process.env.META_APP_ID;
-  const appSecret = process.env.META_APP_SECRET;
-  if (!appId || !appSecret) {
-    return creds; // cannot refresh without app credentials — use as-is
+
+  let refreshed: { accessToken: string; expiresAt?: number };
+  if (isInstagramLoginToken(creds.accessToken)) {
+    // Instagram Business Login: refresh the long-lived token (no app secret).
+    refreshed = await refreshInstagramToken(creds.accessToken, fetchImpl);
+  } else {
+    // Facebook Login: extend via fb_exchange_token (needs the Meta app secret).
+    const appId = process.env.META_APP_ID;
+    const appSecret = process.env.META_APP_SECRET;
+    if (!appId || !appSecret) {
+      return creds; // cannot refresh without app credentials — use as-is
+    }
+    refreshed = await refreshMetaToken(
+      { accessToken: creds.accessToken, appId, appSecret },
+      fetchImpl,
+    );
   }
-  const refreshed = await refreshMetaToken(
-    { accessToken: creds.accessToken, appId, appSecret },
-    fetchImpl,
-  );
+
   const updated: MetaCredentials = {
     ...creds,
     accessToken: refreshed.accessToken,
