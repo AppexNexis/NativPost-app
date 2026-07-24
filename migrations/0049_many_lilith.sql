@@ -1,0 +1,1 @@
+ALTER TABLE "msi_job" ADD COLUMN "execution_handle" text;

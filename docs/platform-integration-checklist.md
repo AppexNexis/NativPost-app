@@ -80,9 +80,43 @@ unfilled Phase-0 sign-off keeps the strategy fail-closed (`manual` only).
 
 ---
 
-## TikTok — _not started_
+## TikTok — second integration
 
-Copy the template. Content Posting API; likely `official_api`. Separate Phase-0.
+| Field | Value |
+|---|---|
+| **Platform key** | `tiktok` |
+| **API + version** | TikTok Content Posting API v2 (`open.tiktokapis.com/v2`) |
+| **API documentation** | developers.tiktok.com/doc/content-posting-api-get-started |
+| **OAuth flow** | TikTok Login Kit; customer authorizes the account (customer-owned). |
+| **Required scopes** | `video.publish` (+ `video.upload`), `user.info.basic`. |
+| **Required app review** | Yes — audited-client review; **unaudited apps can only post to private accounts**. |
+| **Supported operations** | `publish_post` (video via `PULL_FROM_URL`). Photo posts = separate endpoint (follow-up). Account create / profile edits stay `manual`. |
+| **Media handling** | `video/init/` (PULL_FROM_URL) → poll `status/fetch/` until `PUBLISH_COMPLETE` → aweme id in `publicaly_available_post_id[0]`. Video only. |
+| **Rate limits** | Per-account daily post cap (`spam_risk_too_many_posts`). Surface as a capacity constraint. |
+| **Token type + refresh** | OAuth access token (~24h) + refresh token. Stored in the vault as JSON `{ accessToken, username? }`. |
+| **Webhooks** | None used for publishing. |
+| **Error codes of note** | `access_token_invalid` (reconnect); `spam_risk_too_many_posts` (cap); `unaudited_client_can_only_post_to_private_accounts`. |
+| **Retry strategy** | init/FAILED/timeout → throw → job `failed` → worker retries (bounded). No re-publish after a post id is returned (job-level idempotency). |
+| **Compliance notes** | Sanctioned API, customer-owned account, customer-authorized token. Per-account Phase-0 sign-off before `official_api`. |
+| **MSI execution strategy** | `official_api` |
+| **Phase-0 legal sign-off** | _pending — record date + owner here_ |
+| **Client module** | `src/lib/msi/clients/tiktok-client.ts` (+ `tiktok-content.ts`) |
+| **Status** | in-progress (client + tests built; registered in `OFFICIAL_API_CLIENTS`; needs creds + Phase-0 for prod traffic) |
+
+### Wiring notes (TikTok)
+- **Credentials:** capture `{ "accessToken": "…", "username": "…" }` as JSON via the
+  Operations **Credential vault → Capture** surface.
+- **Registered** in `worker-service.ts` `OFFICIAL_API_CLIENTS` (`['tiktok', tiktokClient]`) —
+  fail-closed until a real token is in the vault + the account is `official_api`.
+- **Media:** routed through `/api/media/proxy` so TikTok's `PULL_FROM_URL` domain
+  verification is satisfied by the app origin.
+- **Async status pass (done):** publishing is split — `execute` inits (returns
+  `pending` + a handle), the worker's confirmation pass calls `checkStatus` once
+  per tick until PUBLISH_COMPLETE. No tick blocks on processing; respects the
+  cron's 60s budget. Same mechanism serves IG REELS.
+- **Follow-ups:** photo-post endpoint; token auto-refresh.
+
+## LinkedIn — _not started_
 
 ## LinkedIn — _not started_
 

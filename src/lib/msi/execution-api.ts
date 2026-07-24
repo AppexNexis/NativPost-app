@@ -27,12 +27,31 @@ export type PlatformCallResult = {
   detail?: string;
   // The platform's own post id for a publish (media id, tweet id, …).
   platformPostId?: string;
+  // `true` = the platform accepted the operation but is still processing it
+  // (async). The adapter maps this to a `processing` outcome and persists
+  // `providerHandle` so the runner can confirm on a later tick.
+  pending?: boolean;
+  providerHandle?: string;
 };
+
+/** Result of polling an async operation via `checkStatus`. Throws on failure. */
+export type PlatformStatusResult =
+  | { done: false }
+  | {
+      done: true;
+      platformPostId?: string;
+      evidenceUrl?: string;
+      detail?: string;
+    };
 
 /**
  * Per-platform integration contract. A concrete client (Meta Graph, TikTok
  * Content Posting, a Business-Center delegation, ...) implements this with real
  * API calls + credentials. The adapter is built against this interface only.
+ *
+ * Async publishing: `execute` initiates and may return `{ pending: true,
+ * providerHandle }`; the runner later calls `checkStatus(handle, ctx)` once per
+ * tick until it resolves. Synchronous clients omit `checkStatus`.
  */
 export type PlatformClient = {
   readonly platform: string;
@@ -40,6 +59,10 @@ export type PlatformClient = {
     operation: ExecutionOperation,
     ctx: ExecutionContext,
   ) => Promise<PlatformCallResult>;
+  checkStatus?: (
+    handle: string,
+    ctx: ExecutionContext,
+  ) => Promise<PlatformStatusResult>;
 };
 
 export type PlatformClientRegistry = Map<string, PlatformClient>;
@@ -71,6 +94,15 @@ export function createApiExecutionAdapter(
       }
       try {
         const res = await client.execute(operation, ctx);
+        if (res.pending) {
+          // Accepted but still processing — the runner persists the handle and
+          // confirms on a later tick (no blocking poll inside this tick).
+          return {
+            outcome: 'processing',
+            detail: res.detail,
+            providerHandle: res.providerHandle,
+          };
+        }
         return {
           outcome: 'completed',
           detail: res.detail,
@@ -81,6 +113,35 @@ export function createApiExecutionAdapter(
         return {
           outcome: 'failed',
           detail: err instanceof Error ? err.message : 'platform call failed',
+        };
+      }
+    },
+    async checkStatus(
+      handle: string,
+      ctx: ExecutionContext,
+    ): Promise<ExecutionResult> {
+      const client = clients.get(ctx.platform);
+      if (!client?.checkStatus) {
+        return {
+          outcome: 'failed',
+          detail: `no ${strategy} status check for ${ctx.platform}`,
+        };
+      }
+      try {
+        const res = await client.checkStatus(handle, ctx);
+        if (!res.done) {
+          return { outcome: 'processing', providerHandle: handle };
+        }
+        return {
+          outcome: 'completed',
+          detail: res.detail,
+          evidenceUrl: res.evidenceUrl,
+          platformPostId: res.platformPostId,
+        };
+      } catch (err) {
+        return {
+          outcome: 'failed',
+          detail: err instanceof Error ? err.message : 'status check failed',
         };
       }
     },

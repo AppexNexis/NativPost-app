@@ -26,6 +26,7 @@ import type { DeviceSlot, OperatorSlot } from './allocation';
 import { planAllocations } from './allocation';
 import { buildActivityEvent } from './audit';
 import { metaInstagramClient } from './clients/meta-client';
+import { tiktokClient } from './clients/tiktok-client';
 import type { ExecutionAdapter } from './execution';
 import {
   AdapterNotConfiguredError,
@@ -36,7 +37,13 @@ import { createApiExecutionAdapter } from './execution-api';
 import type { JobState } from './job-workflow';
 import { transitionJob } from './job-workflow';
 import type { OrchestrationAccount } from './orchestration';
-import { planJobOrchestration, resolveStartOutcome, selectJobsToStart } from './orchestration';
+import {
+  planJobOrchestration,
+  resolveConfirmOutcome,
+  resolveStartOutcome,
+  selectJobsToStart,
+} from './orchestration';
+import { resolveStrategy } from './execution';
 import type { WorkerJob } from './worker';
 import { deriveWorkerMutations, planWorkerTick } from './worker';
 
@@ -45,7 +52,10 @@ const TERMINAL_JOB_STATES = ['completed', 'cancelled'];
 // Production platform clients, keyed by `managed_account.platform`. Add a client
 // here as each platform is integrated + cleared. Platforms absent from this map
 // fail closed inside the API adapter (visible failure, never a silent no-op).
-const OFFICIAL_API_CLIENTS = new Map([['instagram', metaInstagramClient]]);
+const OFFICIAL_API_CLIENTS = new Map([
+  ['instagram', metaInstagramClient],
+  ['tiktok', tiktokClient],
+]);
 
 let productionAdaptersRegistered = false;
 
@@ -343,12 +353,98 @@ export async function runWorkerTick(now: Date = new Date()) {
           .update(msiJobSchema)
           .set({ state: 'failed', failureReason: outcome.failureReason })
           .where(eq(msiJobSchema.id, intent.jobId));
+      } else if (outcome.providerHandle) {
+        // Async: accepted + still processing → persist the handle; the job stays
+        // in_progress and is confirmed by the pass below on a later tick.
+        await db
+          .update(msiJobSchema)
+          .set({ executionHandle: outcome.providerHandle })
+          .where(eq(msiJobSchema.id, intent.jobId));
       }
 
       await db.insert(msiActivityLogSchema).values(
         buildActivityEvent({
           managedAccountId: intent.ctx.managedAccountId,
           jobId: intent.jobId,
+          actorType: 'system',
+          action: outcome.auditAction,
+          detail: outcome.auditDetail,
+        }),
+      );
+    }
+  }
+
+  // --- Confirmation pass: poll in-flight async jobs (execution_handle set) ---
+  // These were initiated on an earlier tick and returned `processing`. Each is
+  // polled ONCE here, so a single tick never blocks on platform processing.
+  // (Jobs that went processing *this* tick have a stale in-memory row and are
+  // picked up next tick — deliberate.)
+  const inFlight = jobRows.filter(j => j.state === 'in_progress' && j.executionHandle);
+  for (const job of inFlight) {
+    const account = accountById.get(job.managedAccountId);
+    if (!account) {
+      continue;
+    }
+    const strategy = resolveStrategy({
+      executionStrategy: account.executionStrategy,
+      platform: account.platform,
+    });
+    let adapter: ExecutionAdapter | null = null;
+    try {
+      adapter = getExecutionAdapter(strategy);
+    } catch (err) {
+      if (!(err instanceof AdapterNotConfiguredError)) {
+        throw err;
+      }
+    }
+    if (!adapter?.checkStatus) {
+      continue;
+    }
+
+    const result = await adapter.checkStatus(job.executionHandle!, {
+      managedAccountId: job.managedAccountId,
+      platform: account.platform,
+      country: account.country,
+      strategy,
+      ...(job.contentItemId ? { payload: { contentItemId: job.contentItemId } } : {}),
+    });
+    const outcome = resolveConfirmOutcome(job.id, job.jobType, result);
+
+    if (outcome.resolution === 'still_processing') {
+      continue;
+    }
+
+    const at = new Date();
+    if (outcome.resolution === 'completed') {
+      transitionJob('in_progress', 'peer_review', { evidenceAttached: true });
+      await db
+        .update(msiJobSchema)
+        .set({
+          state: 'peer_review',
+          completedAt: at,
+          executionHandle: null,
+          platformPostId: outcome.platformPostId,
+        })
+        .where(eq(msiJobSchema.id, job.id));
+      if (outcome.completeAllTasks) {
+        await db
+          .update(msiTaskSchema)
+          .set({ status: 'done', completedAt: at })
+          .where(eq(msiTaskSchema.jobId, job.id));
+      }
+    } else {
+      transitionJob('in_progress', 'failed');
+      await db
+        .update(msiJobSchema)
+        .set({ state: 'failed', failureReason: outcome.failureReason, executionHandle: null })
+        .where(eq(msiJobSchema.id, job.id));
+    }
+
+    if (outcome.auditAction) {
+      await db.insert(msiActivityLogSchema).values(
+        buildActivityEvent({
+          managedAccountId: job.managedAccountId,
+          jobId: job.id,
           actorType: 'system',
           action: outcome.auditAction,
           detail: outcome.auditDetail,

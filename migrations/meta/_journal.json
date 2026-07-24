@@ -344,6 +344,13 @@
       "when": 1784905095258,
       "tag": "0048_old_amazoness",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1784907861148,
+      "tag": "0049_many_lilith",
+      "breakpoints": true
     }
   ]
 }

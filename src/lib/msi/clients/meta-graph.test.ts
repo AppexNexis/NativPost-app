@@ -1,149 +1,81 @@
 import { describe, expect, it } from 'vitest';
 
 import type { FetchLike } from './meta-graph';
-import { publishInstagramMedia } from './meta-graph';
+import {
+  checkContainerStatus,
+  createMediaContainer,
+  publishContainer,
+  resolvePermalink,
+} from './meta-graph';
 
-// A scripted fake fetch: matches by URL substring, returns queued responses.
-function fakeFetch(
-  routes: Array<{ match: string; ok?: boolean; status?: number; body: any }>,
-): { fetchImpl: FetchLike; calls: string[] } {
-  const calls: string[] = [];
-  const queue = [...routes];
-  const fetchImpl: FetchLike = async (url) => {
-    calls.push(url);
-    const idx = queue.findIndex(r => url.includes(r.match));
-    if (idx === -1) {
-      throw new Error(`unexpected fetch: ${url}`);
-    }
-    const [route] = queue.splice(idx, 1);
-    return {
-      ok: route!.ok ?? true,
-      status: route!.status ?? 200,
-      json: async () => route!.body,
-    };
-  };
-  return { fetchImpl, calls };
+function oneResponse(body: any, ok = true, status = 200): FetchLike {
+  return async () => ({ ok, status, json: async () => body });
 }
 
-const noSleep = async () => {};
+const input = {
+  igUserId: 'ig-1',
+  accessToken: 'tok',
+  caption: 'hi',
+  mediaUrl: 'https://cdn/img.jpg',
+  isVideo: false,
+};
 
-describe('publishInstagramMedia', () => {
-  it('publishes an image: container → publish → permalink', async () => {
-    const { fetchImpl, calls } = fakeFetch([
-      { match: '/ig-1/media', body: { id: 'container-1' } },
-      { match: 'status_code', body: { status_code: 'FINISHED' } },
-      { match: '/ig-1/media_publish', body: { id: 'media-99' } },
-      { match: 'fields=permalink', body: { permalink: 'https://instagram.com/p/abc' } },
-    ]);
-
-    const res = await publishInstagramMedia(
-      {
-        igUserId: 'ig-1',
-        accessToken: 'tok',
-        caption: 'hi',
-        mediaUrl: 'https://cdn/img.jpg',
-        isVideo: false,
-      },
-      fetchImpl,
-      { attempts: 3, delayMs: 0, sleep: noSleep },
-    );
-
-    expect(res).toEqual({ mediaId: 'media-99', permalink: 'https://instagram.com/p/abc' });
-    // Container creation must be the image path, not REELS.
-    expect(calls[0]).toContain('/ig-1/media');
+describe('createMediaContainer', () => {
+  it('returns the container id (image path)', async () => {
+    let sentBody: any;
+    const fetchImpl: FetchLike = async (_url, init) => {
+      sentBody = JSON.parse(init!.body!);
+      return { ok: true, status: 200, json: async () => ({ id: 'container-1' }) };
+    };
+    const id = await createMediaContainer(input, fetchImpl);
+    expect(id).toBe('container-1');
+    expect(sentBody.image_url).toBe('https://cdn/img.jpg');
+    expect(sentBody.media_type).toBeUndefined();
   });
 
-  it('waits for a REELS container to finish processing before publishing', async () => {
-    const { fetchImpl } = fakeFetch([
-      { match: '/ig-1/media', body: { id: 'c-2' } },
-      { match: 'status_code', body: { status_code: 'IN_PROGRESS' } },
-      { match: 'status_code', body: { status_code: 'FINISHED' } },
-      { match: '/ig-1/media_publish', body: { id: 'media-2' } },
-      { match: 'fields=permalink', body: { permalink: 'https://instagram.com/reel/x' } },
-    ]);
-
-    const res = await publishInstagramMedia(
-      {
-        igUserId: 'ig-1',
-        accessToken: 'tok',
-        caption: 'reel',
-        mediaUrl: 'https://cdn/v.mp4',
-        isVideo: true,
-      },
-      fetchImpl,
-      { attempts: 5, delayMs: 0, sleep: noSleep },
-    );
-
-    expect(res.mediaId).toBe('media-2');
+  it('uses REELS for video', async () => {
+    let sentBody: any;
+    const fetchImpl: FetchLike = async (_url, init) => {
+      sentBody = JSON.parse(init!.body!);
+      return { ok: true, status: 200, json: async () => ({ id: 'c-2' }) };
+    };
+    await createMediaContainer({ ...input, isVideo: true, mediaUrl: 'https://cdn/v.mp4' }, fetchImpl);
+    expect(sentBody.media_type).toBe('REELS');
+    expect(sentBody.video_url).toBe('https://cdn/v.mp4');
   });
 
-  it('throws a descriptive error when the Graph API rejects the container', async () => {
-    const { fetchImpl } = fakeFetch([
-      {
-        match: '/ig-1/media',
-        ok: false,
-        status: 400,
-        body: { error: { message: 'Media URL unreachable' } },
-      },
-    ]);
+  it('throws a descriptive error when the Graph API rejects it', async () => {
+    const fetchImpl = oneResponse({ error: { message: 'Media URL unreachable' } }, false, 400);
+    await expect(createMediaContainer(input, fetchImpl)).rejects.toThrow(
+      /container creation failed \(400\): Media URL unreachable/,
+    );
+  });
+});
 
+describe('checkContainerStatus', () => {
+  it('maps FINISHED / in-progress / ERROR', async () => {
+    expect(
+      await checkContainerStatus('c', 'tok', oneResponse({ status_code: 'FINISHED' })),
+    ).toBe('FINISHED');
+    expect(
+      await checkContainerStatus('c', 'tok', oneResponse({ status_code: 'IN_PROGRESS' })),
+    ).toBe('PROCESSING');
     await expect(
-      publishInstagramMedia(
-        {
-          igUserId: 'ig-1',
-          accessToken: 'tok',
-          caption: 'x',
-          mediaUrl: 'https://cdn/bad.jpg',
-          isVideo: false,
-        },
-        fetchImpl,
-        { attempts: 1, delayMs: 0, sleep: noSleep },
-      ),
-    ).rejects.toThrow(/container creation failed \(400\): Media URL unreachable/);
+      checkContainerStatus('c', 'tok', oneResponse({ status_code: 'ERROR' })),
+    ).rejects.toThrow(/processing ERROR/);
+  });
+});
+
+describe('publishContainer + resolvePermalink', () => {
+  it('publishes a ready container and returns the media id', async () => {
+    const id = await publishContainer('ig-1', 'c-1', 'tok', oneResponse({ id: 'media-99' }));
+    expect(id).toBe('media-99');
   });
 
-  it('throws when a container never finishes (timeout)', async () => {
-    const { fetchImpl } = fakeFetch([
-      { match: '/ig-1/media', body: { id: 'c-3' } },
-      { match: 'status_code', body: { status_code: 'IN_PROGRESS' } },
-      { match: 'status_code', body: { status_code: 'IN_PROGRESS' } },
-    ]);
-
-    await expect(
-      publishInstagramMedia(
-        {
-          igUserId: 'ig-1',
-          accessToken: 'tok',
-          caption: 'x',
-          mediaUrl: 'https://cdn/v.mp4',
-          isVideo: true,
-        },
-        fetchImpl,
-        { attempts: 2, delayMs: 0, sleep: noSleep },
-      ),
-    ).rejects.toThrow(/timed out/);
-  });
-
-  it('still succeeds when permalink resolution fails', async () => {
-    const { fetchImpl } = fakeFetch([
-      { match: '/ig-1/media', body: { id: 'c-4' } },
-      { match: 'status_code', body: { status_code: 'FINISHED' } },
-      { match: '/ig-1/media_publish', body: { id: 'media-4' } },
-      { match: 'fields=permalink', ok: false, status: 500, body: {} },
-    ]);
-
-    const res = await publishInstagramMedia(
-      {
-        igUserId: 'ig-1',
-        accessToken: 'tok',
-        caption: 'x',
-        mediaUrl: 'https://cdn/img.jpg',
-        isVideo: false,
-      },
-      fetchImpl,
-      { attempts: 2, delayMs: 0, sleep: noSleep },
-    );
-
-    expect(res).toEqual({ mediaId: 'media-4', permalink: null });
+  it('resolves a permalink, and returns null when it fails', async () => {
+    expect(
+      await resolvePermalink('media-99', 'tok', oneResponse({ permalink: 'https://ig/p/x' })),
+    ).toBe('https://ig/p/x');
+    expect(await resolvePermalink('media-99', 'tok', oneResponse({}, false, 500))).toBeNull();
   });
 });

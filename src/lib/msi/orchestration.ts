@@ -93,6 +93,8 @@ export type StartOutcome = {
   nextState: 'in_progress' | 'peer_review' | 'failed';
   completeAllTasks: boolean;
   failureReason: string | null;
+  /** Async handle to persist when `processing` (else null). */
+  providerHandle: string | null;
   auditAction: string;
   auditDetail: Record<string, unknown>;
 };
@@ -100,7 +102,8 @@ export type StartOutcome = {
 /**
  * Map an execution result to the job's resulting state — uniform across every
  * strategy. `completed` → submit for QA (peer_review) + tasks done; `failed` →
- * failed; `pending_operator` → stays in_progress awaiting the operator.
+ * failed; `processing` → stays in_progress with a handle (confirmed later);
+ * `pending_operator` → stays in_progress awaiting the operator.
  */
 export function resolveStartOutcome(
   intent: ExecutionIntent,
@@ -114,6 +117,7 @@ export function resolveStartOutcome(
       nextState: 'failed',
       completeAllTasks: false,
       failureReason: result.detail ?? 'execution failed',
+      providerHandle: null,
       auditAction: 'execution_failed',
       auditDetail: { operation: intent.operation, detail: result.detail ?? null },
     };
@@ -125,8 +129,25 @@ export function resolveStartOutcome(
       nextState: 'peer_review',
       completeAllTasks: true,
       failureReason: null,
+      providerHandle: null,
       auditAction: 'execution_completed',
       auditDetail: { operation: intent.operation, strategy: intent.ctx.strategy },
+    };
+  }
+
+  if (result.outcome === 'processing') {
+    return {
+      jobId: intent.jobId,
+      nextState: 'in_progress',
+      completeAllTasks: false,
+      failureReason: null,
+      providerHandle: result.providerHandle ?? null,
+      auditAction: 'execution_processing',
+      auditDetail: {
+        operation: intent.operation,
+        strategy: intent.ctx.strategy,
+        awaiting: 'platform',
+      },
     };
   }
 
@@ -136,11 +157,71 @@ export function resolveStartOutcome(
     nextState: 'in_progress',
     completeAllTasks: false,
     failureReason: null,
+    providerHandle: null,
     auditAction: 'execution_started',
     auditDetail: {
       operation: intent.operation,
       strategy: intent.ctx.strategy,
       awaiting: 'operator',
     },
+  };
+}
+
+export type ConfirmOutcome = {
+  jobId: string;
+  resolution: 'completed' | 'failed' | 'still_processing';
+  completeAllTasks: boolean;
+  platformPostId: string | null;
+  failureReason: string | null;
+  /** Null while still processing (no audit noise per idle tick). */
+  auditAction: string | null;
+  auditDetail: Record<string, unknown>;
+};
+
+/**
+ * Map a `checkStatus` result for an in-flight async job to its resolution.
+ * `completed` → peer_review + tasks done (+ platform post id); `failed` →
+ * failed; `processing` → leave it for the next tick.
+ */
+export function resolveConfirmOutcome(
+  jobId: string,
+  jobType: string,
+  result: ExecutionResult,
+): ConfirmOutcome {
+  const effect = executionEffect(result);
+
+  if (effect.jobFailed) {
+    return {
+      jobId,
+      resolution: 'failed',
+      completeAllTasks: false,
+      platformPostId: null,
+      failureReason: result.detail ?? 'execution failed',
+      auditAction: 'execution_failed',
+      auditDetail: { jobType, detail: result.detail ?? null },
+    };
+  }
+
+  if (result.outcome === 'completed') {
+    return {
+      jobId,
+      resolution: 'completed',
+      completeAllTasks: true,
+      platformPostId: result.platformPostId ?? null,
+      failureReason: null,
+      auditAction: 'execution_completed',
+      auditDetail: { jobType, platformPostId: result.platformPostId ?? null },
+    };
+  }
+
+  // still processing
+  return {
+    jobId,
+    resolution: 'still_processing',
+    completeAllTasks: false,
+    platformPostId: null,
+    failureReason: null,
+    auditAction: null,
+    auditDetail: {},
   };
 }

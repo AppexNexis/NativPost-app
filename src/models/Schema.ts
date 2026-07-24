@@ -1394,6 +1394,10 @@ export const msiJobSchema = pgTable(
     // billable event at billing time for transparency. Null for manual/
     // provisioning jobs.
     platformPostId: text('platform_post_id'),
+    // Opaque provider handle for an in-flight async publish (IG container id /
+    // TikTok publish_id). Set when execution returns `processing`; the worker's
+    // confirmation pass polls it on later ticks and clears it on resolution.
+    executionHandle: text('execution_handle'),
     priority: integer('priority').default(0).notNull(),
     attempts: integer('attempts').default(0).notNull(),
     maxAttempts: integer('max_attempts').default(3).notNull(),

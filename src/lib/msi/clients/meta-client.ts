@@ -22,9 +22,18 @@ import { contentItemSchema } from '@/models/Schema';
 
 import { revealAccountCredentials } from '../credentials-service';
 import type { ExecutionContext, ExecutionOperation } from '../execution';
-import type { PlatformCallResult, PlatformClient } from '../execution-api';
-import type { FetchLike, InstagramPublishResult } from './meta-graph';
-import { publishInstagramMedia } from './meta-graph';
+import type {
+  PlatformCallResult,
+  PlatformClient,
+  PlatformStatusResult,
+} from '../execution-api';
+import type { FetchLike } from './meta-graph';
+import {
+  checkContainerStatus,
+  createMediaContainer,
+  publishContainer,
+  resolvePermalink,
+} from './meta-graph';
 
 /**
  * The credential blob a Meta official_api account stores in the vault — the
@@ -112,7 +121,9 @@ export function createMetaInstagramClient(
       );
       const content = await loadContent(contentItemId);
 
-      const result: InstagramPublishResult = await publishInstagramMedia(
+      // Init only: create the media container and hand back its id. Publishing
+      // waits for processing, which the confirmation pass drives (checkStatus).
+      const creationId = await createMediaContainer(
         {
           igUserId: credentials.igUserId,
           accessToken: credentials.accessToken,
@@ -123,12 +134,44 @@ export function createMetaInstagramClient(
         fetchImpl,
       );
 
+      return { pending: true, providerHandle: creationId };
+    },
+
+    async checkStatus(
+      handle: string,
+      ctx: ExecutionContext,
+    ): Promise<PlatformStatusResult> {
+      const credentials = parseMetaCredentials(
+        await revealAccountCredentials(ctx.managedAccountId),
+      );
+
+      const status = await checkContainerStatus(
+        handle,
+        credentials.accessToken,
+        fetchImpl,
+      );
+      if (status === 'PROCESSING') {
+        return { done: false };
+      }
+
+      // Container ready → publish it and resolve the permalink.
+      const mediaId = await publishContainer(
+        credentials.igUserId,
+        handle,
+        credentials.accessToken,
+        fetchImpl,
+      );
+      const permalink = await resolvePermalink(
+        mediaId,
+        credentials.accessToken,
+        fetchImpl,
+      );
+
       return {
-        evidenceUrl: result.permalink ?? undefined,
-        // The platform post id — threaded into billing (platform_post_id) for
-        // transparency + audit; also echoed in detail for the activity log.
-        platformPostId: result.mediaId,
-        detail: `instagram media ${result.mediaId}`,
+        done: true,
+        platformPostId: mediaId,
+        evidenceUrl: permalink ?? undefined,
+        detail: `instagram media ${mediaId}`,
       };
     },
   };

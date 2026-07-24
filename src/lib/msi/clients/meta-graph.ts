@@ -24,10 +24,7 @@ export type InstagramPublishInput = {
   isVideo: boolean;
 };
 
-export type InstagramPublishResult = {
-  mediaId: string;
-  permalink: string | null;
-};
+export type ContainerStatus = 'FINISHED' | 'PROCESSING';
 
 /** Raise a descriptive error from a Graph API error body (the adapter maps → failed). */
 function graphError(context: string, status: number, body: any): Error {
@@ -77,33 +74,27 @@ export async function createMediaContainer(
 }
 
 /**
- * Poll a container's status_code until FINISHED (video/reels need processing;
- * images are usually immediate). Throws on ERROR or timeout.
+ * One-shot container status check (no polling loop). Returns FINISHED (ready to
+ * publish) or PROCESSING (check again next tick); throws on ERROR/EXPIRED. The
+ * worker's confirmation pass calls this once per tick.
  */
-export async function waitForContainer(
+export async function checkContainerStatus(
   containerId: string,
   accessToken: string,
   fetchImpl: FetchLike,
-  opts: { attempts: number; delayMs: number; sleep?: (ms: number) => Promise<void> },
-): Promise<void> {
-  const sleep = opts.sleep ?? ((ms: number) => new Promise(r => setTimeout(r, ms)));
-  for (let i = 0; i < opts.attempts; i += 1) {
-    const res = await fetchImpl(
-      `${GRAPH}/${containerId}?fields=status_code&access_token=${accessToken}`,
-    );
-    const data = await readJson(res, 'container status');
-    const code: string = data.status_code || '';
-    if (code === 'FINISHED') {
-      return;
-    }
-    if (code === 'ERROR' || code === 'EXPIRED') {
-      throw new Error(`Instagram container processing ${code}`);
-    }
-    if (i < opts.attempts - 1) {
-      await sleep(opts.delayMs);
-    }
+): Promise<ContainerStatus> {
+  const res = await fetchImpl(
+    `${GRAPH}/${containerId}?fields=status_code&access_token=${accessToken}`,
+  );
+  const data = await readJson(res, 'container status');
+  const code: string = data.status_code || '';
+  if (code === 'FINISHED') {
+    return 'FINISHED';
   }
-  throw new Error('Instagram container processing timed out');
+  if (code === 'ERROR' || code === 'EXPIRED') {
+    throw new Error(`Instagram container processing ${code}`);
+  }
+  return 'PROCESSING';
 }
 
 /** Publish a ready container; returns the published media id. */
@@ -145,25 +136,3 @@ export async function resolvePermalink(
   }
 }
 
-/** Full publish: container → wait → publish → permalink. */
-export async function publishInstagramMedia(
-  input: InstagramPublishInput,
-  fetchImpl: FetchLike,
-  waitOpts?: { attempts: number; delayMs: number; sleep?: (ms: number) => Promise<void> },
-): Promise<InstagramPublishResult> {
-  const creationId = await createMediaContainer(input, fetchImpl);
-  await waitForContainer(
-    creationId,
-    input.accessToken,
-    fetchImpl,
-    waitOpts ?? { attempts: input.isVideo ? 30 : 20, delayMs: input.isVideo ? 3000 : 2000 },
-  );
-  const mediaId = await publishContainer(
-    input.igUserId,
-    creationId,
-    input.accessToken,
-    fetchImpl,
-  );
-  const permalink = await resolvePermalink(mediaId, input.accessToken, fetchImpl);
-  return { mediaId, permalink };
-}

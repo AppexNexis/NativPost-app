@@ -46,7 +46,14 @@ export type ExecutionContext = {
   payload?: Record<string, unknown>;
 };
 
-export type ExecutionOutcome = 'completed' | 'pending_operator' | 'failed';
+// `processing` = the platform accepted the operation but is still working on it
+// (async media processing). The runner persists a handle and re-checks on a
+// later tick, so no single worker tick blocks on platform processing.
+export type ExecutionOutcome =
+  | 'completed'
+  | 'pending_operator'
+  | 'processing'
+  | 'failed';
 
 export type ExecutionResult = {
   outcome: ExecutionOutcome;
@@ -55,12 +62,22 @@ export type ExecutionResult = {
   // The platform's post id, when the operation produced one (e.g. a publish).
   // Persisted on the job and later threaded into the billable event.
   platformPostId?: string;
+  // Opaque provider handle for an async operation (e.g. an IG container id or a
+  // TikTok publish_id) — persisted on `processing`, replayed to `checkStatus`.
+  providerHandle?: string;
 };
 
 export type ExecutionAdapter = {
   readonly strategy: ExecutionStrategy;
   execute: (
     operation: ExecutionOperation,
+    ctx: ExecutionContext,
+  ) => Promise<ExecutionResult>;
+  // Poll a previously-initiated async operation. Present only on adapters whose
+  // clients support async publishing; absent → the strategy has no deferred
+  // work to confirm.
+  checkStatus?: (
+    handle: string,
     ctx: ExecutionContext,
   ) => Promise<ExecutionResult>;
 };
@@ -171,6 +188,11 @@ const EFFECTS: Record<ExecutionOutcome, ExecutionEffect> = {
     taskStatus: 'in_progress',
     jobFailed: false,
     operatorActionRequired: true,
+  },
+  processing: {
+    taskStatus: 'in_progress',
+    jobFailed: false,
+    operatorActionRequired: false,
   },
   failed: { taskStatus: 'pending', jobFailed: true, operatorActionRequired: false },
 };

@@ -5,6 +5,7 @@ import {
   type OrchestrationAccount,
   type OrchestrationJob,
   planJobOrchestration,
+  resolveConfirmOutcome,
   resolveStartOutcome,
   selectJobsToStart,
 } from './orchestration';
@@ -90,6 +91,46 @@ describe('resolveStartOutcome', () => {
     const out = resolveStartOutcome(intent, { outcome: 'failed', detail: 'api 500' });
     expect(out.nextState).toBe('failed');
     expect(out.failureReason).toBe('api 500');
+    expect(out.auditAction).toBe('execution_failed');
+  });
+
+  it('processing keeps the job in progress and carries the handle to persist', () => {
+    const out = resolveStartOutcome(intent, {
+      outcome: 'processing',
+      providerHandle: 'container-1',
+    });
+    expect(out.nextState).toBe('in_progress');
+    expect(out.providerHandle).toBe('container-1');
+    expect(out.auditAction).toBe('execution_processing');
+  });
+});
+
+describe('resolveConfirmOutcome', () => {
+  it('completed → peer_review + tasks done + platform post id', () => {
+    const out = resolveConfirmOutcome('j1', 'publish_post', {
+      outcome: 'completed',
+      platformPostId: 'media-9',
+    });
+    expect(out.resolution).toBe('completed');
+    expect(out.completeAllTasks).toBe(true);
+    expect(out.platformPostId).toBe('media-9');
+    expect(out.auditAction).toBe('execution_completed');
+  });
+
+  it('processing → still processing, no audit noise', () => {
+    const out = resolveConfirmOutcome('j1', 'publish_post', { outcome: 'processing' });
+    expect(out.resolution).toBe('still_processing');
+    expect(out.completeAllTasks).toBe(false);
+    expect(out.auditAction).toBeNull();
+  });
+
+  it('failed → failed with a reason', () => {
+    const out = resolveConfirmOutcome('j1', 'publish_post', {
+      outcome: 'failed',
+      detail: 'processing ERROR',
+    });
+    expect(out.resolution).toBe('failed');
+    expect(out.failureReason).toBe('processing ERROR');
     expect(out.auditAction).toBe('execution_failed');
   });
 });

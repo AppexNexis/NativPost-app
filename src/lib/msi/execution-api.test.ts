@@ -44,6 +44,55 @@ describe('createApiExecutionAdapter', () => {
     expect(res.platformPostId).toBe('media-123');
   });
 
+  it('maps a pending client result to processing + provider handle', async () => {
+    const client = fakeClient({
+      execute: async () => ({ pending: true, providerHandle: 'pub-1' }),
+    });
+    const adapter = createApiExecutionAdapter('official_api', new Map([['tiktok', client]]));
+    const res = await adapter.execute('publish_post', ctx);
+    expect(res.outcome).toBe('processing');
+    expect(res.providerHandle).toBe('pub-1');
+  });
+});
+
+describe('createApiExecutionAdapter.checkStatus', () => {
+  it('maps a not-done status to processing', async () => {
+    const client = fakeClient({ checkStatus: async () => ({ done: false }) });
+    const adapter = createApiExecutionAdapter('official_api', new Map([['tiktok', client]]));
+    const res = await adapter.checkStatus!('pub-1', ctx);
+    expect(res.outcome).toBe('processing');
+    expect(res.providerHandle).toBe('pub-1');
+  });
+
+  it('maps a done status to completed + platform post id', async () => {
+    const client = fakeClient({
+      checkStatus: async () => ({ done: true, platformPostId: 'aweme-9', evidenceUrl: 'https://x/v/9' }),
+    });
+    const adapter = createApiExecutionAdapter('official_api', new Map([['tiktok', client]]));
+    const res = await adapter.checkStatus!('pub-1', ctx);
+    expect(res.outcome).toBe('completed');
+    expect(res.platformPostId).toBe('aweme-9');
+  });
+
+  it('maps a thrown status check to failed', async () => {
+    const client = fakeClient({
+      checkStatus: async () => {
+        throw new Error('processing FAILED');
+      },
+    });
+    const adapter = createApiExecutionAdapter('official_api', new Map([['tiktok', client]]));
+    const res = await adapter.checkStatus!('pub-1', ctx);
+    expect(res.outcome).toBe('failed');
+    expect(res.detail).toBe('processing FAILED');
+  });
+
+  it('fails visibly when the client has no status check', async () => {
+    const adapter = createApiExecutionAdapter('official_api', new Map([['tiktok', fakeClient()]]));
+    const res = await adapter.checkStatus!('pub-1', ctx);
+    expect(res.outcome).toBe('failed');
+    expect(res.detail).toMatch(/no official_api status check/);
+  });
+
   it('maps a thrown client error to failed with the message', async () => {
     const client = fakeClient({
       execute: async () => {
