@@ -1,0 +1,24 @@
+name: MSI Billing Usage Reporter
+
+on:
+  schedule:
+    # Hourly at :37. Ships un-reported billable publish events to the billing
+    # provider. A no-op (skipped=true) until MSI_METERED_BILLING_ENABLED is on,
+    # so it is safe to schedule now — it does nothing until billing is wired.
+    - cron: '37 * * * *'
+  workflow_dispatch:
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger MSI billing report tick
+        run: |
+          curl -X POST \
+            https://app.nativpost.com/api/cron/msi-billing-report \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --data '{}' \
+            --fail \
+            --silent \
+            --show-error

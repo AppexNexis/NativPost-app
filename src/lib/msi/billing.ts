@@ -12,9 +12,14 @@ export type PublishEventInput = {
   contentItemId: string | null;
   platform: string;
   occurredAt: Date;
+  // The platform's post id, when known (automated flow); null in manual.
+  platformPostId?: string | null;
 };
 
-export type PublishEventRow = PublishEventInput & { billingPeriod: string };
+export type PublishEventRow = Omit<PublishEventInput, 'platformPostId'> & {
+  platformPostId: string | null;
+  billingPeriod: string;
+};
 
 /** UTC billing month bucket, `YYYY-MM`. */
 export function billingPeriodOf(date: Date): string {
@@ -27,6 +32,7 @@ export function billingPeriodOf(date: Date): string {
 export function buildPublishEvent(input: PublishEventInput): PublishEventRow {
   return {
     ...input,
+    platformPostId: input.platformPostId ?? null,
     billingPeriod: billingPeriodOf(input.occurredAt),
   };
 }
@@ -42,10 +48,13 @@ export type UsageRecord = {
   eventId: string;
 };
 
+/** Outcome of reporting one event: the provider's record id for reconciliation. */
+export type ReportResult = { providerRecordId: string | null };
+
 export type BillingService = {
   readonly enabled: boolean;
   /** Report one usage unit to the provider. No-op when disabled. */
-  reportUsage: (record: UsageRecord) => Promise<void>;
+  reportUsage: (record: UsageRecord) => Promise<ReportResult>;
 };
 
 /** Disabled provider — the default until metered billing is turned on. */
@@ -54,6 +63,7 @@ export const noopBillingService: BillingService = {
   async reportUsage() {
     // Intentionally does nothing — events accumulate un-reported until a real
     // provider is wired and the flag is enabled.
+    return { providerRecordId: null };
   },
 };
 
@@ -66,7 +76,7 @@ export const noopBillingService: BillingService = {
 export function createStripeBillingService(): BillingService {
   return {
     enabled: true,
-    async reportUsage() {
+    async reportUsage(): Promise<ReportResult> {
       throw new Error(
         'StripeBillingService not implemented — enable only after wiring the '
         + 'real Stripe usage-record call.',

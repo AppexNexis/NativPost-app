@@ -18,7 +18,7 @@ describe('billingPeriodOf', () => {
 });
 
 describe('buildPublishEvent', () => {
-  it('carries the identifiers and derives the billing period', () => {
+  it('carries the identifiers, derives the period, defaults platformPostId null', () => {
     const row = buildPublishEvent({
       orgId: 'org-1',
       managedAccountId: 'acc-1',
@@ -34,8 +34,22 @@ describe('buildPublishEvent', () => {
       contentItemId: 'content-1',
       platform: 'tiktok',
       occurredAt: new Date('2026-07-24T09:00:00Z'),
+      platformPostId: null,
       billingPeriod: '2026-07',
     });
+  });
+
+  it('keeps a supplied platformPostId (automated flow)', () => {
+    const row = buildPublishEvent({
+      orgId: 'org-1',
+      managedAccountId: 'acc-1',
+      jobId: 'job-1',
+      contentItemId: null,
+      platform: 'tiktok',
+      occurredAt: new Date('2026-07-24T09:00:00Z'),
+      platformPostId: '7665041407052139784',
+    });
+    expect(row.platformPostId).toBe('7665041407052139784');
   });
 });
 
@@ -54,13 +68,13 @@ describe('billing feature flag', () => {
     expect(service).toBe(noopBillingService);
   });
 
-  it('no-op provider reports without throwing', async () => {
+  it('no-op provider reports without throwing (null provider id)', async () => {
     await expect(
       noopBillingService.reportUsage({
         orgId: 'o',
         billingPeriod: '2026-07',
         eventId: 'e',
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ providerRecordId: null });
   });
 });

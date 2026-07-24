@@ -1589,12 +1589,23 @@ export const msiBillablePublishEventSchema = pgTable(
       { onDelete: 'set null' },
     ),
     platform: text('platform').notNull(),
+    // The platform's own post id, set by a PlatformClient on a real automated
+    // publish (null in the manual flow). Powers billing transparency —
+    // "published to @brand, video 7665…, $1.50".
+    platformPostId: text('platform_post_id'),
+    // Billable outcome. 'published' is the only billable status today; the
+    // column lets non-billable outcomes coexist without a separate table.
+    status: text('status').default('published').notNull(),
     // UTC billing month, 'YYYY-MM' — the aggregation bucket for invoicing.
     billingPeriod: text('billing_period').notNull(),
+    // When the publish occurred (== platform publish time in the automated flow).
     occurredAt: timestamp('occurred_at', { mode: 'date' }).notNull(),
     // Set once the event has been reported to the billing provider (null =
     // pending). The reporter is a no-op until the feature flag is on.
     reportedAt: timestamp('reported_at', { mode: 'date' }),
+    // The provider's returned usage-record id — reconciliation anchor written
+    // by the reporter when it ships this event to Stripe.
+    stripeUsageRecordId: text('stripe_usage_record_id'),
     createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
   },
   t => ({

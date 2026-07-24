@@ -330,6 +330,13 @@
       "when": 1784901134403,
       "tag": "0046_complete_susan_delgado",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1784902124840,
+      "tag": "0047_curious_veda",
+      "breakpoints": true
     }
   ]
 }
