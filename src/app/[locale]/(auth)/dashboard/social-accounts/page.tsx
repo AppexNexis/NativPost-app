@@ -344,7 +344,9 @@ function SocialAccountsContent() {
       return body.accounts || [];
     },
   });
-  const accounts = data ?? [];
+  // Managed accounts appear in their own section (ManagedAccountsSection), not
+  // the OAuth connect grid — filter them out here to avoid double-listing.
+  const accounts = (data ?? []).filter(a => a.accountType !== 'managed');
 
   const connectPlatform = (entry: PlatformEntry) => {
     window.location.href = entry.connectHref

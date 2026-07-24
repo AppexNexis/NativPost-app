@@ -19,6 +19,7 @@ import {
   stateTone,
   toneBadgeClass,
 } from '@/lib/msi/display';
+import { scoreTone } from '@/lib/msi/health';
 import { PLATFORM_LABELS } from '@/lib/platforms';
 
 type ManagedAccount = {
@@ -217,6 +218,70 @@ function ReviewActions({
   );
 }
 
+function OffboardAction({
+  accountId,
+  custody,
+  onDone,
+}: {
+  accountId: string;
+  custody: string;
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  if (custody === 'transfer_requested') {
+    return (
+      <div className="mt-6 rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
+        Off-boarding requested — our team will release your login credentials
+        shortly.
+      </div>
+    );
+  }
+
+  const request = async () => {
+    if (
+      typeof window !== 'undefined'
+      && !window.confirm(
+        'Request your login credentials and stop the managed service for this account?',
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/msi/accounts/${accountId}/offboard`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}));
+        throw new Error(b.error || `Server returned ${res.status}`);
+      }
+      toast.success('Off-boarding requested');
+      onDone();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Request failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-6 flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-5">
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-foreground">
+          Take over this account
+        </div>
+        <div className="text-xs text-muted-foreground">
+          Request your login credentials and stop the managed service.
+        </div>
+      </div>
+      <Button variant="outline" size="sm" disabled={busy} onClick={request}>
+        {busy ? '…' : 'Request export'}
+      </Button>
+    </div>
+  );
+}
+
 export default function InfrastructureAccountPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id;
@@ -281,6 +346,22 @@ export default function InfrastructureAccountPage() {
                     <StageBar state={account.lifecycleState} />
                   </div>
 
+                  {account.healthScore != null
+                    ? (
+                        <div className="mt-6 flex items-center justify-between rounded-xl border border-border bg-card p-5">
+                          <h2 className="text-sm font-semibold text-foreground">
+                            Performance
+                          </h2>
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-xs font-medium ${toneBadgeClass(scoreTone(account.healthScore))}`}
+                          >
+                            {account.healthScore}
+                            /100
+                          </span>
+                        </div>
+                      )
+                    : null}
+
                   {account.lifecycleState === 'customer_review' && id
                     ? (
                         <ReviewActions
@@ -299,6 +380,21 @@ export default function InfrastructureAccountPage() {
                     </h2>
                     <Timeline events={data.timeline} />
                   </div>
+
+                  {id
+                    && (['live', 'active'].includes(account.lifecycleState)
+                      || account.credentialCustody === 'transfer_requested')
+                    ? (
+                        <OffboardAction
+                          accountId={id}
+                          custody={account.credentialCustody}
+                          onDone={() =>
+                            queryClient.invalidateQueries({
+                              queryKey: ['msi-account', id],
+                            })}
+                        />
+                      )
+                    : null}
 
                   <p className="mt-4 text-micro text-muted-foreground">
                     You own this account. Credentials are held securely and released to you on request.
