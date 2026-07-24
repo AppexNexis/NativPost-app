@@ -1,10 +1,13 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { useState } from 'react';
+import { toast } from 'sonner';
 
+import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
 import { PageHeader } from '@/features/dashboard/PageHeader';
 import { ListPageSkeleton } from '@/features/dashboard/PageSkeletons';
@@ -94,9 +97,130 @@ function Timeline({ events }: { events: TimelineEvent[] }) {
   );
 }
 
+const CHANGE_FIELDS = ['Username', 'Bio', 'Profile photo', 'Display name', 'Niche'];
+
+function ReviewActions({
+  accountId,
+  onDone,
+}: {
+  accountId: string;
+  onDone: () => void;
+}) {
+  const [mode, setMode] = useState<'idle' | 'changes'>('idle');
+  const [fields, setFields] = useState<Set<string>>(new Set());
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const toggle = (f: string) =>
+    setFields((prev) => {
+      const next = new Set(prev);
+      if (next.has(f)) {
+        next.delete(f);
+      } else {
+        next.add(f);
+      }
+      return next;
+    });
+
+  const submit = async (action: 'approve' | 'request_changes') => {
+    setBusy(true);
+    try {
+      const changes
+        = action === 'request_changes'
+          ? (fields.size > 0 ? [...fields] : ['general']).map(field => ({
+              field,
+              note,
+            }))
+          : undefined;
+      const res = await fetch(`/api/msi/accounts/${accountId}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, changes }),
+      });
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}));
+        throw new Error(b.error || `Server returned ${res.status}`);
+      }
+      toast.success(
+        action === 'approve' ? 'Account approved' : 'Changes requested',
+      );
+      onDone();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-6 rounded-xl border border-border bg-card p-5">
+      <h2 className="text-sm font-semibold text-foreground">Your review</h2>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Approve to finish, or request changes to the profile before it goes ahead.
+      </p>
+
+      {mode === 'idle'
+        ? (
+            <div className="mt-4 flex gap-2">
+              <Button onClick={() => submit('approve')} disabled={busy}>
+                Approve
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setMode('changes')}
+                disabled={busy}
+              >
+                Request changes
+              </Button>
+            </div>
+          )
+        : (
+            <div className="mt-4 space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {CHANGE_FIELDS.map(f => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => toggle(f)}
+                    className={`rounded-full border px-3 py-1 text-xs transition ${
+                      fields.has(f)
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border text-muted-foreground'
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+              <textarea
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                rows={3}
+                placeholder="What would you like changed?"
+                className="w-full rounded-lg border border-border bg-background p-2 text-sm"
+              />
+              <div className="flex gap-2">
+                <Button onClick={() => submit('request_changes')} disabled={busy}>
+                  Send request
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => setMode('idle')}
+                  disabled={busy}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+    </div>
+  );
+}
+
 export default function InfrastructureAccountPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id;
+  const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['msi-account', id],
@@ -156,6 +280,18 @@ export default function InfrastructureAccountPage() {
                   <div className="mt-2 rounded-xl border border-border bg-card p-5">
                     <StageBar state={account.lifecycleState} />
                   </div>
+
+                  {account.lifecycleState === 'customer_review' && id
+                    ? (
+                        <ReviewActions
+                          accountId={id}
+                          onDone={() =>
+                            queryClient.invalidateQueries({
+                              queryKey: ['msi-account', id],
+                            })}
+                        />
+                      )
+                    : null}
 
                   <div className="mt-6 rounded-xl border border-border bg-card p-5">
                     <h2 className="mb-4 text-sm font-semibold text-foreground">

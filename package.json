@@ -22,6 +22,7 @@
     "msi:seed-demo-account": "dotenv -c production -- tsx scripts/msi-seed-demo-account.ts seed",
     "msi:teardown-demo-account": "dotenv -c production -- tsx scripts/msi-seed-demo-account.ts teardown",
     "msi:sweep-drafts": "dotenv -c production -- tsx scripts/msi-seed-demo-account.ts sweep-drafts",
+    "msi:review-smoke": "dotenv -c production -- tsx scripts/msi-review-smoke.ts",
     "commit": "cz",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "dotenv -c production -- drizzle-kit migrate",
