@@ -28,6 +28,7 @@ import type { ExecutionContext, ExecutionOperation } from '../execution';
 import type {
   PlatformCallResult,
   PlatformClient,
+  PlatformDiagnosis,
   PlatformStatusResult,
 } from '../execution-api';
 import type { FetchLike } from './meta-graph';
@@ -36,6 +37,7 @@ import {
   createCarouselContainer,
   createCarouselItemContainer,
   createMediaContainer,
+  probeInstagram,
   publishContainer,
   resolvePermalink,
 } from './meta-graph';
@@ -248,6 +250,12 @@ export function createMetaInstagramClient(
         evidenceUrl: permalink ?? undefined,
         detail: `instagram media ${mediaId}`,
       };
+    },
+
+    async diagnose(ctx: ExecutionContext): Promise<PlatformDiagnosis> {
+      // Refresh proactively so the probe reflects the token publishing will use.
+      const credentials = await freshMetaCredentials(ctx.managedAccountId, fetchImpl);
+      return probeInstagram(credentials.igUserId, credentials.accessToken, fetchImpl);
     },
   };
 }

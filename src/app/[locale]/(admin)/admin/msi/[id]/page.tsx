@@ -2,10 +2,12 @@ import { desc, eq, inArray } from 'drizzle-orm';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
+import { DiagnosticsPanel } from '@/components/admin/msi/DiagnosticsPanel';
 import { JobActions } from '@/components/admin/msi/JobActions';
 import { VaultActions } from '@/components/admin/msi/VaultActions';
 import { getDb } from '@/libs/DB';
 import { stateLabel, stateTone, toneBadgeClass } from '@/lib/msi/display';
+import { resolveStrategy } from '@/lib/msi/execution';
 import {
   buildJobBoard,
   jobStateTone,
@@ -48,6 +50,7 @@ export default async function AdminMsiAccountJobsPage({ params }: RouteParams) {
       niche: managedAccountSchema.niche,
       lifecycleState: managedAccountSchema.lifecycleState,
       credentialCustody: managedAccountSchema.credentialCustody,
+      executionStrategy: managedAccountSchema.executionStrategy,
     })
     .from(managedAccountSchema)
     .where(eq(managedAccountSchema.id, id))
@@ -134,8 +137,17 @@ export default async function AdminMsiAccountJobsPage({ params }: RouteParams) {
         </span>
       </div>
 
+      <DiagnosticsPanel accountId={account.id} />
+
       <VaultActions
         accountId={account.id}
+        platform={account.platform}
+        apiFormat={
+          resolveStrategy({
+            executionStrategy: account.executionStrategy,
+            platform: account.platform,
+          }) === 'official_api'
+        }
         custody={account.credentialCustody}
         hasCredentials={Boolean(credential)}
       />

@@ -19,7 +19,10 @@ import type {
   ExecutionOperation,
   ExecutionResult,
   ExecutionStrategy,
+  PlatformDiagnosis,
 } from './execution';
+
+export type { PlatformDiagnosis };
 
 /** What a platform client returns on success. It throws on failure. */
 export type PlatformCallResult = {
@@ -67,6 +70,8 @@ export type PlatformClient = {
     handle: string,
     ctx: ExecutionContext,
   ) => Promise<PlatformStatusResult>;
+  // Optional live health probe for the diagnostics page (read-only).
+  diagnose?: (ctx: ExecutionContext) => Promise<PlatformDiagnosis>;
 };
 
 export type PlatformClientRegistry = Map<string, PlatformClient>;
@@ -150,6 +155,13 @@ export function createApiExecutionAdapter(
           detail: err instanceof Error ? err.message : 'status check failed',
         };
       }
+    },
+    async diagnose(ctx: ExecutionContext): Promise<PlatformDiagnosis | null> {
+      const client = clients.get(ctx.platform);
+      if (!client?.diagnose) {
+        return null; // platform has no live probe wired
+      }
+      return client.diagnose(ctx);
     },
   };
 }

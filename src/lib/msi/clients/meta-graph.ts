@@ -168,6 +168,62 @@ export async function publishContainer(
   return data.id as string;
 }
 
+/**
+ * Read-only health probe for the diagnostics page: confirm the token reaches
+ * the IG account and read the granted permissions. Never throws — returns a
+ * structured result (reachable/tokenValid/identity/permissions).
+ */
+export async function probeInstagram(
+  igUserId: string,
+  accessToken: string,
+  fetchImpl: FetchLike,
+): Promise<{
+  reachable: boolean;
+  tokenValid: boolean;
+  identity?: string;
+  permissions?: Array<{ name: string; granted: boolean }>;
+  detail?: string;
+}> {
+  try {
+    const res = await fetchImpl(
+      `${GRAPH}/${igUserId}?fields=id,username&access_token=${accessToken}`,
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      // e.g. code 190 = invalid/expired token; reachable but token rejected.
+      return {
+        reachable: true,
+        tokenValid: false,
+        detail: data?.error?.message || `Graph returned ${res.status}`,
+      };
+    }
+    const identity = data?.username ? `@${data.username}` : data?.id;
+
+    // Permissions live on the user token; best-effort.
+    let permissions: Array<{ name: string; granted: boolean }> | undefined;
+    try {
+      const permRes = await fetchImpl(`${GRAPH}/me/permissions?access_token=${accessToken}`);
+      const permData = await permRes.json().catch(() => ({}));
+      const rows: Array<{ permission: string; status: string }> = permData?.data ?? [];
+      const want = ['instagram_content_publish', 'instagram_basic'];
+      permissions = want.map(name => ({
+        name,
+        granted: rows.some(r => r.permission === name && r.status === 'granted'),
+      }));
+    } catch {
+      permissions = undefined;
+    }
+
+    return { reachable: true, tokenValid: true, identity, permissions };
+  } catch (err) {
+    return {
+      reachable: false,
+      tokenValid: false,
+      detail: err instanceof Error ? err.message : 'network error',
+    };
+  }
+}
+
 /** Best-effort permalink resolution — never fails the publish. */
 export async function resolvePermalink(
   mediaId: string,

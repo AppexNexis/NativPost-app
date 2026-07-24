@@ -67,6 +67,18 @@ export type ExecutionResult = {
   providerHandle?: string;
 };
 
+/**
+ * A live health probe of an account's platform access (Ops diagnostics page).
+ * A read-only API call — never used on the publish path.
+ */
+export type PlatformDiagnosis = {
+  reachable: boolean;
+  tokenValid: boolean;
+  identity?: string;
+  permissions?: Array<{ name: string; granted: boolean }>;
+  detail?: string;
+};
+
 export type ExecutionAdapter = {
   readonly strategy: ExecutionStrategy;
   execute: (
@@ -80,6 +92,9 @@ export type ExecutionAdapter = {
     handle: string,
     ctx: ExecutionContext,
   ) => Promise<ExecutionResult>;
+  // Run a live diagnostic probe for the platform. Returns null when the
+  // account's platform client has no probe.
+  diagnose?: (ctx: ExecutionContext) => Promise<PlatformDiagnosis | null>;
 };
 
 // ---------------------------------------------------------------------------

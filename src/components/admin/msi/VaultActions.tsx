@@ -7,22 +7,36 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  credentialTemplate,
+  requiredCredentialFields,
+} from '@/lib/msi/credential-format';
 
 // Operations vault surface (docs §9). Two dual-authorized actions:
-//   1. Capture — an operator seals the account's login into the vault.
+//   1. Capture — an operator seals the account's credentials into the vault.
 //   2. Release — staff completes a customer-requested off-board, revealing the
 //      credentials once for secure handoff.
 // Staff-gated by middleware (/admin(.*)); the plaintext is never persisted in
 // Postgres and is shown here only at the moment of release.
+//
+// `apiFormat` = the account runs official_api → the blob must be JSON with the
+// platform's fields (the client parses it). Manual accounts store a freeform
+// login. The placeholder + helper adapt so the operator pastes the right thing.
 export function VaultActions({
   accountId,
+  platform,
+  apiFormat,
   custody,
   hasCredentials,
 }: {
   accountId: string;
+  platform: string;
+  apiFormat: boolean;
   custody: string;
   hasCredentials: boolean;
 }) {
+  const template = credentialTemplate(platform);
+  const required = requiredCredentialFields(platform);
   const router = useRouter();
   const [secret, setSecret] = useState('');
   const [busy, setBusy] = useState<'capture' | 'release' | null>(null);
@@ -163,16 +177,32 @@ export function VaultActions({
                     : 'Capture account credentials'}
                 </label>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  {hasCredentials
-                    ? 'Credentials are sealed in the vault. Submitting replaces them (rotation).'
+                  {apiFormat
+                    ? (
+                        <>
+                          Paste the API credentials as
+                          {' '}
+                          <span className="font-medium text-foreground">JSON</span>
+                          {' '}
+                          — required:
+                          {' '}
+                          <span className="font-mono">{required.join(', ')}</span>
+                          . Extra fields (the human login, kept for handoff) are fine.
+                          Encrypted on submit.
+                        </>
+                      )
                     : 'Paste the login (username, password, email, 2FA notes). Encrypted on submit — never stored in plaintext.'}
                 </p>
                 <Textarea
                   id="vault-secret"
                   value={secret}
                   onChange={e => setSecret(e.target.value)}
-                  placeholder={'username: …\npassword: …\nrecovery email: …'}
-                  rows={4}
+                  placeholder={
+                    apiFormat && template
+                      ? template
+                      : 'username: …\npassword: …\nrecovery email: …'
+                  }
+                  rows={apiFormat ? 7 : 4}
                   className="mt-2 font-mono text-xs"
                   autoComplete="off"
                   spellCheck={false}

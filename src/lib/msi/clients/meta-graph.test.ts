@@ -6,12 +6,29 @@ import {
   createCarouselContainer,
   createCarouselItemContainer,
   createMediaContainer,
+  probeInstagram,
   publishContainer,
   resolvePermalink,
 } from './meta-graph';
 
 function oneResponse(body: any, ok = true, status = 200): FetchLike {
   return async () => ({ ok, status, json: async () => body });
+}
+
+// Scripted fake fetch matching by URL substring (for multi-call flows).
+function fakeFetch(
+  routes: Array<{ match: string; ok?: boolean; status?: number; body: any }>,
+): { fetchImpl: FetchLike } {
+  const queue = [...routes];
+  const fetchImpl: FetchLike = async (url) => {
+    const idx = queue.findIndex(r => url.includes(r.match));
+    if (idx === -1) {
+      throw new Error(`unexpected fetch: ${url}`);
+    }
+    const [route] = queue.splice(idx, 1);
+    return { ok: route!.ok ?? true, status: route!.status ?? 200, json: async () => route!.body };
+  };
+  return { fetchImpl };
 }
 
 const input = {
@@ -99,6 +116,42 @@ describe('checkContainerStatus', () => {
     await expect(
       checkContainerStatus('c', 'tok', oneResponse({ status_code: 'ERROR' })),
     ).rejects.toThrow(/processing ERROR/);
+  });
+});
+
+describe('probeInstagram', () => {
+  it('reports reachable + valid token + identity + permissions', async () => {
+    const fetchImpl = fakeFetch([
+      { match: 'fields=id,username', body: { id: 'ig-1', username: 'brand' } },
+      {
+        match: '/me/permissions',
+        body: {
+          data: [
+            { permission: 'instagram_content_publish', status: 'granted' },
+            { permission: 'instagram_basic', status: 'declined' },
+          ],
+        },
+      },
+    ]).fetchImpl;
+
+    const d = await probeInstagram('ig-1', 'tok', fetchImpl);
+    expect(d.reachable).toBe(true);
+    expect(d.tokenValid).toBe(true);
+    expect(d.identity).toBe('@brand');
+    expect(d.permissions).toEqual([
+      { name: 'instagram_content_publish', granted: true },
+      { name: 'instagram_basic', granted: false },
+    ]);
+  });
+
+  it('flags an invalid token (reachable but rejected)', async () => {
+    const fetchImpl = fakeFetch([
+      { match: 'fields=id,username', ok: false, status: 400, body: { error: { code: 190, message: 'Invalid OAuth token' } } },
+    ]).fetchImpl;
+    const d = await probeInstagram('ig-1', 'bad', fetchImpl);
+    expect(d.reachable).toBe(true);
+    expect(d.tokenValid).toBe(false);
+    expect(d.detail).toMatch(/Invalid OAuth token/);
   });
 });
 
