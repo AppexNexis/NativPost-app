@@ -61,37 +61,67 @@ describe('planAllocations', () => {
   const oneDevice = (capacity: number): DeviceSlot[] => [
     { id: 'dev', country: 'US', status: 'active', capacity, assignedCount: 0 },
   ];
+  const qjob = (id: string, managedAccountId: string) => ({ id, country: 'US', managedAccountId });
 
-  it('assigns multiple jobs while capacity remains', () => {
+  it('assigns multiple accounts while capacity remains', () => {
     const plans = planAllocations(
-      [{ id: 'j1', country: 'US' }, { id: 'j2', country: 'US' }],
+      [qjob('j1', 'accA'), qjob('j2', 'accB')],
       oneOperator(2),
       oneDevice(2),
     );
     expect(plans.map(p => p.jobId)).toEqual(['j1', 'j2']);
+    expect(plans.every(p => p.isNewDeviceAssignment)).toBe(true);
+  });
+
+  it('reuses one device for the same account and consumes device capacity once', () => {
+    const plans = planAllocations(
+      [qjob('j1', 'accA'), qjob('j2', 'accA')], // same account
+      oneOperator(2),
+      oneDevice(1), // only one device slot
+    );
+    expect(plans.map(p => p.jobId)).toEqual(['j1', 'j2']); // both assigned
+    expect(plans.map(p => p.deviceId)).toEqual(['dev', 'dev']); // same device
+    expect(plans.map(p => p.isNewDeviceAssignment)).toEqual([true, false]);
+  });
+
+  it('reuses a device the account already has (no new assignment)', () => {
+    const plans = planAllocations(
+      [qjob('j1', 'accA')],
+      oneOperator(2),
+      [], // no free devices
+      new Map([['accA', 'dev-existing']]),
+    );
+    expect(plans[0]).toMatchObject({
+      deviceId: 'dev-existing',
+      isNewDeviceAssignment: false,
+    });
   });
 
   it('stops assigning once operator capacity is consumed', () => {
     const plans = planAllocations(
-      [{ id: 'j1', country: 'US' }, { id: 'j2', country: 'US' }],
+      [qjob('j1', 'accA'), qjob('j2', 'accB')],
       oneOperator(1),
       oneDevice(5),
     );
     expect(plans.map(p => p.jobId)).toEqual(['j1']);
   });
 
-  it('stops assigning once device capacity is consumed', () => {
+  it('stops when a device-less account has no free device', () => {
     const plans = planAllocations(
-      [{ id: 'j1', country: 'US' }, { id: 'j2', country: 'US' }],
+      [qjob('j1', 'accA'), qjob('j2', 'accB')], // distinct accounts
       oneOperator(5),
       oneDevice(1),
     );
-    expect(plans.map(p => p.jobId)).toEqual(['j1']);
+    expect(plans.map(p => p.jobId)).toEqual(['j1']); // accB can't get a device
   });
 
   it('skips jobs in countries with no inventory', () => {
     expect(
-      planAllocations([{ id: 'j', country: 'JP' }], oneOperator(5), oneDevice(5)),
+      planAllocations(
+        [{ id: 'j', country: 'JP', managedAccountId: 'accA' }],
+        oneOperator(5),
+        oneDevice(5),
+      ),
     ).toEqual([]);
   });
 });

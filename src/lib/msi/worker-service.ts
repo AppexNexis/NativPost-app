@@ -166,13 +166,18 @@ export async function runWorkerTick(now: Date = new Date()) {
       const deviceIds = devices.map(d => d.id);
       const activeAssignments = deviceIds.length > 0
         ? await db
-            .select({ deviceId: msiDeviceAssignmentSchema.deviceId })
+            .select({
+              deviceId: msiDeviceAssignmentSchema.deviceId,
+              managedAccountId: msiDeviceAssignmentSchema.managedAccountId,
+            })
             .from(msiDeviceAssignmentSchema)
             .where(and(inArray(msiDeviceAssignmentSchema.deviceId, deviceIds), isNull(msiDeviceAssignmentSchema.releasedAt)))
         : [];
       const loadByDevice = new Map<string, number>();
+      const existingDeviceByAccount = new Map<string, string>();
       for (const a of activeAssignments) {
         loadByDevice.set(a.deviceId, (loadByDevice.get(a.deviceId) ?? 0) + 1);
+        existingDeviceByAccount.set(a.managedAccountId, a.deviceId);
       }
 
       const operatorSlots: OperatorSlot[] = operators.map(o => ({
@@ -193,9 +198,14 @@ export async function runWorkerTick(now: Date = new Date()) {
 
       const accountByJob = new Map(jobsWithCountry.map(j => [j.id, j.managedAccountId]));
       const plans = planAllocations(
-        jobsWithCountry.map(j => ({ id: j.id, country: j.country })),
+        jobsWithCountry.map(j => ({
+          id: j.id,
+          country: j.country,
+          managedAccountId: j.managedAccountId,
+        })),
         operatorSlots,
         deviceSlots,
+        existingDeviceByAccount,
       );
 
       for (const plan of plans) {
@@ -209,9 +219,13 @@ export async function runWorkerTick(now: Date = new Date()) {
           .update(msiOperatorSchema)
           .set({ activeLoad: sql`${msiOperatorSchema.activeLoad} + 1` })
           .where(eq(msiOperatorSchema.id, plan.operatorId));
-        await db
-          .insert(msiDeviceAssignmentSchema)
-          .values({ deviceId: plan.deviceId, managedAccountId });
+        // Only link the account to a device the first time (1:1); later jobs
+        // reuse the account's existing device.
+        if (plan.isNewDeviceAssignment) {
+          await db
+            .insert(msiDeviceAssignmentSchema)
+            .values({ deviceId: plan.deviceId, managedAccountId });
+        }
         await db.insert(msiActivityLogSchema).values(
           buildActivityEvent({
             managedAccountId,
