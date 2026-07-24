@@ -19,6 +19,7 @@ import {
   Film,
   HeadphonesIcon,
   LayoutDashboard,
+  ListChecks,
   Menu,
   MessageSquare,
   Settings,
@@ -71,6 +72,7 @@ const NAV = [
     group: 'Managed Social',
     items: [
       { label: 'Operations', href: '/admin/msi', icon: Boxes },
+      { label: 'Queue', href: '/admin/msi/queue', icon: ListChecks },
     ],
   },
   {
