@@ -34,9 +34,13 @@ export type PlatformCallResult = {
   providerHandle?: string;
 };
 
-/** Result of polling an async operation via `checkStatus`. Throws on failure. */
+/**
+ * Result of polling an async operation via `checkStatus`. Throws on failure.
+ * A not-done result may carry an ADVANCED `providerHandle` (e.g. a chunked
+ * upload that moved its byte offset) — the runner persists it for the next tick.
+ */
 export type PlatformStatusResult =
-  | { done: false }
+  | { done: false; providerHandle?: string }
   | {
       done: true;
       platformPostId?: string;
@@ -130,7 +134,9 @@ export function createApiExecutionAdapter(
       try {
         const res = await client.checkStatus(handle, ctx);
         if (!res.done) {
-          return { outcome: 'processing', providerHandle: handle };
+          // Carry an advanced handle when the client moved its state forward
+          // (chunked upload); otherwise re-persist the same handle.
+          return { outcome: 'processing', providerHandle: res.providerHandle ?? handle };
         }
         return {
           outcome: 'completed',

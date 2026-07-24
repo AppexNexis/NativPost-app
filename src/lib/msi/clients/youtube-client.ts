@@ -18,10 +18,21 @@ import {
   storeAccountCredentials,
 } from '../credentials-service';
 import type { ExecutionContext, ExecutionOperation } from '../execution';
-import type { PlatformCallResult, PlatformClient } from '../execution-api';
+import type {
+  PlatformCallResult,
+  PlatformClient,
+  PlatformStatusResult,
+} from '../execution-api';
 import { needsRefresh, refreshGoogleToken } from './token-refresh';
 import type { FetchLike } from './youtube-upload';
-import { publishToYouTube } from './youtube-upload';
+import {
+  buildVideoMetadata,
+  CHUNK_SIZE,
+  fetchByteRange,
+  initiateResumableUpload,
+  probeTotalSize,
+  uploadChunk,
+} from './youtube-upload';
 
 /**
  * The credential blob a YouTube official_api account stores in the vault: the
@@ -86,6 +97,14 @@ async function freshYouTubeCredentials(
   return updated;
 }
 
+// Resumable-upload state carried in the job's execution_handle between ticks.
+type UploadState = {
+  sessionUri: string;
+  offset: number;
+  total: number;
+  videoUrl: string;
+};
+
 type ContentToPublish = { caption: string; videoUrl: string };
 
 async function loadVideo(contentItemId: string): Promise<ContentToPublish> {
@@ -134,22 +153,67 @@ export function createYouTubeClient(
       const credentials = await freshYouTubeCredentials(ctx.managedAccountId, fetchImpl);
       const video = await loadVideo(contentItemId);
 
-      // Synchronous: upload now and return a terminal result (no checkStatus).
-      const videoId = await publishToYouTube(
-        {
-          accessToken: credentials.accessToken,
-          videoUrl: video.videoUrl,
-          title: video.caption,
-          description: video.caption,
-        },
+      // Init only: probe the size + open a resumable session. The bytes are
+      // uploaded one chunk per tick by checkStatus, so a large video never
+      // blocks a single tick. State (session URI + offset) rides in the handle.
+      const total = await probeTotalSize(video.videoUrl, fetchImpl);
+      const metadata = buildVideoMetadata({
+        title: video.caption,
+        description: video.caption,
+        privacyStatus: 'public',
+      });
+      const sessionUri = await initiateResumableUpload(
+        metadata,
+        credentials.accessToken,
+        'video/mp4',
+        total,
         fetchImpl,
       );
 
-      return {
-        platformPostId: videoId,
-        evidenceUrl: `https://www.youtube.com/watch?v=${videoId}`,
-        detail: `youtube video ${videoId}`,
+      const state: UploadState = {
+        sessionUri,
+        offset: 0,
+        total,
+        videoUrl: video.videoUrl,
       };
+      return { pending: true, providerHandle: JSON.stringify(state) };
+    },
+
+    async checkStatus(
+      handle: string,
+      ctx: ExecutionContext,
+    ): Promise<PlatformStatusResult> {
+      let state: UploadState;
+      try {
+        state = JSON.parse(handle) as UploadState;
+      } catch {
+        throw new Error('YouTube upload handle is corrupt');
+      }
+
+      const credentials = await freshYouTubeCredentials(ctx.managedAccountId, fetchImpl);
+      const end = Math.min(state.offset + CHUNK_SIZE, state.total) - 1;
+      const chunk = await fetchByteRange(state.videoUrl, state.offset, end, fetchImpl);
+      const result = await uploadChunk(
+        state.sessionUri,
+        chunk,
+        state.offset,
+        state.total,
+        credentials.accessToken,
+        fetchImpl,
+      );
+
+      if (result.status === 'complete') {
+        return {
+          done: true,
+          platformPostId: result.videoId,
+          evidenceUrl: `https://www.youtube.com/watch?v=${result.videoId}`,
+          detail: `youtube video ${result.videoId}`,
+        };
+      }
+
+      // Advance the offset and hand the updated state back for the next tick.
+      const next: UploadState = { ...state, offset: result.nextOffset };
+      return { done: false, providerHandle: JSON.stringify(next) };
     },
   };
 }

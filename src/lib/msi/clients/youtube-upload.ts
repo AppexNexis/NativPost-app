@@ -24,6 +24,10 @@ export type FetchLike = (
 
 export type YouTubePrivacy = 'public' | 'unlisted' | 'private';
 
+// Upload one 8 MB slice per tick (a multiple of 256 KB, as YouTube requires for
+// non-final chunks). Bounds each tick's work so a large video never blocks.
+export const CHUNK_SIZE = 8 * 1024 * 1024;
+
 /** Build the videos.insert metadata (pure). Title is capped at YouTube's 100. */
 export function buildVideoMetadata(params: {
   title: string;
@@ -48,6 +52,7 @@ export async function initiateResumableUpload(
   metadata: ReturnType<typeof buildVideoMetadata>,
   accessToken: string,
   contentType: string,
+  totalSize: number,
   fetchImpl: FetchLike,
 ): Promise<string> {
   const res = await fetchImpl(`${UPLOAD}?uploadType=resumable&part=snippet,status`, {
@@ -56,6 +61,7 @@ export async function initiateResumableUpload(
       'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       'X-Upload-Content-Type': contentType,
+      'X-Upload-Content-Length': String(totalSize),
     },
     body: JSON.stringify(metadata),
   });
@@ -72,54 +78,88 @@ export async function initiateResumableUpload(
   return sessionUri;
 }
 
-/** PUT the video bytes to the session URI; returns the created video id. */
-export async function uploadVideoBytes(
-  sessionUri: string,
-  bytes: ArrayBuffer,
-  contentType: string,
-  accessToken: string,
+/** Discover the source video's total byte size via a 1-byte range probe. */
+export async function probeTotalSize(
+  videoUrl: string,
   fetchImpl: FetchLike,
-): Promise<string> {
-  const res = await fetchImpl(sessionUri, {
-    method: 'PUT',
-    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': contentType },
-    body: bytes,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data?.id) {
-    throw new Error(
-      `YouTube video upload failed (${res.status}): ${data?.error?.message || 'no video id'}`,
-    );
+): Promise<number> {
+  const res = await fetchImpl(videoUrl, { method: 'GET', headers: { Range: 'bytes=0-0' } });
+  if (!res.ok && res.status !== 206) {
+    throw new Error(`YouTube source probe failed (${res.status})`);
   }
-  return data.id as string;
+  // 206 → Content-Range "bytes 0-0/{total}"; 200 (range ignored) → Content-Length is the total.
+  const contentRange = res.headers.get('content-range');
+  if (contentRange && contentRange.includes('/')) {
+    const total = Number(contentRange.split('/')[1]);
+    if (Number.isFinite(total) && total > 0) {
+      return total;
+    }
+  }
+  const contentLength = Number(res.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > 0) {
+    return contentLength;
+  }
+  throw new Error('YouTube source size unknown (does the CDN support range requests?)');
 }
 
-/** Full upload: fetch bytes → initiate session → PUT → returns the video id. */
-export async function publishToYouTube(
-  params: {
-    accessToken: string;
-    videoUrl: string;
-    title: string;
-    description: string;
-    privacyStatus?: YouTubePrivacy;
-  },
+/** Fetch a byte range [start, end] (inclusive) of the source video. */
+export async function fetchByteRange(
+  videoUrl: string,
+  start: number,
+  end: number,
   fetchImpl: FetchLike,
-): Promise<string> {
-  const media = await fetchImpl(params.videoUrl);
-  if (!media.ok) {
-    throw new Error(`YouTube media fetch failed (${media.status})`);
-  }
-  const bytes = await media.arrayBuffer();
-  const metadata = buildVideoMetadata({
-    title: params.title,
-    description: params.description,
-    privacyStatus: params.privacyStatus ?? 'public',
+): Promise<ArrayBuffer> {
+  const res = await fetchImpl(videoUrl, {
+    method: 'GET',
+    headers: { Range: `bytes=${start}-${end}` },
   });
-  const sessionUri = await initiateResumableUpload(
-    metadata,
-    params.accessToken,
-    'video/mp4',
-    fetchImpl,
+  if (!res.ok && res.status !== 206) {
+    throw new Error(`YouTube source range fetch failed (${res.status})`);
+  }
+  return res.arrayBuffer();
+}
+
+export type ChunkResult =
+  | { status: 'incomplete'; nextOffset: number }
+  | { status: 'complete'; videoId: string };
+
+/**
+ * PUT one chunk with a Content-Range header. YouTube replies 308 (Resume
+ * Incomplete, with a `Range: bytes=0-{last}` header) until the final chunk, then
+ * 200/201 with the video resource.
+ */
+export async function uploadChunk(
+  sessionUri: string,
+  chunk: ArrayBuffer,
+  start: number,
+  total: number,
+  accessToken: string,
+  fetchImpl: FetchLike,
+): Promise<ChunkResult> {
+  const len = chunk.byteLength;
+  const res = await fetchImpl(sessionUri, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Length': String(len),
+      'Content-Range': `bytes ${start}-${start + len - 1}/${total}`,
+    },
+    body: chunk,
+  });
+
+  if (res.status === 308) {
+    // "Range: bytes=0-{lastByteReceived}" → resume after it.
+    const range = res.headers.get('range');
+    const last = range ? Number(range.split('-')[1]) : Number.NaN;
+    const nextOffset = Number.isFinite(last) ? last + 1 : start + len;
+    return { status: 'incomplete', nextOffset };
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if ((res.ok || res.status === 201) && data?.id) {
+    return { status: 'complete', videoId: data.id as string };
+  }
+  throw new Error(
+    `YouTube chunk upload failed (${res.status}): ${data?.error?.message || 'no video id'}`,
   );
-  return uploadVideoBytes(sessionUri, bytes, 'video/mp4', params.accessToken, fetchImpl);
 }

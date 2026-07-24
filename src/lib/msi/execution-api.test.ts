@@ -56,12 +56,22 @@ describe('createApiExecutionAdapter', () => {
 });
 
 describe('createApiExecutionAdapter.checkStatus', () => {
-  it('maps a not-done status to processing', async () => {
+  it('maps a not-done status to processing, re-persisting the same handle', async () => {
     const client = fakeClient({ checkStatus: async () => ({ done: false }) });
     const adapter = createApiExecutionAdapter('official_api', new Map([['tiktok', client]]));
     const res = await adapter.checkStatus!('pub-1', ctx);
     expect(res.outcome).toBe('processing');
     expect(res.providerHandle).toBe('pub-1');
+  });
+
+  it('carries an advanced handle from the client (chunked upload)', async () => {
+    const client = fakeClient({
+      checkStatus: async () => ({ done: false, providerHandle: 'offset-2' }),
+    });
+    const adapter = createApiExecutionAdapter('official_api', new Map([['tiktok', client]]));
+    const res = await adapter.checkStatus!('offset-1', ctx);
+    expect(res.outcome).toBe('processing');
+    expect(res.providerHandle).toBe('offset-2');
   });
 
   it('maps a done status to completed + platform post id', async () => {

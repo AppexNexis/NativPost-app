@@ -417,6 +417,14 @@ export async function runWorkerTick(now: Date = new Date()) {
     const outcome = resolveConfirmOutcome(job.id, job.jobType, result);
 
     if (outcome.resolution === 'still_processing') {
+      // A chunked upload advances its handle each tick; persist it so the next
+      // tick resumes from the new offset. (No-op for clients that don't move.)
+      if (outcome.providerHandle && outcome.providerHandle !== job.executionHandle) {
+        await db
+          .update(msiJobSchema)
+          .set({ executionHandle: outcome.providerHandle })
+          .where(eq(msiJobSchema.id, job.id));
+      }
       continue;
     }
 

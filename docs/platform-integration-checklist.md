@@ -190,12 +190,12 @@ unfilled Phase-0 sign-off keeps the strategy fail-closed (`manual` only).
 | **Required scopes** | `https://www.googleapis.com/auth/youtube.upload`. |
 | **Required app review** | Yes — Google OAuth verification + (for public) a YouTube API audit. |
 | **Supported operations** | `publish_post` (video only — YouTube is a video platform). |
-| **Media handling** | Resumable upload: `POST /upload/youtube/v3/videos?uploadType=resumable` (metadata) → session URI in the `Location` header → PUT bytes → video id. **Byte upload** (no pull-from-URL). |
+| **Media handling** | **Chunked** resumable upload: init session (`Location`) → one 8 MB range PUT per tick (`Content-Range`; 308 Resume Incomplete → next offset) → video id. Byte upload (no pull-from-URL). **Async** — state (session URI + offset) rides in `execution_handle`; a large video never blocks a tick. Source CDN must support range requests. |
 | **Rate limits** | Daily quota (uploads cost ~1600 units); `uploadLimitExceeded`. |
 | **Token type + refresh** | Google access token (~1h) + refresh token. **Auto-refresh:** proactive by expiry via the `refresh_token` grant (needs `GOOGLE_CLIENT_ID`/`SECRET`; Google keeps the same refresh token). Vault blob JSON `{ accessToken, refreshToken?, expiresAt? }`. |
 | **Webhooks** | None used for publishing. |
 | **Error codes of note** | `401` invalid auth; `403` `forbidden`/`uploadLimitExceeded`; `400` bad metadata. |
-| **Retry strategy** | Any step throws → `execute` throws → job `failed` → worker retries. Synchronous, no confirmation pass. |
+| **Retry strategy** | A throw at init or on any chunk → job `failed` → worker retries the whole upload (bounded). Uses the confirmation pass (async). |
 | **Compliance notes** | Sanctioned API, customer-owned channel, customer-authorized token. Per-account Phase-0 sign-off before `official_api`. |
 | **MSI execution strategy** | `official_api` |
 | **Phase-0 legal sign-off** | _pending — record date + owner here_ |
@@ -206,11 +206,11 @@ unfilled Phase-0 sign-off keeps the strategy fail-closed (`manual` only).
 - **Credentials:** capture `{ "accessToken": "…", "refreshToken": "…", "expiresAt": <ms?> }`
   as JSON via the Operations **Credential vault → Capture** surface.
 - **Registered** in `worker-service.ts` `OFFICIAL_API_CLIENTS` (`['youtube', youtubeClient]`).
-- **Byte upload caveat:** the video is fetched into memory + PUT synchronously in
-  one `execute`. Fine for short managed videos; **large/long videos** may exceed the
-  worker's function budget — the follow-up is chunked resumable upload (byte-range
-  across ticks, using the same `execution_handle` async mechanism) and/or a
-  dedicated higher-timeout upload worker.
+- **Chunked upload (done):** `execute` probes the size + opens the session; the
+  confirmation pass uploads one 8 MB range per tick and advances the offset stored
+  in `execution_handle`, so large videos upload across ticks without ever blocking
+  one. No per-tick work exceeds ~8 MB fetch + PUT.
+- **Requirement:** the source media CDN must honour HTTP range requests.
 
 ## Threads / Pinterest — not planned
 

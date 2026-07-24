@@ -172,6 +172,8 @@ export type ConfirmOutcome = {
   resolution: 'completed' | 'failed' | 'still_processing';
   completeAllTasks: boolean;
   platformPostId: string | null;
+  /** Advanced async handle to persist while still processing (else null). */
+  providerHandle: string | null;
   failureReason: string | null;
   /** Null while still processing (no audit noise per idle tick). */
   auditAction: string | null;
@@ -196,6 +198,7 @@ export function resolveConfirmOutcome(
       resolution: 'failed',
       completeAllTasks: false,
       platformPostId: null,
+      providerHandle: null,
       failureReason: result.detail ?? 'execution failed',
       auditAction: 'execution_failed',
       auditDetail: { jobType, detail: result.detail ?? null },
@@ -208,18 +211,20 @@ export function resolveConfirmOutcome(
       resolution: 'completed',
       completeAllTasks: true,
       platformPostId: result.platformPostId ?? null,
+      providerHandle: null,
       failureReason: null,
       auditAction: 'execution_completed',
       auditDetail: { jobType, platformPostId: result.platformPostId ?? null },
     };
   }
 
-  // still processing
+  // still processing — carry the (possibly advanced) handle to persist.
   return {
     jobId,
     resolution: 'still_processing',
     completeAllTasks: false,
     platformPostId: null,
+    providerHandle: result.providerHandle ?? null,
     failureReason: null,
     auditAction: null,
     auditDetail: {},
