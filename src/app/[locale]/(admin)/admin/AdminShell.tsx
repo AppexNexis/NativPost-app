@@ -14,6 +14,7 @@ import { useAuth, UserButton } from '@clerk/nextjs';
 import {
   BarChart3,
   BookOpen,
+  Boxes,
   ChevronRight,
   Film,
   HeadphonesIcon,
@@ -64,6 +65,12 @@ const NAV = [
       { label: 'Curation queue', href: '/admin/curation', icon: Film },
       { label: 'Bulk import', href: '/admin/import', icon: Upload },
       { label: 'Curation stats', href: '/admin/stats', icon: BarChart3 },
+    ],
+  },
+  {
+    group: 'Managed Social',
+    items: [
+      { label: 'Operations', href: '/admin/msi', icon: Boxes },
     ],
   },
   {
