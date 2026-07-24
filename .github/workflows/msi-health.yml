@@ -1,0 +1,25 @@
+name: MSI Health Score Refresh
+
+on:
+  schedule:
+    # Hourly. Pull latest per-account metrics from each platform's registered
+    # stats provider and persist the composite health score. Accounts on
+    # platforms without a registered provider are skipped (no fabricated data),
+    # so this is cheap and safe to run even before real providers are wired.
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger MSI health tick
+        run: |
+          curl -X POST \
+            https://app.nativpost.com/api/cron/msi-health \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --data '{}' \
+            --fail \
+            --silent \
+            --show-error

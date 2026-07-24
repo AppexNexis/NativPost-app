@@ -1,0 +1,24 @@
+name: MSI Provisioning Worker Tick
+
+on:
+  schedule:
+    # Every 5 minutes. Time-based bookkeeping (expire reservations, close
+    # reviews, retry failed jobs, flag SLA breaches) + execution orchestration
+    # (start assigned jobs through the Execution Layer adapter).
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger MSI worker tick
+        run: |
+          curl -X POST \
+            https://app.nativpost.com/api/cron/msi-worker \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --data '{}' \
+            --fail \
+            --silent \
+            --show-error

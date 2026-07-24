@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildManagedAccountNotification } from './notify';
+import {
+  buildManagedAccountEmailContent,
+  buildManagedAccountNotification,
+} from './notify';
 
 describe('buildManagedAccountNotification', () => {
   it('builds a review-ready notification linked to the account', () => {
@@ -29,5 +32,24 @@ describe('buildManagedAccountNotification', () => {
     });
     expect(n.type).toBe('success');
     expect(n.title).toBe('@x is live');
+  });
+});
+
+describe('buildManagedAccountEmailContent', () => {
+  it('builds review-ready + went-live emails with the account link', () => {
+    const review = buildManagedAccountEmailContent({
+      event: 'review_ready',
+      handle: '@demo',
+      url: 'https://app/x',
+    });
+    expect(review.subject).toBe('@demo is ready for your review');
+    expect(review.text).toContain('https://app/x');
+
+    const live = buildManagedAccountEmailContent({
+      event: 'went_live',
+      handle: '@demo',
+      url: 'https://app/x',
+    });
+    expect(live.subject).toBe('@demo is live');
   });
 });

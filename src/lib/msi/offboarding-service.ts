@@ -9,10 +9,12 @@ import { db } from '@/lib/db';
 import {
   managedAccountSchema,
   msiActivityLogSchema,
+  msiCredentialSchema,
   socialAccountSchema,
 } from '@/models/Schema';
 
 import { buildActivityEvent } from './audit';
+import { revealAccountCredentials } from './credentials-service';
 import type { AccountState } from './lifecycle';
 import { transitionAccount } from './lifecycle';
 import { canOffboard } from './offboarding';
@@ -85,14 +87,27 @@ export async function releaseAccount(accountId: string, staffUserId: string) {
       .where(eq(socialAccountSchema.id, account.socialAccountId));
   }
 
+  // Reveal the stored credentials for handoff (if any) + mark custody released.
+  // Skipped gracefully when the vault isn't configured (handoff out-of-band).
+  let credentials: string | null = null;
+  try {
+    credentials = await revealAccountCredentials(accountId);
+    await db
+      .update(msiCredentialSchema)
+      .set({ custodyState: 'released' })
+      .where(eq(msiCredentialSchema.managedAccountId, accountId));
+  } catch (revealErr) {
+    console.error('[offboard] credential reveal skipped:', revealErr);
+  }
+
   await db.insert(msiActivityLogSchema).values(
     buildActivityEvent({
       managedAccountId: accountId,
       actorType: 'system',
       actorId: staffUserId,
       action: 'credentials_released',
-      detail: { note: 'credential rotation + secure handoff performed by the vault' },
+      detail: { delivered: credentials !== null },
     }),
   );
-  return { state: next };
+  return { state: next, credentials };
 }

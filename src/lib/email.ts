@@ -27,6 +27,26 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://nativpost.com';
 // -----------------------------------------------------------
 // Post published notification
 // -----------------------------------------------------------
+export async function sendManagedAccountEmail(
+  to: string,
+  subject: string,
+  text: string,
+): Promise<void> {
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject,
+      text,
+    });
+    if (error) {
+      console.error('[Email] sendManagedAccountEmail failed:', error);
+    }
+  } catch (err) {
+    console.error('[Email] sendManagedAccountEmail threw:', err);
+  }
+}
+
 export async function sendPublishedNotification(
   to: string,
   brandName: string,

@@ -122,6 +122,40 @@ export async function ensureNativPostAdminInOrg(orgId: string): Promise<void> {
  * then fire the welcome email sequence to the email tool.
  * Idempotent — the email tool deduplicates enrollments via UNIQUE KEY.
  */
+/** The org's primary customer email (first non-NativPost admin member), or null. */
+export async function getOrgCustomerEmail(orgId: string): Promise<string | null> {
+  try {
+    if (!CLERK_SECRET_KEY) {
+      return null;
+    }
+    const res = await fetch(
+      `https://api.clerk.com/v1/organizations/${orgId}/memberships?limit=10`,
+      {
+        headers: new Headers({
+          'Authorization': `Bearer ${CLERK_SECRET_KEY}`,
+          'Content-Type': 'application/json',
+        }),
+      },
+    );
+    if (!res.ok) {
+      return null;
+    }
+    const json = await res.json();
+    const members: Array<{
+      role: string;
+      public_user_data?: { identifier?: string };
+    }> = json.data ?? json;
+    const creator = members.find(
+      m =>
+        m.role === 'admin'
+        && m.public_user_data?.identifier !== NATIVPOST_ADMIN_EMAIL,
+    );
+    return creator?.public_user_data?.identifier ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fireWelcomeEmailForOrg(orgId: string): Promise<void> {
   try {
     if (!CLERK_SECRET_KEY) return;

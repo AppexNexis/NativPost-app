@@ -26,6 +26,18 @@ export type ProtectedCredential = {
   encryptedDek: string;
 };
 
+/**
+ * Namespaces in the Infrastructure Vault — MSI managed accounts are the first
+ * consumer; future products (email, phone numbers, domains, exports) get their
+ * own namespace so storage never has to be reorganized. The vaultRef is
+ * `${namespace}/${uuid}`, stored at `vault/${namespace}/${uuid}.blob`.
+ */
+export type VaultNamespace =
+  | 'managed-account'
+  | 'authorization'
+  | 'recovery'
+  | 'exports';
+
 export type SealedBlobStore = {
   put: (ref: string, blob: CredentialBlob) => Promise<void>;
   get: (ref: string) => Promise<CredentialBlob | null>;
@@ -65,9 +77,12 @@ export class CredentialVault {
    * Seal a secret. Stores the ciphertext blob and returns the two fields to
    * persist on the msi_credential row. The plaintext is discarded here.
    */
-  async protect(secret: string): Promise<ProtectedCredential> {
+  async protect(
+    secret: string,
+    namespace: VaultNamespace = 'managed-account',
+  ): Promise<ProtectedCredential> {
     const sealed = sealSecret(secret, this.masterKey);
-    const vaultRef = `msi:cred:${randomUUID()}`;
+    const vaultRef = `${namespace}/${randomUUID()}`;
     await this.blobStore.put(vaultRef, {
       v: sealed.v,
       ciphertext: sealed.ciphertext,

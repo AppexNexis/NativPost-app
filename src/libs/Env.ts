@@ -27,6 +27,13 @@ export const Env = createEnv({
     // `generateMasterKey()` from src/lib/msi/vault.ts. The vault fails CLOSED
     // (throws) when unset — no credential can be sealed or revealed.
     MSI_VAULT_MASTER_KEY: z.string().min(1).optional(),
+    // Infrastructure Vault ciphertext storage (Supabase Storage private bucket).
+    // The wrapped DEK stays in Postgres (msi_credential); the ciphertext blob
+    // lives here — separate trust boundaries. All optional; the vault fails
+    // closed when unset.
+    SUPABASE_URL: z.string().url().optional(),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
+    MSI_VAULT_BUCKET: z.string().min(1).optional(), // defaults to 'vault'
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().optional(),
@@ -52,6 +59,9 @@ export const Env = createEnv({
     CLOUDINARY_MODERATION_WEBHOOK: process.env.CLOUDINARY_MODERATION_WEBHOOK,
     FEEDBACK_DISCORD_WEBHOOK_URL: process.env.FEEDBACK_DISCORD_WEBHOOK_URL,
     MSI_VAULT_MASTER_KEY: process.env.MSI_VAULT_MASTER_KEY,
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    MSI_VAULT_BUCKET: process.env.MSI_VAULT_BUCKET,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
     NEXT_PUBLIC_CLERK_SIGN_IN_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL,

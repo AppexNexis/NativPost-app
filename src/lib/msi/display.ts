@@ -88,6 +88,7 @@ const ACTION_LABELS: Record<string, string> = {
   execution_started: 'Work started — in progress',
   execution_completed: 'Work completed',
   execution_failed: 'A step failed — team notified',
+  credentials_stored: 'Credentials secured in the vault',
   offboard_requested: 'Off-boarding requested',
   credentials_released: 'Credentials released to you',
 };

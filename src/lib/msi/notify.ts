@@ -1,7 +1,9 @@
 // MSI notifications (docs §14). Key lifecycle events emit an in-app
 // notification to the customer's org. Pure builder + a thin insert service.
 
+import { getOrgCustomerEmail } from '@/lib/clerk-org-helpers';
 import { db } from '@/lib/db';
+import { sendManagedAccountEmail } from '@/lib/email';
 import { notificationSchema } from '@/models/Schema';
 
 export type ManagedNotificationEvent = 'review_ready' | 'went_live';
@@ -45,6 +47,23 @@ export function buildManagedAccountNotification(input: {
   };
 }
 
+export function buildManagedAccountEmailContent(input: {
+  event: ManagedNotificationEvent;
+  handle: string;
+  url: string;
+}): { subject: string; text: string } {
+  if (input.event === 'went_live') {
+    return {
+      subject: `${input.handle} is live`,
+      text: `Good news — your managed account ${input.handle} is live and ready to publish.\n\nView it: ${input.url}`,
+    };
+  }
+  return {
+    subject: `${input.handle} is ready for your review`,
+    text: `Your managed account ${input.handle} is ready. Review the profile and approve it, or request changes.\n\nReview it: ${input.url}`,
+  };
+}
+
 export async function notifyManagedAccount(input: {
   orgId: string;
   event: ManagedNotificationEvent;
@@ -52,4 +71,20 @@ export async function notifyManagedAccount(input: {
   handle: string;
 }): Promise<void> {
   await db.insert(notificationSchema).values(buildManagedAccountNotification(input));
+
+  // Best-effort email — never block the in-app notification on it.
+  try {
+    const to = await getOrgCustomerEmail(input.orgId);
+    if (to) {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      const { subject, text } = buildManagedAccountEmailContent({
+        event: input.event,
+        handle: input.handle,
+        url: `${appUrl}/dashboard/infrastructure/${input.accountId}`,
+      });
+      await sendManagedAccountEmail(to, subject, text);
+    }
+  } catch (err) {
+    console.error('[MSI] email notification failed:', err);
+  }
 }
