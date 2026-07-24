@@ -5,6 +5,8 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { sendPublishedNotification } from '@/lib/email';
+import { isManagedSocialAccount, managedAccountIdOf } from '@/lib/msi/publishing';
+import { enqueueManagedPublish } from '@/lib/msi/publishing-service';
 import { publishToplatform } from '@/lib/social-publish';
 import { getDb } from '@/libs/DB';
 import { campaignContentSchema, campaignSchema, contentItemSchema, publishingQueueSchema, socialAccountSchema } from '@/models/Schema';
@@ -271,6 +273,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       platformPostId?: string;
       permalink?: string;
       error?: string;
+      managed?: boolean;
+      queued?: boolean;
     }> = [];
 
     // 3. Publish to each platform
@@ -287,6 +291,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           continue;
         }
         results.push({ platform, success: false, error: `No connected ${platform} account` });
+        continue;
+      }
+
+      // Managed accounts publish via the MSI execution pipeline (a publish_post
+      // job), not the OAuth path (docs §13). They carry no access token.
+      if (isManagedSocialAccount(account)) {
+        const managedAccountId = managedAccountIdOf(account);
+        if (managedAccountId) {
+          await enqueueManagedPublish({ orgId: orgId!, managedAccountId, contentItemId: item.id });
+          results.push({ platform, success: true, managed: true, queued: true });
+        } else {
+          results.push({ platform, success: false, error: `Managed ${platform} account not linked` });
+        }
         continue;
       }
 

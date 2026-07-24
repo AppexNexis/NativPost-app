@@ -316,6 +316,13 @@
       "when": 1784881066380,
       "tag": "0044_msi_execution_strategy",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1784884217904,
+      "tag": "0045_msi_job_content_ref",
+      "breakpoints": true
     }
   ]
 }

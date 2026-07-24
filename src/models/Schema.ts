@@ -1382,6 +1382,12 @@ export const msiJobSchema = pgTable(
       .references(() => managedAccountSchema.id, { onDelete: 'cascade' })
       .notNull(),
     jobType: text('job_type').notNull(), // see JOB_TYPES in job-workflow.ts
+    // For publish_post jobs: the content routed here from the publish flow
+    // (docs §13 publish routing). Null for provisioning jobs.
+    contentItemId: uuid('content_item_id').references(
+      () => contentItemSchema.id,
+      { onDelete: 'set null' },
+    ),
     state: text('state').default('queued').notNull(),
     priority: integer('priority').default(0).notNull(),
     attempts: integer('attempts').default(0).notNull(),

@@ -6,6 +6,7 @@ import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { buildActivityEvent } from '@/lib/msi/audit';
 import { transitionAccount } from '@/lib/msi/lifecycle';
+import { buildManagedSocialAccount } from '@/lib/msi/publishing';
 import { parseReviewRequest } from '@/lib/msi/review-request';
 import {
   GuardFailedError,
@@ -15,6 +16,7 @@ import {
   managedAccountSchema,
   msiAccountReviewSchema,
   msiActivityLogSchema,
+  socialAccountSchema,
 } from '@/models/Schema';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -46,6 +48,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   const [account] = await db
     .select({
       id: managedAccountSchema.id,
+      platform: managedAccountSchema.platform,
+      displayName: managedAccountSchema.displayName,
+      handlePreferences: managedAccountSchema.handlePreferences,
+      executionStrategy: managedAccountSchema.executionStrategy,
+      socialAccountId: managedAccountSchema.socialAccountId,
       lifecycleState: managedAccountSchema.lifecycleState,
     })
     .from(managedAccountSchema)
@@ -93,6 +100,40 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           action: 'customer_approved',
         }),
       );
+
+      // Go-live: connect the account as a publish target (docs §13). Managed
+      // connections carry no OAuth tokens — publishing routes through the
+      // execution layer. Idempotent: skip if already linked.
+      if (!account.socialAccountId) {
+        const [social] = await db
+          .insert(socialAccountSchema)
+          .values(
+            buildManagedSocialAccount({
+              id,
+              orgId: orgId!,
+              platform: account.platform,
+              displayName: account.displayName,
+              handlePreferences: account.handlePreferences ?? [],
+              executionStrategy: account.executionStrategy,
+            }),
+          )
+          .returning({ id: socialAccountSchema.id });
+        if (social) {
+          await db
+            .update(managedAccountSchema)
+            .set({ socialAccountId: social.id })
+            .where(eq(managedAccountSchema.id, id));
+          await db.insert(msiActivityLogSchema).values(
+            buildActivityEvent({
+              managedAccountId: id,
+              actorType: 'system',
+              action: 'publishing_enabled',
+              detail: { socialAccountId: social.id },
+            }),
+          );
+        }
+      }
+
       return NextResponse.json({ state: next }, { status: 200 });
     }
 

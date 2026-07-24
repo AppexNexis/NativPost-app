@@ -78,6 +78,7 @@ const ACTION_LABELS: Record<string, string> = {
   changes_requested: 'Changes requested',
   changes_completed: 'Changes completed',
   went_live: 'Account went live',
+  publishing_enabled: 'Connected — ready to publish',
   first_post_published: 'First post published',
   sla_breach: 'Delivery running late — team notified',
   execution_started: 'Work started — in progress',

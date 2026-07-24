@@ -131,6 +131,20 @@ export function getExecutionAdapter(strategy: ExecutionStrategy): ExecutionAdapt
   return adapter;
 }
 
+/**
+ * Register a concrete adapter for a strategy — call at app/worker bootstrap
+ * once the platform clients are configured (see ./execution-api). Until then
+ * the strategy stays fail-closed.
+ */
+export function registerExecutionAdapter(adapter: ExecutionAdapter): void {
+  ADAPTERS[adapter.strategy] = adapter;
+}
+
+/** Remove a registered adapter; the strategy reverts to fail-closed. */
+export function unregisterExecutionAdapter(strategy: ExecutionStrategy): void {
+  delete ADAPTERS[strategy];
+}
+
 export function getAdapterForAccount(input: {
   executionStrategy?: string | null;
   platform: string;
