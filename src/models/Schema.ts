@@ -112,6 +112,8 @@ export const brandProfileSchema = pgTable('brand_profile', {
   twitterVoice: text('twitter_voice'),
   facebookVoice: text('facebook_voice'),
   tiktokVoice: text('tiktok_voice'),
+  // ElevenLabs library voice ID for Blitz voice-over (Phase A). NULL = feature off for org.
+  elevenlabsVoiceId: text('elevenlabs_voice_id'),
   mission: text('mission'),
   values: jsonb('values').default([]),
   productsServices: jsonb('products_services').default([]),

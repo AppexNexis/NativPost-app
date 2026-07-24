@@ -29,6 +29,7 @@ export type BrandProfileData = {
   twitterVoice: string;
   facebookVoice: string;
   tiktokVoice: string;
+  elevenlabsVoiceId: string;
   growthStage: string;
 };
 
@@ -58,6 +59,7 @@ export const DEFAULT_PROFILE: BrandProfileData = {
   twitterVoice: '',
   facebookVoice: '',
   tiktokVoice: '',
+  elevenlabsVoiceId: '',
   growthStage: 'early',
 };
 
@@ -163,6 +165,7 @@ function mapServerProfile(profile: Record<string, unknown>): BrandProfileData {
     twitterVoice: (profile.twitterVoice as string) || '',
     facebookVoice: (profile.facebookVoice as string) || '',
     tiktokVoice: (profile.tiktokVoice as string) || '',
+    elevenlabsVoiceId: (profile.elevenlabsVoiceId as string) || '',
     growthStage: (profile.growthStage as string) || 'early',
   };
 }

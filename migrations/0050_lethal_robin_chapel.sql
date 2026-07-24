@@ -1,0 +1,1 @@
+ALTER TABLE "brand_profile" ADD COLUMN "elevenlabs_voice_id" text;

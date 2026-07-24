@@ -139,6 +139,7 @@ function sanitizeProfileData(body: Record<string, unknown>) {
     twitterVoice: body.twitterVoice ? String(body.twitterVoice) : null,
     facebookVoice: body.facebookVoice ? String(body.facebookVoice) : null,
     tiktokVoice: body.tiktokVoice ? String(body.tiktokVoice) : null,
+    elevenlabsVoiceId: body.elevenlabsVoiceId ? String(body.elevenlabsVoiceId) : null,
     mission: body.mission ? String(body.mission) : null,
     values: Array.isArray(body.values) ? body.values : [],
     productsServices: Array.isArray(body.productsServices) ? body.productsServices : [],
