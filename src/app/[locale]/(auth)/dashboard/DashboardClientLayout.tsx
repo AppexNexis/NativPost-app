@@ -4,6 +4,7 @@ import { OrganizationSwitcher, useAuth, useOrganization, UserButton } from '@cle
 import {
   BarChart3,
   BookOpen,
+  Boxes,
   Calendar,
   CheckCircle2,
   ChevronLeft,
@@ -56,6 +57,7 @@ import { getNavForRole, getUserRole, isTeamMember } from '@/lib/roles';
 const ICONS: Record<string, typeof Calendar> = {
   BarChart3,
   BookOpen,
+  Boxes,
   Calendar,
   CheckCircle2,
   CircleCheck,

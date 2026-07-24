@@ -1151,3 +1151,403 @@ export const webhookDeliverySchema = pgTable(
     orgIdx: index('webhook_delivery_org_idx').on(t.orgId, t.createdAt),
   }),
 );
+
+// ============================================================
+// MANAGED SOCIAL INFRASTRUCTURE (MSI)
+// See docs/managed-social-infrastructure.md. The state strings
+// for `lifecycle_state`, `msi_job.state`, `msi_task.status`, etc.
+// are OWNED by the state machines in `src/lib/msi/*` — keep the
+// defaults below in sync with those modules.
+// ============================================================
+
+// -----------------------------------------------------------
+// AUTHORIZATION GRANT — the legal spine (docs §4.1). No managed
+// account is provisioned without an active grant. This is the
+// customer's signed, revocable authorization for NativPost to
+// operate accounts on their behalf.
+// -----------------------------------------------------------
+export const authorizationGrantSchema = pgTable(
+  'authorization_grant',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    brandProfileId: uuid('brand_profile_id')
+      .references(() => brandProfileSchema.id)
+      .notNull(),
+    grantVersion: text('grant_version').notNull(), // terms version signed
+    scope: jsonb('scope').default({}).notNull(), // { platforms: [], countries: [] }
+    signedByUserId: text('signed_by_user_id').notNull(), // Clerk user
+    signedAt: timestamp('signed_at', { mode: 'date' }).defaultNow().notNull(),
+    documentUrl: text('document_url'), // stored signed agreement
+    status: text('status').default('active').notNull(), // active | revoked
+    revokedAt: timestamp('revoked_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    orgIdx: index('authorization_grant_org_idx').on(t.orgId),
+    brandIdx: index('authorization_grant_brand_idx').on(t.brandProfileId),
+  }),
+);
+
+// -----------------------------------------------------------
+// MSI PROVISIONING ORDER — a single purchase that fans out to N
+// managed accounts (docs §4.3).
+// -----------------------------------------------------------
+export const msiProvisioningOrderSchema = pgTable(
+  'msi_provisioning_order',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    stripeCheckoutSessionId: text('stripe_checkout_session_id'),
+    stripeSubscriptionId: text('stripe_subscription_id'),
+    quantity: integer('quantity').default(1).notNull(),
+    // Snapshot of the requested config: { country, platform, niche, handlePreferences }
+    configSnapshot: jsonb('config_snapshot').default({}).notNull(),
+    // pending | paid | fulfilling | fulfilled | cancelled | refunded
+    status: text('status').default('pending').notNull(),
+    paidAt: timestamp('paid_at', { mode: 'date' }),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    orgIdx: index('msi_provisioning_order_org_idx').on(t.orgId, t.createdAt),
+  }),
+);
+
+// -----------------------------------------------------------
+// MANAGED ACCOUNT — the product unit (docs §4.2). Once live,
+// `socialAccountId` links to the existing `social_account` row so
+// it publishes through the current pipeline (`lib/social-publish`).
+// -----------------------------------------------------------
+export const managedAccountSchema = pgTable(
+  'managed_account',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    // MUST reference a real, disclosed brand — never anonymous (docs §2.1).
+    brandProfileId: uuid('brand_profile_id')
+      .references(() => brandProfileSchema.id)
+      .notNull(),
+    authorizationGrantId: uuid('authorization_grant_id')
+      .references(() => authorizationGrantSchema.id)
+      .notNull(),
+    orderId: uuid('order_id').references(() => msiProvisioningOrderSchema.id, {
+      onDelete: 'set null',
+    }),
+    platform: text('platform').notNull(), // tiktok | instagram | ...
+    country: text('country').notNull(), // ISO country
+    targetLocale: text('target_locale'),
+    niche: text('niche'),
+    handlePreferences: jsonb('handle_preferences')
+      .$type<string[]>()
+      .default([])
+      .notNull(), // ordered @handle choices
+    displayName: text('display_name'),
+    // Owned by src/lib/msi/lifecycle.ts — see banner above.
+    lifecycleState: text('lifecycle_state').default('ordered').notNull(),
+    // Always customer-owned in the compliant model (docs §2.1, §9).
+    credentialCustody: text('credential_custody')
+      .default('customer_owned')
+      .notNull(),
+    // Set when the account goes live → unified publishing.
+    socialAccountId: uuid('social_account_id').references(
+      () => socialAccountSchema.id,
+    ),
+    healthScore: integer('health_score'), // latest composite score (docs §11.3)
+    liveAt: timestamp('live_at', { mode: 'date' }),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    orgIdx: index('managed_account_org_idx').on(t.orgId),
+    stateIdx: index('managed_account_state_idx').on(t.lifecycleState),
+    countryPlatformIdx: index('managed_account_country_platform_idx').on(
+      t.country,
+      t.platform,
+    ),
+  }),
+);
+
+// -----------------------------------------------------------
+// MSI OPERATOR — internal ops-plane staff (docs §8). Not a
+// customer; identified by Clerk user id. Capacity feeds the
+// Capacity Engine (docs §6).
+// -----------------------------------------------------------
+export const msiOperatorSchema = pgTable(
+  'msi_operator',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clerkUserId: text('clerk_user_id').notNull(),
+    displayName: text('display_name'),
+    country: text('country').notNull(),
+    // operator | reviewer | qa | country_manager | ops_admin | ops_support | finance
+    role: text('role').default('operator').notNull(),
+    capacity: integer('capacity').default(10).notNull(), // max concurrent accounts
+    activeLoad: integer('active_load').default(0).notNull(),
+    status: text('status').default('active').notNull(), // active | inactive | suspended
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    clerkIdx: uniqueIndex('msi_operator_clerk_idx').on(t.clerkUserId),
+    countryIdx: index('msi_operator_country_idx').on(t.country, t.role),
+  }),
+);
+
+// -----------------------------------------------------------
+// MSI DEVICE — a real phone + SIM operated in-country (docs §8.3).
+// Capacity-limited; one account belongs to one device.
+// -----------------------------------------------------------
+export const msiDeviceSchema = pgTable(
+  'msi_device',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    label: text('label').notNull(), // e.g. 'US-Phone-18'
+    country: text('country').notNull(),
+    carrier: text('carrier'), // SIM carrier, e.g. 'T-Mobile'
+    simIdentifier: text('sim_identifier'),
+    capacity: integer('capacity').default(5).notNull(),
+    status: text('status').default('active').notNull(), // active | maintenance | retired
+    managedByOperatorId: uuid('managed_by_operator_id').references(
+      () => msiOperatorSchema.id,
+      { onDelete: 'set null' },
+    ),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    countryIdx: index('msi_device_country_idx').on(t.country, t.status),
+  }),
+);
+
+// -----------------------------------------------------------
+// MSI DEVICE ASSIGNMENT — which device currently hosts which
+// managed account (docs §4.3). releasedAt set when it moves off.
+// -----------------------------------------------------------
+export const msiDeviceAssignmentSchema = pgTable(
+  'msi_device_assignment',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    deviceId: uuid('device_id')
+      .references(() => msiDeviceSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    managedAccountId: uuid('managed_account_id')
+      .references(() => managedAccountSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    assignedAt: timestamp('assigned_at', { mode: 'date' }).defaultNow().notNull(),
+    releasedAt: timestamp('released_at', { mode: 'date' }),
+  },
+  t => ({
+    deviceIdx: index('msi_device_assignment_device_idx').on(t.deviceId),
+    accountIdx: index('msi_device_assignment_account_idx').on(t.managedAccountId),
+  }),
+);
+
+// -----------------------------------------------------------
+// MSI JOB — the universal unit of work (docs §7). Every operation
+// (create/update/publish/pause/transfer/recover/appeal/archive)
+// is a job. State owned by src/lib/msi/job-workflow.ts.
+// -----------------------------------------------------------
+export const msiJobSchema = pgTable(
+  'msi_job',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    managedAccountId: uuid('managed_account_id')
+      .references(() => managedAccountSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    jobType: text('job_type').notNull(), // see JOB_TYPES in job-workflow.ts
+    state: text('state').default('queued').notNull(),
+    priority: integer('priority').default(0).notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    maxAttempts: integer('max_attempts').default(3).notNull(),
+    assignedOperatorId: uuid('assigned_operator_id').references(
+      () => msiOperatorSchema.id,
+      { onDelete: 'set null' },
+    ),
+    assignedDeviceId: uuid('assigned_device_id').references(
+      () => msiDeviceSchema.id,
+      { onDelete: 'set null' },
+    ),
+    slaDueAt: timestamp('sla_due_at', { mode: 'date' }),
+    failureReason: text('failure_reason'),
+    startedAt: timestamp('started_at', { mode: 'date' }),
+    completedAt: timestamp('completed_at', { mode: 'date' }),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    accountIdx: index('msi_job_account_idx').on(t.managedAccountId),
+    stateIdx: index('msi_job_state_idx').on(t.state),
+    orgIdx: index('msi_job_org_idx').on(t.orgId),
+  }),
+);
+
+// -----------------------------------------------------------
+// MSI TASK — the structured checklist inside a job (docs §7.2).
+// Operators complete tasks with evidence; they never get raw,
+// free-form account access.
+// -----------------------------------------------------------
+export const msiTaskSchema = pgTable(
+  'msi_task',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    jobId: uuid('job_id')
+      .references(() => msiJobSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    taskType: text('task_type').notNull(),
+    sequence: integer('sequence').default(0).notNull(),
+    status: text('status').default('pending').notNull(), // pending | in_progress | done | skipped
+    completedByRole: text('completed_by_role'), // operator | reviewer | qa
+    completedByUserId: text('completed_by_user_id'),
+    evidenceUrl: text('evidence_url'),
+    notes: text('notes'),
+    completedAt: timestamp('completed_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    jobIdx: index('msi_task_job_idx').on(t.jobId, t.sequence),
+  }),
+);
+
+// -----------------------------------------------------------
+// MSI ACCOUNT REVIEW — the customer's 3-day review window
+// (docs §5, §7). Drives the customer_review lifecycle state.
+// -----------------------------------------------------------
+export const msiAccountReviewSchema = pgTable(
+  'msi_account_review',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    managedAccountId: uuid('managed_account_id')
+      .references(() => managedAccountSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    windowOpensAt: timestamp('window_opens_at', { mode: 'date' })
+      .defaultNow()
+      .notNull(),
+    windowClosesAt: timestamp('window_closes_at', { mode: 'date' }).notNull(),
+    // pending | changes_requested | approved | expired
+    status: text('status').default('pending').notNull(),
+    // [{ field: 'bio' | 'username' | 'avatar' | 'display_name' | 'niche', note }]
+    requestedChanges: jsonb('requested_changes').default([]).notNull(),
+    respondedAt: timestamp('responded_at', { mode: 'date' }),
+    respondedByUserId: text('responded_by_user_id'),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    accountIdx: index('msi_account_review_account_idx').on(t.managedAccountId),
+  }),
+);
+
+// -----------------------------------------------------------
+// MSI ACTIVITY LOG — append-only audit + event stream (docs §7.4).
+// Powers the customer-facing GitHub-style timeline (docs §13.2)
+// AND is our compliance defense. Never mutate rows.
+// -----------------------------------------------------------
+export const msiActivityLogSchema = pgTable(
+  'msi_activity_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    managedAccountId: uuid('managed_account_id').references(
+      () => managedAccountSchema.id,
+      { onDelete: 'cascade' },
+    ),
+    jobId: uuid('job_id').references(() => msiJobSchema.id, {
+      onDelete: 'set null',
+    }),
+    actorType: text('actor_type').notNull(), // system | operator | customer
+    actorId: text('actor_id'),
+    action: text('action').notNull(), // e.g. 'profile_created', 'qa_passed', 'went_live'
+    detail: jsonb('detail').default({}).notNull(),
+    occurredAt: timestamp('occurred_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    accountIdx: index('msi_activity_log_account_idx').on(
+      t.managedAccountId,
+      t.occurredAt,
+    ),
+    jobIdx: index('msi_activity_log_job_idx').on(t.jobId),
+  }),
+);
+
+// -----------------------------------------------------------
+// MSI CAPACITY RESERVATION — soft-hold placed at checkout so two
+// buyers can't oversell the same country/platform slots (docs §6).
+// -----------------------------------------------------------
+export const msiCapacityReservationSchema = pgTable(
+  'msi_capacity_reservation',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    orderId: uuid('order_id').references(() => msiProvisioningOrderSchema.id, {
+      onDelete: 'cascade',
+    }),
+    country: text('country').notNull(),
+    platform: text('platform').notNull(),
+    quantity: integer('quantity').default(1).notNull(),
+    status: text('status').default('held').notNull(), // held | consumed | released | expired
+    expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    orgIdx: index('msi_capacity_reservation_org_idx').on(t.orgId),
+    countryPlatformIdx: index('msi_capacity_reservation_cp_idx').on(
+      t.country,
+      t.platform,
+      t.status,
+    ),
+  }),
+);
+
+// -----------------------------------------------------------
+// MSI CREDENTIAL — vault POINTER only (docs §9). NEVER store
+// plaintext credentials here. `vaultRef` points at the external
+// secrets vault; `encryptedDek` is the envelope-encrypted Data
+// Encryption Key wrapped by the KMS master key.
+// -----------------------------------------------------------
+export const msiCredentialSchema = pgTable(
+  'msi_credential',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    managedAccountId: uuid('managed_account_id')
+      .references(() => managedAccountSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    vaultRef: text('vault_ref').notNull(),
+    encryptedDek: text('encrypted_dek'),
+    // provisioning | nativpost_operating | transfer_requested | released
+    custodyState: text('custody_state').default('provisioning').notNull(),
+    lastRotatedAt: timestamp('last_rotated_at', { mode: 'date' }),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    accountIdx: uniqueIndex('msi_credential_account_idx').on(t.managedAccountId),
+  }),
+);

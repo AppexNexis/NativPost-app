@@ -22,6 +22,11 @@ export const Env = createEnv({
     // Optional Discord webhook for in-app feedback notifications.
     // Set the URL in Vercel env vars; leave unset to skip.
     FEEDBACK_DISCORD_WEBHOOK_URL: z.string().url().optional(),
+    // Base64-encoded 32-byte master key (KEK) for the MSI credential vault
+    // (docs/managed-social-infrastructure.md §9). Generate with
+    // `generateMasterKey()` from src/lib/msi/vault.ts. The vault fails CLOSED
+    // (throws) when unset — no credential can be sealed or revealed.
+    MSI_VAULT_MASTER_KEY: z.string().min(1).optional(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().optional(),
@@ -46,6 +51,7 @@ export const Env = createEnv({
     NATIVPOST_TEAM_ORG_ID: process.env.NATIVPOST_TEAM_ORG_ID,
     CLOUDINARY_MODERATION_WEBHOOK: process.env.CLOUDINARY_MODERATION_WEBHOOK,
     FEEDBACK_DISCORD_WEBHOOK_URL: process.env.FEEDBACK_DISCORD_WEBHOOK_URL,
+    MSI_VAULT_MASTER_KEY: process.env.MSI_VAULT_MASTER_KEY,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
     NEXT_PUBLIC_CLERK_SIGN_IN_URL: process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL,
