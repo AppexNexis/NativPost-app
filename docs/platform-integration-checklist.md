@@ -129,8 +129,8 @@ unfilled Phase-0 sign-off keeps the strategy fail-closed (`manual` only).
 | **OAuth flow** | LinkedIn OAuth; customer authorizes the member/organization identity (customer-owned). |
 | **Required scopes** | `w_member_social` (+ `w_organization_social` for pages). |
 | **Required app review** | Yes — Marketing Developer Platform access for posting scopes. |
-| **Supported operations** | `publish_post` (text, single + multi image up to 9). Video = follow-up (chunked upload). Profile/create stay `manual`. |
-| **Media handling** | `assets?action=registerUpload` → PUT bytes to the returned URL → `ugcPosts` with `shareMediaCategory: IMAGE`. **No pull-from-URL** — media is uploaded as bytes. **Synchronous** (no processing poll). |
+| **Supported operations** | `publish_post` (text, single + multi image up to 9, and single video). Profile/create stay `manual`. |
+| **Media handling** | `assets?action=registerUpload` (image or video recipe) → PUT bytes to the returned URL → `ugcPosts` with `shareMediaCategory: IMAGE`/`VIDEO`. **No pull-from-URL** — media is uploaded as bytes. **Synchronous** (single PUT). |
 | **Rate limits** | Per-member/app daily throttles; duplicate-content rejection. |
 | **Token type + refresh** | Access token ~60d + refresh token ~1y. **Auto-refresh:** proactive by expiry via `refresh_token` grant (needs `LINKEDIN_CLIENT_ID`/`SECRET`). Vault blob JSON `{ accessToken, authorUrn, refreshToken?, expiresAt? }`. |
 | **Webhooks** | None used for publishing. |
@@ -148,7 +148,10 @@ unfilled Phase-0 sign-off keeps the strategy fail-closed (`manual` only).
 - **Registered** in `worker-service.ts` `OFFICIAL_API_CLIENTS` (`['linkedin', linkedinClient]`).
 - **Synchronous client:** `execute` publishes and returns `completed` in one call —
   no `checkStatus` (validates the model supports sync clients too).
-- **Follow-ups:** video (chunked upload); LinkedIn is image/text in v1.
+- **Video:** single-PUT byte upload via the Assets API (`feedshare-video` recipe).
+  Fine for typical managed clips; **large videos** are the follow-up — the multipart
+  `/rest/videos` API (initialize → part uploads → finalize), which could ride the
+  same `execution_handle` async mechanism as YouTube's chunked upload.
 
 ## Facebook — fourth integration
 

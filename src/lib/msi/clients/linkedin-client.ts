@@ -90,7 +90,7 @@ async function freshLinkedInCredentials(
   return updated;
 }
 
-type ContentToPublish = { caption: string; imageUrls: string[]; isVideo: boolean };
+type ContentToPublish = { caption: string; mediaUrls: string[]; isVideo: boolean };
 
 async function loadContent(contentItemId: string): Promise<ContentToPublish> {
   const [item] = await db
@@ -107,7 +107,7 @@ async function loadContent(contentItemId: string): Promise<ContentToPublish> {
   }
   return {
     caption: item.caption,
-    imageUrls: (item.graphicUrls as string[] | null) ?? [],
+    mediaUrls: (item.graphicUrls as string[] | null) ?? [],
     isVideo: isVideoContentType(item.contentType),
   };
 }
@@ -134,18 +134,20 @@ export function createLinkedInClient(
 
       const credentials = await freshLinkedInCredentials(ctx.managedAccountId, fetchImpl);
       const content = await loadContent(contentItemId);
-      if (content.isVideo) {
-        // Video uses a heavier chunked-upload flow — image + text first (v1).
-        throw new Error('LinkedIn video publishing is not yet supported');
+      if (content.isVideo && !content.mediaUrls[0]) {
+        throw new Error('Content item has no video to publish');
       }
 
       // Synchronous: publish now and return a terminal result (no checkStatus).
+      // Video posts a single VIDEO; otherwise the text/image path runs.
       const postUrn = await publishToLinkedIn(
         {
           accessToken: credentials.accessToken,
           authorUrn: credentials.authorUrn,
           caption: content.caption,
-          imageUrls: content.imageUrls,
+          ...(content.isVideo
+            ? { videoUrl: content.mediaUrls[0] }
+            : { imageUrls: content.mediaUrls }),
         },
         fetchImpl,
       );

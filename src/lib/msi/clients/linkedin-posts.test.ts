@@ -60,6 +60,18 @@ describe('buildUgcPostBody', () => {
     ]);
   });
 
+  it('builds a VIDEO share referencing the video asset', () => {
+    const body = buildUgcPostBody({
+      author: 'urn:li:person:1',
+      caption: 'hi',
+      category: 'VIDEO',
+      assetUrns: ['urn:li:digitalmediaAsset:vid'],
+    });
+    const share = body.specificContent['com.linkedin.ugc.ShareContent'];
+    expect(share.shareMediaCategory).toBe('VIDEO');
+    expect(share.media).toEqual([{ status: 'READY', media: 'urn:li:digitalmediaAsset:vid' }]);
+  });
+
   it('omits media for a NONE (text) share', () => {
     const body = buildUgcPostBody({ author: 'urn:li:person:1', caption: 'hi', category: 'NONE', assetUrns: [] });
     expect(body.specificContent['com.linkedin.ugc.ShareContent'].media).toBeUndefined();
@@ -110,6 +122,51 @@ describe('publishToLinkedIn', () => {
       fetchImpl,
     );
     expect(urn).toBe('urn:li:share:999');
+  });
+
+  it('registers the video recipe, uploads, and posts a VIDEO', async () => {
+    let registerBody: any;
+    let postBody: any;
+    const queue = [
+      {
+        match: '/assets?action=registerUpload',
+        body: {
+          value: {
+            asset: 'urn:li:digitalmediaAsset:vid',
+            uploadMechanism: {
+              'com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest': { uploadUrl: 'https://upload/v' },
+            },
+          },
+        },
+      },
+      { match: 'https://cdn/clip.mp4' }, // media fetch
+      { match: 'https://upload/v', status: 201 }, // PUT upload
+      { match: '/ugcPosts', body: { id: 'urn:li:share:vid1' } },
+    ];
+    const fetchImpl: FetchLike = async (url, init) => {
+      const idx = queue.findIndex(r => url.includes(r.match));
+      const [route] = queue.splice(idx, 1);
+      if (url.includes('registerUpload')) {
+        registerBody = JSON.parse(init!.body as string);
+      }
+      if (url.includes('/ugcPosts')) {
+        postBody = JSON.parse(init!.body as string);
+      }
+      return {
+        ok: (route as any)!.ok ?? true,
+        status: (route as any)!.status ?? 200,
+        json: async () => (route as any)!.body ?? {},
+        arrayBuffer: async () => new ArrayBuffer(8),
+      };
+    };
+
+    const urn = await publishToLinkedIn(
+      { accessToken: 'tok', authorUrn: 'urn:li:person:1', caption: 'hi', videoUrl: 'https://cdn/clip.mp4' },
+      fetchImpl,
+    );
+    expect(urn).toBe('urn:li:share:vid1');
+    expect(registerBody.registerUploadRequest.recipes).toEqual(['urn:li:digitalmediaRecipe:feedshare-video']);
+    expect(postBody.specificContent['com.linkedin.ugc.ShareContent'].shareMediaCategory).toBe('VIDEO');
   });
 
   it('throws a descriptive error when the post is rejected', async () => {

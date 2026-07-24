@@ -24,6 +24,7 @@ export type FetchLike = (
 
 const API = 'https://api.linkedin.com/v2';
 const IMAGE_RECIPE = 'urn:li:digitalmediaRecipe:feedshare-image';
+const VIDEO_RECIPE = 'urn:li:digitalmediaRecipe:feedshare-video';
 // LinkedIn feedshare supports up to 9 images per post.
 export const MAX_LINKEDIN_IMAGES = 9;
 
@@ -97,16 +98,17 @@ export function buildUgcPostBody(params: {
 // HTTP (thin, injectable fetch)
 // ---------------------------------------------------------------------------
 
-/** Register an image upload; returns the upload URL + the asset URN. */
-export async function registerImageUpload(
+/** Register an upload for a recipe (image or video); returns URL + asset URN. */
+export async function registerUpload(
   authorUrn: string,
+  recipe: string,
   accessToken: string,
   fetchImpl: FetchLike,
 ): Promise<{ uploadUrl: string; assetUrn: string }> {
   const res = await fetchImpl(`${API}/assets?action=registerUpload`, {
     method: 'POST',
     headers: jsonHeaders(accessToken),
-    body: JSON.stringify(buildRegisterUploadBody(authorUrn, IMAGE_RECIPE)),
+    body: JSON.stringify(buildRegisterUploadBody(authorUrn, recipe)),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -115,14 +117,14 @@ export async function registerImageUpload(
   return parseRegisterUpload(data);
 }
 
-/** Fetch the image bytes and PUT them to the pre-signed upload URL. */
-export async function uploadImageAsset(
+/** Fetch the media bytes and PUT them to the pre-signed upload URL. */
+export async function uploadAsset(
   uploadUrl: string,
-  imageUrl: string,
+  mediaUrl: string,
   accessToken: string,
   fetchImpl: FetchLike,
 ): Promise<void> {
-  const media = await fetchImpl(imageUrl);
+  const media = await fetchImpl(mediaUrl);
   if (!media.ok) {
     throw new Error(`LinkedIn media fetch failed (${media.status})`);
   }
@@ -157,16 +159,35 @@ export async function createUgcPost(
   return data.id as string;
 }
 
-/** Full publish: upload each image, then create the post. Returns the post URN. */
+/**
+ * Full publish. A `videoUrl` posts a single VIDEO; otherwise the images path
+ * (register → upload → post) runs. Returns the post URN. Video uploads the bytes
+ * in one PUT (Assets API) — fine for typical managed clips; large videos are a
+ * follow-up (the multipart /rest/videos API).
+ */
 export async function publishToLinkedIn(
-  params: { accessToken: string; authorUrn: string; caption: string; imageUrls: string[] },
+  params: {
+    accessToken: string;
+    authorUrn: string;
+    caption: string;
+    imageUrls?: string[];
+    videoUrl?: string;
+  },
   fetchImpl: FetchLike,
 ): Promise<string> {
   const author = normalizeAuthorUrn(params.authorUrn);
+
+  if (params.videoUrl) {
+    const { uploadUrl, assetUrn } = await registerUpload(author, VIDEO_RECIPE, params.accessToken, fetchImpl);
+    await uploadAsset(uploadUrl, params.videoUrl, params.accessToken, fetchImpl);
+    const body = buildUgcPostBody({ author, caption: params.caption, category: 'VIDEO', assetUrns: [assetUrn] });
+    return createUgcPost(body, params.accessToken, fetchImpl);
+  }
+
   const assetUrns: string[] = [];
-  for (const url of params.imageUrls.slice(0, MAX_LINKEDIN_IMAGES)) {
-    const { uploadUrl, assetUrn } = await registerImageUpload(author, params.accessToken, fetchImpl);
-    await uploadImageAsset(uploadUrl, url, params.accessToken, fetchImpl);
+  for (const url of (params.imageUrls ?? []).slice(0, MAX_LINKEDIN_IMAGES)) {
+    const { uploadUrl, assetUrn } = await registerUpload(author, IMAGE_RECIPE, params.accessToken, fetchImpl);
+    await uploadAsset(uploadUrl, url, params.accessToken, fetchImpl);
     assetUrns.push(assetUrn);
   }
   const category: LinkedInMediaCategory = assetUrns.length > 0 ? 'IMAGE' : 'NONE';
