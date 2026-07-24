@@ -149,3 +149,42 @@ unfilled Phase-0 sign-off keeps the strategy fail-closed (`manual` only).
 - **Synchronous client:** `execute` publishes and returns `completed` in one call —
   no `checkStatus` (validates the model supports sync clients too).
 - **Follow-ups:** video (chunked upload); LinkedIn is image/text in v1.
+
+## Facebook — fourth integration
+
+| Field | Value |
+|---|---|
+| **Platform key** | `facebook` |
+| **API + version** | Facebook Graph API `v21.0` (Page publishing) |
+| **API documentation** | developers.facebook.com/docs/pages-api/posts |
+| **OAuth flow** | Facebook Login → Page access token; customer authorizes (customer-owned Page). |
+| **Required scopes** | `pages_manage_posts`, `pages_read_engagement`, `pages_show_list`. |
+| **Required app review** | Yes — Meta App Review for the pages_* posting permissions + Business Verification. |
+| **Supported operations** | `publish_post` (text, single image, multi-image carousel, video). Account/profile stay `manual`. |
+| **Media handling** | Pull-from-URL: video `POST /{page}/videos` (`file_url`); single image `/{page}/photos` (`url`); carousel = unpublished `/photos` (`published:false`) → `/{page}/feed` (`attached_media`). **Synchronous** (no processing poll). |
+| **Rate limits** | Standard Graph per-app/page rate limits. |
+| **Token type + refresh** | Long-lived Page token. **Auto-refresh:** shares Meta's `fb_exchange_token` (needs `META_APP_ID`/`META_APP_SECRET`). Vault blob JSON `{ accessToken, pageId, expiresAt? }`. |
+| **Webhooks** | None used for publishing. |
+| **Error codes of note** | `190` invalid/expired token; `200`/`10` permission; `100` bad param. |
+| **Retry strategy** | Any step throws → `execute` throws → job `failed` → worker retries. Synchronous, no confirmation pass. |
+| **Compliance notes** | Sanctioned API, customer-owned Page, customer-authorized token. Per-account Phase-0 sign-off before `official_api`. |
+| **MSI execution strategy** | `official_api` |
+| **Phase-0 legal sign-off** | _pending — record date + owner here_ |
+| **Client module** | `src/lib/msi/clients/facebook-client.ts` (+ `facebook-graph.ts`) |
+| **Status** | in-progress (client + tests built; registered in `OFFICIAL_API_CLIENTS`; needs creds + Phase-0 for prod traffic) |
+
+### Wiring notes (Facebook)
+- **Credentials:** capture `{ "accessToken": "…", "pageId": "…", "expiresAt": <ms?> }` as
+  JSON via the Operations **Credential vault → Capture** surface.
+- **Registered** in `worker-service.ts` `OFFICIAL_API_CLIENTS` (`['facebook', facebookClient]`).
+- Shares Meta's token refresh (`fb_exchange_token`, `META_APP_*`) — no separate refresh token.
+
+## YouTube — catalog-listed, client not built
+
+Orderable in the configure flow (`MSI_PLATFORMS`), but **no execution client yet** —
+YouTube accounts run the `manual` (operator) strategy until a `PlatformClient` is
+built (resumable video upload + `videos.insert`). Copy the template when starting.
+
+## Threads / Pinterest — not planned
+
+Deliberately excluded from the launch catalog.

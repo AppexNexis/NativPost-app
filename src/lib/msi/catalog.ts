@@ -7,6 +7,9 @@ export type CatalogOption = { value: string; label: string };
 export const MSI_PLATFORMS: CatalogOption[] = [
   { value: 'tiktok', label: 'TikTok' },
   { value: 'instagram', label: 'Instagram' },
+  { value: 'facebook', label: 'Facebook' },
+  { value: 'linkedin', label: 'LinkedIn' },
+  { value: 'youtube', label: 'YouTube' },
 ];
 
 export const MSI_COUNTRIES: CatalogOption[] = [

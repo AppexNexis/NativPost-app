@@ -25,6 +25,7 @@ import {
 import type { DeviceSlot, OperatorSlot } from './allocation';
 import { planAllocations } from './allocation';
 import { buildActivityEvent } from './audit';
+import { facebookClient } from './clients/facebook-client';
 import { linkedinClient } from './clients/linkedin-client';
 import { metaInstagramClient } from './clients/meta-client';
 import { tiktokClient } from './clients/tiktok-client';
@@ -57,6 +58,7 @@ const OFFICIAL_API_CLIENTS = new Map([
   ['instagram', metaInstagramClient],
   ['tiktok', tiktokClient],
   ['linkedin', linkedinClient],
+  ['facebook', facebookClient],
 ]);
 
 let productionAdaptersRegistered = false;
