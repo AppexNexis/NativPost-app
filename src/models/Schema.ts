@@ -1389,6 +1389,11 @@ export const msiJobSchema = pgTable(
       { onDelete: 'set null' },
     ),
     state: text('state').default('queued').notNull(),
+    // The platform's post id, captured by the execution layer when a publish
+    // job runs through an official_api client (docs §6). Threaded into the
+    // billable event at billing time for transparency. Null for manual/
+    // provisioning jobs.
+    platformPostId: text('platform_post_id'),
     priority: integer('priority').default(0).notNull(),
     attempts: integer('attempts').default(0).notNull(),
     maxAttempts: integer('max_attempts').default(3).notNull(),

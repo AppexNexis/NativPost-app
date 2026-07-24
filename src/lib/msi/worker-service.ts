@@ -323,7 +323,13 @@ export async function runWorkerTick(now: Date = new Date()) {
         transitionJob('in_progress', 'peer_review', { evidenceAttached: true });
         await db
           .update(msiJobSchema)
-          .set({ state: 'peer_review', completedAt: startedAt })
+          .set({
+            state: 'peer_review',
+            completedAt: startedAt,
+            // Capture the platform post id now so billing can thread it when the
+            // job later clears QA (null for ops without one, e.g. profile edits).
+            platformPostId: result.platformPostId ?? null,
+          })
           .where(eq(msiJobSchema.id, intent.jobId));
         if (outcome.completeAllTasks) {
           await db

@@ -35,6 +35,15 @@ describe('createApiExecutionAdapter', () => {
     expect(res.evidenceUrl).toBe('https://x/post/1');
   });
 
+  it('passes the platform post id through to the execution result', async () => {
+    const client = fakeClient({
+      execute: async () => ({ evidenceUrl: 'https://x/p/1', platformPostId: 'media-123' }),
+    });
+    const adapter = createApiExecutionAdapter('official_api', new Map([['tiktok', client]]));
+    const res = await adapter.execute('publish_post', ctx);
+    expect(res.platformPostId).toBe('media-123');
+  });
+
   it('maps a thrown client error to failed with the message', async () => {
     const client = fakeClient({
       execute: async () => {

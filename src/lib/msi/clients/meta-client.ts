@@ -125,7 +125,9 @@ export function createMetaInstagramClient(
 
       return {
         evidenceUrl: result.permalink ?? undefined,
-        // The platform post id — surfaced for billing transparency + audit.
+        // The platform post id — threaded into billing (platform_post_id) for
+        // transparency + audit; also echoed in detail for the activity log.
+        platformPostId: result.mediaId,
         detail: `instagram media ${result.mediaId}`,
       };
     },

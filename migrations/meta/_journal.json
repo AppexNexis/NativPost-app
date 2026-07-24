@@ -337,6 +337,13 @@
       "when": 1784902124840,
       "tag": "0047_curious_veda",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1784905095258,
+      "tag": "0048_old_amazoness",
+      "breakpoints": true
     }
   ]
 }

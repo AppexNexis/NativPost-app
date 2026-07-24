@@ -52,6 +52,9 @@ export type ExecutionResult = {
   outcome: ExecutionOutcome;
   detail?: string;
   evidenceUrl?: string;
+  // The platform's post id, when the operation produced one (e.g. a publish).
+  // Persisted on the job and later threaded into the billable event.
+  platformPostId?: string;
 };
 
 export type ExecutionAdapter = {

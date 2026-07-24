@@ -31,6 +31,7 @@ export async function recordPublishEvent(
       jobType: msiJobSchema.jobType,
       managedAccountId: msiJobSchema.managedAccountId,
       contentItemId: msiJobSchema.contentItemId,
+      platformPostId: msiJobSchema.platformPostId,
       orgId: managedAccountSchema.orgId,
       platform: managedAccountSchema.platform,
     })
@@ -54,6 +55,7 @@ export async function recordPublishEvent(
     contentItemId: row.contentItemId ?? null,
     platform: row.platform,
     occurredAt,
+    platformPostId: row.platformPostId ?? null,
   });
 
   const inserted = await db

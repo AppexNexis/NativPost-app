@@ -25,6 +25,8 @@ import type {
 export type PlatformCallResult = {
   evidenceUrl?: string;
   detail?: string;
+  // The platform's own post id for a publish (media id, tweet id, …).
+  platformPostId?: string;
 };
 
 /**
@@ -73,6 +75,7 @@ export function createApiExecutionAdapter(
           outcome: 'completed',
           detail: res.detail,
           evidenceUrl: res.evidenceUrl,
+          platformPostId: res.platformPostId,
         };
       } catch (err) {
         return {
