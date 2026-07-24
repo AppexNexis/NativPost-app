@@ -73,6 +73,58 @@ export async function createMediaContainer(
   return data.id as string;
 }
 
+/** Create one carousel child (image) container; returns its id. */
+export async function createCarouselItemContainer(
+  igUserId: string,
+  imageUrl: string,
+  accessToken: string,
+  fetchImpl: FetchLike,
+): Promise<string> {
+  const res = await fetchImpl(`${GRAPH}/${igUserId}/media`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      image_url: imageUrl,
+      is_carousel_item: true,
+      access_token: accessToken,
+    }),
+  });
+  const data = await readJson(res, 'carousel item creation');
+  if (!data.id) {
+    throw new Error('Instagram carousel item creation returned no id');
+  }
+  return data.id as string;
+}
+
+/**
+ * Create the parent carousel container from child ids. Its status_code goes
+ * FINISHED only once every child has processed, so the existing single-shot
+ * status check + publish path works for carousels unchanged.
+ */
+export async function createCarouselContainer(
+  igUserId: string,
+  childIds: string[],
+  caption: string,
+  accessToken: string,
+  fetchImpl: FetchLike,
+): Promise<string> {
+  const res = await fetchImpl(`${GRAPH}/${igUserId}/media`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      media_type: 'CAROUSEL',
+      children: childIds,
+      caption,
+      access_token: accessToken,
+    }),
+  });
+  const data = await readJson(res, 'carousel container creation');
+  if (!data.id) {
+    throw new Error('Instagram carousel container creation returned no id');
+  }
+  return data.id as string;
+}
+
 /**
  * One-shot container status check (no polling loop). Returns FINISHED (ready to
  * publish) or PROCESSING (check again next tick); throws on ERROR/EXPIRED. The

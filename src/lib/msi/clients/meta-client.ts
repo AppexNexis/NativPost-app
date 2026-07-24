@@ -33,6 +33,8 @@ import type {
 import type { FetchLike } from './meta-graph';
 import {
   checkContainerStatus,
+  createCarouselContainer,
+  createCarouselItemContainer,
   createMediaContainer,
   publishContainer,
   resolvePermalink,
@@ -110,9 +112,12 @@ async function freshMetaCredentials(
 
 type ContentToPublish = {
   caption: string;
-  mediaUrl: string;
+  mediaUrls: string[];
   isVideo: boolean;
 };
+
+// Instagram allows up to 10 items in a carousel.
+const MAX_CAROUSEL_ITEMS = 10;
 
 async function loadContent(contentItemId: string): Promise<ContentToPublish> {
   const [item] = await db
@@ -128,13 +133,12 @@ async function loadContent(contentItemId: string): Promise<ContentToPublish> {
     throw new Error(`Content item ${contentItemId} not found`);
   }
   const urls = (item.graphicUrls as string[] | null) ?? [];
-  const mediaUrl = urls[0];
-  if (!mediaUrl) {
+  if (urls.length === 0) {
     throw new Error('Content item has no media to publish');
   }
   return {
     caption: item.caption,
-    mediaUrl,
+    mediaUrls: urls,
     isVideo: isVideoContentType(item.contentType),
   };
 }
@@ -168,18 +172,44 @@ export function createMetaInstagramClient(
       const credentials = await freshMetaCredentials(ctx.managedAccountId, fetchImpl);
       const content = await loadContent(contentItemId);
 
-      // Init only: create the media container and hand back its id. Publishing
-      // waits for processing, which the confirmation pass drives (checkStatus).
-      const creationId = await createMediaContainer(
-        {
-          igUserId: credentials.igUserId,
-          accessToken: credentials.accessToken,
-          caption: content.caption,
-          mediaUrl: content.mediaUrl,
-          isVideo: content.isVideo,
-        },
-        fetchImpl,
-      );
+      // Init only: create the container(s) and hand back the parent id.
+      // Publishing waits for processing, which the confirmation pass drives
+      // (checkStatus) — identical for single media and carousels, because the
+      // carousel container's status already reflects child readiness.
+      let creationId: string;
+      if (!content.isVideo && content.mediaUrls.length > 1) {
+        // Carousel: create a child container per image, then the parent.
+        const childIds: string[] = [];
+        for (const url of content.mediaUrls.slice(0, MAX_CAROUSEL_ITEMS)) {
+          childIds.push(
+            await createCarouselItemContainer(
+              credentials.igUserId,
+              url,
+              credentials.accessToken,
+              fetchImpl,
+            ),
+          );
+        }
+        creationId = await createCarouselContainer(
+          credentials.igUserId,
+          childIds,
+          content.caption,
+          credentials.accessToken,
+          fetchImpl,
+        );
+      } else {
+        // Single image or REELS video.
+        creationId = await createMediaContainer(
+          {
+            igUserId: credentials.igUserId,
+            accessToken: credentials.accessToken,
+            caption: content.caption,
+            mediaUrl: content.mediaUrls[0]!,
+            isVideo: content.isVideo,
+          },
+          fetchImpl,
+        );
+      }
 
       return { pending: true, providerHandle: creationId };
     },

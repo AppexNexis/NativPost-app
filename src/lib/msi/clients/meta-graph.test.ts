@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { FetchLike } from './meta-graph';
 import {
   checkContainerStatus,
+  createCarouselContainer,
+  createCarouselItemContainer,
   createMediaContainer,
   publishContainer,
   resolvePermalink,
@@ -49,6 +51,40 @@ describe('createMediaContainer', () => {
     await expect(createMediaContainer(input, fetchImpl)).rejects.toThrow(
       /container creation failed \(400\): Media URL unreachable/,
     );
+  });
+});
+
+describe('carousel containers', () => {
+  it('creates a child item container flagged is_carousel_item', async () => {
+    let sentBody: any;
+    const fetchImpl: FetchLike = async (_url, init) => {
+      sentBody = JSON.parse(init!.body!);
+      return { ok: true, status: 200, json: async () => ({ id: 'child-1' }) };
+    };
+    const id = await createCarouselItemContainer('ig-1', 'https://cdn/1.jpg', 'tok', fetchImpl);
+    expect(id).toBe('child-1');
+    expect(sentBody).toMatchObject({ image_url: 'https://cdn/1.jpg', is_carousel_item: true });
+  });
+
+  it('creates the parent carousel container from child ids', async () => {
+    let sentBody: any;
+    const fetchImpl: FetchLike = async (_url, init) => {
+      sentBody = JSON.parse(init!.body!);
+      return { ok: true, status: 200, json: async () => ({ id: 'carousel-1' }) };
+    };
+    const id = await createCarouselContainer('ig-1', ['child-1', 'child-2'], 'hi', 'tok', fetchImpl);
+    expect(id).toBe('carousel-1');
+    expect(sentBody).toMatchObject({
+      media_type: 'CAROUSEL',
+      children: ['child-1', 'child-2'],
+      caption: 'hi',
+    });
+  });
+
+  it('throws when carousel creation returns no id', async () => {
+    await expect(
+      createCarouselContainer('ig-1', ['c'], 'x', 'tok', oneResponse({ error: { message: 'bad' } }, false, 400)),
+    ).rejects.toThrow(/carousel container creation failed \(400\): bad/);
   });
 });
 

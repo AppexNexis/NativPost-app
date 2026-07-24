@@ -46,7 +46,7 @@ unfilled Phase-0 sign-off keeps the strategy fail-closed (`manual` only).
 | **OAuth flow** | Facebook Login → Page + connected IG Business/Creator account; token authorized by the customer (account is customer-owned). |
 | **Required scopes** | `instagram_basic`, `instagram_content_publish`, `pages_show_list`, `pages_read_engagement` (+ `business_management` for delegated). |
 | **Required app review** | Yes — Meta App Review for `instagram_content_publish` + advanced access; Business Verification. |
-| **Supported operations** | `publish_post` (image, REELS). Account create / profile edits stay `manual` (customer-owned). Carousel = follow-up. |
+| **Supported operations** | `publish_post` (single image, REELS video, and multi-image carousel up to 10). Account create / profile edits stay `manual` (customer-owned). |
 | **Media handling** | Container → poll `status_code` until `FINISHED` → `media_publish`. Image immediate-ish; REELS need processing. Media URLs must be publicly reachable. |
 | **Rate limits** | 25 API-published posts per IG account per rolling 24h (Meta-enforced). Respect + surface as a capacity constraint. |
 | **Token type + refresh** | Long-lived Page/IG token (~60 days). **Auto-refresh:** proactive by expiry via `fb_exchange_token` (needs `META_APP_ID`/`META_APP_SECRET`). Vault blob JSON `{ accessToken, igUserId, expiresAt? }`. |
@@ -75,8 +75,8 @@ unfilled Phase-0 sign-off keeps the strategy fail-closed (`manual` only).
   ```
   Do this at the point you turn Instagram on — not in a preemptive bootstrap.
   Until registered, `official_api` stays fail-closed and IG accounts run `manual`.
-- **Follow-ups (not yet done):** carousel (multi-image) support. (Platform media
-  id → billing `platform_post_id` and token auto-refresh are now done.)
+- **Follow-ups:** none outstanding. (Platform media id → billing, token
+  auto-refresh, and multi-image carousel are all done.)
 
 ---
 
