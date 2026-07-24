@@ -1,4 +1,5 @@
 import { desc, eq } from 'drizzle-orm';
+import Link from 'next/link';
 
 import { getDb } from '@/libs/DB';
 import {
@@ -9,6 +10,7 @@ import {
 } from '@/lib/msi/display';
 import { ACCOUNT_STATES } from '@/lib/msi/lifecycle';
 import { rollupCountries, summarizePipeline } from '@/lib/msi/ops-overview';
+import { PLATFORM_LABELS } from '@/lib/platforms';
 import {
   managedAccountSchema,
   msiActivityLogSchema,
@@ -67,6 +69,18 @@ export default async function AdminMsiOpsPage() {
       .limit(15),
   ]);
 
+  const accountsList = await db
+    .select({
+      id: managedAccountSchema.id,
+      displayName: managedAccountSchema.displayName,
+      platform: managedAccountSchema.platform,
+      country: managedAccountSchema.country,
+      lifecycleState: managedAccountSchema.lifecycleState,
+    })
+    .from(managedAccountSchema)
+    .orderBy(desc(managedAccountSchema.updatedAt))
+    .limit(50);
+
   const pipeline = summarizePipeline(accounts.map(a => a.lifecycleState));
   const countries = rollupCountries(accounts, operators, devices);
   const live = pipeline.live + pipeline.active;
@@ -116,6 +130,43 @@ export default async function AdminMsiOpsPage() {
             </span>
           ))}
         </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="mb-3 text-sm font-semibold text-foreground">Accounts</h2>
+        {accountsList.length === 0
+          ? (
+              <p className="text-sm text-muted-foreground">
+                No managed accounts yet.
+              </p>
+            )
+          : (
+              <div className="divide-y divide-border overflow-hidden rounded-xl border border-border">
+                {accountsList.map(a => (
+                  <Link
+                    key={a.id}
+                    href={`/admin/msi/${a.id}`}
+                    className="flex items-center justify-between gap-3 bg-card px-4 py-3 text-sm transition hover:bg-muted/50"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-foreground">
+                        {a.displayName || 'Managed account'}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {PLATFORM_LABELS[a.platform] || a.platform}
+                        {' · '}
+                        {a.country}
+                      </div>
+                    </div>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-micro font-medium ${toneBadgeClass(stateTone(a.lifecycleState))}`}
+                    >
+                      {stateLabel(a.lifecycleState)}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
       </section>
 
       <section className="mt-8">
