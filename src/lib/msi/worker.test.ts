@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { planWorkerTick, type WorkerJob } from './worker';
+import {
+  deriveWorkerMutations,
+  planWorkerTick,
+  type WorkerJob,
+  type WorkerPlan,
+} from './worker';
 
 const now = new Date('2026-07-23T12:00:00Z');
 const past = new Date(now.getTime() - 60_000);
@@ -69,5 +74,55 @@ describe('planWorkerTick', () => {
       jobsToRetry: [],
       slaBreaches: [],
     });
+  });
+});
+
+describe('deriveWorkerMutations', () => {
+  const jobs: WorkerJob[] = [
+    { id: 'j-retry', state: 'failed', attempts: 1, maxAttempts: 3, slaDueAt: null, managedAccountId: 'acc-1' },
+    { id: 'j-breach', state: 'in_progress', attempts: 0, maxAttempts: 3, slaDueAt: past, managedAccountId: 'acc-2' },
+  ];
+
+  const empty: WorkerPlan = {
+    reservationsToExpire: [],
+    reviewsToClose: [],
+    jobsToRetry: [],
+    slaBreaches: [],
+  };
+
+  it('passes reservations/reviews through and enriches retries + breaches', () => {
+    const plan = planWorkerTick({
+      jobs,
+      reviews: [{ id: 'rev', status: 'pending', windowClosesAt: past }],
+      reservations: [{ id: 'r', status: 'held', expiresAt: past }],
+      now,
+    });
+    const mut = deriveWorkerMutations(plan, jobs);
+
+    expect(mut.reservationsToExpire).toEqual(['r']);
+    expect(mut.reviewsToClose).toEqual(['rev']);
+    // retry carries the incremented attempt count
+    expect(mut.jobRetries).toEqual([{ id: 'j-retry', attempts: 2 }]);
+    // breach becomes a built, attributed activity event
+    expect(mut.slaBreachEvents).toHaveLength(1);
+    expect(mut.slaBreachEvents[0]).toMatchObject({
+      managedAccountId: 'acc-2',
+      jobId: 'j-breach',
+      actorType: 'system',
+      action: 'sla_breach',
+    });
+    expect(mut.slaBreachEvents[0]!.detail).toEqual({ slaDueAt: past });
+  });
+
+  it('skips retries for ids not present in jobs', () => {
+    const plan = { ...empty, jobsToRetry: ['ghost'] };
+    expect(deriveWorkerMutations(plan, jobs).jobRetries).toEqual([]);
+  });
+
+  it('attributes a breach event to a null account when the job is unknown', () => {
+    const plan = { ...empty, slaBreaches: ['ghost'] };
+    const ev = deriveWorkerMutations(plan, jobs).slaBreachEvents[0];
+    expect(ev!.managedAccountId).toBeNull();
+    expect(ev!.jobId).toBe('ghost');
   });
 });

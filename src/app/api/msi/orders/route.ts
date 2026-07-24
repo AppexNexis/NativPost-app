@@ -4,8 +4,8 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
-import { isSupportedCountry, isSupportedPlatform } from '@/lib/msi/catalog';
 import { createAuthorizationGrant } from '@/lib/msi/grant-service';
+import { parseOrderRequest } from '@/lib/msi/order-request';
 import { brandProfileSchema, msiProvisioningOrderSchema } from '@/models/Schema';
 
 // -----------------------------------------------------------
@@ -22,45 +22,12 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => null);
-  if (!body) {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  const parsed = parseOrderRequest(body);
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-
-  const {
-    brandProfileId,
-    country,
-    platform,
-    niche,
-    handlePreferences,
-    quantity,
-    authorized,
-  } = body;
-
-  if (!authorized) {
-    return NextResponse.json(
-      { error: 'Authorization is required to configure managed accounts' },
-      { status: 400 },
-    );
-  }
-  if (!brandProfileId || !country || !platform) {
-    return NextResponse.json(
-      { error: 'brand, country, and platform are required' },
-      { status: 400 },
-    );
-  }
-  if (!isSupportedCountry(country) || !isSupportedPlatform(platform)) {
-    return NextResponse.json(
-      { error: 'Unsupported country or platform' },
-      { status: 400 },
-    );
-  }
-  const qty = Number(quantity ?? 1);
-  if (!Number.isInteger(qty) || qty < 1) {
-    return NextResponse.json(
-      { error: 'quantity must be a positive integer' },
-      { status: 400 },
-    );
-  }
+  const { brandProfileId, country, platform, niche, handlePreferences, quantity }
+    = parsed.value;
 
   const db = await getDb();
 
@@ -89,21 +56,17 @@ export async function POST(request: NextRequest) {
       scope: { platforms: [platform], countries: [country] },
     });
 
-    const handles = Array.isArray(handlePreferences)
-      ? handlePreferences.filter((h: unknown) => typeof h === 'string')
-      : [];
-
     const [order] = await db
       .insert(msiProvisioningOrderSchema)
       .values({
         orgId: orgId!,
-        quantity: qty,
+        quantity,
         status: 'pending', // no payment, no provisioning
         configSnapshot: {
           country,
           platform,
-          niche: niche ?? null,
-          handlePreferences: handles,
+          niche,
+          handlePreferences,
           grantId: grant.id,
         },
       })

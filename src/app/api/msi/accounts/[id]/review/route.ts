@@ -6,6 +6,7 @@ import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { buildActivityEvent } from '@/lib/msi/audit';
 import { transitionAccount } from '@/lib/msi/lifecycle';
+import { parseReviewRequest } from '@/lib/msi/review-request';
 import {
   GuardFailedError,
   InvalidTransitionError,
@@ -36,12 +37,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
 
   const body = await request.json().catch(() => null);
-  const action = body?.action;
-  if (action !== 'approve' && action !== 'request_changes') {
-    return NextResponse.json(
-      { error: 'action must be "approve" or "request_changes"' },
-      { status: 400 },
-    );
+  const parsed = parseReviewRequest(body);
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
 
   const db = await getDb();
@@ -71,7 +69,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
   const now = new Date();
   try {
-    if (action === 'approve') {
+    if (parsed.value.action === 'approve') {
       const next = transitionAccount('customer_review', 'live', {
         customerApproved: true,
       });
@@ -98,11 +96,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ state: next }, { status: 200 });
     }
 
-    // request_changes
-    const rawChanges = Array.isArray(body?.changes) ? body.changes : [];
-    const changes = rawChanges.filter(
-      (c: unknown) => c !== null && typeof c === 'object',
-    );
+    // request_changes — changes already normalized by parseReviewRequest.
+    const changes = parsed.value.changes;
     const next = transitionAccount('customer_review', 'revisions');
     await db
       .update(managedAccountSchema)
