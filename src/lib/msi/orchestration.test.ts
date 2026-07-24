@@ -52,6 +52,16 @@ describe('planJobOrchestration', () => {
   it('skips jobs whose account is missing', () => {
     expect(planJobOrchestration([job({ managedAccountId: 'ghost' })], accounts)).toEqual([]);
   });
+
+  it('threads a publish job content ref into ctx.payload', () => {
+    const withContent = planJobOrchestration(
+      [job({ jobType: 'publish_post', contentItemId: 'content-9' })],
+      accounts,
+    );
+    expect(withContent[0]!.ctx.payload).toEqual({ contentItemId: 'content-9' });
+    // provisioning jobs carry no payload
+    expect(planJobOrchestration([job()], accounts)[0]!.ctx.payload).toBeUndefined();
+  });
 });
 
 describe('resolveStartOutcome', () => {

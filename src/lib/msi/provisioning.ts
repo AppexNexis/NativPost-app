@@ -3,18 +3,24 @@
 // `createManagedAccount` is the DB service that composes it so that NO managed
 // account row can be created without an active, in-scope authorization grant.
 
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 import {
   authorizationGrantSchema,
   managedAccountSchema,
   msiActivityLogSchema,
+  msiJobSchema,
+  msiProvisioningOrderSchema,
+  msiTaskSchema,
 } from '@/models/Schema';
 
 import { buildActivityEvent } from './audit';
+import { resolveStrategy } from './execution';
 import type { GrantLike, ScopeRequest } from './grant';
-import { assertActiveGrant, assertGrantCoversScope } from './grant';
+import { assertActiveGrant, assertGrantCoversScope, isGrantActive } from './grant';
+import { transitionAccount } from './lifecycle';
+import { buildProvisioningJob } from './provisioning-jobs';
 
 export type ProvisionRequest = {
   orgId: string;
@@ -92,4 +98,117 @@ export async function createManagedAccount(req: ProvisionRequest) {
   );
 
   return account;
+}
+
+/**
+ * Move an ordered account into provisioning and spin up its create_account job.
+ * Sets the execution strategy (platform default). Called by fulfilment.
+ */
+export async function startProvisioning(
+  managedAccountId: string,
+  orgId: string,
+  platform: string,
+  grantActive: boolean,
+) {
+  // Guarded transition: prereqs are satisfied at fulfilment time.
+  transitionAccount('ordered', 'provisioning', {
+    grantActive,
+    paymentConfirmed: true,
+    capacityReserved: true,
+  });
+
+  await db
+    .update(managedAccountSchema)
+    .set({
+      lifecycleState: 'provisioning',
+      executionStrategy: resolveStrategy({ executionStrategy: null, platform }),
+    })
+    .where(eq(managedAccountSchema.id, managedAccountId));
+
+  const { job, tasks } = buildProvisioningJob({ orgId, managedAccountId });
+  const [row] = await db
+    .insert(msiJobSchema)
+    .values(job)
+    .returning({ id: msiJobSchema.id });
+  if (row) {
+    await db.insert(msiTaskSchema).values(
+      tasks.map(t => ({ jobId: row.id, taskType: t.taskType, sequence: t.sequence })),
+    );
+    await db.insert(msiActivityLogSchema).values(
+      buildActivityEvent({
+        managedAccountId,
+        jobId: row.id,
+        actorType: 'system',
+        action: 'provisioning_started',
+      }),
+    );
+  }
+}
+
+type OrderConfig = {
+  country?: string;
+  platform?: string;
+  niche?: string | null;
+  handlePreferences?: string[];
+  grantId?: string;
+};
+
+/**
+ * Fulfil a pending/paid order: create the managed account(s) under the order's
+ * grant and start provisioning each. The bridge from "order" to real work —
+ * called by the billing webhook on payment (or manually by staff).
+ */
+export async function fulfillOrder(orderId: string) {
+  const [order] = await db
+    .select()
+    .from(msiProvisioningOrderSchema)
+    .where(
+      and(
+        eq(msiProvisioningOrderSchema.id, orderId),
+        inArray(msiProvisioningOrderSchema.status, ['pending', 'paid']),
+      ),
+    )
+    .limit(1);
+  if (!order) {
+    throw new Error('Order not found or not fulfillable');
+  }
+
+  const config = (order.configSnapshot ?? {}) as OrderConfig;
+  if (!config.grantId || !config.country || !config.platform) {
+    throw new Error('Order configuration is incomplete');
+  }
+
+  const [grant] = await db
+    .select()
+    .from(authorizationGrantSchema)
+    .where(eq(authorizationGrantSchema.id, config.grantId))
+    .limit(1);
+  if (!grant) {
+    throw new Error('Authorization grant not found');
+  }
+
+  const created: string[] = [];
+  for (let i = 0; i < order.quantity; i++) {
+    // eslint-disable-next-line no-await-in-loop
+    const account = await createManagedAccount({
+      orgId: order.orgId,
+      brandProfileId: grant.brandProfileId,
+      grantId: grant.id,
+      platform: config.platform,
+      country: config.country,
+      niche: config.niche ?? undefined,
+      handlePreferences: config.handlePreferences ?? [],
+      orderId: order.id,
+    });
+    // eslint-disable-next-line no-await-in-loop
+    await startProvisioning(account.id, order.orgId, config.platform, isGrantActive(grant));
+    created.push(account.id);
+  }
+
+  await db
+    .update(msiProvisioningOrderSchema)
+    .set({ status: 'fulfilling', paidAt: order.paidAt ?? new Date() })
+    .where(eq(msiProvisioningOrderSchema.id, orderId));
+
+  return created;
 }

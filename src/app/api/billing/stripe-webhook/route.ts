@@ -6,10 +6,11 @@ import Stripe from 'stripe';
 
 import { addAiCredits } from '@/lib/ai-studio/server';
 import { firePlanUpgradedEmail, fireSubscriptionCancelledEmail } from '@/lib/billing';
+import { fulfillOrder } from '@/lib/msi/provisioning';
 import { getPlanByStripePriceId, PLAN_CONFIGS } from '@/lib/plans';
 import { sendTrustpilotInvitation } from '@/lib/trustpilot';
 import { getDb } from '@/libs/DB';
-import { organizationSchema } from '@/models/Schema';
+import { msiProvisioningOrderSchema, organizationSchema } from '@/models/Schema';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
@@ -126,6 +127,30 @@ export async function POST(request: NextRequest) {
         const sessionType = session.metadata?.type;
 
         if (!orgId) {
+          break;
+        }
+
+        // ── MSI managed-account order: mark paid + fulfil (provision) ──
+        if (sessionType === 'msi_order') {
+          const msiOrderId = session.metadata?.msiOrderId;
+          if (msiOrderId) {
+            await db
+              .update(msiProvisioningOrderSchema)
+              .set({
+                status: 'paid',
+                stripeCheckoutSessionId: session.id,
+                stripeSubscriptionId:
+                  typeof session.subscription === 'string' ? session.subscription : null,
+                paidAt: new Date(),
+              })
+              .where(eq(msiProvisioningOrderSchema.id, msiOrderId));
+            try {
+              await fulfillOrder(msiOrderId);
+              console.log(`[Stripe Webhook] msi_order paid + fulfilled: ${msiOrderId}`);
+            } catch (fulfilErr) {
+              console.error('[Stripe Webhook] msi fulfilment failed:', fulfilErr);
+            }
+          }
           break;
         }
 

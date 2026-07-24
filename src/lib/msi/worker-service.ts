@@ -233,6 +233,7 @@ export async function runWorkerTick(now: Date = new Date()) {
     jobType: j.jobType,
     state: assignedThisTick.has(j.id) ? 'assigned' : j.state,
     startedAt: j.startedAt,
+    contentItemId: j.contentItemId,
   }));
   const toStart = selectJobsToStart(orchestrationJobs);
 

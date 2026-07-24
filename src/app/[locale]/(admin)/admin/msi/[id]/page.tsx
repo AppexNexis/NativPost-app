@@ -2,6 +2,7 @@ import { desc, eq, inArray } from 'drizzle-orm';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
+import { JobActions } from '@/components/admin/msi/JobActions';
 import { getDb } from '@/libs/DB';
 import { stateLabel, stateTone, toneBadgeClass } from '@/lib/msi/display';
 import {
@@ -190,6 +191,12 @@ export default async function AdminMsiAccountJobsPage({ params }: RouteParams) {
                           </ul>
                         )
                       : null}
+
+                    <JobActions
+                      jobId={job.id}
+                      jobState={job.state}
+                      tasks={job.tasks}
+                    />
                   </div>
                 ))}
               </div>

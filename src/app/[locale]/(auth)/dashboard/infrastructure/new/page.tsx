@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select';
 import { PageHeader } from '@/features/dashboard/PageHeader';
 import { MSI_COUNTRIES, MSI_PLATFORMS } from '@/lib/msi/catalog';
+import { MSI_PER_ACCOUNT_USD } from '@/lib/msi/pricing';
 
 type Brand = { id: string; brandName: string };
 
@@ -175,6 +176,22 @@ export default function ConfigureAccountsPage() {
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `Server returned ${res.status}`);
+      }
+      const { order } = await res.json();
+      // Proceed to Stripe checkout; fall back to a saved state if unavailable.
+      try {
+        const checkout = await fetch(`/api/msi/orders/${order.id}/checkout`, {
+          method: 'POST',
+        });
+        if (checkout.ok) {
+          const { url } = await checkout.json();
+          if (typeof url === 'string' && url) {
+            window.location.href = url;
+            return;
+          }
+        }
+      } catch {
+        // fall through to the saved state
       }
       setDone(true);
       toast.success('Configuration saved');
@@ -363,7 +380,7 @@ export default function ConfigureAccountsPage() {
 
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-micro text-muted-foreground">
-                          No payment is taken now.
+                          {`$${MSI_PER_ACCOUNT_USD * quantity}/mo · secure checkout`}
                         </p>
                         <Button disabled={!canSubmit} onClick={submit}>
                           {submitting
@@ -374,7 +391,7 @@ export default function ConfigureAccountsPage() {
                                 </>
                               )
                             : (
-                                'Save configuration'
+                                'Continue to payment'
                               )}
                         </Button>
                       </div>

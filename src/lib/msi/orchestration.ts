@@ -16,6 +16,8 @@ export type OrchestrationJob = {
   jobType: string;
   state: string;
   startedAt: Date | null;
+  /** For publish_post jobs — the content to publish (docs §13). */
+  contentItemId?: string | null;
 };
 
 export type OrchestrationAccount = {
@@ -75,6 +77,10 @@ export function planJobOrchestration(
         platform: account.platform,
         country: account.country,
         strategy,
+        // Carry the content ref so a publish adapter knows what to publish.
+        ...(job.contentItemId
+          ? { payload: { contentItemId: job.contentItemId } }
+          : {}),
       },
     });
   }
