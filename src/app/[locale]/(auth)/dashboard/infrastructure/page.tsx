@@ -6,8 +6,8 @@ import Link from 'next/link';
 import { useMemo } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/features/dashboard/EmptyState';
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
+import { InfrastructureLanding } from '@/features/dashboard/InfrastructureLanding';
 import { PageHeader } from '@/features/dashboard/PageHeader';
 import { GridPageSkeleton } from '@/features/dashboard/PageSkeletons';
 import { StatCard } from '@/features/dashboard/StatCard';
@@ -142,11 +142,7 @@ export default function InfrastructurePage() {
             )
           : accounts.length === 0
             ? (
-                <EmptyState
-                  icon={Boxes}
-                  title="No managed accounts yet"
-                  description="Managed accounts you order will appear here with a live build timeline from order to live."
-                />
+                <InfrastructureLanding />
               )
             : (
                 <>
