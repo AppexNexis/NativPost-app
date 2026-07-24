@@ -113,13 +113,19 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   // Strip locale prefix for active matching
   const clean = pathname.replace(/^\/[a-z]{2}(\/|$)/, '/');
 
+  // Longest matching nav path wins, so /admin/msi/queue highlights Queue only,
+  // not also Operations (/admin/msi). /admin/msi/[id] still highlights Operations.
+  const bestPath = NAV.flatMap(g => g.items.map(i => i.href.split('?')[0]!))
+    .filter(p => clean === p || clean.startsWith(`${p}/`))
+    .sort((a, b) => b.length - a.length)[0];
+
   const isActive = (href: string) => {
     const path = href.split('?')[0]!;
     const query = href.includes('?') ? href.split('?')[1] : null;
-    if (query) return clean === path && pathname.includes(query);
-    // Exact match for overview, prefix match for others
-    if (href === '/admin/support') return clean === '/admin/support';
-    return clean.startsWith(path);
+    if (query) {
+      return clean === path && pathname.includes(query);
+    }
+    return path === bestPath;
   };
 
   const Sidebar = () => (
