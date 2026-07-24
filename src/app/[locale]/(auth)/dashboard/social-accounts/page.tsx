@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/tooltip';
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
 import { LoadingState } from '@/features/dashboard/LoadingState';
+import { ManagedAccountsSection } from '@/features/dashboard/ManagedAccountsSection';
 import { ListPageSkeleton } from '@/features/dashboard/PageSkeletons';
 
 // ---------------------------------------------------------------------------
@@ -568,6 +569,8 @@ function SocialAccountsContent() {
           ))}
         </div>
       )}
+
+      <ManagedAccountsSection />
 
       <p className="mt-8 text-meta text-muted-foreground">
         NativPost uses official platform APIs with OAuth 2.0 and OAuth 1.0a where required.

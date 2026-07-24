@@ -74,7 +74,7 @@ async function main() {
 
     const initialState = account.lifecycleState;
     const initialCount = await countTimeline();
-    console.log(`Demo account ${id} (@${account.displayName ?? '—'})`);
+    console.log(`Demo account ${id} (${account.displayName ?? '—'})`);
     console.log(`  initial state: ${initialState}, timeline events: ${initialCount}\n`);
 
     if (initialState !== 'customer_review') {
