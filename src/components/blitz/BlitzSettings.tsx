@@ -37,6 +37,7 @@ type SocialAccount = {
   platform: string;
   handle: string | null;
   profileImageUrl: string | null;
+  accountType: string | null;
 };
 
 type AIInfluencer = {
@@ -260,6 +261,7 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
             platform: a.platform,
             handle: a.platformUsername ?? a.handle ?? null,
             profileImageUrl: a.profileImageUrl ?? null,
+            accountType: a.accountType ?? null,
           }));
         setConnectedAccounts(active);
       })
@@ -895,8 +897,13 @@ export function BlitzSettings({ campaignId, open, onClose, onSaved, initial }: B
                         className="flex flex-col items-start gap-2 rounded-lg border bg-card p-2.5"
                       >
                         <div className="w-full min-w-0">
-                          <p className="truncate text-sm font-medium capitalize">
+                          <p className="flex items-center gap-1 truncate text-sm font-medium capitalize">
                             {acc.platform}
+                            {acc.accountType === 'managed' && (
+                              <span className="rounded bg-primary/10 px-1 text-[9px] font-medium normal-case text-primary">
+                                Managed
+                              </span>
+                            )}
                           </p>
                           {acc.handle && (
                             <p className="truncate text-micro text-muted-foreground">

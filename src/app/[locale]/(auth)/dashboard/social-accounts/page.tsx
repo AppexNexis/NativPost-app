@@ -368,14 +368,17 @@ function SocialAccountsContent() {
     }
   };
 
-  const resolveAccount = (entry: PlatformEntry): SocialAccount | undefined => {
+  // All active accounts for a platform entry (multiple accounts per platform
+  // are supported — e.g. 5 TikToks). The first is shown on the main row; the
+  // rest render as sub-rows, and "Add another" connects one more.
+  const resolveAccounts = (entry: PlatformEntry): SocialAccount[] => {
     if (entry.id === 'twitter_v1') {
-      return accounts.find(a => a.platform === 'twitter' && a.isActive && a.oauthToken);
+      return accounts.filter(a => a.platform === 'twitter' && a.isActive && a.oauthToken);
     }
     if (entry.id === 'twitter') {
-      return accounts.find(a => a.platform === 'twitter' && a.isActive && a.accessToken);
+      return accounts.filter(a => a.platform === 'twitter' && a.isActive && a.accessToken);
     }
-    return accounts.find(a => a.platform === entry.id && a.isActive);
+    return accounts.filter(a => a.platform === entry.id && a.isActive);
   };
 
   const connectedCount = accounts.filter(a => a.isActive).length;
@@ -429,7 +432,9 @@ function SocialAccountsContent() {
               <div className="rounded-xl border bg-card">
                 {group.platforms.map((platform, i) => {
                   const PIcon = platform.icon;
-                  const account = resolveAccount(platform);
+                  const platformAccounts = resolveAccounts(platform);
+                  const account = platformAccounts[0];
+                  const extraAccounts = platformAccounts.slice(1);
                   const connected = !!account;
                   const isLast = i === group.platforms.length - 1;
                   const isMediaRow = platform.id === 'twitter_v1';
@@ -438,13 +443,13 @@ function SocialAccountsContent() {
                     <div
                       key={`${platform.id}-${i}`}
                       className={[
-                        'flex items-center gap-3 p-4 sm:gap-4 sm:px-5',
                         !isLast ? 'border-b' : '',
                         isMediaRow && !connected ? 'bg-muted/30' : '',
                       ]
                         .filter(Boolean)
                         .join(' ')}
                     >
+                    <div className="flex items-center gap-3 p-4 sm:gap-4 sm:px-5">
                       {/* Platform icon */}
                       <div
                         className={[
@@ -537,6 +542,15 @@ function SocialAccountsContent() {
                               'Disconnect'
                             )}
                           </button>
+
+                          {/* Connect an ADDITIONAL account on the same platform. */}
+                          <button
+                            type="button"
+                            onClick={() => connectPlatform(platform)}
+                            className="shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted sm:px-3"
+                          >
+                            + Add
+                          </button>
                         </div>
                       ) : (
                         <div className="flex shrink-0 items-center gap-2">
@@ -556,6 +570,35 @@ function SocialAccountsContent() {
                           </button>
                         </div>
                       )}
+                    </div>
+
+                    {/* Additional accounts connected to this same platform. */}
+                    {extraAccounts.map(extra => (
+                      <div
+                        key={extra.id}
+                        className="flex items-center gap-3 px-4 pb-3 pl-16 sm:gap-4 sm:px-5 sm:pl-[4.75rem]"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-xs text-emerald-600">
+                          {extra.platformUsername ? `@${extra.platformUsername}` : 'Connected'}
+                        </span>
+                        <Avatar
+                          src={extra.profileImageUrl}
+                          username={extra.platformUsername}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => disconnectAccount(extra.id)}
+                          disabled={disconnecting === extra.id}
+                          className="shrink-0 rounded-lg border px-2.5 py-1 text-xs font-medium text-red-500 transition-colors hover:bg-red-50 disabled:opacity-50 sm:px-3"
+                        >
+                          {disconnecting === extra.id ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            'Disconnect'
+                          )}
+                        </button>
+                      </div>
+                    ))}
                     </div>
                   );
                 })}
