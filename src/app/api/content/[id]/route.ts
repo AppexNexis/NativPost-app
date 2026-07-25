@@ -83,6 +83,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const publicationRows = await db
       .select({
         platform: publishingQueueSchema.platform,
+        socialAccountId: publishingQueueSchema.socialAccountId,
         status: publishingQueueSchema.status,
         platformPostId: publishingQueueSchema.platformPostId,
         permalink: publishingQueueSchema.permalink,
@@ -91,6 +92,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         createdAt: publishingQueueSchema.createdAt,
         platformUsername: socialAccountSchema.platformUsername,
         platformUserId: socialAccountSchema.platformUserId,
+        accountType: socialAccountSchema.accountType,
       })
       .from(publishingQueueSchema)
       .leftJoin(
@@ -99,16 +101,20 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       )
       .where(eq(publishingQueueSchema.contentItemId, id));
 
-    // Deduplicate to the most recent row per platform (a re-publish will
-    // insert a new row; the UI should show the latest attempt).
-    const latestByPlatform = new Map<string, typeof publicationRows[number]>();
+    // Deduplicate to the most recent row PER ACCOUNT (multiple accounts per
+    // platform are supported now — a re-publish inserts a new row, so the UI
+    // shows the latest attempt for each account, and every account gets its
+    // own post link). Legacy rows without a socialAccountId fall back to
+    // platform-level keying.
+    const latestByAccount = new Map<string, typeof publicationRows[number]>();
     for (const row of publicationRows) {
-      const prev = latestByPlatform.get(row.platform);
+      const key = row.socialAccountId || row.platform;
+      const prev = latestByAccount.get(key);
       const rowTime = (row.publishedAt || row.createdAt || new Date(0)).getTime();
       const prevTime = prev ? (prev.publishedAt || prev.createdAt || new Date(0)).getTime() : -1;
-      if (rowTime >= prevTime) latestByPlatform.set(row.platform, row);
+      if (rowTime >= prevTime) latestByAccount.set(key, row);
     }
-    const publications = Array.from(latestByPlatform.values());
+    const publications = Array.from(latestByAccount.values());
 
     return NextResponse.json({ item, publications }, { status: 200 });
   } catch (err) {

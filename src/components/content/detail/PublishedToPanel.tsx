@@ -17,6 +17,7 @@ import { PlatformIcon } from '../preview-helpers';
 
 export type Publication = {
   platform: string;
+  socialAccountId?: string | null;
   status: string;
   platformPostId: string | null;
   permalink: string | null;
@@ -25,6 +26,7 @@ export type Publication = {
   createdAt: string | null;
   platformUsername: string | null;
   platformUserId: string | null;
+  accountType?: string | null;
 };
 
 type Props = {
@@ -73,7 +75,9 @@ export function PublishedToPanel({ publications, onRetry, isRetrying }: Props) {
       </div>
       <TooltipProvider>
         <div className="space-y-2.5">
-          {publications.map((pub) => {
+          {publications.map((pub, idx) => {
+            // Unique per-account key (multiple accounts can share a platform).
+            const rowKey = pub.socialAccountId || `${pub.platform}-${idx}`;
             const pill = statusPill(pub.status);
             const meta = PLATFORM_META[pub.platform] || { label: pub.platform, brandColor: '#6b7280' };
             const isPublished = pill.label === 'Published';
@@ -90,11 +94,18 @@ export function PublishedToPanel({ publications, onRetry, isRetrying }: Props) {
               : { url: null, isFallback: false };
 
             return (
-              <div key={pub.platform} className="flex flex-wrap items-center gap-2 rounded-md border bg-background/60 px-2.5 py-2">
+              <div key={rowKey} className="flex flex-wrap items-center gap-2 rounded-md border bg-background/60 px-2.5 py-2">
                 <div className="flex min-w-0 flex-1 items-center gap-2">
                   <PlatformIcon platform={pub.platform} size="sm" />
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{meta.label}</p>
+                    <p className="flex items-center gap-1 truncate text-sm font-medium">
+                      {meta.label}
+                      {pub.accountType === 'managed' && (
+                        <span className="rounded bg-primary/10 px-1 text-[9px] font-medium text-primary">
+                          Managed
+                        </span>
+                      )}
+                    </p>
                     {pub.platformUsername && (
                       <p className="truncate text-micro text-muted-foreground">
                         @
@@ -169,10 +180,10 @@ export function PublishedToPanel({ publications, onRetry, isRetrying }: Props) {
                         size="sm"
                         variant="ghost"
                         className="size-6 p-0"
-                        onClick={() => copy(pub.platform, url)}
+                        onClick={() => copy(rowKey, url)}
                         aria-label={`Copy ${meta.label} link`}
                       >
-                        {copiedFor === pub.platform
+                        {copiedFor === rowKey
                           ? <Check className="size-3 text-emerald-500" />
                           : <Copy className="size-3" />}
                       </Button>
