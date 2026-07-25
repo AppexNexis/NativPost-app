@@ -269,6 +269,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const results: Array<{
       platform: string;
+      account?: string;
       success: boolean;
       platformPostId?: string;
       permalink?: string;
@@ -277,15 +278,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       queued?: boolean;
     }> = [];
 
-    // 3. Publish to each platform
-    for (const platform of platforms) {
-      const account = effectiveAccounts.find(a => a.platform === platform);
+    // Account-level targeting: publish to the explicitly selected accounts, or
+    // (legacy / no selection) to EVERY active account of each target platform.
+    // This is what enables multiple accounts per platform + managed accounts as
+    // first-class targets. Single-account orgs are unaffected.
+    const selectedAccountIds = (item.targetAccountIds as string[] | null) ?? [];
 
-      if (!account) {
-        // For Blitz posts, a missing account can mean the user disabled
-        // it in the Blitz settings drawer after the post was scheduled.
-        // We silently skip — per product decision, disabled accounts
-        // must not mark a post as failed.
+    // 3. Publish to each platform's selected / connected accounts
+    for (const platform of platforms) {
+      const platformAccounts = effectiveAccounts.filter(
+        a =>
+          a.platform === platform
+          && (selectedAccountIds.length === 0 || selectedAccountIds.includes(a.id)),
+      );
+
+      if (platformAccounts.length === 0) {
+        // Explicit account selection that doesn't include this platform → skip.
+        if (selectedAccountIds.length > 0) {
+          continue;
+        }
+        // For Blitz posts, a missing account can mean the user disabled it in
+        // the Blitz settings drawer — silent skip, never a failure.
         const wasDisabledForBlitz = accounts.find(a => a.platform === platform) != null;
         if (wasDisabledForBlitz) {
           continue;
@@ -294,25 +307,28 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         continue;
       }
 
-      // Managed accounts publish via the MSI execution pipeline (a publish_post
-      // job), not the OAuth path (docs §13). They carry no access token.
-      if (isManagedSocialAccount(account)) {
-        const managedAccountId = managedAccountIdOf(account);
-        if (managedAccountId) {
-          await enqueueManagedPublish({ orgId: orgId!, managedAccountId, contentItemId: item.id });
-          results.push({ platform, success: true, managed: true, queued: true });
-        } else {
-          results.push({ platform, success: false, error: `Managed ${platform} account not linked` });
+      for (const account of platformAccounts) {
+        const accountLabel = account.platformUsername || undefined;
+
+        // Managed accounts publish via the MSI execution pipeline (a
+        // publish_post job), not the OAuth path (docs §13). No access token.
+        if (isManagedSocialAccount(account)) {
+          const managedAccountId = managedAccountIdOf(account);
+          if (managedAccountId) {
+            await enqueueManagedPublish({ orgId: orgId!, managedAccountId, contentItemId: item.id });
+            results.push({ platform, account: accountLabel, success: true, managed: true, queued: true });
+          } else {
+            results.push({ platform, account: accountLabel, success: false, error: `Managed ${platform} account not linked` });
+          }
+          continue;
         }
-        continue;
-      }
 
-      if (!account.accessToken) {
-        results.push({ platform, success: false, error: `${platform} access token missing` });
-        continue;
-      }
+        if (!account.accessToken) {
+          results.push({ platform, account: accountLabel, success: false, error: `${platform} access token missing` });
+          continue;
+        }
 
-      // Resolve caption
+        // Resolve caption
       const platformSpecificData = (item.platformSpecific as Record<string, unknown>) || {};
       const platformCaption = platformSpecificData[platform];
       const caption = (typeof platformCaption === 'string' && platformCaption.trim())
@@ -367,7 +383,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         account.platformUsername || undefined,
       );
 
-      results.push({ platform, ...result });
+      results.push({ platform, account: accountLabel, ...result });
 
       // 4. Record in publishing queue
       await db.insert(publishingQueueSchema).values({
@@ -381,6 +397,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         errorMessage: result.error || null,
         publishedAt: result.success ? new Date() : null,
       });
+      } // end account loop
     }
 
     // 5. Update content item status

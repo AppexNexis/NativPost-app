@@ -1,0 +1,1 @@
+ALTER TABLE "content_item" ADD COLUMN "target_account_ids" jsonb DEFAULT '[]'::jsonb;

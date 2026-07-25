@@ -178,6 +178,11 @@ export const contentItemSchema = pgTable('content_item', {
   variantNumber: integer('variant_number').default(1),
   isSelectedVariant: boolean('is_selected_variant').default(false),
   targetPlatforms: jsonb('target_platforms').default([]),
+  // Specific social_account ids to publish to (account-level targeting; enables
+  // multiple accounts per platform + managed accounts as first-class targets).
+  // Empty/absent → publish to every active account of each targetPlatform
+  // (backward-compatible with the platform-only model).
+  targetAccountIds: jsonb('target_account_ids').$type<string[]>().default([]),
   platformSpecific: jsonb('platform_specific').default({}),
   status: text('status').default('draft').notNull(),
   scheduledFor: timestamp('scheduled_for', { mode: 'date' }),

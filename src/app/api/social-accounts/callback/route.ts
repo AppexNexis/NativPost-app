@@ -113,16 +113,33 @@ export async function GET(request: NextRequest) {
     // Use page token if available (Facebook/Instagram), otherwise use the OAuth token
     const effectiveAccessToken = profile?.pageAccessToken ?? tokens.accessToken;
 
-    const existing = await db
-      .select({ id: socialAccountSchema.id })
-      .from(socialAccountSchema)
-      .where(
-        and(
-          eq(socialAccountSchema.orgId, orgId!),
-          eq(socialAccountSchema.platform, platform),
-        ),
-      )
-      .limit(1);
+    // Dedupe by the specific account (org + platform + platform user id), NOT
+    // just platform — so a customer can connect MULTIPLE accounts per platform
+    // (e.g. 5 TikToks). Re-connecting the same account updates it; a different
+    // account inserts a new row. If the platform user id is unknown, fall back
+    // to platform-level dedupe to avoid orphaning.
+    const existing = profile?.id
+      ? await db
+          .select({ id: socialAccountSchema.id })
+          .from(socialAccountSchema)
+          .where(
+            and(
+              eq(socialAccountSchema.orgId, orgId!),
+              eq(socialAccountSchema.platform, platform),
+              eq(socialAccountSchema.platformUserId, profile.id),
+            ),
+          )
+          .limit(1)
+      : await db
+          .select({ id: socialAccountSchema.id })
+          .from(socialAccountSchema)
+          .where(
+            and(
+              eq(socialAccountSchema.orgId, orgId!),
+              eq(socialAccountSchema.platform, platform),
+            ),
+          )
+          .limit(1);
 
     const tokenExpiresAt = tokens.expiresIn
       ? new Date(Date.now() + tokens.expiresIn * 1000)
