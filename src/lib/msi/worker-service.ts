@@ -20,6 +20,7 @@ import {
   msiJobSchema,
   msiOperatorSchema,
   msiTaskSchema,
+  publishingQueueSchema,
 } from '@/models/Schema';
 
 import type { DeviceSlot, OperatorSlot } from './allocation';
@@ -81,6 +82,39 @@ export function ensureExecutionAdaptersRegistered(): void {
     createApiExecutionAdapter('official_api', OFFICIAL_API_CLIENTS),
   );
   productionAdaptersRegistered = true;
+}
+
+// Mirror a managed publish_post outcome onto its `publishing_queue` row so it
+// surfaces in the customer's "Published to" panel (docs §13). The publish route
+// inserts a `queued` row on enqueue; here we flip it to published (+ permalink)
+// or failed. No-op when the account isn't yet linked to a social_account, or
+// when no matching queued row exists (e.g. jobs enqueued before this shipped).
+async function syncManagedPublicationRow(params: {
+  contentItemId: string | null;
+  socialAccountId: string | null | undefined;
+  status: 'published' | 'failed';
+  platformPostId?: string | null;
+  permalink?: string | null;
+  errorMessage?: string | null;
+}): Promise<void> {
+  if (!params.contentItemId || !params.socialAccountId) {
+    return;
+  }
+  await db
+    .update(publishingQueueSchema)
+    .set({
+      status: params.status,
+      platformPostId: params.platformPostId ?? null,
+      permalink: params.permalink ?? null,
+      errorMessage: params.errorMessage ?? null,
+      publishedAt: params.status === 'published' ? new Date() : null,
+    })
+    .where(
+      and(
+        eq(publishingQueueSchema.contentItemId, params.contentItemId),
+        eq(publishingQueueSchema.socialAccountId, params.socialAccountId),
+      ),
+    );
 }
 
 export async function runWorkerTick(now: Date = new Date()) {
@@ -175,6 +209,7 @@ export async function runWorkerTick(now: Date = new Date()) {
         country: managedAccountSchema.country,
         platform: managedAccountSchema.platform,
         executionStrategy: managedAccountSchema.executionStrategy,
+        socialAccountId: managedAccountSchema.socialAccountId,
       })
       .from(managedAccountSchema)
       .where(inArray(managedAccountSchema.id, jobAccountIds))
@@ -336,6 +371,9 @@ export async function runWorkerTick(now: Date = new Date()) {
       const result = await adapter.execute(intent.operation, intent.ctx);
       const outcome = resolveStartOutcome(intent, result);
       const startedAt = new Date();
+      const startJob = jobRows.find(j => j.id === intent.jobId);
+      const startAccount = accountById.get(intent.ctx.managedAccountId);
+      const isPublishJob = startJob?.jobType === 'publish_post';
 
       // Start: assigned → in_progress (validated by the state machine).
       transitionJob(intent.jobState as JobState, 'in_progress');
@@ -362,12 +400,30 @@ export async function runWorkerTick(now: Date = new Date()) {
             .set({ status: 'done', completedAt: startedAt })
             .where(eq(msiTaskSchema.jobId, intent.jobId));
         }
+        // Post is live on the platform → mirror onto "Published to".
+        if (isPublishJob) {
+          await syncManagedPublicationRow({
+            contentItemId: startJob?.contentItemId ?? null,
+            socialAccountId: startAccount?.socialAccountId,
+            status: 'published',
+            platformPostId: result.platformPostId ?? null,
+            permalink: result.evidenceUrl ?? null,
+          });
+        }
       } else if (outcome.nextState === 'failed') {
         transitionJob('in_progress', 'failed');
         await db
           .update(msiJobSchema)
           .set({ state: 'failed', failureReason: outcome.failureReason })
           .where(eq(msiJobSchema.id, intent.jobId));
+        if (isPublishJob) {
+          await syncManagedPublicationRow({
+            contentItemId: startJob?.contentItemId ?? null,
+            socialAccountId: startAccount?.socialAccountId,
+            status: 'failed',
+            errorMessage: outcome.failureReason ?? null,
+          });
+        }
       } else if (outcome.providerHandle) {
         // Async: accepted + still processing → persist the handle; the job stays
         // in_progress and is confirmed by the pass below on a later tick.
@@ -455,12 +511,29 @@ export async function runWorkerTick(now: Date = new Date()) {
           .set({ status: 'done', completedAt: at })
           .where(eq(msiTaskSchema.jobId, job.id));
       }
+      if (job.jobType === 'publish_post') {
+        await syncManagedPublicationRow({
+          contentItemId: job.contentItemId,
+          socialAccountId: account.socialAccountId,
+          status: 'published',
+          platformPostId: outcome.platformPostId ?? result.platformPostId ?? null,
+          permalink: result.evidenceUrl ?? null,
+        });
+      }
     } else {
       transitionJob('in_progress', 'failed');
       await db
         .update(msiJobSchema)
         .set({ state: 'failed', failureReason: outcome.failureReason, executionHandle: null })
         .where(eq(msiJobSchema.id, job.id));
+      if (job.jobType === 'publish_post') {
+        await syncManagedPublicationRow({
+          contentItemId: job.contentItemId,
+          socialAccountId: account.socialAccountId,
+          status: 'failed',
+          errorMessage: outcome.failureReason ?? null,
+        });
+      }
     }
 
     if (outcome.auditAction) {

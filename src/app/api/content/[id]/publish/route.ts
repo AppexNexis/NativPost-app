@@ -316,6 +316,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           const managedAccountId = managedAccountIdOf(account);
           if (managedAccountId) {
             await enqueueManagedPublish({ orgId: orgId!, managedAccountId, contentItemId: item.id });
+            // Record a queued publishing_queue row so the managed publish shows
+            // in "Published to" immediately; the worker updates it to published
+            // (+ permalink) when the MSI job completes.
+            await db.insert(publishingQueueSchema).values({
+              contentItemId: item.id,
+              socialAccountId: account.id,
+              platform,
+              scheduledFor: new Date(),
+              status: 'queued',
+            });
             results.push({ platform, account: accountLabel, success: true, managed: true, queued: true });
           } else {
             results.push({ platform, account: accountLabel, success: false, error: `Managed ${platform} account not linked` });

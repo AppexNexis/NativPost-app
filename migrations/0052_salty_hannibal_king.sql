@@ -1,0 +1,1 @@
+ALTER TABLE "msi_billable_publish_event" ADD COLUMN "permalink" text;

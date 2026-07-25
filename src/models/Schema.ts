@@ -1609,6 +1609,9 @@ export const msiBillablePublishEventSchema = pgTable(
     // publish (null in the manual flow). Powers billing transparency —
     // "published to @brand, video 7665…, $1.50".
     platformPostId: text('platform_post_id'),
+    // The live post permalink, threaded from the publish result. Lets an invoice
+    // line link straight to the post it charged for (null when unavailable).
+    permalink: text('permalink'),
     // Billable outcome. 'published' is the only billable status today; the
     // column lets non-billable outcomes coexist without a separate table.
     status: text('status').default('published').notNull(),

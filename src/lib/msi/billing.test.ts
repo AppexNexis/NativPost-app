@@ -35,6 +35,7 @@ describe('buildPublishEvent', () => {
       platform: 'tiktok',
       occurredAt: new Date('2026-07-24T09:00:00Z'),
       platformPostId: null,
+      permalink: null,
       billingPeriod: '2026-07',
     });
   });
@@ -50,6 +51,19 @@ describe('buildPublishEvent', () => {
       platformPostId: '7665041407052139784',
     });
     expect(row.platformPostId).toBe('7665041407052139784');
+  });
+
+  it('keeps a supplied permalink (threaded from the publish result)', () => {
+    const row = buildPublishEvent({
+      orgId: 'org-1',
+      managedAccountId: 'acc-1',
+      jobId: 'job-1',
+      contentItemId: 'content-1',
+      platform: 'instagram',
+      occurredAt: new Date('2026-07-24T09:00:00Z'),
+      permalink: 'https://www.instagram.com/p/DbM-YKCEfmq/',
+    });
+    expect(row.permalink).toBe('https://www.instagram.com/p/DbM-YKCEfmq/');
   });
 });
 

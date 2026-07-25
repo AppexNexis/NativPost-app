@@ -14,10 +14,13 @@ export type PublishEventInput = {
   occurredAt: Date;
   // The platform's post id, when known (automated flow); null in manual.
   platformPostId?: string | null;
+  // The live post permalink, when the publish result carried one; null otherwise.
+  permalink?: string | null;
 };
 
-export type PublishEventRow = Omit<PublishEventInput, 'platformPostId'> & {
+export type PublishEventRow = Omit<PublishEventInput, 'platformPostId' | 'permalink'> & {
   platformPostId: string | null;
+  permalink: string | null;
   billingPeriod: string;
 };
 
@@ -33,6 +36,7 @@ export function buildPublishEvent(input: PublishEventInput): PublishEventRow {
   return {
     ...input,
     platformPostId: input.platformPostId ?? null,
+    permalink: input.permalink ?? null,
     billingPeriod: billingPeriodOf(input.occurredAt),
   };
 }

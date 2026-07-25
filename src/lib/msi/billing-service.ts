@@ -4,13 +4,14 @@
 // double-fire (retry, replay) never double-charges. Only the terminal success
 // path calls this — failed/retried publishes never reach it.
 
-import { eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 import {
   managedAccountSchema,
   msiBillablePublishEventSchema,
   msiJobSchema,
+  publishingQueueSchema,
 } from '@/models/Schema';
 
 import { buildPublishEvent } from './billing';
@@ -34,6 +35,7 @@ export async function recordPublishEvent(
       platformPostId: msiJobSchema.platformPostId,
       orgId: managedAccountSchema.orgId,
       platform: managedAccountSchema.platform,
+      socialAccountId: managedAccountSchema.socialAccountId,
     })
     .from(msiJobSchema)
     .innerJoin(
@@ -48,6 +50,24 @@ export async function recordPublishEvent(
     return { recorded: false };
   }
 
+  // Recover the live permalink from the publish's queue row (written by the
+  // worker when the post went live) so the invoice line can link to the post.
+  let permalink: string | null = null;
+  if (row.contentItemId && row.socialAccountId) {
+    const [pub] = await db
+      .select({ permalink: publishingQueueSchema.permalink })
+      .from(publishingQueueSchema)
+      .where(
+        and(
+          eq(publishingQueueSchema.contentItemId, row.contentItemId),
+          eq(publishingQueueSchema.socialAccountId, row.socialAccountId),
+        ),
+      )
+      .orderBy(desc(publishingQueueSchema.createdAt))
+      .limit(1);
+    permalink = pub?.permalink ?? null;
+  }
+
   const event = buildPublishEvent({
     orgId: row.orgId,
     managedAccountId: row.managedAccountId,
@@ -56,6 +76,7 @@ export async function recordPublishEvent(
     platform: row.platform,
     occurredAt,
     platformPostId: row.platformPostId ?? null,
+    permalink,
   });
 
   const inserted = await db

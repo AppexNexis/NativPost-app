@@ -154,6 +154,7 @@ async function main() {
     const billable = await db
       .select({
         platformPostId: schema.msiBillablePublishEventSchema.platformPostId,
+        permalink: schema.msiBillablePublishEventSchema.permalink,
         billingPeriod: schema.msiBillablePublishEventSchema.billingPeriod,
         occurredAt: schema.msiBillablePublishEventSchema.occurredAt,
         reportedAt: schema.msiBillablePublishEventSchema.reportedAt,
