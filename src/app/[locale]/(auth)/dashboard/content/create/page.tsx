@@ -51,6 +51,7 @@ type ConnectedAccount = {
   platform: string;
   platformUsername: string | null;
   isActive: boolean;
+  accountType?: string | null;
 };
 
 type Enrichment = {
@@ -267,6 +268,9 @@ export default function ContentCreatePage() {
   const [contentType, setContentType] = useState(prefillContentType);
   const [topic, setTopic] = useState(prefillTopic);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+  // Account-level targeting: which specific accounts to publish to. Enables
+  // multiple accounts per platform + managed accounts as first-class targets.
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState<GenerationProgress>({ completed: 0, total: 3, percent: 0 });
@@ -369,9 +373,25 @@ export default function ContentCreatePage() {
 
   const connectedPlatformIds = connectedAccounts.filter(a => a.isActive).map(a => a.platform);
 
+  const activeAccountsForPlatform = (platformId: string) =>
+    connectedAccounts.filter(a => a.isActive && a.platform === platformId);
+
   const togglePlatform = (id: string) => {
-    setSelectedPlatforms(prev =>
-      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id],
+    const isOn = selectedPlatforms.includes(id);
+    const acctIds = activeAccountsForPlatform(id).map(a => a.id);
+    setSelectedPlatforms(prev => (isOn ? prev.filter(p => p !== id) : [...prev, id]));
+    // Default-select all of the platform's accounts when it's turned on; clear
+    // them when it's turned off. The user can then narrow the selection.
+    setSelectedAccountIds(cur =>
+      isOn
+        ? cur.filter(x => !acctIds.includes(x))
+        : [...new Set([...cur, ...acctIds])],
+    );
+  };
+
+  const toggleAccount = (accountId: string) => {
+    setSelectedAccountIds(prev =>
+      prev.includes(accountId) ? prev.filter(x => x !== accountId) : [...prev, accountId],
     );
   };
 
@@ -567,6 +587,7 @@ export default function ContentCreatePage() {
       topic: topic || undefined,
       contentType,
       targetPlatforms: selectedPlatforms,
+      targetAccountIds: selectedAccountIds,
       numVariants,
     };
     if (hasEnrichment()) {
@@ -1030,6 +1051,54 @@ export default function ContentCreatePage() {
                       })}
                     </div>
                   )}
+
+                  {/* Account picker — appears when a platform has more than one
+                      account, or a managed account, so you choose exactly which
+                      accounts (incl. NativPost-managed) to publish to. */}
+                  {selectedPlatforms.map((platformId) => {
+                    const accts = activeAccountsForPlatform(platformId);
+                    const show = accts.length > 1 || accts.some(a => a.accountType === 'managed');
+                    if (!show) {
+                      return null;
+                    }
+                    return (
+                      <div key={platformId} className="mt-3">
+                        <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          {platformId}
+                          {' '}
+                          accounts
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {accts.map((a) => {
+                            const on = selectedAccountIds.includes(a.id);
+                            const managed = a.accountType === 'managed';
+                            return (
+                              <button
+                                key={a.id}
+                                type="button"
+                                onClick={() => toggleAccount(a.id)}
+                                className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                                  on
+                                    ? 'border-primary bg-primary/5 text-foreground'
+                                    : 'border-border text-muted-foreground hover:bg-muted'
+                                }`}
+                              >
+                                {on && <Check className="size-3 text-primary" />}
+                                <span className="truncate max-w-[140px]">
+                                  {a.platformUsername || a.platform}
+                                </span>
+                                {managed && (
+                                  <span className="rounded bg-primary/10 px-1 text-[9px] font-medium text-primary">
+                                    Managed
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

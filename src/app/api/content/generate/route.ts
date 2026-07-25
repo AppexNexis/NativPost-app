@@ -164,6 +164,9 @@ async function saveVariant(
       variantNumber: variant.variant_number || 1,
       isSelectedVariant: false,
       targetPlatforms: platforms,
+      // Account-level publish targets (multiple accounts per platform + managed
+      // accounts). Empty → publish to all accounts of each targetPlatform.
+      targetAccountIds: Array.isArray(body.targetAccountIds) ? body.targetAccountIds : [],
       platformSpecific,
       status: 'pending_review',
       antiSlopScore: variant.anti_slop_score || null,

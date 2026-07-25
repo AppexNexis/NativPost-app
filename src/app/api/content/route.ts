@@ -306,6 +306,7 @@ export async function POST(request: NextRequest) {
         variantNumber: Number(body.variantNumber) || 1,
         isSelectedVariant: Boolean(body.isSelectedVariant),
         targetPlatforms: Array.isArray(body.targetPlatforms) ? body.targetPlatforms : [],
+        targetAccountIds: Array.isArray(body.targetAccountIds) ? body.targetAccountIds : [],
         platformSpecific: body.platformSpecific || {},
         status: body.status || 'draft',
         scheduledFor: body.scheduledFor ? new Date(body.scheduledFor) : null,

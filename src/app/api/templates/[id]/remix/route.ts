@@ -134,6 +134,7 @@ async function saveVariant(
     variantNumber: variant.variant_number || 1,
     isSelectedVariant: false,
     targetPlatforms: platforms,
+    targetAccountIds: Array.isArray(body.targetAccountIds) ? body.targetAccountIds : [],
     platformSpecific,
     status: 'pending_review',
     antiSlopScore: variant.anti_slop_score || null,
