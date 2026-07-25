@@ -30,6 +30,7 @@ type ContentItem = {
   status: string;
   contentType: string;
   targetPlatforms: string[];
+  targetAccountIds?: string[] | null;
   scheduledFor: string | null;
   publishedAt: string | null;
   createdAt: string;
@@ -214,6 +215,27 @@ export default function CalendarPage() {
     },
   });
   const items = useMemo(() => contentData ?? [], [contentData]);
+
+  // Connected accounts → id map, so cards can show which specific accounts a
+  // post targets (handle + a Managed marker), not just the platform.
+  const { data: accountData } = useQuery({
+    queryKey: ['calendar-accounts'],
+    queryFn: async (): Promise<Array<{ id: string; platformUsername: string | null; accountType: string | null }>> => {
+      const res = await fetch('/api/social-accounts');
+      if (!res.ok) {
+        return [];
+      }
+      const body = await res.json();
+      return body.accounts || [];
+    },
+  });
+  const accountMap = useMemo(() => {
+    const m = new Map<string, { handle: string | null; managed: boolean }>();
+    for (const a of accountData ?? []) {
+      m.set(a.id, { handle: a.platformUsername, managed: a.accountType === 'managed' });
+    }
+    return m;
+  }, [accountData]);
 
   const { data: planState = null, isFetching: isPlanLoading } = useQuery({
     queryKey: ['calendar-plan', currentMonth],
@@ -901,14 +923,36 @@ export default function CalendarPage() {
                           <div className="mb-1.5 flex items-center gap-2">
                             <Icon className="size-3.5 shrink-0 text-muted-foreground" />
                             <div className="ml-auto flex flex-wrap items-center gap-1.5">
-                              {post.targetPlatforms.slice(0, 3).map(p => (
-                                <span
-                                  key={p}
-                                  className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
-                                >
-                                  {PLATFORM_ABBR[p] || p.toUpperCase().slice(0, 2)}
-                                </span>
-                              ))}
+                              {post.targetAccountIds && post.targetAccountIds.length > 0
+                                ? (
+                                    // Explicitly targeted accounts → show handles (+ Managed marker).
+                                    post.targetAccountIds.slice(0, 3).map((accId) => {
+                                      const acc = accountMap.get(accId);
+                                      return (
+                                        <span
+                                          key={accId}
+                                          className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                                            acc?.managed
+                                              ? 'bg-primary/10 text-primary'
+                                              : 'bg-muted text-muted-foreground'
+                                          }`}
+                                          title={acc?.managed ? 'Managed account' : undefined}
+                                        >
+                                          {acc?.handle ? `@${acc.handle}` : 'account'}
+                                        </span>
+                                      );
+                                    })
+                                  )
+                                : (
+                                    post.targetPlatforms.slice(0, 3).map(p => (
+                                      <span
+                                        key={p}
+                                        className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                                      >
+                                        {PLATFORM_ABBR[p] || p.toUpperCase().slice(0, 2)}
+                                      </span>
+                                    ))
+                                  )}
                               <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${config.bar} text-foreground/70`}>
                                 <span className={`size-1.5 rounded-full ${config.dot}`} />
                                 {config.label}
