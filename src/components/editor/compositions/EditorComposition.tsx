@@ -81,6 +81,24 @@ export interface EditorInputProps {
   noAnimation?: boolean;
   audioTrack?: EditorAudioTrack | null;
   /**
+   * ElevenLabs voice-over URL (Phase A Blitz audio). Distinct from
+   * `audioTrack` (music). Both mount simultaneously.
+   */
+  audioUrl?: string | null;
+  /**
+   * Voice-over duration in ms. Currently informational only — the
+   * per-Sequence duration decisions live in the parent Composition
+   * definition, not here.
+   */
+  audioDurationMs?: number | null;
+  /**
+   * Total composition duration in seconds. When present, overrides
+   * `EDITOR_FIXED_DURATION_SECONDS` so voice-over runs through.
+   * Callers must ensure the root Composition's `durationInFrames`
+   * matches, otherwise Remotion cuts the tail.
+   */
+  durationSeconds?: number;
+  /**
    * When true, skip the `limitHook/Body/Cta` character chop — live browser
    * previews rely on CSS `line-clamp`/overflow instead. Never set for
    * compile-to-MP4 mounts (Remotion has no CSS overflow control).
@@ -163,6 +181,8 @@ export function EditorComposition({
   contentType,
   noAnimation: noAnimationFromProps,
   audioTrack,
+  audioUrl,
+  durationSeconds,
   previewMode,
 }: EditorInputProps) {
   const { width, height, fps } = useVideoConfig();
@@ -208,7 +228,7 @@ export function EditorComposition({
   const bodyText = limitBodyMaybe(script.bodyText, previewMode);
   const ctaText = limitCtaMaybe(script.ctaText, previewMode);
   const activeText = hookText || bodyText || ctaText;
-  const totalFrames = EDITOR_FIXED_DURATION_SECONDS * fps;
+  const totalFrames = (durationSeconds ?? EDITOR_FIXED_DURATION_SECONDS) * fps;
   const textStartFrame = noAnimation ? 0 : 10;
   const hookStartFrame = noAnimation ? 0 : 15;
 
@@ -314,6 +334,12 @@ export function EditorComposition({
           src={audioTrack.url}
           volume={Math.max(0, Math.min(1, (audioTrack.volume ?? 80) / 100))}
         />
+      )}
+
+      {/* ElevenLabs voice-over (Phase A Blitz). Independent of audioTrack;
+          both mount together. Volume fixed at 1.0 — TTS is already leveled. */}
+      {audioUrl && (
+        <Audio src={audioUrl} volume={1} />
       )}
 
       {/* Slideshow preview strip */}

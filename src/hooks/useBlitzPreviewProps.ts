@@ -28,6 +28,11 @@ export type BlitzPreviewInputProps = {
   demoVideoUrl?: string;
   slides?: { url: string; assetType: 'image' }[];
   audioTrack?: any;
+  // ElevenLabs voice-over URL (Cloudinary). Present when
+  // enrichmentData.audio.status === 'ready'. Compositions render
+  // <Audio src={audioUrl}> when set; silent when absent.
+  audioUrl?: string;
+  audioDurationMs?: number;
   // nested shape — per-type compositions
   mediaSlots: {
     background?: { url: string; assetType?: 'image' | 'video' };
@@ -70,6 +75,9 @@ export function useBlitzPreviewProps(item: BlitzPreviewItemShape | null | undefi
       || (mediaSlots.slides && mediaSlots.slides.length > 0);
     if (!hasAnyMedia) return null;
 
+    const audio = (enrichment.audio as { url?: string; durationMs?: number; status?: string } | undefined);
+    const audioUrl = audio?.status === 'ready' ? audio.url : undefined;
+
     const inputProps: BlitzPreviewInputProps = {
       // flat aliases
       backgroundUrl: mediaSlots.background?.url,
@@ -77,6 +85,8 @@ export function useBlitzPreviewProps(item: BlitzPreviewItemShape | null | undefi
       demoVideoUrl: mediaSlots.demoVideo?.url,
       slides: mediaSlots.slides,
       audioTrack: enrichment.audioTrack,
+      audioUrl,
+      audioDurationMs: audio?.durationMs,
       // nested shape
       mediaSlots,
       script: enrichment.editorScript || {},

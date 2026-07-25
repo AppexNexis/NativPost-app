@@ -5,6 +5,7 @@ import {
   Globe,
   Loader2,
   MessageSquare,
+  Mic,
   Palette,
   Pencil,
   Play,
@@ -18,6 +19,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
+import { BlitzVoicePicker } from '@/components/brand-profile/BlitzVoicePicker';
 import { useBrandProfile } from '@/features/brand-profile/useBrandProfile';
 import { EmptyState } from '@/features/dashboard/EmptyState';
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
@@ -34,7 +36,7 @@ const GROWTH_STAGE_LABELS: Record<string, string> = {
 };
 
 export default function BrandProfilePage() {
-  const { data, isLoading, hasProfile, profileCompleteness } = useBrandProfile();
+  const { data, isLoading, hasProfile, profileCompleteness, updateData, save, isSaving } = useBrandProfile();
 
   if (isLoading) {
     return <ListPageSkeleton rows={4} />;
@@ -200,6 +202,18 @@ export default function BrandProfilePage() {
             <p className="text-meta text-muted-foreground">No content preferences configured.</p>
           )}
         </ProfileCard>
+
+        {/* Blitz voice-over — full width */}
+        <div className="sm:col-span-2">
+          <ProfileCard icon={Mic} title="Blitz voice-over">
+            <BlitzVoicePicker
+              data={data}
+              updateData={updateData}
+              save={save}
+              isSaving={isSaving}
+            />
+          </ProfileCard>
+        </div>
 
         {/* Platform voices — full width */}
         <div className="sm:col-span-2">

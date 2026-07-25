@@ -40,6 +40,7 @@ import {
   isInstagramLoginToken,
   probeInstagram,
   publishContainer,
+  resolveInstagramUserId,
   resolvePermalink,
 } from './meta-graph';
 import {
@@ -160,6 +161,25 @@ async function loadContent(contentItemId: string): Promise<ContentToPublish> {
 }
 
 /**
+ * The IG user id to publish to. For an Instagram-Login token the token itself
+ * identifies the account, so we resolve it authoritatively (removing any
+ * reliance on a hand-entered `igUserId`); Facebook tokens use the stored id.
+ * Falls back to the stored id if resolution fails.
+ */
+async function effectiveIgUserId(
+  creds: MetaCredentials,
+  fetchImpl: FetchLike,
+): Promise<string> {
+  if (isInstagramLoginToken(creds.accessToken)) {
+    const resolved = await resolveInstagramUserId(creds.accessToken, fetchImpl);
+    if (resolved) {
+      return resolved;
+    }
+  }
+  return creds.igUserId;
+}
+
+/**
  * Build the Instagram PlatformClient. `fetchImpl` is injectable for testing;
  * defaults to the global fetch in production.
  */
@@ -186,6 +206,7 @@ export function createMetaInstagramClient(
       }
 
       const credentials = await freshMetaCredentials(ctx.managedAccountId, fetchImpl);
+      const igUserId = await effectiveIgUserId(credentials, fetchImpl);
       const content = await loadContent(contentItemId);
 
       // Init only: create the container(s) and hand back the parent id.
@@ -199,7 +220,7 @@ export function createMetaInstagramClient(
         for (const url of content.mediaUrls.slice(0, MAX_CAROUSEL_ITEMS)) {
           childIds.push(
             await createCarouselItemContainer(
-              credentials.igUserId,
+              igUserId,
               url,
               credentials.accessToken,
               fetchImpl,
@@ -207,7 +228,7 @@ export function createMetaInstagramClient(
           );
         }
         creationId = await createCarouselContainer(
-          credentials.igUserId,
+          igUserId,
           childIds,
           content.caption,
           credentials.accessToken,
@@ -217,7 +238,7 @@ export function createMetaInstagramClient(
         // Single image or REELS video.
         creationId = await createMediaContainer(
           {
-            igUserId: credentials.igUserId,
+            igUserId,
             accessToken: credentials.accessToken,
             caption: content.caption,
             mediaUrl: content.mediaUrls[0]!,
@@ -246,8 +267,9 @@ export function createMetaInstagramClient(
       }
 
       // Container ready → publish it and resolve the permalink.
+      const igUserId = await effectiveIgUserId(credentials, fetchImpl);
       const mediaId = await publishContainer(
-        credentials.igUserId,
+        igUserId,
         handle,
         credentials.accessToken,
         fetchImpl,

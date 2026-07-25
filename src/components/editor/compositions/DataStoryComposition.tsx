@@ -26,10 +26,12 @@ interface Props {
     url: string;
     volume?: number;
   } | null;
+  audioUrl?: string | null;
+  audioDurationMs?: number | null;
   previewMode?: boolean;
 }
 
-export function DataStoryComposition({ script, style, mediaSlots, audioTrack, previewMode }: Props) {
+export function DataStoryComposition({ script, style, mediaSlots, audioTrack, audioUrl, previewMode }: Props) {
   const { width, height, fps } = useVideoConfig();
 
   // Background dim: scrim between source media and text overlay.
@@ -55,6 +57,8 @@ export function DataStoryComposition({ script, style, mediaSlots, audioTrack, pr
           volume={Math.max(0, Math.min(1, (audioTrack.volume ?? 80) / 100))}
         />
       )}
+      {/* Blitz voice-over (Phase A). Mounts alongside audioTrack. */}
+      {audioUrl && <Audio src={audioUrl} volume={1} />}
       {slides.map((slide, idx) => {
         const copyItem = slideCopy[idx];
         const copyText = typeof copyItem === 'string' ? copyItem : copyItem?.text || '';

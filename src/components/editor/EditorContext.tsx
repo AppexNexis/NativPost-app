@@ -44,6 +44,17 @@ export type EditorState = {
   timing: ContentEditTiming;
   mediaSlots: MediaSlots;
   audioTrack: AudioTrack | null;
+  /**
+   * Blitz Phase A voice-over URL (Cloudinary). Read-only in the editor —
+   * the value is written server-side by `generateAudioForBlitzItem` into
+   * `content_item.enrichmentData.audio.url`, snapshotted into the edit
+   * session by `useLoadEditSession`, and threaded here so the editor
+   * preview plays the same voice track as the Blitz card.
+   * Editing scripts does NOT re-generate audio (cost gate); the user
+   * triggers regen via the Voice-over panel button.
+   */
+  audioUrl: string | null;
+  audioDurationMs: number | null;
   aspectRatio: string;
   targetPlatforms: string[];
   contentMode: string;
@@ -80,6 +91,8 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
         timing: action.payload.timing || {},
         mediaSlots: action.payload.mediaSlots || {},
         audioTrack: action.payload.audioTrack || null,
+        audioUrl: (action.payload as any).audioUrl ?? null,
+        audioDurationMs: (action.payload as any).audioDurationMs ?? null,
         aspectRatio: action.payload.aspectRatio || '9:16',
         targetPlatforms: action.payload.targetPlatforms || [],
         contentMode: action.payload.contentMode || 'normal',
@@ -168,6 +181,8 @@ export function EditorProvider({
     timing: initialEdit?.timing || {},
     mediaSlots: initialEdit?.mediaSlots || {},
     audioTrack: initialEdit?.audioTrack || null,
+    audioUrl: (initialEdit as any)?.audioUrl ?? null,
+    audioDurationMs: (initialEdit as any)?.audioDurationMs ?? null,
     aspectRatio: initialEdit?.aspectRatio || '9:16',
     targetPlatforms: initialEdit?.targetPlatforms || [],
     contentMode: initialEdit?.contentMode || 'normal',

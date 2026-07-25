@@ -137,6 +137,8 @@ export function EditorPreview() {
                     aspectRatio: state.aspectRatio,
                     contentType,
                     audioTrack: state.audioTrack ?? null,
+                    audioUrl: state.audioUrl ?? undefined,
+                    audioDurationMs: state.audioDurationMs ?? undefined,
                     // Live browser preview — skip ellipsis chop so full
                     // hook/body/cta text displays. Compile-to-MP4 still
                     // truncates via the unaware limit helpers.
@@ -174,6 +176,8 @@ export function EditorPreview() {
                 aspectRatio: state.aspectRatio,
                 contentType,
                 audioTrack: state.audioTrack ?? null,
+                audioUrl: state.audioUrl ?? undefined,
+                audioDurationMs: state.audioDurationMs ?? undefined,
                 previewMode: true,
               }}
             />

@@ -25,6 +25,10 @@ export type RenderEditorVideoInput = {
     source?: 'original' | 'library' | 'upload';
     volume?: number;
   } | null;
+  // ElevenLabs voice-over (Blitz Phase A). Distinct from audioTrack
+  // (background music). Compositions mount both simultaneously.
+  voiceoverUrl?: string | null;
+  voiceoverDurationMs?: number | null;
 };
 
 export type RenderProgressCallback = (percent: number, stage: RenderStage) => void;
@@ -51,6 +55,8 @@ export async function renderEditorVideo(
       hookVideoUrl: input.mediaSlots?.hookVideo?.url,
       slides: input.mediaSlots?.slides,
       audioTrack: input.audioTrack ?? null,
+      voiceoverUrl: input.voiceoverUrl ?? null,
+      voiceoverDurationMs: input.voiceoverDurationMs ?? null,
     }),
   });
   if (!res.ok) {

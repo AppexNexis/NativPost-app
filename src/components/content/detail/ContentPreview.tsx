@@ -122,6 +122,17 @@ export function ContentPreview({
 
   const posterUrl = useMemo(() => resolveImageUrl(item) || item.graphicUrls?.[0] || '', [item]);
 
+  // Blitz Phase A voice-over. `enrichment.audio.url` is the Cloudinary URL
+  // written by `generateAudioForBlitzItem`; only surface when status='ready'.
+  const audioUrl = useMemo(() => {
+    const audio = enrichment.audio as { url?: string; status?: string } | undefined;
+    return audio?.status === 'ready' && audio.url ? audio.url : undefined;
+  }, [enrichment.audio]);
+  const audioDurationMs = useMemo(() => {
+    const audio = enrichment.audio as { durationMs?: number; status?: string } | undefined;
+    return audio?.status === 'ready' && typeof audio.durationMs === 'number' ? audio.durationMs : undefined;
+  }, [enrichment.audio]);
+
   const remotionInputProps = useMemo(() => {
     const bgUrl = mediaSlots.background?.url
       || mediaSlots.hookVideo?.url
@@ -142,8 +153,10 @@ export function ContentPreview({
       // VideoHookComposition when every mediaSlot is empty. Without this,
       // VHD posts with no reconstructable video/image render solid black.
       posterUrl,
+      audioUrl,
+      audioDurationMs,
     };
-  }, [mediaSlots, scriptWithFallback, enrichment.editorStyle, enrichment.editorLayout, aspectRatio, item, posterUrl]);
+  }, [mediaSlots, scriptWithFallback, enrichment.editorStyle, enrichment.editorLayout, aspectRatio, item, posterUrl, audioUrl, audioDurationMs]);
   // VIDEO_RE-guard the graphicUrls fallback so we never feed an image URL to
   // `<video src>` — that produces a silent black frame. When no real video
   // exists, we render the poster image instead (see the fallback branch below).

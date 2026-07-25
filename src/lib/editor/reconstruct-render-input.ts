@@ -50,6 +50,11 @@ export function reconstructRenderInput(
   let layout: string;
   let audioTrack: RenderEditorVideoInput['audioTrack'];
 
+  // Blitz voice-over lives at enrichmentData.audio regardless of path.
+  const audio = enrichmentData.audio as { url?: string; durationMs?: number; status?: string } | undefined;
+  const voiceoverUrl = audio?.status === 'ready' && audio.url ? audio.url : null;
+  const voiceoverDurationMs = audio?.status === 'ready' && typeof audio.durationMs === 'number' ? audio.durationMs : null;
+
   const editorState = enrichmentData.editorState as Record<string, unknown> | undefined;
 
   if (editorState && typeof editorState === 'object') {
@@ -82,6 +87,8 @@ export function reconstructRenderInput(
       mediaSlots,
       contentType,
       audioTrack,
+      voiceoverUrl,
+      voiceoverDurationMs,
     },
   };
 }

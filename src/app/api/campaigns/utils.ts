@@ -9,6 +9,7 @@ import { applyBrandVoice } from '@/lib/blitz/apply-brand-voice';
 import { applySetToSlots, InsufficientAssetsError } from '@/lib/blitz/apply-set-to-slots';
 import { buildEditorScript, buildReasoning, deriveTopicLabel } from '@/lib/blitz/build-editor-script';
 import { buildSourceMediaSlots } from '@/lib/blitz/build-source-media-slots';
+import { generateAudioForBlitzItem } from '@/lib/blitz/generate-audio';
 import { generateBlitzSlideCaptions } from '@/lib/blitz/generate-slide-captions';
 import { pickDefaultSet } from '@/lib/blitz/pick-default-set';
 import {
@@ -1796,6 +1797,29 @@ export async function generateCampaignPosts(
             console.error('[Campaign] slide caption gen (local) failed:', e?.message || e);
           });
         }
+      }
+
+      // Fire-and-forget ElevenLabs voice-over generation for video
+      // Blitz items. Gated internally on ENABLE_BLITZ_AUDIO_VIDEO env,
+      // content-type eligibility (excludes slideshow), and voice
+      // configured on brand_profile. Silent no-op on all skip paths
+      // per the "Blitz must always work" invariant.
+      try {
+        waitUntil(
+          generateAudioForBlitzItem({
+            db,
+            contentItemId: contentItem.id,
+          }).catch((err: any) => {
+            console.error('[Campaign] voice-over gen failed:', err?.message || err);
+          }),
+        );
+      } catch {
+        void generateAudioForBlitzItem({
+          db,
+          contentItemId: contentItem.id,
+        }).catch((e: any) => {
+          console.error('[Campaign] voice-over gen (local) failed:', e?.message || e);
+        });
       }
 
       await db.insert(campaignContentSchema).values({

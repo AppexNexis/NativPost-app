@@ -31,10 +31,12 @@ interface Props {
     url: string;
     volume?: number;
   } | null;
+  audioUrl?: string | null;
+  audioDurationMs?: number | null;
   previewMode?: boolean;
 }
 
-export function GreenScreenComposition({ script, style, mediaSlots, audioTrack, previewMode }: Props) {
+export function GreenScreenComposition({ script, style, mediaSlots, audioTrack, audioUrl, previewMode }: Props) {
   const { width, height } = useVideoConfig();
   const frame = useCurrentFrame();
 
@@ -75,6 +77,8 @@ export function GreenScreenComposition({ script, style, mediaSlots, audioTrack, 
           volume={Math.max(0, Math.min(1, (audioTrack.volume ?? 80) / 100))}
         />
       )}
+      {/* Blitz voice-over (Phase A). Mounts alongside audioTrack. */}
+      {audioUrl && <Audio src={audioUrl} volume={1} />}
       {mediaSlots?.background?.url ? (
         isVideoUrl(mediaSlots.background.url) ? (
           <Video

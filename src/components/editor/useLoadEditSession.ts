@@ -52,7 +52,30 @@ export function useLoadEditSession({
           const res = await fetch(`/api/content/edit/${editId}`);
           if (!res.ok) throw new Error('Failed to load edit session');
           const data = await res.json();
-          if (!cancelled) setEdit(data.edit);
+          // Fetch the linked content_item's audio snapshot so the reopened
+          // editor plays the Blitz voice-over. contentItemId may be null
+          // for pure remix edits — skip audio in that case.
+          let augmented = data.edit;
+          const cid = data.edit?.contentItemId as string | null | undefined;
+          if (cid) {
+            try {
+              const itemRes = await fetch(`/api/content/${cid}`);
+              if (itemRes.ok) {
+                const itemData = await itemRes.json();
+                const audio = itemData.item?.enrichmentData?.audio;
+                if (audio?.status === 'ready' && audio.url) {
+                  augmented = {
+                    ...data.edit,
+                    audioUrl: audio.url,
+                    audioDurationMs: typeof audio.durationMs === 'number' ? audio.durationMs : null,
+                  };
+                }
+              }
+            } catch {
+              // Non-fatal: editor still opens without voice-over.
+            }
+          }
+          if (!cancelled) setEdit(augmented);
           return;
         }
 
@@ -82,6 +105,7 @@ export function useLoadEditSession({
             editorLayout?: string;
             sourceMediaSlots?: Record<string, unknown>;
             audioTrack?: unknown;
+            audio?: { url?: string; durationMs?: number; status?: string };
             isCompiled?: boolean;
           };
         } | undefined;
@@ -126,6 +150,17 @@ export function useLoadEditSession({
         // re-opened editor sees the user's last audio pick instead of null.
         const audioTrack = item?.enrichmentData?.audioTrack ?? null;
 
+        // Blitz Phase A voice-over snapshot. The Cloudinary URL lives on
+        // content_item.enrichmentData.audio (written by
+        // generateAudioForBlitzItem) — pull it here so the editor preview
+        // plays the same track as the Blitz card. Read-only in the editor;
+        // regeneration goes through POST /api/content/[id]/audio/regenerate.
+        const itemAudio = item?.enrichmentData?.audio;
+        const audioUrl = itemAudio?.status === 'ready' && itemAudio.url ? itemAudio.url : null;
+        const audioDurationMs = itemAudio?.status === 'ready' && typeof itemAudio.durationMs === 'number'
+          ? itemAudio.durationMs
+          : null;
+
         const res = await fetch('/api/content/edit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -145,7 +180,12 @@ export function useLoadEditSession({
         });
         if (!res.ok) throw new Error('Failed to create edit session');
         const data = await res.json();
-        if (!cancelled) setEdit(data.edit);
+        // Client-side augmentation: the edit row schema doesn't hold audio
+        // (voice-over lives on the content_item), so stamp the snapshot
+        // onto the returned edit here. EditorContext picks it up via
+        // (initialEdit as any).audioUrl.
+        const augmented = data.edit ? { ...data.edit, audioUrl, audioDurationMs } : data.edit;
+        if (!cancelled) setEdit(augmented);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Unknown error');

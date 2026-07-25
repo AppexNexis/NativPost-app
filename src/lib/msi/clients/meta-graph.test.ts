@@ -8,6 +8,7 @@ import {
   createMediaContainer,
   probeInstagram,
   publishContainer,
+  resolveInstagramUserId,
   resolvePermalink,
 } from './meta-graph';
 
@@ -204,5 +205,23 @@ describe('host selection by token type', () => {
     expect(d.identity).toBe('@brand');
     expect(urls[0]).toContain('graph.instagram.com/v21.0/me');
     expect(urls.some(u => u.includes('/me/permissions'))).toBe(false);
+  });
+});
+
+describe('resolveInstagramUserId', () => {
+  it('returns the user_id from /me on the IG host', async () => {
+    let calledUrl = '';
+    const fetchImpl: FetchLike = async (url) => {
+      calledUrl = url;
+      return { ok: true, status: 200, json: async () => ({ user_id: '17841473245605331' }) };
+    };
+    const id = await resolveInstagramUserId('IGAAxyz', fetchImpl);
+    expect(id).toBe('17841473245605331');
+    expect(calledUrl).toContain('graph.instagram.com/v21.0/me?fields=user_id');
+  });
+
+  it('returns null when the call fails (caller falls back to the stored id)', async () => {
+    const fetchImpl: FetchLike = async () => ({ ok: false, status: 400, json: async () => ({}) });
+    expect(await resolveInstagramUserId('IGAAbad', fetchImpl)).toBeNull();
   });
 });

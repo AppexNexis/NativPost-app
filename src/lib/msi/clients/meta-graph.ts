@@ -248,6 +248,27 @@ export async function probeInstagram(
   }
 }
 
+/**
+ * Resolve the IG user id from an Instagram-Login token — the token *is* the
+ * account, so this is authoritative and removes any reliance on a hand-entered
+ * `igUserId`. Returns null on failure (caller falls back to the stored value).
+ */
+export async function resolveInstagramUserId(
+  accessToken: string,
+  fetchImpl: FetchLike,
+): Promise<string | null> {
+  try {
+    const res = await fetchImpl(`${GRAPH_IG}/me?fields=user_id&access_token=${accessToken}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return null;
+    }
+    return (data.user_id || data.id || null) as string | null;
+  } catch {
+    return null;
+  }
+}
+
 /** Best-effort permalink resolution — never fails the publish. */
 export async function resolvePermalink(
   mediaId: string,

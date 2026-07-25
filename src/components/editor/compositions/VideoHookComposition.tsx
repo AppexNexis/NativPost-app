@@ -33,6 +33,8 @@ interface Props {
     url: string;
     volume?: number;
   } | null;
+  audioUrl?: string | null;
+  audioDurationMs?: number | null;
   previewMode?: boolean;
   // Poster / thumbnail shown when no media slot resolves to a usable URL.
   posterUrl?: string;
@@ -59,7 +61,7 @@ interface Props {
  * overlaid with staggered `interpolate` fade-ins — no Sequence remount, no
  * multi-decoder mount, no split-slot dependency.
  */
-export function VideoHookComposition({ script, style, mediaSlots, audioTrack, previewMode, posterUrl }: Props) {
+export function VideoHookComposition({ script, style, mediaSlots, audioTrack, audioUrl, previewMode, posterUrl }: Props) {
   const { width, height } = useVideoConfig();
   const frame = useCurrentFrame();
 
@@ -108,6 +110,9 @@ export function VideoHookComposition({ script, style, mediaSlots, audioTrack, pr
           volume={Math.max(0, Math.min(1, (audioTrack.volume ?? 80) / 100))}
         />
       )}
+
+      {/* Blitz voice-over (Phase A). Mounts alongside audioTrack. */}
+      {audioUrl && <Audio src={audioUrl} volume={1} />}
 
       {/* Single top-level media — one decoder, no Sequence remount storm. */}
       {sourceUrl && (

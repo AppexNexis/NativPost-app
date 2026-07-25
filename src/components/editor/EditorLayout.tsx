@@ -120,6 +120,12 @@ export function EditorLayout({
             mediaSlots: state.mediaSlots,
             contentType: state.edit?.contentType || 'text',
             audioTrack: state.audioTrack ?? null,
+            // Blitz Phase A voice-over. Snapshotted onto edit session by
+            // useLoadEditSession; read-only in editor. Threading here
+            // guarantees the compiled MP4 matches the editor preview
+            // (WYSIWYG contract).
+            voiceoverUrl: state.audioUrl ?? null,
+            voiceoverDurationMs: state.audioDurationMs ?? null,
           },
           (percent, stage) => {
             setRenderPercent(percent);

@@ -19,9 +19,11 @@ interface Props {
     url: string;
     volume?: number;
   } | null;
+  audioUrl?: string | null;
+  audioDurationMs?: number | null;
 }
 
-export function WallOfTextComposition({ script, style, audioTrack }: Props) {
+export function WallOfTextComposition({ script, style, audioTrack, audioUrl }: Props) {
   const { width, height } = useVideoConfig();
 
   const fontFamily = style.fontFamily || 'Inter';
@@ -65,6 +67,8 @@ export function WallOfTextComposition({ script, style, audioTrack }: Props) {
           volume={Math.max(0, Math.min(1, (audioTrack.volume ?? 80) / 100))}
         />
       )}
+      {/* Blitz voice-over (Phase A). Mounts alongside audioTrack. */}
+      {audioUrl && <Audio src={audioUrl} volume={1} />}
     </AbsoluteFill>
   );
 }

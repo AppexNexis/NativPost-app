@@ -39,6 +39,12 @@ interface RemotionPreviewPlayerProps {
   inputProps: Record<string, any>;
 }
 
+// Voice-over extends the preview budget up to this ceiling, matching the
+// engine's calcDurationEditor clamp. Silent renders keep the legacy 8s
+// (EDITOR_TOTAL_FRAMES). See nativpost-editor-composition-frame-budget
+// memory for the wider frame-budget contract.
+const MAX_PREVIEW_SECONDS = 15;
+
 export function RemotionPreviewPlayer({ contentType, inputProps }: RemotionPreviewPlayerProps) {
   const Composition = COMPOSITION_BY_TYPE[contentType] || EditorComposition;
 
@@ -50,11 +56,36 @@ export function RemotionPreviewPlayer({ contentType, inputProps }: RemotionPrevi
     return { width: Math.round(w * scale), height: Math.round(h * scale) };
   }, [inputProps.aspectRatio]);
 
+  // Derive composition duration from voice-over length. Mirrors engine
+  // calcDurationEditor(voiceoverDurationMs) so app preview and compiled
+  // MP4 match frame-for-frame (WYSIWYG contract). When no voice-over is
+  // present, falls back to EDITOR_TOTAL_FRAMES (8s).
+  const { durationInFrames, durationSeconds } = useMemo(() => {
+    const audioDurationMs = inputProps.audioDurationMs;
+    if (typeof audioDurationMs !== 'number' || audioDurationMs <= 0) {
+      return { durationInFrames: EDITOR_TOTAL_FRAMES, durationSeconds: undefined };
+    }
+    const legacySeconds = EDITOR_TOTAL_FRAMES / EDITOR_FPS;
+    const clamped = Math.min(MAX_PREVIEW_SECONDS, Math.max(legacySeconds, audioDurationMs / 1000));
+    return {
+      durationInFrames: Math.round(clamped * EDITOR_FPS),
+      durationSeconds: clamped,
+    };
+  }, [inputProps.audioDurationMs]);
+
+  // Inject durationSeconds into inputProps so per-type compositions
+  // reading it (EditorComposition today; per-type ones as they migrate)
+  // stretch their totalFrames to match the outer Player.
+  const extendedInputProps = useMemo(
+    () => (durationSeconds !== undefined ? { ...inputProps, durationSeconds } : inputProps),
+    [inputProps, durationSeconds],
+  );
+
   return (
     <Player
       component={Composition}
-      inputProps={inputProps}
-      durationInFrames={EDITOR_TOTAL_FRAMES}
+      inputProps={extendedInputProps}
+      durationInFrames={durationInFrames}
       compositionWidth={width}
       compositionHeight={height}
       fps={EDITOR_FPS}
