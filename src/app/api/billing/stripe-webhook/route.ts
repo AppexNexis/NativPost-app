@@ -164,7 +164,12 @@ export async function POST(request: NextRequest) {
           break;
         }
 
-        // ── Setup fee payment ──
+        // ── Setup fee payment (legacy) ──
+        // The setup fee was removed with the /subscribe page — nothing
+        // creates `type: setup_fee` sessions any more. Kept so a checkout
+        // that was already open at deploy time still resolves to a sane
+        // state instead of silently dropping. Safe to delete once no
+        // setup_fee events have arrived for a full Stripe retry window.
         if (sessionType === 'setup_fee') {
           const trialEndsAt = new Date();
           trialEndsAt.setDate(trialEndsAt.getDate() + 7);

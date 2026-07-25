@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     const { planId, email, interval = 'month' } = await request.json();
     const plan = PLAN_CONFIGS[planId];
 
-    if (!plan) {
+    if (!plan || plan.isFree) {
       return NextResponse.json({ error: 'Invalid plan.' }, { status: 400 });
     }
 

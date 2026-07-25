@@ -49,7 +49,7 @@ import SupportWidget from '@/components/support/SupportWidget';
 import { CommandPalette } from '@/components/ui/command-palette';
 import { Kbd } from '@/components/ui/kbd';
 import { Toaster } from '@/components/ui/toaster';
-import { BillingGate } from '@/features/dashboard/BillingGate';
+import { type BillingGateState, BillingGate } from '@/features/dashboard/BillingGate';
 import { useOrgSync } from '@/hooks/useOrgSync';
 import type { NavItem } from '@/lib/roles';
 import { getNavForRole, getUserRole, isTeamMember } from '@/lib/roles';
@@ -94,8 +94,8 @@ export default function DashboardClientLayout({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [subNavOpen, setSubNavOpen] = useState<Record<string, boolean>>({});
-  const [currentPlan, setCurrentPlan] = useState<string>(plan || 'starter');
-  const [billingStatus, setBillingStatus] = useState<{ planStatus: string; setupFeePaid: boolean } | null>(null);
+  const [currentPlan, setCurrentPlan] = useState<string>(plan || 'free');
+  const [billingStatus, setBillingStatus] = useState<BillingGateState | null>(null);
   const [trialLimits, setTrialLimits] = useState<TrialLimitsData | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -169,7 +169,8 @@ export default function DashboardClientLayout({
       .then((data: {
         plan?: string;
         planStatus?: string;
-        setupFeePaid?: boolean;
+        isFree?: boolean;
+        freeTrialEnded?: boolean;
         isTrialing?: boolean;
         trialDaysLeft?: number;
         trialExpired?: boolean;
@@ -179,12 +180,16 @@ export default function DashboardClientLayout({
           setCurrentPlan(data.plan);
         }
         if (data) {
-          setBillingStatus({ planStatus: data.planStatus ?? '', setupFeePaid: data.setupFeePaid ?? false });
+          setBillingStatus({
+            planStatus: data.planStatus ?? '',
+            freeTrialEnded: !!data.freeTrialEnded,
+          });
           setTrialLimits({
             isTrialing: !!data.isTrialing,
             trialDaysLeft: data.trialDaysLeft ?? 0,
             trialExpired: !!data.trialExpired,
-            plan: data.plan ?? 'starter',
+            isFree: !!data.isFree,
+            plan: data.plan ?? 'free',
             usage: {
               postsThisMonth: data.usage?.postsThisMonth ?? 0,
               postsLimit: data.usage?.postsLimit ?? 0,

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { getOrgBillingState, getOrgUsage } from '@/lib/billing';
+import { FREE_PLAN_FEATURES, FREE_PLAN_ID, FREE_TRIAL_DAYS } from '@/lib/plans';
 
 // -----------------------------------------------------------
 // GET /api/billing/status
@@ -28,25 +29,24 @@ export async function GET(_request: NextRequest) {
       console.warn(`[Billing Status] Org ${orgId} missing — returning fallback state`);
 
       return NextResponse.json({
-        plan: 'starter',
-        planStatus: 'inactive',
-        isActive: false,
-        isTrialing: false,
-        trialDaysLeft: 0,
+        plan: FREE_PLAN_ID,
+        planStatus: 'trialing',
+        isActive: true,
+        isTrialing: true,
+        isFree: true,
+        freeTrialEnded: false,
+        trialDaysLeft: FREE_TRIAL_DAYS,
         trialExpired: false,
         trialEndsAt: null,
         setupFeePaid: false,
         hasStripe: false,
         hasPaystack: false,
         paymentType: 'stripe',
-        features: {
-          postsPerMonth: 0,
-          platformsLimit: 0,
-        },
+        features: FREE_PLAN_FEATURES,
         usage: {
           postsThisMonth: 0,
-          postsLimit: 0,
-          platformsLimit: 0,
+          postsLimit: FREE_PLAN_FEATURES.postsPerMonth,
+          platformsLimit: FREE_PLAN_FEATURES.platformsLimit,
         },
       });
     }
@@ -56,6 +56,8 @@ export async function GET(_request: NextRequest) {
       planStatus: billing.planStatus,
       isActive: billing.isActive,
       isTrialing: billing.isTrialing,
+      isFree: billing.isFree,
+      freeTrialEnded: billing.freeTrialEnded,
       trialDaysLeft: billing.trialDaysLeft,
       trialExpired: billing.trialExpired,
       trialEndsAt: billing.trialEndsAt?.toISOString() ?? null,

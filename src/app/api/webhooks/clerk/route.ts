@@ -2,9 +2,10 @@ import { eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { Webhook } from 'svix';
 
+import { ensureOrgFreePlan } from '@/lib/billing';
+import { ensureNativPostAdminInOrg, fireWelcomeEmailForOrg } from '@/lib/clerk-org-helpers';
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
-import { ensureNativPostAdminInOrg, fireWelcomeEmailForOrg } from '@/lib/clerk-org-helpers';
 
 const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 
@@ -69,23 +70,9 @@ export async function POST(request: Request) {
         const orgId = event.data.id;
         console.log(`[Clerk Webhook] org.created → ${orgId} ("${event.data.name ?? 'unnamed'}")`);
 
-        // 1. Create org row in DB
-        await db
-          .insert(organizationSchema)
-          .values({
-            id: orgId,
-            plan: 'starter',
-            planStatus: 'inactive',
-            postsPerMonth: 0,
-            platformsLimit: 0,
-            setupFeePaid: false,
-            trialEndsAt: null,
-            stripeCustomerId: null,
-            stripeSubscriptionId: null,
-            paystackCustomerCode: null,
-            paystackSubscriptionCode: null,
-          })
-          .onConflictDoNothing();
+        // 1. Create org row in DB, already on the free plan.
+        //    No purchase step stands between signup and the dashboard.
+        await ensureOrgFreePlan(orgId);
 
         // 2. Add NativPost admin — non-fatal if it fails,
         //    billing.ts fallback will retry on next request

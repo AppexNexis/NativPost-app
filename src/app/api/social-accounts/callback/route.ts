@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { buildFreePlanRow } from '@/lib/billing';
 import { decodePlatformFromState, exchangeCodeForTokens, PLATFORM_CONFIGS, type SocialPlatform } from '@/lib/social-oauth';
 import { fireWebhook } from '@/lib/webhook-dispatcher';
 import { getDb } from '@/libs/DB';
@@ -44,17 +45,11 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Safety net: ensure org row exists before FK-dependent insert
+  // Safety net: ensure org row exists before FK-dependent insert.
+  // Falls back to the free plan — never to paid limits.
   await db
     .insert(organizationSchema)
-    .values({
-      id: orgId!,
-      plan: 'starter',
-      planStatus: 'trialing',
-      postsPerMonth: 20,
-      platformsLimit: 3,
-      setupFeePaid: false,
-    })
+    .values(buildFreePlanRow(orgId!))
     .onConflictDoNothing();
 
   const tokens = await exchangeCodeForTokens(platform, code, state);

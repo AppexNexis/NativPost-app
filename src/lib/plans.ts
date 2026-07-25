@@ -7,6 +7,12 @@
  *
  * v3: annual/yearly billing — BillingInterval type, annualPriceUsd,
  *     stripeAnnualPriceId, paystackAnnualPlanCode on every PlanConfig.
+ *
+ * v4: the FREE plan. Every new org is auto-enrolled on `free` at signup —
+ *     no card, no setup fee, no /subscribe wall. Free is a 7-day window
+ *     (FREE_TRIAL_DAYS) carrying FREE_PLAN_FEATURES; when it lapses the
+ *     org stays signed in but is routed to /dashboard/billing to pick a
+ *     paid plan. The one-time setup fee was removed entirely in this pass.
  */
 
 export type BillingInterval = 'month' | 'year';
@@ -40,7 +46,6 @@ export type PlanConfig = {
   tagline: string;
   priceUsd: number;
   annualPriceUsd: number; // total billed once per 12 months (~20% off monthly × 12)
-  setupFeeUsd: number; // flat $5 across all plans
   features: PlanFeatures;
   stripePriceId: { dev: string; prod: string };
   stripeAnnualPriceId: { dev: string; prod: string };
@@ -48,16 +53,52 @@ export type PlanConfig = {
   paystackAnnualPlanCode: { dev: string; prod: string };
   popular?: boolean;
   hidden?: boolean;
+  /** The $0 auto-granted tier. Never purchasable — excluded from VISIBLE_PLANS. */
+  isFree?: boolean;
 };
 
 export const PLAN_CONFIGS: Record<string, PlanConfig> = {
+  free: {
+    id: 'free',
+    name: 'Free',
+    tagline: 'Test the waters — no card required.',
+    priceUsd: 0,
+    annualPriceUsd: 0,
+    isFree: true,
+    features: {
+      postsPerMonth: 3, // 3 posts for the whole free window
+      platformsLimit: 2, // can connect 2 platforms
+      brandProfilesLimit: 1,
+      teamMembersLimit: 1,
+      textPosts: true,
+      imagePosts: false, // free: text only
+      carouselPosts: false,
+      videoPosts: false,
+      videoGeneration: false,
+      contentModes: false,
+      postEnrichment: false,
+      humanReview: false,
+      analyticsSync: false,
+      analyticsHistory: 7,
+      supportLevel: 'email',
+      apiAccess: false,
+      monthlyPlanTopics: 0, // not available on free
+      monthlyPlanRegenerations: 0,
+      monthlyAiCredits: 50,
+      blitzPostsPerDay: 2,
+    },
+    stripePriceId: { dev: '', prod: '' },
+    stripeAnnualPriceId: { dev: '', prod: '' },
+    paystackPlanCode: { dev: '', prod: '' },
+    paystackAnnualPlanCode: { dev: '', prod: '' },
+  },
+
   starter: {
     id: 'starter',
     name: 'Starter',
     tagline: 'Get consistent, on-brand content without the agency price tag.',
     priceUsd: 19,
     annualPriceUsd: 182,
-    setupFeeUsd: 5,
     popular: false,
     features: {
       postsPerMonth: 15,
@@ -93,7 +134,6 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     tagline: 'More reach, richer content, and video — for brands that are serious.',
     priceUsd: 39,
     annualPriceUsd: 374,
-    setupFeeUsd: 5,
     popular: true,
     features: {
       postsPerMonth: 40,
@@ -129,7 +169,6 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     tagline: 'Agency-quality content with a human eye on everything before it goes live.',
     priceUsd: 79,
     annualPriceUsd: 758,
-    setupFeeUsd: 5,
     popular: false,
     features: {
       postsPerMonth: 80,
@@ -165,7 +204,6 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     tagline: 'Run content for multiple clients at scale, under one roof.',
     priceUsd: 149,
     annualPriceUsd: 1430,
-    setupFeeUsd: 5,
     popular: false,
     features: {
       postsPerMonth: -1,
@@ -201,7 +239,6 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     tagline: 'Custom solution for large organisations.',
     priceUsd: 0,
     annualPriceUsd: 0,
-    setupFeeUsd: 0,
     hidden: true,
     features: {
       postsPerMonth: -1,
@@ -233,40 +270,19 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
 };
 
 export const FREE_TRIAL_DAYS = 7;
-export const SETUP_FEE_USD = 5; // flat across all plans
+export const FREE_PLAN_ID = 'free';
 
 // -----------------------------------------------------------
-// TRIAL RESTRICTIONS
-// During the 7-day trial, regardless of selected plan,
-// users get these locked-down limits:
-//   - 3 posts total (not per month — for the whole trial)
-//   - 1 platform max per post
-//   - 2 social accounts connectable
+// FREE PLAN
+// Auto-granted to every org at signup — no card, no setup fee.
+// Runs for FREE_TRIAL_DAYS, then the org must pick a paid plan.
+//   - 3 posts total (for the whole free window, not per month)
+//   - 1 platform max per post, 2 social accounts connectable
 //   - text posts ONLY (no image, carousel, video)
 //   - Monthly Plan: not available (0 topics)
 // -----------------------------------------------------------
-export const TRIAL_FEATURES: PlanFeatures = {
-  postsPerMonth: 3, // 3 posts for entire trial
-  platformsLimit: 2, // can connect 2 platforms
-  brandProfilesLimit: 1,
-  teamMembersLimit: 1,
-  textPosts: true,
-  imagePosts: false, // trial: text only
-  carouselPosts: false,
-  videoPosts: false,
-  videoGeneration: false,
-  contentModes: false,
-  postEnrichment: false,
-  humanReview: false,
-  analyticsSync: false,
-  analyticsHistory: 7,
-  supportLevel: 'email',
-  apiAccess: false,
-  monthlyPlanTopics: 0, // not available during trial
-  monthlyPlanRegenerations: 0,
-  monthlyAiCredits: 50,
-  blitzPostsPerDay: 2,
-};
+export const FREE_PLAN = PLAN_CONFIGS.free!;
+export const FREE_PLAN_FEATURES: PlanFeatures = FREE_PLAN.features;
 
 function getEnv(): 'dev' | 'prod' {
   return process.env.BILLING_PLAN_ENV === 'prod' ? 'prod' : 'dev';
@@ -313,10 +329,16 @@ export function getPlanByPaystackCode(planCode: string): PlanConfig | null {
 }
 
 export function getEffectivePlanFeatures(planId: string, planStatus: string): PlanFeatures {
-  if (planStatus === 'trialing') {
-    return TRIAL_FEATURES;
+  // Free orgs always get free limits, whatever the status column says.
+  if (planId === FREE_PLAN_ID) {
+    return FREE_PLAN_FEATURES;
   }
-  return PLAN_CONFIGS[planId]?.features ?? PLAN_CONFIGS.starter!.features;
+  // A paid plan sitting in `trialing` (Stripe-side trial) is still capped
+  // at free limits until the first real charge lands.
+  if (planStatus === 'trialing') {
+    return FREE_PLAN_FEATURES;
+  }
+  return PLAN_CONFIGS[planId]?.features ?? FREE_PLAN_FEATURES;
 }
 
 export function isPlanConfigured(planId: string): boolean {
@@ -349,7 +371,23 @@ export function formatLimit(value: number, singular: string, plural?: string): s
   return `${value} ${value === 1 ? singular : (plural ?? `${singular}s`)}`;
 }
 
-export const VISIBLE_PLANS = Object.values(PLAN_CONFIGS).filter(p => !p.hidden);
+/**
+ * The purchasable tiers, in upgrade order. Excludes `free` (auto-granted,
+ * never bought) and `enterprise` (hidden, sales-led). This is what the
+ * billing grid renders.
+ */
+export const VISIBLE_PLANS = Object.values(PLAN_CONFIGS).filter(
+  p => !p.hidden && !p.isFree,
+);
+
+export function isFreePlan(planId: string | null | undefined): boolean {
+  return planId === FREE_PLAN_ID;
+}
+
+/** Resolves any plan id — including `free` — to its config. */
+export function resolvePlan(planId: string | null | undefined): PlanConfig {
+  return (planId && PLAN_CONFIGS[planId]) || FREE_PLAN;
+}
 
 // -----------------------------------------------------------
 // MONTHLY PLAN HELPERS

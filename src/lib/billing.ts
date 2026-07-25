@@ -9,13 +9,20 @@
  * Import these in API routes to enforce limits before processing requests.
  */
 
-import { and, count, eq, gte, isNotNull } from 'drizzle-orm';
+import { and, count, eq, gte, isNotNull, isNull } from 'drizzle-orm';
 
 import { fireEmailEvent } from '@/lib/email-webhook';
 import { getDb } from '@/libs/DB';
 import { contentItemSchema, organizationSchema, publishingQueueSchema } from '@/models/Schema';
 
-import { FREE_TRIAL_DAYS, getEffectivePlanFeatures, type PlanFeatures, TRIAL_FEATURES } from './plans';
+import {
+  FREE_PLAN_FEATURES,
+  FREE_PLAN_ID,
+  FREE_TRIAL_DAYS,
+  getEffectivePlanFeatures,
+  isFreePlan,
+  type PlanFeatures,
+} from './plans';
 
 // -----------------------------------------------------------
 // TYPES
@@ -39,6 +46,10 @@ export type OrgBillingState = {
   isTrialing: boolean;
   trialDaysLeft: number;
   trialExpired: boolean;
+  /** On the auto-granted $0 tier — has never subscribed. */
+  isFree: boolean;
+  /** Free window has lapsed and no paid subscription took over. */
+  freeTrialEnded: boolean;
   features: PlanFeatures;
 };
 
@@ -98,6 +109,91 @@ async function runWelcomeEmailFallback(orgId: string): Promise<void> {
 }
 
 // -----------------------------------------------------------
+// FREE PLAN PROVISIONING
+//
+// Every org starts here. There is no purchase step before the
+// dashboard — signup → onboarding → dashboard, on the free plan.
+// -----------------------------------------------------------
+
+export function freeTrialEndDate(from: Date = new Date()): Date {
+  const endsAt = new Date(from);
+  endsAt.setDate(endsAt.getDate() + FREE_TRIAL_DAYS);
+  return endsAt;
+}
+
+/** The column values that put an org on the free plan. */
+export function buildFreePlanRow(orgId: string) {
+  return {
+    id: orgId,
+    plan: FREE_PLAN_ID,
+    planStatus: 'trialing',
+    trialEndsAt: freeTrialEndDate(),
+    postsPerMonth: FREE_PLAN_FEATURES.postsPerMonth,
+    platformsLimit: FREE_PLAN_FEATURES.platformsLimit,
+    setupFeePaid: false,
+    stripeCustomerId: null,
+    stripeSubscriptionId: null,
+    paystackCustomerCode: null,
+    paystackSubscriptionCode: null,
+  };
+}
+
+/**
+ * Idempotently put an org on the free plan.
+ *
+ * Creates the row if it is missing, and repairs legacy rows still sitting
+ * on the pre-free-plan `inactive` status. Orgs that have ever touched a
+ * payment provider are never rewritten — their webhook state wins.
+ *
+ * This sits on the dashboard layout, so it runs on every navigation: the
+ * settled case costs one primary-key SELECT and no writes at all.
+ */
+export async function ensureOrgFreePlan(orgId: string): Promise<void> {
+  const db = await getDb();
+
+  const [org] = await db
+    .select({ planStatus: organizationSchema.planStatus })
+    .from(organizationSchema)
+    .where(eq(organizationSchema.id, orgId))
+    .limit(1);
+
+  // Settled org — nothing to do.
+  if (org && org.planStatus !== 'inactive') {
+    return;
+  }
+
+  if (!org) {
+    await db
+      .insert(organizationSchema)
+      .values(buildFreePlanRow(orgId))
+      .onConflictDoNothing();
+    return;
+  }
+
+  // Repair path for orgs created before the free plan existed. Scoped to
+  // `inactive` with no payment identifiers so it can never touch a
+  // subscriber, a live trial, or a past_due account mid-recovery.
+  await db
+    .update(organizationSchema)
+    .set({
+      plan: FREE_PLAN_ID,
+      planStatus: 'trialing',
+      trialEndsAt: freeTrialEndDate(),
+      postsPerMonth: FREE_PLAN_FEATURES.postsPerMonth,
+      platformsLimit: FREE_PLAN_FEATURES.platformsLimit,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(organizationSchema.id, orgId),
+        eq(organizationSchema.planStatus, 'inactive'),
+        isNull(organizationSchema.stripeSubscriptionId),
+        isNull(organizationSchema.paystackSubscriptionCode),
+      ),
+    );
+}
+
+// -----------------------------------------------------------
 // GET ORG BILLING STATE
 // -----------------------------------------------------------
 export async function getOrgBillingState(orgId: string): Promise<OrgBillingState | null> {
@@ -120,19 +216,7 @@ export async function getOrgBillingState(orgId: string): Promise<OrgBillingState
     try {
       await db
         .insert(organizationSchema)
-        .values({
-          id: orgId,
-          plan: 'starter',
-          planStatus: 'inactive',
-          postsPerMonth: 0,
-          platformsLimit: 0,
-          setupFeePaid: false,
-          trialEndsAt: null,
-          stripeCustomerId: null,
-          stripeSubscriptionId: null,
-          paystackCustomerCode: null,
-          paystackSubscriptionCode: null,
-        })
+        .values(buildFreePlanRow(orgId))
         .onConflictDoNothing();
     } catch (error) {
       console.error('[Billing] Failed to create fallback org:', error);
@@ -165,6 +249,7 @@ export async function getOrgBillingState(orgId: string): Promise<OrgBillingState
   const isTrialing = org.planStatus === 'trialing';
   const isActive = org.planStatus === 'active';
   const trialEndsAt = org.trialEndsAt;
+  const isFree = isFreePlan(org.plan);
 
   let trialDaysLeft = 0;
   let trialExpired = false;
@@ -174,6 +259,11 @@ export async function getOrgBillingState(orgId: string): Promise<OrgBillingState
     trialDaysLeft = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
     trialExpired = msLeft <= 0;
   }
+
+  // A lapsed free window is not a lockout — the user stays signed in and
+  // gets routed to /dashboard/billing. Write actions are still refused by
+  // the limit checks below, which all key off isActive.
+  const freeTrialEnded = isFree && trialExpired;
 
   const features = getEffectivePlanFeatures(org.plan, org.planStatus);
 
@@ -195,8 +285,25 @@ export async function getOrgBillingState(orgId: string): Promise<OrgBillingState
     isTrialing,
     trialDaysLeft,
     trialExpired,
+    isFree,
+    freeTrialEnded,
     features,
   };
+}
+
+/**
+ * Why an org can't perform a billable action right now. Free users who ran
+ * out the clock get upgrade copy, not "your subscription expired" — they
+ * never had one.
+ */
+function inactiveReason(billing: OrgBillingState): string {
+  if (billing.freeTrialEnded) {
+    return `Your ${FREE_TRIAL_DAYS}-day free trial has ended. Choose a plan to keep publishing.`;
+  }
+  if (billing.planStatus === 'past_due') {
+    return 'Your last payment failed. Update your payment details to restore access.';
+  }
+  return 'Your subscription is no longer active. Choose a plan to continue.';
 }
 
 // -----------------------------------------------------------
@@ -220,7 +327,7 @@ export async function checkPostLimit(orgId: string): Promise<LimitCheckResult> {
     return { allowed: false, reason: 'Organisation not found.', upgradeRequired: false };
   }
   if (!billing.isActive) {
-    return { allowed: false, reason: 'Your subscription has expired. Please subscribe to continue.', upgradeRequired: true };
+    return { allowed: false, reason: inactiveReason(billing), upgradeRequired: true };
   }
 
   const { postsPerMonth } = billing.features;
@@ -256,11 +363,11 @@ export async function checkPostLimit(orgId: string): Promise<LimitCheckResult> {
 
   if (used >= postsPerMonth) {
     const limitLabel = billing.isTrialing
-      ? `${postsPerMonth} posts for your trial`
+      ? `${postsPerMonth} posts on the free plan`
       : `${postsPerMonth} posts for this month`;
     return {
       allowed: false,
-      reason: `You've used all ${limitLabel}. ${billing.isTrialing ? 'Subscribe to a plan to continue.' : 'Your limit resets on the 1st. Upgrade for more.'}`,
+      reason: `You've used all ${limitLabel}. ${billing.isTrialing ? 'Upgrade to a paid plan to keep publishing.' : 'Your limit resets on the 1st. Upgrade for more.'}`,
       upgradeRequired: true,
     };
   }
@@ -280,14 +387,14 @@ export async function checkPlatformsPerPost(
     return { allowed: false, reason: 'Organisation not found.', upgradeRequired: false };
   }
   if (!billing.isActive) {
-    return { allowed: false, reason: 'Your subscription has expired.', upgradeRequired: true };
+    return { allowed: false, reason: inactiveReason(billing), upgradeRequired: true };
   }
 
   if (billing.isTrialing) {
     if (requestedPlatforms.length > 1) {
       return {
         allowed: false,
-        reason: 'During your trial, you can only publish to 1 platform per post. Subscribe to publish to multiple platforms.',
+        reason: 'The free plan publishes to 1 platform per post. Upgrade to publish everywhere at once.',
         upgradeRequired: true,
       };
     }
@@ -322,7 +429,7 @@ export async function checkPlatformLimit(
     return { allowed: false, reason: 'Organisation not found.', upgradeRequired: false };
   }
   if (!billing.isActive) {
-    return { allowed: false, reason: 'Your subscription has expired.', upgradeRequired: true };
+    return { allowed: false, reason: inactiveReason(billing), upgradeRequired: true };
   }
 
   const { platformsLimit } = billing.features;
@@ -353,13 +460,13 @@ export async function checkFeatureAccess(
     return { allowed: false, reason: 'Organisation not found.', upgradeRequired: false };
   }
   if (!billing.isActive) {
-    return { allowed: false, reason: 'Your subscription has expired.', upgradeRequired: true };
+    return { allowed: false, reason: inactiveReason(billing), upgradeRequired: true };
   }
 
   const value = billing.features[feature];
   if (value === false) {
-    const trialSuffix = billing.isTrialing
-      ? ' Subscribe to unlock this feature.'
+    const trialSuffix = billing.isFree
+      ? ' Upgrade to unlock it.'
       : ' Upgrade your plan to access it.';
     return {
       allowed: false,
@@ -406,30 +513,6 @@ export async function getOrgUsage(orgId: string) {
     postsThisMonth: result?.count ?? 0,
     monthStart: windowStart.toISOString(),
   };
-}
-
-// -----------------------------------------------------------
-// INIT ORG TRIAL
-// Called when setup fee is paid to start the trial.
-// Welcome email was already fired at org creation — no duplicate needed.
-// -----------------------------------------------------------
-export async function initOrgTrial(orgId: string) {
-  const db = await getDb();
-  const trialEndsAt = new Date();
-  trialEndsAt.setDate(trialEndsAt.getDate() + FREE_TRIAL_DAYS);
-
-  await db
-    .update(organizationSchema)
-    .set({
-      planStatus: 'trialing',
-      plan: 'starter',
-      trialEndsAt,
-      postsPerMonth: TRIAL_FEATURES.postsPerMonth,
-      platformsLimit: TRIAL_FEATURES.platformsLimit,
-    })
-    .where(eq(organizationSchema.id, orgId));
-
-  console.log(`[initOrgTrial] Trial started for org ${orgId}, ends at ${trialEndsAt.toISOString()}`);
 }
 
 // -----------------------------------------------------------

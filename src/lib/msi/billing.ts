@@ -5,6 +5,10 @@
 // split means metered billing can be switched on later WITHOUT changing the
 // publish pipeline.
 
+// Type-only — erased at compile time, so the pure-logic path and unit tests
+// never load the Stripe SDK (the client is imported lazily; see below).
+import type Stripe from 'stripe';
+
 export type PublishEventInput = {
   orgId: string;
   managedAccountId: string;
@@ -50,6 +54,12 @@ export type UsageRecord = {
   orgId: string;
   billingPeriod: string;
   eventId: string;
+  // The org's Stripe customer id, resolved by the reporter (which owns DB
+  // access). Absent/null for orgs that aren't Stripe customers — the Stripe
+  // provider cannot meter those and the reporter skips them.
+  stripeCustomerId?: string | null;
+  // When the publish happened — used as the meter-event timestamp when recent.
+  occurredAt?: Date;
 };
 
 /** Outcome of reporting one event: the provider's record id for reconciliation. */
@@ -71,20 +81,69 @@ export const noopBillingService: BillingService = {
   },
 };
 
+// The meter's `event_name` in Stripe (Billing → Meters). Each reported unit is
+// one managed post; the meter's price ($MSI_PER_POST_USD) lives in Stripe.
+const METER_EVENT_NAME
+  = process.env.STRIPE_MSI_METER_EVENT_NAME || 'nativpost_managed_post';
+
+// Stripe rejects meter-event timestamps older than ~35 days. Stay safely inside
+// that so a late reporter run doesn't fail; otherwise the event defaults to now.
+const METER_TIMESTAMP_MAX_AGE_MS = 34 * 24 * 60 * 60 * 1000;
+
+// Built lazily on first use so the pure-logic path never loads the SDK.
+let stripeClient: Stripe | null = null;
+
+async function getStripeClient(): Promise<Stripe> {
+  if (stripeClient) {
+    return stripeClient;
+  }
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) {
+    throw new Error('STRIPE_SECRET_KEY is not set — cannot report metered usage.');
+  }
+  const { default: Stripe } = await import('stripe');
+  stripeClient = new Stripe(key);
+  return stripeClient;
+}
+
 /**
- * Stripe provider STUB. Deliberately not implemented — wiring the real
- * `stripe.billing.meterEvents.create` (or subscription usage record) call is
- * the final step, done only after PlatformClients make publishes trustworthy.
- * Guarded so an accidental enable fails loudly rather than silently no-op'ing.
+ * Stripe metered-billing provider. Reports one usage unit per managed post via
+ * the Billing Meter Events API. Idempotent: the event id is both the Stripe
+ * `identifier` (dedup within Stripe's rolling window) and the idempotency key,
+ * so a retry/replay never double-meters. Enabled only when
+ * MSI_METERED_BILLING_ENABLED is on; the reporter skips events with no Stripe
+ * customer id (this call requires one).
  */
 export function createStripeBillingService(): BillingService {
   return {
     enabled: true,
-    async reportUsage(): Promise<ReportResult> {
-      throw new Error(
-        'StripeBillingService not implemented — enable only after wiring the '
-        + 'real Stripe usage-record call.',
+    async reportUsage(record: UsageRecord): Promise<ReportResult> {
+      if (!record.stripeCustomerId) {
+        throw new Error(
+          `Cannot meter usage for org ${record.orgId}: no Stripe customer id.`,
+        );
+      }
+      const stripe = await getStripeClient();
+      const withinWindow
+        = record.occurredAt != null
+          && Date.now() - record.occurredAt.getTime() < METER_TIMESTAMP_MAX_AGE_MS;
+
+      const event = await stripe.billing.meterEvents.create(
+        {
+          event_name: METER_EVENT_NAME,
+          payload: {
+            stripe_customer_id: record.stripeCustomerId,
+            value: '1',
+          },
+          identifier: record.eventId,
+          ...(withinWindow
+            ? { timestamp: Math.floor(record.occurredAt!.getTime() / 1000) }
+            : {}),
+        },
+        { idempotencyKey: `msi-meter-${record.eventId}` },
       );
+
+      return { providerRecordId: event.identifier };
     },
   };
 }

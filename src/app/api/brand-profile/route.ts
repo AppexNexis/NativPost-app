@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { buildFreePlanRow } from '@/lib/billing';
 // import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import { brandProfileSchema, organizationSchema } from '@/models/Schema';
@@ -55,17 +56,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    // Ensure org row exists before writing brand profile (FK safety net)
+    // Ensure org row exists before writing brand profile (FK safety net).
+    // Falls back to the free plan — never to paid limits.
     await db
       .insert(organizationSchema)
-      .values({
-        id: orgId!,
-        plan: 'starter',
-        planStatus: 'trialing',
-        postsPerMonth: 20,
-        platformsLimit: 3,
-        setupFeePaid: false,
-      })
+      .values(buildFreePlanRow(orgId!))
       .onConflictDoNothing();
 
     const completeness = calculateCompleteness(body);

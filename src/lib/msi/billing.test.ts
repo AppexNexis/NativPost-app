@@ -1,12 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   billingPeriodOf,
   buildPublishEvent,
+  createStripeBillingService,
   getBillingService,
   isMeteredBillingEnabled,
   noopBillingService,
 } from './billing';
+
+// Mock the Stripe SDK the metered provider lazily imports.
+const { meterEventsCreate } = vi.hoisted(() => ({ meterEventsCreate: vi.fn() }));
+vi.mock('stripe', () => ({
+  default: class MockStripe {
+    billing = { meterEvents: { create: meterEventsCreate } };
+    constructor(_key: string) {}
+  },
+}));
 
 describe('billingPeriodOf', () => {
   it('buckets by UTC year-month, zero-padded', () => {
@@ -90,5 +100,60 @@ describe('billing feature flag', () => {
         eventId: 'e',
       }),
     ).resolves.toEqual({ providerRecordId: null });
+  });
+});
+
+describe('Stripe metered provider', () => {
+  afterEach(() => {
+    meterEventsCreate.mockReset();
+  });
+
+  it('refuses to meter an org with no Stripe customer id', async () => {
+    await expect(
+      createStripeBillingService().reportUsage({
+        orgId: 'org-1',
+        billingPeriod: '2026-07',
+        eventId: 'evt-1',
+      }),
+    ).rejects.toThrow(/no Stripe customer id/);
+    expect(meterEventsCreate).not.toHaveBeenCalled();
+  });
+
+  it('reports one unit via the meter events API, idempotent on the event id', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_dummy';
+    meterEventsCreate.mockResolvedValue({ identifier: 'evt-42' });
+
+    const res = await createStripeBillingService().reportUsage({
+      orgId: 'org-1',
+      billingPeriod: '2026-07',
+      eventId: 'evt-42',
+      stripeCustomerId: 'cus_123',
+      occurredAt: new Date(),
+    });
+
+    expect(res).toEqual({ providerRecordId: 'evt-42' });
+    expect(meterEventsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { stripe_customer_id: 'cus_123', value: '1' },
+        identifier: 'evt-42',
+      }),
+      { idempotencyKey: 'msi-meter-evt-42' },
+    );
+  });
+
+  it('omits an out-of-window timestamp (Stripe rejects >35d old)', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_dummy';
+    meterEventsCreate.mockResolvedValue({ identifier: 'evt-old' });
+
+    await createStripeBillingService().reportUsage({
+      orgId: 'org-1',
+      billingPeriod: '2026-05',
+      eventId: 'evt-old',
+      stripeCustomerId: 'cus_123',
+      occurredAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
+    });
+
+    const [params] = meterEventsCreate.mock.calls[0]!;
+    expect(params).not.toHaveProperty('timestamp');
   });
 });

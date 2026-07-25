@@ -2,7 +2,7 @@ import { auth } from '@clerk/nextjs/server';
 import { and, eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
-import { getOrgBillingState } from '@/lib/billing';
+import { ensureOrgFreePlan } from '@/lib/billing';
 import { getDb } from '@/libs/DB';
 import { onboardingProgressSchema } from '@/models/Schema';
 
@@ -53,30 +53,20 @@ export default async function DashboardLayoutGate({
     redirect('/onboarding/setup');
   }
 
-  // ── Billing gate ───────────────────────────────────────────────────
-  let billing;
+  // ── Billing provisioning ───────────────────────────────────────────
+  // Nothing here ever redirects. There is no purchase step in front of
+  // the dashboard: an org with no billing row (missed Clerk webhook) or
+  // a legacy `inactive` row is repaired onto the free plan and carries on.
+  //
+  // Routing for a lapsed free window or a failed payment is the client
+  // BillingGate's job — it can see the pathname, so it can send the user
+  // to /dashboard/billing without fighting this layout for the same URL.
   try {
-    billing = await getOrgBillingState(orgId);
+    await ensureOrgFreePlan(orgId);
   } catch (err) {
-    console.error('[Dashboard Gate] billing fetch failed', err);
-    billing = null;
-  }
-
-  const isActive = billing?.isActive;
-  const isTrialing = billing?.isTrialing;
-  const trialExpired = billing?.trialExpired;
-  const isPastDueOrCancelled =
-    billing?.planStatus === 'past_due' || billing?.planStatus === 'cancelled';
-
-  // past_due/cancelled users CAN access the dashboard (specifically billing)
-  // They get redirected to /dashboard/billing by the client-side billing gate below
-  const canAccess =
-    isActive ||
-    (isTrialing && !trialExpired) ||
-    (isPastDueOrCancelled && !!billing?.setupFeePaid);
-
-  if (!canAccess) {
-    redirect('/subscribe?redirect=/dashboard');
+    console.error('[Dashboard Gate] free plan provisioning failed', err);
+    // Non-fatal: getOrgBillingState has its own fallback insert, and
+    // API-level limit checks still refuse work for an unprovisioned org.
   }
 
   return <DashboardLayout>{children}</DashboardLayout>;

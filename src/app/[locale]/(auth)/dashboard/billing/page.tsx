@@ -17,7 +17,15 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/features/dashboard/PageHeader';
-import { ANNUAL_SAVE_PCT, type BillingInterval, FREE_TRIAL_DAYS, getMonthlyEquivalentDisplay, SETUP_FEE_USD, VISIBLE_PLANS } from '@/lib/plans';
+import {
+  ANNUAL_SAVE_PCT,
+  type BillingInterval,
+  FREE_PLAN,
+  FREE_TRIAL_DAYS,
+  getMonthlyEquivalentDisplay,
+  resolvePlan,
+  VISIBLE_PLANS,
+} from '@/lib/plans';
 
 // -----------------------------------------------------------
 // TYPES
@@ -49,6 +57,8 @@ type BillingStatus = {
   planStatus: string;
   isActive: boolean;
   isTrialing: boolean;
+  isFree: boolean;
+  freeTrialEnded: boolean;
   billingInterval?: BillingInterval;
   trialDaysLeft: number;
   trialExpired: boolean;
@@ -128,10 +138,30 @@ const FEATURE_ROWS = [
 function StatusBadge({
   status,
   isTrialing,
+  isFree,
+  freeTrialEnded,
 }: {
   status: string;
   isTrialing: boolean;
+  isFree?: boolean;
+  freeTrialEnded?: boolean;
 }) {
+  if (freeTrialEnded) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-400">
+        <span className="size-1.5 rounded-full bg-red-500" />
+        Ended
+      </span>
+    );
+  }
+  if (isFree) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+        <span className="size-1.5 rounded-full bg-emerald-500" />
+        Free
+      </span>
+    );
+  }
   if (isTrialing) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
@@ -161,6 +191,116 @@ function StatusBadge({
       <span className="size-1.5 rounded-full bg-muted-foreground/50" />
       Inactive
     </span>
+  );
+}
+
+// -----------------------------------------------------------
+// FREE PLAN BANNER
+//
+// Sits above the paid grid as a full-width row rather than a fifth
+// card: Free is never purchased, so it reads as state ("this is what
+// you have now"), not as an option competing with the paid tiers.
+// -----------------------------------------------------------
+const FREE_PLAN_PERKS = [
+  `${FREE_PLAN.features.postsPerMonth} posts to publish`,
+  `Connect up to ${FREE_PLAN.features.platformsLimit} social accounts`,
+  'Text posts with AI copywriting',
+  `${FREE_PLAN.features.monthlyAiCredits} AI Studio credits`,
+  `Blitz mode · ${FREE_PLAN.features.blitzPostsPerDay} posts/day`,
+  'Full brand profile + calendar',
+];
+
+function FreePlanBanner({
+  isCurrent,
+  trialDaysLeft,
+  trialEnded,
+  trialEndsAt,
+}: {
+  isCurrent: boolean;
+  trialDaysLeft: number;
+  trialEnded: boolean;
+  trialEndsAt: string | null;
+}) {
+  return (
+    <div
+      className={`overflow-hidden rounded-2xl border transition-colors ${
+        trialEnded
+          ? 'border-red-300 bg-red-50/50 dark:border-red-800/60 dark:bg-red-900/10'
+          : 'border-border bg-muted/30'
+      }`}
+    >
+      <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-center lg:gap-8">
+        {/* Identity + price */}
+        <div className="lg:w-64 lg:shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold">{FREE_PLAN.name}</p>
+            {isCurrent && !trialEnded && (
+              <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                Current plan
+              </span>
+            )}
+            {trialEnded && (
+              <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                Ended
+              </span>
+            )}
+          </div>
+
+          <div className="mt-1.5 flex items-baseline gap-1">
+            <span className="text-3xl font-bold tracking-tight">$0</span>
+            <span className="text-sm text-muted-foreground">
+              for
+              {' '}
+              {FREE_TRIAL_DAYS}
+              {' '}
+              days
+            </span>
+          </div>
+
+          <p className="mt-1 text-meta text-muted-foreground">
+            {trialEnded
+              ? 'Your free trial has ended — pick a plan to keep publishing.'
+              : trialDaysLeft > 0
+                ? `${trialDaysLeft} ${trialDaysLeft === 1 ? 'day' : 'days'} left${
+                  trialEndsAt
+                    ? ` · ends ${new Date(trialEndsAt).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                    })}`
+                    : ''
+                }`
+                : 'No credit card required.'}
+          </p>
+        </div>
+
+        {/* Perks */}
+        <div className="grid flex-1 gap-x-6 gap-y-2.5 sm:grid-cols-2 xl:grid-cols-3">
+          {FREE_PLAN_PERKS.map(perk => (
+            <div key={perk} className="flex items-start gap-2.5 text-sm">
+              <div
+                className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full ${
+                  trialEnded
+                    ? 'bg-muted'
+                    : 'bg-emerald-100 dark:bg-emerald-900/30'
+                }`}
+              >
+                <Check
+                  className={`size-2.5 ${
+                    trialEnded
+                      ? 'text-muted-foreground'
+                      : 'text-emerald-600 dark:text-emerald-400'
+                  }`}
+                />
+              </div>
+              <span className="text-muted-foreground">{perk}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* No countdown bar here on purpose — the current-plan card at the
+          top of the page already owns the trial progress meter. */}
+    </div>
   );
 }
 
@@ -526,8 +666,13 @@ function BillingContent() {
   };
 
   const trialDaysLeft = billing?.trialDaysLeft ?? 0;
-  const currentPlan = VISIBLE_PLANS.find(p => p.id === billing?.plan);
+  // resolvePlan handles `free`, which is deliberately absent from VISIBLE_PLANS.
+  const currentPlan = resolvePlan(billing?.plan);
+  // -1 for free, so every paid tier reads as an upgrade.
   const currentPlanIndex = VISIBLE_PLANS.findIndex(p => p.id === billing?.plan);
+  const isFree = billing?.isFree ?? true;
+  const freeTrialEnded = billing?.freeTrialEnded ?? false;
+  const trialEnded = searchParams.get('trial_ended');
 
   if (isLoading) {
     // Mirrors the plans layout so the frame paints instantly.
@@ -561,6 +706,26 @@ function BillingContent() {
         <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400">
           <AlertCircle className="size-4 shrink-0" />
           Checkout cancelled. No changes were made.
+        </div>
+      )}
+
+      {/* Landed here because the free window ran out */}
+      {(trialEnded || freeTrialEnded) && !success && (
+        <div className="flex flex-col gap-3 rounded-xl border-2 border-red-300 bg-red-50 p-5 dark:border-red-800 dark:bg-red-900/20 sm:flex-row sm:items-start">
+          <AlertCircle className="mt-0.5 size-5 shrink-0 text-red-500" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+              Your
+              {' '}
+              {FREE_TRIAL_DAYS}
+              -day free trial has ended
+            </p>
+            <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+              Everything you've made is safe — your posts, brand profile and
+              connected accounts are exactly where you left them. Pick a plan
+              below to start publishing again.
+            </p>
+          </div>
         </div>
       )}
 
@@ -632,23 +797,27 @@ function BillingContent() {
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-sm font-semibold">
-                  {currentPlan?.name ?? 'Starter'}
+                  {currentPlan.name}
                   {' '}
                   Plan
                 </p>
                 <StatusBadge
-                  status={billing?.planStatus ?? 'inactive'}
+                  status={billing?.planStatus ?? 'trialing'}
                   isTrialing={billing?.isTrialing ?? false}
+                  isFree={isFree}
+                  freeTrialEnded={freeTrialEnded}
                 />
               </div>
               <p className="mt-1 text-meta text-muted-foreground">
-                {billing?.isTrialing
-                  ? `Trial ends ${new Date(billing.trialEndsAt!).toLocaleDateString('en-US', {
-                    month: 'long',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}`
-                  : `${billing?.usage.postsLimit === 999999 ? 'Unlimited' : billing?.usage.postsLimit} posts/mo · ${billing?.usage.platformsLimit === 99 ? 'All' : billing?.usage.platformsLimit} platforms`}
+                {freeTrialEnded
+                  ? 'Free trial ended — choose a plan to keep publishing'
+                  : billing?.isTrialing && billing.trialEndsAt
+                    ? `${isFree ? 'Free trial' : 'Trial'} ends ${new Date(billing.trialEndsAt).toLocaleDateString('en-US', {
+                      month: 'long',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}`
+                    : `${billing?.usage.postsLimit === 999999 ? 'Unlimited' : billing?.usage.postsLimit} posts/mo · ${billing?.usage.platformsLimit === 99 ? 'All' : billing?.usage.platformsLimit} platforms`}
               </p>
             </div>
 
@@ -689,9 +858,9 @@ function BillingContent() {
                 {billing?.usage.postsLimit === 999999 ? '∞' : (billing?.usage.postsLimit ?? 0)}
               </span>
             </p>
-            {billing?.isTrialing && billing.plan !== 'starter' && (
+            {isFree && (
               <p className="mt-1 text-micro leading-tight text-muted-foreground">
-                Starter limits apply during trial
+                Free plan allowance
               </p>
             )}
           </div>
@@ -701,9 +870,9 @@ function BillingContent() {
             <p className="mt-1 text-2xl font-bold tabular-nums">
               {billing?.usage.platformsLimit === 99 ? '∞' : (billing?.usage.platformsLimit ?? 0)}
             </p>
-            {billing?.isTrialing && billing.plan !== 'starter' && (
+            {isFree && (
               <p className="mt-1 text-micro leading-tight text-muted-foreground">
-                Unlocks after subscribing
+                More unlock on paid plans
               </p>
             )}
           </div>
@@ -711,67 +880,59 @@ function BillingContent() {
           <div className="border-t px-5 py-4 sm:border-t-0">
             <p className="text-meta text-muted-foreground">Plan price</p>
             <p className="mt-1 text-2xl font-bold tabular-nums">
-              {billing?.billingInterval === 'year' ? (
+              {billing?.billingInterval === 'year' && !isFree ? (
                 <>
                   $
-                  {currentPlan?.annualPriceUsd ?? currentPlan?.priceUsd ?? 0}
+                  {currentPlan.annualPriceUsd}
                   <span className="ml-1 text-sm font-normal text-muted-foreground">/yr</span>
                 </>
               ) : (
                 <>
                   $
-                  {currentPlan?.priceUsd ?? 0}
-                  <span className="ml-1 text-sm font-normal text-muted-foreground">/mo</span>
+                  {currentPlan.priceUsd}
+                  <span className="ml-1 text-sm font-normal text-muted-foreground">
+                    {isFree ? '' : '/mo'}
+                  </span>
                 </>
               )}
             </p>
           </div>
 
           <div className="border-t px-5 py-4 sm:border-t-0">
-            <p className="text-meta text-muted-foreground">Setup fee</p>
+            <p className="text-meta text-muted-foreground">
+              {isFree ? 'Free trial' : 'Billing'}
+            </p>
             <p className="mt-1 text-2xl font-bold">
-              {billing?.setupFeePaid ? (
-                <span className="text-emerald-600">Paid</span>
+              {isFree ? (
+                freeTrialEnded ? (
+                  <span className="text-red-600">Ended</span>
+                ) : (
+                  <span className="tabular-nums">
+                    {trialDaysLeft}
+                    <span className="ml-1 text-sm font-normal text-muted-foreground">
+                      {trialDaysLeft === 1 ? 'day left' : 'days left'}
+                    </span>
+                  </span>
+                )
               ) : (
-                <span className="text-muted-foreground">
-                  $
-                  {SETUP_FEE_USD}
-                  {' '}
-                  due
+                <span className="capitalize">
+                  {billing?.billingInterval === 'year' ? 'Yearly' : 'Monthly'}
                 </span>
               )}
             </p>
           </div>
         </div>
 
-        {/* Trial note */}
-        {billing?.isTrialing && billing.plan !== 'starter' && (
-          <div className="border-t bg-blue-50/60 px-5 py-3 dark:bg-blue-900/20">
-            <p className="text-xs text-blue-700 dark:text-blue-400">
-              <strong className="font-semibold">Trial note:</strong>
-              {' '}
-              During your
-              {' '}
-              {FREE_TRIAL_DAYS}
-              -day trial, access is limited to Starter plan features (15 posts, 3
-              platforms) regardless of your selected plan. Your full
-              {currentPlan?.name}
-              {' '}
-              limits
-              unlock the moment you subscribe.
-            </p>
-          </div>
-        )}
-
-        {/* Trial progress bar */}
-        {billing?.isTrialing && billing.trialEndsAt && (
+        {/* Free-plan progress bar */}
+        {isFree && !freeTrialEnded && billing?.trialEndsAt && (
           <div className="border-t px-5 py-4">
             <div className="mb-2 flex items-center justify-between text-xs">
-              <span className="text-muted-foreground">Trial progress</span>
+              <span className="text-muted-foreground">Free trial</span>
               <span className="font-semibold">
                 {trialDaysLeft}
                 {' '}
                 of
+                {' '}
                 {FREE_TRIAL_DAYS}
                 {' '}
                 days remaining
@@ -779,16 +940,16 @@ function BillingContent() {
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full rounded-full bg-blue-500 transition-all"
+                className="h-full rounded-full bg-emerald-500 transition-all"
                 style={{
-                  width: `${Math.round(
+                  width: `${Math.min(100, Math.max(0, Math.round(
                     ((FREE_TRIAL_DAYS - trialDaysLeft) / FREE_TRIAL_DAYS) * 100,
-                  )}%`,
+                  )))}%`,
                 }}
               />
             </div>
             <p className="mt-2 text-meta text-muted-foreground">
-              Subscribe before your trial ends to keep your content flowing without interruption.
+              Upgrade before it ends to keep your content flowing without interruption.
             </p>
           </div>
         )}
@@ -800,10 +961,7 @@ function BillingContent() {
           <div>
             <h2 className="text-heading">Available plans</h2>
             <p className="mt-0.5 text-meta text-muted-foreground">
-              All plans include a one-time $
-              {SETUP_FEE_USD}
-              {' '}
-              setup fee on first subscription.
+              No setup fees. Change or cancel your plan at any time.
             </p>
           </div>
 
@@ -882,23 +1040,33 @@ function BillingContent() {
           </div>
         </div>
 
+        {/* Free plan — full-width row above the paid tiers */}
+        <div className="mb-4">
+          <FreePlanBanner
+            isCurrent={isFree}
+            trialDaysLeft={trialDaysLeft}
+            trialEnded={isFree && freeTrialEnded}
+            trialEndsAt={isFree ? billing?.trialEndsAt ?? null : null}
+          />
+        </div>
+
         {/* Plan cards — 1 col mobile, 2 col sm, 4 col xl */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {VISIBLE_PLANS.map((plan, idx) => {
             const isCurrent = billing?.plan === plan.id && billing?.planStatus === 'active';
-            const isTrialingOnThis = billing?.isTrialing && billing.plan === plan.id;
+            // A paid plan sitting in a provider-side trial (never `free`).
+            const isTrialingOnThis
+              = !isFree && billing?.isTrialing && billing.plan === plan.id;
             const isLoadingThis = checkoutLoading === plan.id;
             const isAboveCurrent = idx > currentPlanIndex;
 
-            let ctaLabel = 'Get started';
+            let ctaLabel = `Upgrade to ${plan.name}`;
             if (isCurrent) {
               ctaLabel = 'Current plan';
             } else if (isTrialingOnThis) {
               ctaLabel = 'Subscribe now';
             } else if (billing?.planStatus === 'active' && !isCurrent) {
               ctaLabel = isAboveCurrent ? 'Upgrade' : 'Downgrade';
-            } else if (billing?.isTrialing) {
-              ctaLabel = 'Subscribe now';
             }
 
             return (
@@ -985,10 +1153,7 @@ function BillingContent() {
                     className={`mt-0.5 text-xs ${plan.popular ? 'text-background/50' : 'text-muted-foreground'
                     }`}
                   >
-                    + $
-                    {SETUP_FEE_USD}
-                    {' '}
-                    one-time setup
+                    Cancel anytime
                   </p>
                 </div>
 

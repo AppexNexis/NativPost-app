@@ -3,12 +3,16 @@
 import Link from 'next/link';
 
 /**
- * Persistent trial + usage pill in the dashboard header.
+ * Persistent free-plan + usage pill in the dashboard header.
  *
  * Renders one of three states, in priority order:
- *   1. Trial expired + not converted to paid → red "Trial expired — Upgrade"
- *   2. Trialing → amber "Trial: {N}d left" (red when <=1 day)
+ *   1. Free window lapsed → red "Free trial ended — Upgrade"
+ *   2. On the free window → "Free: {N} days left" (amber <=3 days, red <=1)
  *   3. Paid plan → neutral "{used}/{limit} posts" chip that turns amber >=70% and red >=90%
+ *
+ * Expiry is checked BEFORE the countdown: a lapsed org still carries
+ * planStatus 'trialing', so testing isTrialing first would pin it at
+ * "ends today" forever.
  *
  * Hidden entirely on unlimited plans (postsLimit sentinel 999999) to avoid
  * meaningless "0/999999 posts" noise for enterprise seats.
@@ -20,6 +24,7 @@ export type TrialLimitsData = {
   isTrialing: boolean;
   trialDaysLeft: number;
   trialExpired: boolean;
+  isFree?: boolean;
   plan: string;
   usage: {
     postsThisMonth: number;
@@ -36,22 +41,22 @@ export function TrialLimitsPill({ data }: { data: TrialLimitsData | null }) {
   const { isTrialing, trialDaysLeft, trialExpired, usage } = data;
   const unlimited = usage.postsLimit >= 999999;
 
-  // --- 1. Expired trial (highest priority — blocks value) ---
-  if (trialExpired && !isTrialing) {
+  // --- 1. Expired free window (highest priority — blocks value) ---
+  if (trialExpired) {
     return (
       <Link
-        href="/dashboard/billing"
-        aria-label="Trial expired. Click to upgrade."
+        href="/dashboard/billing?trial_ended=true"
+        aria-label="Free trial ended. Click to upgrade."
         className={`${CHIP_BASE} border-red-500/30 bg-red-500/10 text-red-600 hover:bg-red-500/15 dark:text-red-400`}
       >
         <span className="inline-block size-1.5 rounded-full bg-red-500" />
         <span className="sm:hidden">Upgrade</span>
-        <span className="hidden sm:inline">Trial expired — Upgrade</span>
+        <span className="hidden sm:inline">Free trial ended — Upgrade</span>
       </Link>
     );
   }
 
-  // --- 2. Active trial ---
+  // --- 2. Free window running ---
   if (isTrialing) {
     const urgent = trialDaysLeft <= 1;
     const warn = trialDaysLeft <= 3;
@@ -62,10 +67,10 @@ export function TrialLimitsPill({ data }: { data: TrialLimitsData | null }) {
         : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-400';
     const dot = urgent ? 'bg-red-500' : warn ? 'bg-amber-500' : 'bg-emerald-500';
     const label = trialDaysLeft <= 0
-      ? 'Trial ends today'
+      ? 'Free plan ends today'
       : trialDaysLeft === 1
-        ? 'Trial: 1 day left'
-        : `Trial: ${trialDaysLeft} days left`;
+        ? 'Free: 1 day left'
+        : `Free: ${trialDaysLeft} days left`;
     // Mobile chips get a compact form so the header does not overflow at 375px.
     const shortLabel = trialDaysLeft <= 0
       ? 'Ends today'
@@ -74,7 +79,7 @@ export function TrialLimitsPill({ data }: { data: TrialLimitsData | null }) {
     return (
       <Link
         href="/dashboard/billing"
-        aria-label={`${label}. Click to manage subscription.`}
+        aria-label={`${label}. Click to upgrade.`}
         className={`${CHIP_BASE} ${tone}`}
       >
         <span className={`inline-block size-1.5 rounded-full ${dot}`} />

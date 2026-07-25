@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
 import { getAuthContext } from '@/lib/auth';
-import { getStripePriceId, isPlanConfigured, PLAN_CONFIGS, SETUP_FEE_USD } from '@/lib/plans';
+import { getStripePriceId, isPlanConfigured, PLAN_CONFIGS } from '@/lib/plans';
 // import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
@@ -13,21 +13,15 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 // -----------------------------------------------------------
-// POST /api/billing/create-checkout
+// POST /api/billing/create-checkout   body: { planId, interval }
 //
-// TWO modes based on body:
+// Single mode: subscribe to a paid plan. Called from
+// /dashboard/billing when a free user upgrades or a subscriber
+// changes tier.
 //
-// 1. SETUP_FEE mode (body: { planId, setupFeeOnly: true })
-//    Called from /subscribe page (trialing users).
-//    Charges ONLY the one-time $5 setup fee.
-//    No subscription created. No trial.
-//    On success → webhook marks setupFeePaid=true.
-//
-// 2. SUBSCRIBE mode (body: { planId })
-//    Called from /dashboard/billing (subscribing from trial or upgrading).
-//    Charges the subscription plan price only.
-//    Setup fee is NOT included (already paid during trial).
-//    No trial period — they're already in trial, now converting.
+// There is no setup fee and no pre-dashboard purchase step — every
+// org is auto-enrolled on the free plan at signup. Checkout charges
+// the plan price and nothing else.
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
   const db = await getDb();
@@ -38,10 +32,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { planId, setupFeeOnly = false, interval = 'month' } = body;
+    const { planId, interval = 'month' } = body;
     const plan = PLAN_CONFIGS[planId];
 
-    if (!plan) {
+    if (!plan || plan.isFree) {
       return NextResponse.json({ error: 'Invalid plan.' }, { status: 400 });
     }
 
@@ -71,41 +65,7 @@ export async function POST(request: NextRequest) {
         .where(eq(organizationSchema.id, orgId!));
     }
 
-    // ── MODE 1: Setup fee only ──────────────────────────────
-    // Charge the one-time $5 setup fee as a one-time payment.
-    // User is redirected to dashboard after paying.
-    if (setupFeeOnly) {
-      const session = await stripe.checkout.sessions.create({
-        customer: customerId,
-        mode: 'payment', // one-time, not subscription
-        line_items: [
-          {
-            price_data: {
-              currency: 'usd',
-              product_data: {
-                name: 'NativPost Brand Profile Setup',
-                description: 'One-time onboarding fee. Sets up your personalised Brand Profile.',
-              },
-              unit_amount: SETUP_FEE_USD * 100,
-            },
-            quantity: 1,
-          },
-        ],
-        metadata: {
-          orgId: orgId!,
-          planId,
-          type: 'setup_fee',
-          billingInterval: interval,
-        },
-        success_url: `${APP_URL}/dashboard?setup=success`,
-        cancel_url: `${APP_URL}/subscribe?cancelled=true`,
-      });
-
-      return NextResponse.json({ url: session.url });
-    }
-
-    // ── MODE 2: Plan subscription (no trial, no setup fee) ──
-    // Used from the billing page when converting from trial.
+    // ── Plan subscription (no trial, no setup fee) ──
     if (!isPlanConfigured(planId)) {
       return NextResponse.json(
         { error: 'This plan is not yet available for purchase. Contact support.' },
