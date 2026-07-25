@@ -1,5 +1,5 @@
 import { desc, eq, inArray } from 'drizzle-orm';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 
 import { DiagnosticsPanel } from '@/components/admin/msi/DiagnosticsPanel';
@@ -13,9 +13,11 @@ import {
   jobStateTone,
   taskStatusTone,
 } from '@/lib/msi/job-board';
+import { MSI_PER_POST_USD } from '@/lib/msi/pricing';
 import { PLATFORM_LABELS } from '@/lib/platforms';
 import {
   managedAccountSchema,
+  msiBillablePublishEventSchema,
   msiCredentialSchema,
   msiJobSchema,
   msiTaskSchema,
@@ -107,6 +109,23 @@ export default async function AdminMsiAccountJobsPage({ params }: RouteParams) {
     : [];
 
   const board = buildJobBoard(jobs, tasks);
+
+  // Billable publish events (docs §6) — the metered $1.50/post charges, each now
+  // carrying the live post permalink threaded from the publish result.
+  const billableEvents = await db
+    .select({
+      id: msiBillablePublishEventSchema.id,
+      platformPostId: msiBillablePublishEventSchema.platformPostId,
+      permalink: msiBillablePublishEventSchema.permalink,
+      billingPeriod: msiBillablePublishEventSchema.billingPeriod,
+      occurredAt: msiBillablePublishEventSchema.occurredAt,
+      reportedAt: msiBillablePublishEventSchema.reportedAt,
+    })
+    .from(msiBillablePublishEventSchema)
+    .where(eq(msiBillablePublishEventSchema.managedAccountId, id))
+    .orderBy(desc(msiBillablePublishEventSchema.occurredAt));
+
+  const billedTotal = billableEvents.length * MSI_PER_POST_USD;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
@@ -224,6 +243,82 @@ export default async function AdminMsiAccountJobsPage({ params }: RouteParams) {
                       jobState={job.state}
                       tasks={job.tasks}
                     />
+                  </div>
+                ))}
+              </div>
+            )}
+      </section>
+
+      <section className="mt-6">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-foreground">
+            Billable publish events
+          </h2>
+          {billableEvents.length > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {billableEvents.length}
+              {' × $'}
+              {MSI_PER_POST_USD.toFixed(2)}
+              {' = $'}
+              {billedTotal.toFixed(2)}
+            </span>
+          )}
+        </div>
+        {billableEvents.length === 0
+          ? (
+              <div className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
+                No billable publishes yet. A $
+                {MSI_PER_POST_USD.toFixed(2)}
+                {' '}
+                event is recorded each time a post clears QA.
+              </div>
+            )
+          : (
+              <div className="space-y-2">
+                {billableEvents.map(ev => (
+                  <div
+                    key={ev.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card p-4"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                        <span>
+                          $
+                          {MSI_PER_POST_USD.toFixed(2)}
+                        </span>
+                        <span className="text-xs font-normal text-muted-foreground">
+                          {ev.billingPeriod}
+                          {' · '}
+                          {fmt(ev.occurredAt)}
+                        </span>
+                      </div>
+                      <div className="mt-1 truncate text-xs text-muted-foreground">
+                        {ev.platformPostId
+                          ? `post ${ev.platformPostId}`
+                          : 'no platform post id'}
+                        {' · '}
+                        {ev.reportedAt
+                          ? `reported ${fmt(ev.reportedAt)}`
+                          : 'not yet reported'}
+                      </div>
+                    </div>
+                    {ev.permalink
+                      ? (
+                          <a
+                            href={ev.permalink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
+                          >
+                            <ExternalLink className="size-3.5" />
+                            View post
+                          </a>
+                        )
+                      : (
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            no permalink
+                          </span>
+                        )}
                   </div>
                 ))}
               </div>

@@ -123,9 +123,14 @@ export default function InfrastructurePage() {
         title="Infrastructure"
         description="Managed social accounts — created, warmed, and run by NativPost, owned by you."
         actions={(
-          <Button asChild size="sm">
-            <Link href="/dashboard/infrastructure/new">Configure accounts</Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild size="sm" variant="outline">
+              <Link href="/dashboard/infrastructure/usage">Usage</Link>
+            </Button>
+            <Button asChild size="sm">
+              <Link href="/dashboard/infrastructure/new">Configure accounts</Link>
+            </Button>
+          </div>
         )}
       />
 
