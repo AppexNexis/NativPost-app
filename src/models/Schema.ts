@@ -1635,3 +1635,43 @@ export const msiBillablePublishEventSchema = pgTable(
     ),
   }),
 );
+
+// -----------------------------------------------------------
+// MSI ADD-ON SUBSCRIPTIONS (docs §19)
+// Per-org activation of an MSI add-on (Managed Posting, Ads, Content, …). The
+// add-on catalog itself lives in code (src/lib/msi/addons.ts); this row records
+// which add-ons an org has turned on, the selected tier, and the Stripe billing
+// linkage. One row per (org, addon) — enforced by the unique index. Deliberately
+// thin: an add-on changes WHO performs the work, not the underlying pipeline.
+// -----------------------------------------------------------
+export const msiAddonSubscriptionSchema = pgTable(
+  'msi_addon_subscription',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    // Matches an MsiAddonId in the code catalog (e.g. 'managed_posting').
+    addonId: text('addon_id').notNull(),
+    // active | paused | cancelled
+    status: text('status').default('active').notNull(),
+    // Selected tier id for fixed-tier add-ons (e.g. 'professional'); null for
+    // usage/percent/custom pricing models.
+    tierId: text('tier_id'),
+    // Stripe subscription item that bills this add-on, when metered/subscribed.
+    stripeSubscriptionItemId: text('stripe_subscription_item_id'),
+    // Per-add-on configuration (e.g. ad budgets, reply scope, target markets).
+    config: jsonb('config').$type<Record<string, unknown>>().default({}).notNull(),
+    activatedAt: timestamp('activated_at', { mode: 'date' }),
+    cancelledAt: timestamp('cancelled_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  t => ({
+    orgAddonIdx: uniqueIndex('msi_addon_org_addon_idx').on(t.orgId, t.addonId),
+    orgIdx: index('msi_addon_org_idx').on(t.orgId),
+  }),
+);

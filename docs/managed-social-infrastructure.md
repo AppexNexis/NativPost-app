@@ -516,8 +516,95 @@ Every phase leaves `npm run check-types` and `npm run test` green (repo's reliab
 
 ---
 
+## 17b. Metered billing — go-live runbook
+
+Managed Posting is billed at **$1.50 per published post** (metered), on top of the
+**$80/account/month** managed-account fee. The code is wired end-to-end; going live
+is a Stripe-config + env-flag operation. Do it in this order.
+
+**One-time Stripe setup**
+1. **Meter** (Billing → Meters): event name **`nativpost_managed_post`**, aggregation **Sum**,
+   payload keys `stripe_customer_id` + `value` (defaults). Status must be **active**.
+2. **Metered price**: on the `Managed Posting` product, a **usage-based** price of **$1.50/unit**,
+   monthly, **linked to the meter**. Verify the saved price is `usage_type: metered` +
+   `meter: mtr_…` (a licensed price silently ignores usage). Copy its `price_…` id.
+3. **Env** (all prod): `STRIPE_MSI_POST_PRICE_ID=price_…`,
+   `STRIPE_MSI_METER_EVENT_NAME=nativpost_managed_post` (or match your meter),
+   `MSI_METERED_BILLING_ENABLED=false` (keep off until verified).
+
+**Verify (no DB needed)**
+4. `npm run msi:verify-billing-config` → expect **CONFIG OK, BILLING PAUSED**. It checks the
+   price is metered, the meter is active, and the event name matches what the code sends.
+
+**Attach usage to subscriptions**
+5. The order-checkout route ([`api/msi/orders/[orderId]/checkout`](../src/app/api/msi/orders/[orderId]/checkout/route.ts))
+   adds the metered price as a **2nd subscription item** on every **new** MSI order (gated on
+   `STRIPE_MSI_POST_PRICE_ID`). Existing subs need a one-time backfill:
+   `npm run msi:backfill-metered-price` (dry-run) → `… -- --apply`
+   (add `--from-stripe` if the DB isn't reachable locally). It refuses to run unless the price
+   is genuinely metered.
+
+**Go live**
+6. Set `MSI_METERED_BILLING_ENABLED=true`.
+7. The reporter cron ([`api/cron/msi-billing-report`](../src/app/api/cron/msi-billing-report/route.ts),
+   scheduled hourly by [`.github/workflows/msi-billing-report.yml`](../.github/workflows/msi-billing-report.yml))
+   ships un-reported `msi_billable_publish_event` rows to the Stripe meter, stamping `reported_at`.
+   Re-run `msi:verify-billing-config` → **LIVE**.
+
+**How the pieces map**
+- Each managed publish → immutable `msi_billable_publish_event` (idempotent on `job_id`), with the
+  live post permalink threaded in.
+- Customer sees it at **`/dashboard/infrastructure/usage`**; staff at **`/admin/msi/[id]`**.
+- **Paystack MSI customers are NOT billed by this path** (no Stripe customer id → the reporter skips
+  them, `skippedNoCustomer`). A Paystack metering path (monthly invoice for `posts × $1.50`) is
+  separate, unbuilt work.
+
+---
+
+## 19. MSI Add-ons (the platform play)
+
+MSI is not just managed accounts — it is an **operating system for social operations**. The
+customer buys one thing (Managed Social Infrastructure) and turns on **add-ons**. Every add-on
+runs on the **same backbone** already built (org → managed accounts → calendar → content → worker
+→ vault → platform clients). An add-on changes only **who performs the work**: `system`, `ai`,
+`operator`, or `ai_plus_human`. Nothing in the pipeline changes.
+
+**Data model.** Catalog in code — `src/lib/msi/addons.ts` (`ADDON_CATALOG`, `MsiAddon`,
+`AddonPricing` discriminated union, `getAddon`/`isAddonId`/`addonsByPriority`/`addonFromPriceUsd`;
+pure + tested). Per-org activation — `msi_addon_subscription` (Schema.ts, migration `0054`): one
+row per `(org, addon)` (unique index), with `status`, `tierId`, `stripeSubscriptionItemId`,
+`config` jsonb. An add-on is therefore a **data row + a billing SKU**, not a new product — same
+shape as the metered-billing pattern (§17b).
+
+**Rollout tiering** (by value-vs-operational-cost, not list order — human hours are the scarce
+input, so operator-backed add-ons use **fixed tiers** for predictable margin, never a low flat fee):
+
+1. **Managed Posting** (`ai_plus_human`) — team creates + publishes posts. Smallest gap from what
+   MSI already does. Tiers $49/12, $99/30, $199/60 per month.
+2. **Managed Content** (`ai_plus_human`) — monthly graphics/video/copy studio. Highest-value.
+3. **Managed Advertising** (`operator`) — configure/launch/monitor paid campaigns. Setup fee +
+   10–20% of spend (customer pays the ad platform directly for spend).
+4. **Managed Analytics & Strategy** (`ai_plus_human`) — monthly growth report + next-month plan.
+   Cheap to produce; makes every other add-on stickier. $39/account/month.
+5. **Managed Expansion** (`system`) — provision more accounts on demand; standard per-account price.
+6. **Managed Community** (`operator`) — replies/DMs/moderation. Operationally heavy (real-time,
+   timezone coverage) → staged after operator density.
+7. **Managed UGC** (`ai_plus_human`), 8. **Influencer Outreach** (`operator`),
+   9. **Account Recovery & Compliance** (`operator`, **best-effort — platform decides, never a
+   restoration guarantee**), 10. **Localization & Market Expansion** (`operator`).
+
+**Positioning differentiator: "Operators, not Services."** Each active add-on surfaces an
+**assigned operator** (name, hours, current tasks) so the customer feels they hired a social-media
+department, not bought software. This is the emotional, higher-price purchase MSI unlocks.
+
+**Status:** catalogued + priced (`status: 'planned'` for all execution workflows; only Managed
+Accounts + metered Publishing are live today). Build order follows the priority above.
+
+---
+
 ## 18. Changelog
 
+- **2026-07-25 (Metered billing wired end-to-end — Managed Posting go-live path).** Implemented the real Stripe metering: `createStripeBillingService.reportUsage` now calls the **Billing Meter Events API** (idempotent on the event id) — was a throwing stub; the reporter joins `organization` for the Stripe customer id and skips orgs without one (`skippedNoCustomer`). Threaded the **post permalink** through: added `msi_billable_publish_event.permalink` (migration `0052`), recovered from the publish's `publishing_queue` row. **Made managed publishes visible** in "Published to" (the publish route writes a `queued` row; the worker flips it to `published` + permalink on completion) and **per-account** in the panel (dedup by `socialAccountId`, not platform). Surfaced billed events with permalinks in the **Ops account page** and a new customer **Usage page** (`/dashboard/infrastructure/usage` + `GET /api/msi/usage`). The order-checkout adds the metered price as a 2nd subscription item (gated on `STRIPE_MSI_POST_PRICE_ID`). New scripts: `msi:verify-billing-config` (Stripe-only readiness check), `msi:backfill-metered-price` (`--from-stripe`/`--apply`, with a metered-price gate). See the §17b runbook. Gates: `check-types` clean, suite **330/330**.
 - **2026-07-25 (Multi-account-per-platform epic — COMPLETE).** NativPost now supports multiple accounts per platform (5 TikToks, 5 YouTubes, …), which also makes MSI-managed accounts first-class publish targets. **① Schema:** `content_item.target_account_ids` (jsonb string[]) → migration `0051` (additive; empty = publish to every active account of each targetPlatform — backward-compatible). **② Multi-account connect:** the OAuth callback deduped by `(org, platform)` (a 2nd account overwrote the 1st); now dedupes by `(org, platform, platformUserId)` → each distinct account inserts a new row. **③ Publish route:** replaced the `.find()` one-account-per-platform resolution with iteration over the selected accounts (`targetAccountIds`) — or all active accounts of each platform when none selected; each routes OAuth→`social-publish` or managed→`enqueueManagedPublish`; results carry the account. **④ Create Post:** an account picker under each platform (shows OAuth + managed accounts, "Managed" badge, multi-select), persisted via `saveVariant`/direct-create/remix inserts. **Social Accounts:** lists all accounts per platform + a "+ Add" action to connect another. **⑤ Calendar:** inherits it (delegates creation to Create Post; display-only). **⑥ Blitz:** already per-account (`blitzDisabledAccountIds`) — now renders the "Managed" badge; **Campaigns** broadcast to all accounts of each platform (incl. managed) via the publish-route default. Full customer loop: connect N accounts → pick in Create Post → schedule (Calendar) → publish per account (OAuth or managed). Gates: `check-types` clean, suite **326/326**.
 - **2026-07-25 (IG hardening — auto-resolve igUserId for Instagram-Login) + FIRST LIVE PUBLISH validated.** The full managed pipeline published a real Instagram post in production (@nativpost.hq, `platformPostId 18015967592719109`) → walked through peer_review → QA → completed → billable event. Validated live: vault (capture/encrypt/reveal), diagnostics, Instagram Business Login publishing (`graph.instagram.com`), the async worker (container tick → confirm tick), and platform_post_id threading. **Hardening (from the live debug):** the `igUserId` is now **auto-resolved from the token** for Instagram-Login accounts — `meta-graph.resolveInstagramUserId` (`GET graph.instagram.com/me?fields=user_id`, IG-host only) + `meta-client.effectiveIgUserId` (resolve for `IGAA…` tokens, fall back to the stored id; Facebook tokens keep the stored id). Used in both `execute` (container/carousel) and `checkStatus` (publish). This removes the "wrong igUserId passes diagnostics but fails publish" trap that cost a debug cycle (the operator can now paste a wrong/blank igUserId for IG-login and it self-corrects). **Also fixed (production bug found live):** the worker retry path didn't clear `startedAt`/`completedAt`/`executionHandle` on requeue, so retried jobs stalled in `assigned` (selectJobsToStart gates on `startedAt === null`) — now cleared. Plus test-loop scripts: `msi:seed-live-ig` / `teardown` / `reset` / `msi:live-ig-status` (seed a live official_api IG account + a ready publish job, reset a stuck job, read status). +2 tests. Gates: `check-types` clean, suite **326/326**.
 - **2026-07-24 (Instagram Business Login support — dual Graph host)** — The Meta client now supports **both** Instagram publishing APIs, auto-detected from the token, so a token from either flow works with the same `{ accessToken, igUserId }` blob: Facebook Login (`EAA…` → `graph.facebook.com`) and Instagram Business Login (`IGAA…`/`IGQ…` → `graph.instagram.com`). `meta-graph.ts`: `isInstagramLoginToken` + `graphBase(token)` pick the host; every call (container/carousel/status/publish/permalink/probe) uses it. `probeInstagram` branches — IG-login reads identity via `/me` and skips the `/me/permissions` call (that endpoint is Facebook-host only; IG tokens carry fixed scopes). Token refresh branches: `token-refresh.refreshInstagramToken` (`ig_refresh_access_token`, no app secret) for IG tokens vs `fb_exchange_token` for Facebook tokens; `meta-client.freshMetaCredentials` selects by token prefix. +5 tests (host-by-token, IG probe via `/me`, IG refresh). Prompted by live testing: a real `IGAA…` token failed diagnostics with "Cannot parse access token" at `graph.facebook.com` — this fixes it with zero change to what the operator pastes. Checklist Instagram row updated. Gates: `check-types` clean, suite **324/324**.
