@@ -67,7 +67,7 @@ export const ADDON_CATALOG: MsiAddon[] = [
     tagline: 'We create and publish your posts, end to end.',
     description:
       'Hand off the posting workflow: our team drafts, reviews, schedules, and publishes to your managed accounts. You approve; we run it. The smallest gap between what MSI already does and a full service.',
-    status: 'planned',
+    status: 'available',
     whoPerforms: 'ai_plus_human',
     pricing: {
       kind: 'fixed_tiers',

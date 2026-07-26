@@ -16,6 +16,7 @@ import {
 
 import { buildActivityEvent } from './audit';
 import { recordPublishEvent } from './billing-service';
+import { enqueueManagedPublish } from './publishing-service';
 import { transitionJob } from './job-workflow';
 import type { AccountState } from './lifecycle';
 import { advanceAccountThrough, pathToCustomerReview } from './lifecycle-coordination';
@@ -101,6 +102,8 @@ export async function reviewJob(
       state: msiJobSchema.state,
       jobType: msiJobSchema.jobType,
       managedAccountId: msiJobSchema.managedAccountId,
+      orgId: msiJobSchema.orgId,
+      contentItemId: msiJobSchema.contentItemId,
     })
     .from(msiJobSchema)
     .where(eq(msiJobSchema.id, jobId))
@@ -155,6 +158,19 @@ export async function reviewJob(
         await recordPublishEvent(jobId, now);
       } catch (billingErr) {
         console.error('[MSI] recordPublishEvent failed:', billingErr);
+      }
+    }
+    if (job.jobType === 'content_post' && job.orgId && job.contentItemId) {
+      // Managed Posting (docs §19): an approved operator-drafted post now enters
+      // the standard publish pipeline. Best-effort — a hiccup must not fail QA.
+      try {
+        await enqueueManagedPublish({
+          orgId: job.orgId,
+          managedAccountId: job.managedAccountId,
+          contentItemId: job.contentItemId,
+        });
+      } catch (publishErr) {
+        console.error('[MSI] content_post → publish enqueue failed:', publishErr);
       }
     }
     return { state: 'completed' as const };

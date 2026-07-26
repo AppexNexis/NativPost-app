@@ -125,6 +125,9 @@ export default function InfrastructurePage() {
         actions={(
           <div className="flex items-center gap-2">
             <Button asChild size="sm" variant="outline">
+              <Link href="/dashboard/infrastructure/addons">Add-ons</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
               <Link href="/dashboard/infrastructure/usage">Usage</Link>
             </Button>
             <Button asChild size="sm">

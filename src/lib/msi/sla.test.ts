@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
+import { JOB_TYPES } from './job-workflow';
 import { JOB_SLA_HOURS, percentile, slaDueAt, summarizeSla } from './sla';
 
 describe('sla', () => {
   it('has an SLA for every job type', () => {
-    expect(Object.keys(JOB_SLA_HOURS).length).toBe(12);
+    // Coverage tracks the canonical job-type list, so adding a type forces an SLA.
+    expect(Object.keys(JOB_SLA_HOURS).length).toBe(JOB_TYPES.length);
+    for (const jobType of JOB_TYPES) {
+      expect(JOB_SLA_HOURS[jobType]).toBeGreaterThan(0);
+    }
     expect(JOB_SLA_HOURS.create_account).toBe(48);
   });
 

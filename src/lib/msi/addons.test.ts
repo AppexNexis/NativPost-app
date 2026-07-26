@@ -6,6 +6,9 @@ import {
   addonsByPriority,
   getAddon,
   isAddonId,
+  requiresTier,
+  resolveTier,
+  validateActivation,
 } from './addons';
 
 describe('MSI add-on catalog', () => {
@@ -50,6 +53,43 @@ describe('MSI add-on catalog', () => {
       const starter = posting.pricing.tiers.find(t => t.id === 'starter')!;
       expect(starter.monthlyUsd).toBe(49);
       expect(starter.allotment).toContain('12 posts');
+    }
+  });
+
+  it('knows which add-ons require a tier', () => {
+    expect(requiresTier(getAddon('managed_posting')!)).toBe(true);
+    expect(requiresTier(getAddon('managed_ads')!)).toBe(false); // percent_of_spend
+    expect(requiresTier(getAddon('managed_expansion')!)).toBe(false); // per_account
+  });
+
+  it('resolves tiers only for fixed-tier add-ons', () => {
+    const posting = getAddon('managed_posting')!;
+    expect(resolveTier(posting, 'professional')?.monthlyUsd).toBe(99);
+    expect(resolveTier(posting, 'nope')).toBeNull();
+    expect(resolveTier(getAddon('managed_ads')!, 'anything')).toBeNull();
+  });
+
+  it('validates activation: tier required, valid, and unknown add-ons rejected', () => {
+    expect(validateActivation('managed_nonsense')).toEqual({
+      ok: false,
+      error: 'Unknown add-on: managed_nonsense',
+    });
+    // tiered add-on with no tier → rejected
+    const noTier = validateActivation('managed_posting');
+    expect(noTier.ok).toBe(false);
+    // tiered add-on with a bad tier → rejected
+    expect(validateActivation('managed_posting', 'bogus').ok).toBe(false);
+    // tiered add-on with a good tier → ok, tier resolved
+    const good = validateActivation('managed_posting', 'scale');
+    expect(good.ok).toBe(true);
+    if (good.ok) {
+      expect(good.tier?.monthlyUsd).toBe(199);
+    }
+    // non-tiered add-on ignores any tier and is ok
+    const ads = validateActivation('managed_ads');
+    expect(ads.ok).toBe(true);
+    if (ads.ok) {
+      expect(ads.tier).toBeNull();
     }
   });
 

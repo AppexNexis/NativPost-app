@@ -31,6 +31,9 @@ export const JOB_TYPES = [
   'update_bio',
   'prepare_first_posts',
   'publish_post',
+  // Managed Posting add-on (docs §19): an operator drafts a post for the
+  // customer; on QA approval it enqueues a publish_post for the linked content.
+  'content_post',
   'pause_account',
   'resume_account',
   'transfer_ownership',
