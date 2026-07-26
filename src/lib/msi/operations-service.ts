@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 import {
+  contentItemSchema,
   managedAccountSchema,
   msiAccountReviewSchema,
   msiActivityLogSchema,
@@ -171,6 +172,18 @@ export async function reviewJob(
         });
       } catch (publishErr) {
         console.error('[MSI] content_post → publish enqueue failed:', publishErr);
+      }
+    }
+    if (job.jobType === 'content_piece' && job.contentItemId) {
+      // Managed Content (docs §19): approval delivers the piece to the customer's
+      // library (status approved) — not an auto-publish. Best-effort.
+      try {
+        await db
+          .update(contentItemSchema)
+          .set({ status: 'approved' })
+          .where(eq(contentItemSchema.id, job.contentItemId));
+      } catch (deliverErr) {
+        console.error('[MSI] content_piece → approve failed:', deliverErr);
       }
     }
     return { state: 'completed' as const };

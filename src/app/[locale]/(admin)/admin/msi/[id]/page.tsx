@@ -2,6 +2,7 @@ import { desc, eq, inArray } from 'drizzle-orm';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 
+import { ContentPostDraft } from '@/components/admin/msi/ContentPostDraft';
 import { DiagnosticsPanel } from '@/components/admin/msi/DiagnosticsPanel';
 import { JobActions } from '@/components/admin/msi/JobActions';
 import { VaultActions } from '@/components/admin/msi/VaultActions';
@@ -237,6 +238,10 @@ export default async function AdminMsiAccountJobsPage({ params }: RouteParams) {
                           </ul>
                         )
                       : null}
+
+                    {(job.jobType === 'content_post' || job.jobType === 'content_piece') && (
+                      <ContentPostDraft jobId={job.id} />
+                    )}
 
                     <JobActions
                       jobId={job.id}

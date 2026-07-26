@@ -33,6 +33,13 @@ type Addon = {
 
 type Subscription = { addonId: string; status: string; tierId: string | null };
 
+// Add-ons with a dedicated customer workflow surface.
+const ADDON_WORKFLOWS: Record<string, { label: string; href: string }> = {
+  managed_posting: { label: 'Request a post', href: '/dashboard/infrastructure/addons/managed-posting' },
+  managed_content: { label: 'Request content', href: '/dashboard/infrastructure/addons/managed-content' },
+  managed_analytics: { label: 'Open reports', href: '/dashboard/infrastructure/addons/managed-analytics' },
+};
+
 type ApiResponse = { addons: Addon[]; subscriptions: Subscription[] };
 
 const WHO_META: Record<Addon['whoPerforms'], { label: string; Icon: typeof Bot; className: string }> = {
@@ -243,12 +250,12 @@ export default function AddonsPage() {
                     )}
                   </div>
 
-                  {addon.id === 'managed_posting' && isActive && !isPlanned && (
+                  {isActive && !isPlanned && ADDON_WORKFLOWS[addon.id] && (
                     <Link
-                      href="/dashboard/infrastructure/addons/managed-posting"
+                      href={ADDON_WORKFLOWS[addon.id]!.href}
                       className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-md text-xs font-medium text-primary hover:underline"
                     >
-                      Request a post →
+                      {ADDON_WORKFLOWS[addon.id]!.label} →
                     </Link>
                   )}
                 </div>

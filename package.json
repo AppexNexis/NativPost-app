@@ -30,6 +30,7 @@
     "msi:reset-live-ig": "dotenv -c production -- tsx scripts/msi-seed-live-ig.ts reset",
     "msi:live-ig-status": "dotenv -c production -- tsx scripts/msi-live-ig-status.ts",
     "msi:verify-billing-config": "dotenv -c production -- tsx scripts/msi-verify-billing-config.ts",
+    "msi:verify-addon-billing": "dotenv -c production -- tsx scripts/msi-verify-addon-billing.ts",
     "msi:backfill-metered-price": "dotenv -c production -- tsx scripts/msi-backfill-metered-price.ts",
     "msi:backfill-metered-price:apply": "dotenv -c production -- tsx scripts/msi-backfill-metered-price.ts --apply",
     "commit": "cz",

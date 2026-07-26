@@ -9,6 +9,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { msiAddonSubscriptionSchema } from '@/models/Schema';
 
+import { removeAddonBilling, syncAddonBilling } from './addon-billing';
 import type { MsiAddon } from './addons';
 import { validateActivation } from './addons';
 
@@ -80,6 +81,10 @@ export async function activateAddon(
     return v;
   }
   const now = new Date();
+  // Know the prior billing item (if any) so a re-activation / tier change
+  // re-prices it instead of orphaning a Stripe item.
+  const existing = await getOrgAddon(orgId, addonId);
+
   await db
     .insert(msiAddonSubscriptionSchema)
     .values({
@@ -98,14 +103,48 @@ export async function activateAddon(
         cancelledAt: null,
       },
     });
+
+  // Best-effort billing: a Stripe hiccup must never fail activation. No-op until
+  // MSI_ADDON_BILLING_ENABLED + the price env vars are configured.
+  try {
+    const itemId = await syncAddonBilling({
+      orgId,
+      addonId,
+      tierId: v.tier?.id ?? null,
+      existingItemId: existing?.stripeSubscriptionItemId ?? null,
+    });
+    if (itemId && itemId !== existing?.stripeSubscriptionItemId) {
+      await db
+        .update(msiAddonSubscriptionSchema)
+        .set({ stripeSubscriptionItemId: itemId })
+        .where(
+          and(
+            eq(msiAddonSubscriptionSchema.orgId, orgId),
+            eq(msiAddonSubscriptionSchema.addonId, addonId),
+          ),
+        );
+    }
+  } catch (billingErr) {
+    console.error('[MSI] add-on billing sync failed (activation still applied):', billingErr);
+  }
+
   return { ok: true, addon: v.addon };
 }
 
 /** Deactivate an add-on (soft — keeps the row for history/reactivation). */
 export async function deactivateAddon(orgId: string, addonId: string): Promise<void> {
+  const existing = await getOrgAddon(orgId, addonId);
+
+  // Best-effort: remove the Stripe subscription item so billing stops.
+  try {
+    await removeAddonBilling(existing?.stripeSubscriptionItemId ?? null);
+  } catch (billingErr) {
+    console.error('[MSI] add-on billing removal failed (deactivation still applied):', billingErr);
+  }
+
   await db
     .update(msiAddonSubscriptionSchema)
-    .set({ status: 'cancelled', cancelledAt: new Date() })
+    .set({ status: 'cancelled', cancelledAt: new Date(), stripeSubscriptionItemId: null })
     .where(
       and(
         eq(msiAddonSubscriptionSchema.orgId, orgId),

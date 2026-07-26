@@ -13,6 +13,8 @@ export const JOB_SLA_HOURS: Record<JobType, number> = {
   publish_post: 6,
   // Managed Posting: operator drafts + review turnaround before publish.
   content_post: 24,
+  // Managed Content: operator drafts a library piece + review.
+  content_piece: 24,
   pause_account: 4,
   resume_account: 4,
   transfer_ownership: 72,

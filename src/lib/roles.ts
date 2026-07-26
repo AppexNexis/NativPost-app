@@ -107,8 +107,10 @@ export const NAV_ITEMS: NavItem[] = [
     external: true,
   },
   {
-    label: 'Stay Updated',
-    href: 'https://chat.whatsapp.com/CY6sAujZInqGEECEX8CQzF',
+    // label: 'Stay Updated',
+    label: 'Join our Discord',
+    // href: 'https://chat.whatsapp.com/CY6sAujZInqGEECEX8CQzF',
+    href: 'https://discord.com/invite/N5SgkwfCAY',
     icon: 'MessageCircle',
     roles: ['admin', 'editor', 'member'],
     group: 'Resources',

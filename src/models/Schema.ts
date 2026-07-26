@@ -1675,3 +1675,37 @@ export const msiAddonSubscriptionSchema = pgTable(
     orgIdx: index('msi_addon_org_idx').on(t.orgId),
   }),
 );
+
+// -----------------------------------------------------------
+// MSI ANALYTICS REPORTS (docs §19 — Managed Analytics add-on)
+// The monthly report artifact: one per (managed account, billing period). AI
+// composes a draft (status in_review); an operator delivers it (delivered).
+// -----------------------------------------------------------
+export const msiAnalyticsReportSchema = pgTable(
+  'msi_analytics_report',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    managedAccountId: uuid('managed_account_id')
+      .references(() => managedAccountSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    // UTC billing month, 'YYYY-MM'.
+    billingPeriod: text('billing_period').notNull(),
+    // generating | in_review | delivered
+    status: text('status').default('in_review').notNull(),
+    // Structured report body: { headline, sections[], recommendations[] }.
+    summary: jsonb('summary').$type<Record<string, unknown>>().default({}).notNull(),
+    generatedAt: timestamp('generated_at', { mode: 'date' }),
+    deliveredAt: timestamp('delivered_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    acctPeriodIdx: uniqueIndex('msi_analytics_report_acct_period_idx').on(
+      t.managedAccountId,
+      t.billingPeriod,
+    ),
+    orgIdx: index('msi_analytics_report_org_idx').on(t.orgId),
+  }),
+);
