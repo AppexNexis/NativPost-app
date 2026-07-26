@@ -28,6 +28,9 @@ type Addon = {
   status: 'available' | 'beta' | 'planned';
   whoPerforms: 'system' | 'ai' | 'operator' | 'ai_plus_human';
   pricing: AddonPricing;
+  whoFor?: string;
+  whatWeDo?: string[];
+  timeSaved?: string;
   priority: number;
 };
 
@@ -199,7 +202,29 @@ export default function AddonsPage() {
 
                   <p className="text-sm font-semibold text-foreground">{addon.name}</p>
                   <p className="mt-0.5 text-xs font-medium text-muted-foreground">{addon.tagline}</p>
-                  <p className="mt-2 flex-1 text-xs text-muted-foreground">{addon.description}</p>
+
+                  {addon.whoFor && (
+                    <p className="mt-2 rounded-md bg-muted/50 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+                      <span className="font-semibold text-foreground">Who it's for:</span> {addon.whoFor}
+                    </p>
+                  )}
+
+                  {addon.whatWeDo && addon.whatWeDo.length > 0 ? (
+                    <ul className="mt-2 flex-1 space-y-1">
+                      {addon.whatWeDo.slice(0, 5).map(item => (
+                        <li key={item} className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                          <Check className="mt-0.5 size-3 shrink-0 text-emerald-500" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 flex-1 text-xs text-muted-foreground">{addon.description}</p>
+                  )}
+
+                  {addon.timeSaved && (
+                    <p className="mt-2 text-[11px] font-medium text-primary">⏱ {addon.timeSaved}</p>
+                  )}
 
                   <p className="mt-3 text-sm font-semibold text-foreground">{priceLabel(addon.pricing)}</p>
 
