@@ -1709,3 +1709,65 @@ export const msiAnalyticsReportSchema = pgTable(
     orgIdx: index('msi_analytics_report_org_idx').on(t.orgId),
   }),
 );
+
+// -----------------------------------------------------------
+// MSI AD CAMPAIGNS (docs §19 — Managed Advertising add-on)
+// Percent-of-spend billing: a one-time setup fee on creation + a management fee
+// (management_pct of recorded spend) billed as invoice items. The ad SPEND
+// itself is paid by the customer directly to the ad platform — never through us.
+// -----------------------------------------------------------
+export const msiAdCampaignSchema = pgTable(
+  'msi_ad_campaign',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    managedAccountId: uuid('managed_account_id')
+      .references(() => managedAccountSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    name: text('name').notNull(),
+    platform: text('platform').notNull(),
+    objective: text('objective'),
+    // active | paused | ended
+    status: text('status').default('active').notNull(),
+    // Management fee percentage of spend (10–20).
+    managementPct: integer('management_pct').notNull(),
+    // Accumulated recorded ad spend, in cents (paid by the customer to the ad
+    // platform; tracked here to compute our management fee).
+    spendCents: integer('spend_cents').default(0).notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  t => ({
+    orgIdx: index('msi_ad_campaign_org_idx').on(t.orgId),
+  }),
+);
+
+// -----------------------------------------------------------
+// MSI COMMUNITY REPLIES (docs §19 — Managed Community add-on)
+// Operators log the replies/DMs/moderation they handle; usage is summed per
+// month against the tier's reply quota. Flat-tier billed like other add-ons.
+// -----------------------------------------------------------
+export const msiCommunityReplySchema = pgTable(
+  'msi_community_reply',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    managedAccountId: uuid('managed_account_id')
+      .references(() => managedAccountSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    // Number of replies handled in this log entry.
+    count: integer('count').default(1).notNull(),
+    note: text('note'),
+    loggedAt: timestamp('logged_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  t => ({
+    orgIdx: index('msi_community_reply_org_idx').on(t.orgId),
+  }),
+);

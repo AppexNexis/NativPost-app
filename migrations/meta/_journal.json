@@ -393,6 +393,13 @@
       "when": 1785085613285,
       "tag": "0055_noisy_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1785102331722,
+      "tag": "0056_condemned_anthem",
+      "breakpoints": true
     }
   ]
 }

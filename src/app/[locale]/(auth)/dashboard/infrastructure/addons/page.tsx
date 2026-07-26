@@ -38,6 +38,8 @@ const ADDON_WORKFLOWS: Record<string, { label: string; href: string }> = {
   managed_posting: { label: 'Request a post', href: '/dashboard/infrastructure/addons/managed-posting' },
   managed_content: { label: 'Request content', href: '/dashboard/infrastructure/addons/managed-content' },
   managed_analytics: { label: 'Open reports', href: '/dashboard/infrastructure/addons/managed-analytics' },
+  managed_ads: { label: 'Manage campaigns', href: '/dashboard/infrastructure/addons/managed-ads' },
+  managed_community: { label: 'View activity', href: '/dashboard/infrastructure/addons/managed-community' },
 };
 
 type ApiResponse = { addons: Addon[]; subscriptions: Subscription[] };

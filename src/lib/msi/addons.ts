@@ -103,7 +103,7 @@ export const ADDON_CATALOG: MsiAddon[] = [
     tagline: 'We build, launch, and monitor your paid campaigns.',
     description:
       'Our operators configure the campaign, audience, budget, pixel, creative, copy, and tracking, then monitor performance. You pay the ad platform directly for spend; we take a setup fee plus a management percentage.',
-    status: 'planned',
+    status: 'available',
     whoPerforms: 'operator',
     pricing: {
       kind: 'percent_of_spend',
@@ -146,7 +146,7 @@ export const ADDON_CATALOG: MsiAddon[] = [
     tagline: 'We reply to comments and DMs, hide spam, and moderate.',
     description:
       'Our operators handle inbound from one dashboard: reply to comments and DMs, hide spam, pin comments. Operationally heavy (real-time, timezone coverage) — staged after operator density is in place.',
-    status: 'planned',
+    status: 'available',
     whoPerforms: 'operator',
     pricing: {
       kind: 'fixed_tiers',

@@ -105,3 +105,36 @@ export async function removeAddonBilling(itemId: string | null | undefined): Pro
   const stripe = await getStripeClient();
   await stripe.subscriptionItems.del(itemId);
 }
+
+/**
+ * Bill a one-off amount by adding an invoice item to the org's next invoice.
+ * Used for usage-based add-on fees that don't fit a flat subscription price —
+ * an ad setup fee, or a management fee computed from spend (docs §19). Returns
+ * the invoice item id, or null when not billable (flag off, no amount, or the
+ * org has no Stripe customer). Callers wrap this best-effort.
+ */
+export async function billOneOffInvoiceItem(params: {
+  orgId: string;
+  amountCents: number;
+  description: string;
+}): Promise<string | null> {
+  if (!isAddonBillingEnabled() || params.amountCents <= 0) {
+    return null;
+  }
+  const [org] = await db
+    .select({ customerId: organizationSchema.stripeCustomerId })
+    .from(organizationSchema)
+    .where(eq(organizationSchema.id, params.orgId))
+    .limit(1);
+  if (!org?.customerId) {
+    return null;
+  }
+  const stripe = await getStripeClient();
+  const item = await stripe.invoiceItems.create({
+    customer: org.customerId,
+    amount: params.amountCents,
+    currency: 'usd',
+    description: params.description,
+  });
+  return item.id;
+}
