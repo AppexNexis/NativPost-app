@@ -10,6 +10,11 @@ import { msiProvisioningOrderSchema, organizationSchema } from '@/models/Schema'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+// Metered price ($1.50/post) linked to the Managed Posts meter. When set, it's
+// added as a second subscription item so managed-post usage is billed on the
+// SAME subscription as the per-account fee. Unset → checkout behaves exactly as
+// before (per-account only); safe to deploy before the price exists in Stripe.
+const MSI_POST_PRICE_ID = process.env.STRIPE_MSI_POST_PRICE_ID;
 
 type RouteParams = { params: Promise<{ orderId: string }> };
 
@@ -78,6 +83,10 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
           },
           quantity: order.quantity,
         },
+        // Metered per-post usage item. No `quantity` — a metered price derives
+        // its quantity from reported meter events (docs §6). Omitted entirely
+        // when the price id isn't configured.
+        ...(MSI_POST_PRICE_ID ? [{ price: MSI_POST_PRICE_ID }] : []),
       ],
       metadata,
       subscription_data: { metadata },
