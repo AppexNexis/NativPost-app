@@ -532,6 +532,7 @@ export default function ContentCreatePage() {
           body: JSON.stringify({
             contentType,
             targetPlatforms: selectedPlatforms,
+            targetAccountIds: selectedAccountIds,
             aspectRatio: '9:16',
             numVariants: 3,
             enrichment: hasEnrichment() ? enrichment : undefined,

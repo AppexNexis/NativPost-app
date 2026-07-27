@@ -185,6 +185,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (body.targetPlatforms !== undefined) {
       updates.targetPlatforms = body.targetPlatforms;
     }
+    if (body.targetAccountIds !== undefined) {
+      updates.targetAccountIds = Array.isArray(body.targetAccountIds) ? body.targetAccountIds : [];
+    }
     if (body.platformSpecific !== undefined) {
       const existing = (current?.platformSpecific as Record<string, unknown>) || {};
       updates.platformSpecific = { ...existing, ...body.platformSpecific };
