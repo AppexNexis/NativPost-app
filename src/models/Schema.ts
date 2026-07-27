@@ -603,6 +603,9 @@ export const contentEditSchema = pgTable('content_edit', {
   contentType: text('content_type').notNull(),
   contentMode: text('content_mode').default('normal'),
   targetPlatforms: jsonb('target_platforms').default([]),
+  // Account-level publish targets carried from the create/remix picker so the
+  // editor's save can scope publishing to the exact selected accounts.
+  targetAccountIds: jsonb('target_account_ids').$type<string[]>().default([]),
   aspectRatio: text('aspect_ratio').default('9:16'),
 
   // Editable content

@@ -400,6 +400,13 @@
       "when": 1785102331722,
       "tag": "0056_condemned_anthem",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1785166604476,
+      "tag": "0057_volatile_squadron_sinister",
+      "breakpoints": true
     }
   ]
 }

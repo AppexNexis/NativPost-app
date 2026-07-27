@@ -57,6 +57,7 @@ async function post(req: NextRequest) {
     contentType: string;
     contentMode: string;
     targetPlatforms: string[];
+    targetAccountIds: string[];
     aspectRatio: string;
     script: Record<string, unknown>;
     style: Record<string, unknown>;
@@ -81,6 +82,7 @@ async function post(req: NextRequest) {
       contentType: body.contentType || 'text',
       contentMode: body.contentMode || 'normal',
       targetPlatforms: body.targetPlatforms || [],
+      targetAccountIds: Array.isArray(body.targetAccountIds) ? body.targetAccountIds : [],
       aspectRatio: body.aspectRatio || '9:16',
       script: body.script || {},
       style: body.style || {},
@@ -124,7 +126,7 @@ async function patch(req: NextRequest, context: { params: Promise<{ id?: string 
   // Only allow updating editable fields
   const allowed: Record<string, unknown> = {};
   const keys = [
-    'contentItemId', 'contentType', 'contentMode', 'targetPlatforms', 'aspectRatio',
+    'contentItemId', 'contentType', 'contentMode', 'targetPlatforms', 'targetAccountIds', 'aspectRatio',
     'script', 'style', 'layout', 'timing', 'mediaSlots', 'audioTrack',
     'enrichment', 'brandProfileSnapshot', 'previewRenderUrl', 'previewRenderId',
     'finalRenderUrl', 'finalRenderId', 'renderStatus', 'status', 'isAutosave',

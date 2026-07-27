@@ -481,6 +481,7 @@ export default function ContentCreatePage() {
         templateId,
         contentType,
         targetPlatforms: selectedPlatforms,
+        targetAccountIds: selectedAccountIds,
         aspectRatio: '9:16',
         script: {
           hookText: template.structure?.hook?.text || '',

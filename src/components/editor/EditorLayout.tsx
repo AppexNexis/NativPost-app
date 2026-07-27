@@ -206,6 +206,7 @@ export function EditorLayout({
           contentType: state.edit?.contentType || 'text_only',
           caption,
           targetPlatforms: state.targetPlatforms || state.edit?.targetPlatforms || [],
+          targetAccountIds: state.edit?.targetAccountIds || [],
           status: 'draft',
           graphicUrls: allMediaUrls,
           aspectRatio: state.aspectRatio || state.edit?.aspectRatio || '9:16',

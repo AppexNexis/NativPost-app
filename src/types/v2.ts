@@ -489,6 +489,7 @@ export type ContentEdit = {
   contentType: ContentType;
   contentMode: string;
   targetPlatforms: string[];
+  targetAccountIds: string[];
   aspectRatio: string;
 
   script: ContentEditScript;
