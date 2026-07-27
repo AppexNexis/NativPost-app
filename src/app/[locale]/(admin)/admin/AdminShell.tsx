@@ -20,6 +20,7 @@ import {
   HeadphonesIcon,
   LayoutDashboard,
   ListChecks,
+  Megaphone,
   Menu,
   MessageSquare,
   Settings,
@@ -73,6 +74,7 @@ const NAV = [
     items: [
       { label: 'Operations', href: '/admin/msi', icon: Boxes },
       { label: 'Queue', href: '/admin/msi/queue', icon: ListChecks },
+      { label: 'Add-on ops', href: '/admin/msi/addon-ops', icon: Megaphone },
     ],
   },
   {
