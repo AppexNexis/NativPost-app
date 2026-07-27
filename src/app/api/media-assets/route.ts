@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { checkStorageLimit } from '@/lib/billing';
 import { getDb } from '@/libs/DB';
 import { mediaAssetSchema } from '@/models/Schema';
 
@@ -82,6 +83,14 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
+
+    const storageCheck = await checkStorageLimit(orgId!, Number(body.fileSize) || 0);
+    if (!storageCheck.allowed) {
+      return NextResponse.json(
+        { error: storageCheck.reason, used: storageCheck.used, limit: storageCheck.limit },
+        { status: 403 },
+      );
+    }
 
     const [created] = await db
       .insert(mediaAssetSchema)

@@ -38,7 +38,13 @@ export type PlanFeatures = {
   monthlyPlanRegenerations: number; // how many regenerations per month allowed
   monthlyAiCredits: number; // AI Studio monthly credit allocation
   blitzPostsPerDay: number; // -1 = unlimited; hard cap on Blitz daily queue
+  workspacesLimit: number; // -1 = unlimited; max Clerk organizations (workspaces) the user may own
+  mediaStorageBytes: number; // -1 = unlimited; total media storage cap in bytes
 };
+
+/** Byte-size helpers for media storage limits. */
+const MB = 1024 * 1024;
+const GB = 1024 * 1024 * 1024;
 
 export type PlanConfig = {
   id: string;
@@ -86,6 +92,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       monthlyPlanRegenerations: 0,
       monthlyAiCredits: 50,
       blitzPostsPerDay: 2,
+      workspacesLimit: 1,
+      mediaStorageBytes: 500 * MB,
     },
     stripePriceId: { dev: '', prod: '' },
     stripeAnnualPriceId: { dev: '', prod: '' },
@@ -121,6 +129,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       monthlyPlanRegenerations: 2,
       monthlyAiCredits: 250,
       blitzPostsPerDay: 3,
+      workspacesLimit: 1,
+      mediaStorageBytes: 10 * GB,
     },
     stripePriceId: { dev: 'price_STARTER_DEV_REPLACE', prod: 'price_1TLfHe8UA4orc9zNIcmWwP1d' },
     stripeAnnualPriceId: { dev: 'price_STARTER_ANNUAL_DEV_REPLACE', prod: 'price_1TuJun8UA4orc9zNttOr2wxC' },
@@ -156,6 +166,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       monthlyPlanRegenerations: 3,
       monthlyAiCredits: 500,
       blitzPostsPerDay: 5,
+      workspacesLimit: 3,
+      mediaStorageBytes: 10 * GB,
     },
     stripePriceId: { dev: 'price_GROWTH_DEV_REPLACE', prod: 'price_1TLfIW8UA4orc9zN5SvYEWkD' },
     stripeAnnualPriceId: { dev: 'price_GROWTH_ANNUAL_DEV_REPLACE', prod: 'price_1TuK1Z8UA4orc9zNsShuDFMu' },
@@ -191,6 +203,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       monthlyPlanRegenerations: 3,
       monthlyAiCredits: 1250,
       blitzPostsPerDay: 10,
+      workspacesLimit: 10,
+      mediaStorageBytes: 10 * GB,
     },
     stripePriceId: { dev: 'price_PRO_DEV_REPLACE', prod: 'price_1TLfJ08UA4orc9zNrNzFnRr7' },
     stripeAnnualPriceId: { dev: 'price_PRO_ANNUAL_DEV_REPLACE', prod: 'price_1TuK308UA4orc9zNdT2A3trX' },
@@ -226,6 +240,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       monthlyPlanRegenerations: -1, // unlimited
       monthlyAiCredits: 2000,
       blitzPostsPerDay: 20,
+      workspacesLimit: 25,
+      mediaStorageBytes: 50 * GB,
     },
     stripePriceId: { dev: 'price_AGENCY_DEV_REPLACE', prod: 'price_1TLfKa8UA4orc9zNw27oyVak' },
     stripeAnnualPriceId: { dev: 'price_AGENCY_ANNUAL_DEV_REPLACE', prod: 'price_1TuK9K8UA4orc9zNzhdEgB9m' },
@@ -261,6 +277,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
       monthlyPlanRegenerations: -1,
       monthlyAiCredits: 2000,
       blitzPostsPerDay: -1,
+      workspacesLimit: -1,
+      mediaStorageBytes: -1,
     },
     stripePriceId: { dev: '', prod: '' },
     stripeAnnualPriceId: { dev: '', prod: '' },

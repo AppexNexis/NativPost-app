@@ -11,6 +11,7 @@ import {
   ChevronRight,
   CircleCheck,
   Clock,
+  Coins,
   CreditCard,
   ExternalLink,
   FileText,
@@ -49,6 +50,7 @@ import SupportWidget from '@/components/support/SupportWidget';
 import { CommandPalette } from '@/components/ui/command-palette';
 import { Kbd } from '@/components/ui/kbd';
 import { Toaster } from '@/components/ui/toaster';
+import { useOrgCredits } from '@/features/credits/useOrgCredits';
 import { type BillingGateState, BillingGate } from '@/features/dashboard/BillingGate';
 import { useOrgSync } from '@/hooks/useOrgSync';
 import type { NavItem } from '@/lib/roles';
@@ -81,6 +83,36 @@ const ICONS: Record<string, typeof Calendar> = {
   Zap,
 };
 
+// -----------------------------------------------------------
+// CreditsNavPill — compact AI-credits balance in the header.
+// Reuses the shared useOrgCredits hook (no extra fetch) and links to the
+// Credits settings tab. Balance mirrors CreditBadge:
+// monthlyRemaining + addon.remaining - reserved.
+// -----------------------------------------------------------
+function CreditsNavPill() {
+  const { wallet, loading } = useOrgCredits();
+
+  if (loading && !wallet) return null;
+  if (!wallet) return null;
+
+  const monthlyRemaining = Math.max(0, wallet.monthly.limit - wallet.monthly.used);
+  const reserved = wallet.reservedCredits ?? 0;
+  const balance = Math.max(0, monthlyRemaining + wallet.addon.remaining - reserved);
+  const display = balance >= 1000 ? `${(balance / 1000).toFixed(1)}k` : String(balance);
+
+  return (
+    <Link
+      href="/dashboard/settings?tab=credits"
+      aria-label={`${balance} AI credits remaining. Click to manage credits.`}
+      title={`${balance.toLocaleString()} AI credits`}
+      className="hidden h-7 items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
+    >
+      <Coins className="size-3.5" />
+      <span>{display}</span>
+    </Link>
+  );
+}
+
 export default function DashboardClientLayout({
   children,
   plan,
@@ -97,6 +129,7 @@ export default function DashboardClientLayout({
   const [currentPlan, setCurrentPlan] = useState<string>(plan || 'free');
   const [billingStatus, setBillingStatus] = useState<BillingGateState | null>(null);
   const [trialLimits, setTrialLimits] = useState<TrialLimitsData | null>(null);
+  const [workspaceUsage, setWorkspaceUsage] = useState<{ count: number; limit: number } | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [isMac, setIsMac] = useState(true);
@@ -199,6 +232,21 @@ export default function DashboardClientLayout({
       })
       .catch(() => null);
   }, []);
+
+  // Fetch workspace usage to drive the soft create-org gate near the switcher.
+  useEffect(() => {
+    fetch('/api/workspaces/usage', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null))
+      .then((data: { count?: number; limit?: number } | null) => {
+        if (data && typeof data.count === 'number' && typeof data.limit === 'number') {
+          setWorkspaceUsage({ count: data.count, limit: data.limit });
+        }
+      })
+      .catch(() => null);
+  }, []);
+
+  const workspaceLimitReached
+    = !!workspaceUsage && workspaceUsage.limit !== -1 && workspaceUsage.count >= workspaceUsage.limit;
 
   const cleanPath = pathname.replace(/^\/[a-z]{2}(\/|$)/, '/');
 
@@ -339,9 +387,31 @@ export default function DashboardClientLayout({
                     rootBox: 'w-full',
                     organizationSwitcherTrigger:
                     'w-full justify-between rounded-lg border px-3 py-2 text-sm hover:bg-muted',
+                    // Soft gate: once the user is at their plan's workspace
+                    // limit, hide Clerk's built-in create-organization action.
+                    // The webhook backstop still enforces this server-side.
+                    ...(workspaceLimitReached
+                      ? { organizationSwitcherPopoverActionButton__createOrganization: 'hidden' }
+                      : {}),
                   },
                 }}
               />
+              {workspaceUsage && (
+                <p className="mt-2 text-meta text-muted-foreground">
+                  {workspaceUsage.count}
+                  {' / '}
+                  {workspaceUsage.limit === -1 ? 'Unlimited' : workspaceUsage.limit}
+                  {' workspaces'}
+                </p>
+              )}
+              {workspaceLimitReached && (
+                <Link
+                  href="/dashboard/billing"
+                  className="mt-1 block text-meta font-medium text-primary hover:underline"
+                >
+                  Upgrade to add more workspaces
+                </Link>
+              )}
             </div>
           )}
 
@@ -519,6 +589,7 @@ export default function DashboardClientLayout({
               >
                 Feedback
               </button>
+              <CreditsNavPill />
               <TrialLimitsPill data={trialLimits} />
               <NotificationBell />
               <UserButton

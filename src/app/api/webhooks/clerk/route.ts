@@ -3,7 +3,12 @@ import { NextResponse } from 'next/server';
 import { Webhook } from 'svix';
 
 import { ensureOrgFreePlan } from '@/lib/billing';
-import { ensureNativPostAdminInOrg, fireWelcomeEmailForOrg } from '@/lib/clerk-org-helpers';
+import {
+  deleteClerkOrganization,
+  ensureNativPostAdminInOrg,
+  fireWelcomeEmailForOrg,
+  getUserWorkspaceUsage,
+} from '@/lib/clerk-org-helpers';
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 
@@ -16,6 +21,7 @@ type ClerkOrganizationEvent = {
     name?: string;
     slug?: string;
     created_at?: number;
+    created_by?: string;
   };
 };
 
@@ -69,6 +75,30 @@ export async function POST(request: Request) {
       case 'organization.created': {
         const orgId = event.data.id;
         console.log(`[Clerk Webhook] org.created → ${orgId} ("${event.data.name ?? 'unnamed'}")`);
+
+        // 0. Hard enforce the workspace limit (backstop). Clerk org creation
+        //    happens inside widgets we don't control, so this webhook is the
+        //    airtight guard: if the creator is already at their plan's
+        //    workspace limit, roll back by deleting the just-created org and
+        //    skip all seeding. The soft in-UI gate makes this path rare.
+        const createdBy = event.data.created_by;
+        if (createdBy) {
+          try {
+            const { count, limit } = await getUserWorkspaceUsage(createdBy, orgId);
+            if (limit !== -1 && count >= limit) {
+              console.warn(
+                `[Clerk Webhook] Workspace limit reached for user ${createdBy} `
+                + `(owns ${count}, limit ${limit}). Rolling back org ${orgId}.`,
+              );
+              await deleteClerkOrganization(orgId);
+              return NextResponse.json({ received: true, rolledBack: true }, { status: 200 });
+            }
+          } catch (err) {
+            // Non-fatal: if the limit check errors, fall through and allow
+            // the org rather than blocking a legitimate signup.
+            console.error('[Clerk Webhook] Workspace limit check failed:', err);
+          }
+        }
 
         // 1. Create org row in DB, already on the free plan.
         //    No purchase step stands between signup and the dashboard.

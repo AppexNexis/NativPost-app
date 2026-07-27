@@ -93,6 +93,42 @@ const FEATURE_ROWS = [
         : `Up to ${plan.features.platformsLimit}`,
   },
   {
+    label: 'Workspaces',
+    render: (plan: typeof VISIBLE_PLANS[0]) =>
+      plan.features.workspacesLimit === -1 ? 'Unlimited' : String(plan.features.workspacesLimit),
+  },
+  {
+    label: 'Media storage',
+    render: (plan: typeof VISIBLE_PLANS[0]) => {
+      const bytes = plan.features.mediaStorageBytes;
+      if (bytes === -1) {
+        return 'Unlimited';
+      }
+      const gb = bytes / (1024 * 1024 * 1024);
+      if (gb >= 1) {
+        return `${gb % 1 === 0 ? gb : gb.toFixed(1)} GB`;
+      }
+      return `${Math.round(bytes / (1024 * 1024))} MB`;
+    },
+  },
+  {
+    label: 'AI credits per month',
+    render: (plan: typeof VISIBLE_PLANS[0]) =>
+      plan.features.monthlyAiCredits === -1
+        ? 'Unlimited'
+        : plan.features.monthlyAiCredits.toLocaleString(),
+  },
+  {
+    label: 'Blitz swipes per day',
+    render: (plan: typeof VISIBLE_PLANS[0]) =>
+      plan.features.blitzPostsPerDay === -1 ? 'Unlimited' : String(plan.features.blitzPostsPerDay),
+  },
+  {
+    label: 'Team members',
+    render: (plan: typeof VISIBLE_PLANS[0]) =>
+      plan.features.teamMembersLimit === -1 ? 'Unlimited' : String(plan.features.teamMembersLimit),
+  },
+  {
     label: 'Image and text posts',
     render: (plan: typeof VISIBLE_PLANS[0]) => plan.features.imagePosts as boolean,
   },

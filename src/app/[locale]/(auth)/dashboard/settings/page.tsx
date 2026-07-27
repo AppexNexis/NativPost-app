@@ -5,6 +5,7 @@ import {
   Building2,
   ChevronRight,
   Coins,
+  HardDrive,
   KeyRound,
   Layout,
   Loader2,
@@ -17,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ApiKeysPanel } from '@/components/settings/api-keys/ApiKeysPanel';
 import { CreditsPanel } from '@/components/settings/credits/CreditsPanel';
+import { StoragePanel } from '@/components/settings/storage/StoragePanel';
 import { PageHeader } from '@/features/dashboard/PageHeader';
 import { CONTENT_LANGUAGE_GROUPS, CONTENT_LANGUAGES } from '@/lib/content-languages';
 import { PLATFORM_LABELS } from '@/lib/platforms';
@@ -46,7 +48,7 @@ type UserPrefs = {
   sidebarDensity: string;
 };
 
-const TAB_KEYS = ['workspace', 'notifications', 'publishing', 'content', 'appearance', 'credits', 'api-keys'] as const;
+const TAB_KEYS = ['workspace', 'notifications', 'publishing', 'content', 'appearance', 'credits', 'storage', 'api-keys'] as const;
 type TabKey = typeof TAB_KEYS[number];
 
 const TABS: { key: TabKey; label: string; icon: typeof Building2 }[] = [
@@ -55,11 +57,12 @@ const TABS: { key: TabKey; label: string; icon: typeof Building2 }[] = [
   { key: 'publishing', label: 'Publishing', icon: PenLine },
   { key: 'content', label: 'Content', icon: Layout },
   { key: 'credits', label: 'Credits', icon: Coins },
+  { key: 'storage', label: 'Storage', icon: HardDrive },
   { key: 'api-keys', label: 'API keys', icon: KeyRound },
   { key: 'appearance', label: 'Appearance', icon: Palette },
 ];
 
-const PANEL_TABS: TabKey[] = ['credits', 'api-keys'];
+const PANEL_TABS: TabKey[] = ['credits', 'storage', 'api-keys'];
 
 const TIMEZONES = [
   'Africa/Lagos',
@@ -207,6 +210,63 @@ function Select({
         <option key={o.value} value={o.value}>{o.label}</option>
       ))}
     </select>
+  );
+}
+
+// -----------------------------------------------------------
+// WorkspaceUsageRow — shows how many workspaces the user owns vs. their
+// plan limit, and prompts an upgrade once the limit is reached.
+// -----------------------------------------------------------
+function WorkspaceUsageRow() {
+  const [usage, setUsage] = useState<{ count: number; limit: number } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/workspaces/usage', { cache: 'no-store' });
+        if (!res.ok) throw new Error('failed');
+        const data = await res.json();
+        if (!cancelled) setUsage({ count: Number(data.count) || 0, limit: Number(data.limit) ?? 0 });
+      } catch {
+        if (!cancelled) setUsage(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) {
+    return <Loader2 className="size-4 animate-spin text-muted-foreground" />;
+  }
+  if (!usage) {
+    return <p className="text-sm text-muted-foreground">Unavailable</p>;
+  }
+
+  const unlimited = usage.limit === -1;
+  const atLimit = !unlimited && usage.count >= usage.limit;
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium">
+        {usage.count}
+        {' / '}
+        {unlimited ? 'Unlimited' : usage.limit}
+        {' '}
+        <span className="font-normal text-muted-foreground">workspaces</span>
+      </p>
+      {atLimit && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-meta text-amber-700 dark:text-amber-400">
+          You've reached your workspace limit.
+          {' '}
+          <a href="/dashboard/billing" className="font-medium underline underline-offset-2">
+            Upgrade to add more
+          </a>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -400,6 +460,9 @@ export default function SettingsPage() {
             {/* ── Credits ── */}
             {activeTab === 'credits' && <CreditsPanel />}
 
+            {/* ── Storage ── */}
+            {activeTab === 'storage' && <StoragePanel />}
+
             {/* ── API keys ── */}
             {activeTab === 'api-keys' && <ApiKeysPanel />}
 
@@ -434,6 +497,9 @@ export default function SettingsPage() {
                       <option value={orgSettings.contentLanguage}>{orgSettings.contentLanguage}</option>
                     )}
                   </select>
+                </SettingRow>
+                <SettingRow label="Workspaces" description="How many workspaces your plan includes.">
+                  <WorkspaceUsageRow />
                 </SettingRow>
                 <SettingRow label="Team members" description="Manage roles and invitations.">
                   <a

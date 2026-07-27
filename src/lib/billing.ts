@@ -9,11 +9,11 @@
  * Import these in API routes to enforce limits before processing requests.
  */
 
-import { and, count, eq, gte, isNotNull, isNull } from 'drizzle-orm';
+import { and, count, eq, gte, isNotNull, isNull, sum } from 'drizzle-orm';
 
 import { fireEmailEvent } from '@/lib/email-webhook';
 import { getDb } from '@/libs/DB';
-import { contentItemSchema, organizationSchema, publishingQueueSchema } from '@/models/Schema';
+import { contentItemSchema, mediaAssetSchema, organizationSchema, publishingQueueSchema } from '@/models/Schema';
 
 import {
   FREE_PLAN_FEATURES,
@@ -513,6 +513,59 @@ export async function getOrgUsage(orgId: string) {
     postsThisMonth: result?.count ?? 0,
     monthStart: windowStart.toISOString(),
   };
+}
+
+// -----------------------------------------------------------
+// MEDIA STORAGE USAGE + LIMIT
+// -----------------------------------------------------------
+/** Total bytes of media stored by an org (sum of media_asset.file_size). */
+export async function getOrgStorageBytes(orgId: string): Promise<number> {
+  const db = await getDb();
+  const [result] = await db
+    .select({ total: sum(mediaAssetSchema.fileSize) })
+    .from(mediaAssetSchema)
+    .where(eq(mediaAssetSchema.orgId, orgId));
+
+  // sum() returns a numeric string (or null when no rows).
+  return Number(result?.total ?? 0) || 0;
+}
+
+export type StorageCheckResult = {
+  allowed: boolean;
+  reason: string;
+  used: number;
+  limit: number;
+};
+
+/**
+ * Whether an org can store `incomingBytes` more media without exceeding its
+ * plan's media storage cap. `mediaStorageBytes === -1` means unlimited.
+ */
+export async function checkStorageLimit(
+  orgId: string,
+  incomingBytes: number,
+): Promise<StorageCheckResult> {
+  const billing = await getOrgBillingState(orgId);
+  const limit = billing?.features.mediaStorageBytes ?? FREE_PLAN_FEATURES.mediaStorageBytes;
+
+  if (limit === -1) {
+    return { allowed: true, reason: '', used: 0, limit };
+  }
+
+  const used = await getOrgStorageBytes(orgId);
+  const incoming = Math.max(0, incomingBytes || 0);
+
+  if (used + incoming > limit) {
+    const limitGb = (limit / (1024 * 1024 * 1024)).toFixed(limit >= 1024 * 1024 * 1024 ? 0 : 2);
+    return {
+      allowed: false,
+      reason: `You've reached your media storage limit (${limitGb} GB). Delete some media or upgrade your plan for more storage.`,
+      used,
+      limit,
+    };
+  }
+
+  return { allowed: true, reason: '', used, limit };
 }
 
 // -----------------------------------------------------------
