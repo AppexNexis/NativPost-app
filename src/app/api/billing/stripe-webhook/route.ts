@@ -7,6 +7,7 @@ import Stripe from 'stripe';
 import { addAiCredits } from '@/lib/ai-studio/server';
 import { firePlanUpgradedEmail, fireSubscriptionCancelledEmail } from '@/lib/billing';
 import { fulfillOrder } from '@/lib/msi/provisioning';
+import { notifyBilling } from '@/lib/notifications';
 import { getPlanByStripePriceId, PLAN_CONFIGS } from '@/lib/plans';
 import { sendTrustpilotInvitation } from '@/lib/trustpilot';
 import { getDb } from '@/libs/DB';
@@ -250,6 +251,13 @@ export async function POST(request: NextRequest) {
 
         console.log(`[Stripe Webhook] checkout.session.completed: org=${orgId} plan=${planId}`);
 
+        void notifyBilling(
+          orgId,
+          `You are now on the ${plan.name} plan`,
+          'Your subscription is active. New limits and features are unlocked.',
+          'success',
+        );
+
         // ── Fire plan.upgraded email + Trustpilot review invitation ──
         if (subscriptionStatus === 'active') {
           const email = await getEmailForOrg(orgId);
@@ -384,12 +392,22 @@ export async function POST(request: NextRequest) {
           : (invoice.customer as Stripe.Customer | null)?.id;
 
         if (customerId) {
-          await db
+          const [org] = await db
             .update(organizationSchema)
             .set({ planStatus: 'past_due', updatedAt: new Date() })
-            .where(eq(organizationSchema.stripeCustomerId, customerId));
+            .where(eq(organizationSchema.stripeCustomerId, customerId))
+            .returning({ id: organizationSchema.id });
 
           console.log(`[Stripe Webhook] payment_failed: customer=${customerId}`);
+
+          if (org?.id) {
+            void notifyBilling(
+              org.id,
+              'Payment failed',
+              'We could not process your latest payment. Update your billing details to avoid losing access.',
+              'error',
+            );
+          }
         }
         break;
       }

@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { checkStorageLimit } from '@/lib/billing';
+import { notifyLimitReached } from '@/lib/notifications';
 import { getDb } from '@/libs/DB';
 import { mediaAssetSchema } from '@/models/Schema';
 
@@ -86,6 +87,11 @@ export async function POST(request: NextRequest) {
 
     const storageCheck = await checkStorageLimit(orgId!, Number(body.fileSize) || 0);
     if (!storageCheck.allowed) {
+      void notifyLimitReached(
+        orgId!,
+        'Media storage',
+        storageCheck.reason || 'You have reached your media storage limit. Upgrade to add more.',
+      );
       return NextResponse.json(
         { error: storageCheck.reason, used: storageCheck.used, limit: storageCheck.limit },
         { status: 403 },

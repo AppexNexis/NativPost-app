@@ -26,7 +26,7 @@ export function buildManagedAccountNotification(input: {
 }): NewNotification {
   const base = {
     orgId: input.orgId,
-    category: 'infrastructure',
+    category: 'system',
     actionUrl: `/dashboard/infrastructure/${input.accountId}`,
   };
   if (input.event === 'went_live') {

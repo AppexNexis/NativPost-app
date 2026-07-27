@@ -15,6 +15,7 @@ import {
   socialAccountSchema,
 } from '@/models/Schema';
 import { notifyApprovalNeeded } from '@/lib/notify-connect';
+import { notifyApprovalPending } from '@/lib/notifications';
 
 type RouteParams = {
   params: Promise<{ id: string }>;
@@ -321,6 +322,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
         const count = result?.count ?? 0;
         void notifyApprovalNeeded(orgId!, Number(count));
+        void notifyApprovalPending(orgId!, Number(count));
       }).catch(() => { });
     }
 

@@ -12,6 +12,7 @@ import {
   socialAccountSchema,
 } from '@/models/Schema';
 import { notifyPostFailed, notifyPostPublished } from '@/lib/notify-connect';
+import { notifyPublishFailed, notifyPublishSucceeded } from '@/lib/notifications';
 import { isVideoContentType } from '@/types/v2';
 import { renderEditorVideoServer, RenderTimeoutError } from '@/lib/editor/render-editor-video-server';
 import { reconstructRenderInput } from '@/lib/editor/reconstruct-render-input';
@@ -409,11 +410,25 @@ export async function GET(request: NextRequest) {
             item.caption,
             item.id,
           );
+
+          // In-app notification (navbar bell)
+          void notifyPublishSucceeded(
+            item.orgId,
+            successPlatforms.join(', ') || 'platform',
+            item.caption,
+            item.id,
+          );
         }
 
         const failedPlatforms = platformResults.filter(r => !r.success);
         for (const failed of failedPlatforms) {
           void notifyPostFailed(item.orgId, failed.platform, failed.error ?? 'Unknown error');
+          void notifyPublishFailed(
+            item.orgId,
+            failed.platform,
+            failed.error ?? 'Unknown error',
+            item.id,
+          );
         }
 
         // ── Webhook emission ────────────────────────────────────────────────

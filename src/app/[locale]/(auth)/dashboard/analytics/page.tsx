@@ -13,8 +13,23 @@ import {
   Video,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+} from 'recharts';
 
+import {
+  type ChartConfig,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from '@/components/ui/chart';
 import { EmptyState } from '@/features/dashboard/EmptyState';
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
 import { PageHeader } from '@/features/dashboard/PageHeader';
@@ -186,6 +201,209 @@ function SummaryCard({
 }
 
 // -----------------------------------------------------------
+// GROWTH CHARTS
+// -----------------------------------------------------------
+type MetricKey = 'views' | 'likes' | 'comments' | 'shares' | 'posts';
+
+const METRIC_OPTIONS: { key: MetricKey; label: string }[] = [
+  { key: 'views', label: 'Views' },
+  { key: 'likes', label: 'Likes' },
+  { key: 'comments', label: 'Comments' },
+  { key: 'shares', label: 'Shares' },
+  { key: 'posts', label: 'Posts' },
+];
+
+const GROWTH_WINDOW_DAYS = 30;
+
+function metricValue(post: Post, metric: MetricKey): number {
+  if (metric === 'posts') {
+    return 1;
+  }
+  return post.totals[metric] || 0;
+}
+
+// Build the last 30 daily buckets from published posts. Each bucket carries the
+// per-day total and the running cumulative total across the window.
+function buildGrowthSeries(posts: Post[], metric: MetricKey) {
+  const dayMs = 86_400_000;
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startMs = todayStart - (GROWTH_WINDOW_DAYS - 1) * dayMs;
+
+  const perDay = new Map<number, number>();
+  for (let i = 0; i < GROWTH_WINDOW_DAYS; i++) {
+    perDay.set(startMs + i * dayMs, 0);
+  }
+
+  for (const post of posts) {
+    if (!post.publishedAt) {
+      continue;
+    }
+    const published = new Date(post.publishedAt);
+    const dayKey = new Date(
+      published.getFullYear(),
+      published.getMonth(),
+      published.getDate(),
+    ).getTime();
+    if (dayKey < startMs || dayKey > todayStart) {
+      continue;
+    }
+    perDay.set(dayKey, (perDay.get(dayKey) || 0) + metricValue(post, metric));
+  }
+
+  let running = 0;
+  return Array.from(perDay.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([ms, daily]) => {
+      running += daily;
+      return {
+        date: new Date(ms).toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+        }),
+        daily,
+        cumulative: running,
+      };
+    });
+}
+
+function MetricToggle({
+  metric,
+  onChange,
+}: {
+  metric: MetricKey;
+  onChange: (m: MetricKey) => void;
+}) {
+  return (
+    <div className="inline-flex flex-wrap gap-1 rounded-lg border bg-muted/40 p-1">
+      {METRIC_OPTIONS.map(opt => (
+        <button
+          key={opt.key}
+          type="button"
+          onClick={() => onChange(opt.key)}
+          className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+            metric === opt.key
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function GrowthCharts({ posts }: { posts: Post[] }) {
+  const [cumulativeMetric, setCumulativeMetric] = useState<MetricKey>('views');
+  const [dailyMetric, setDailyMetric] = useState<MetricKey>('posts');
+
+  const cumulativeData = useMemo(
+    () => buildGrowthSeries(posts, cumulativeMetric),
+    [posts, cumulativeMetric],
+  );
+  const dailyData = useMemo(
+    () => buildGrowthSeries(posts, dailyMetric),
+    [posts, dailyMetric],
+  );
+
+  const cumulativeLabel = METRIC_OPTIONS.find(o => o.key === cumulativeMetric)!.label;
+  const dailyLabel = METRIC_OPTIONS.find(o => o.key === dailyMetric)!.label;
+
+  const cumulativeConfig = {
+    cumulative: { label: cumulativeLabel, color: 'hsl(var(--primary))' },
+  } satisfies ChartConfig;
+  const dailyConfig = {
+    daily: { label: dailyLabel, color: 'hsl(var(--primary))' },
+  } satisfies ChartConfig;
+
+  return (
+    <div className="mb-6 grid gap-4 lg:grid-cols-2">
+      {/* Cumulative growth */}
+      <div className="rounded-xl border bg-card p-5">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold">Cumulative growth</h3>
+            <p className="mt-0.5 text-meta text-muted-foreground">
+              Total accumulated over the last 30 days
+            </p>
+          </div>
+          <MetricToggle metric={cumulativeMetric} onChange={setCumulativeMetric} />
+        </div>
+        <ChartContainer config={cumulativeConfig} className="aspect-auto h-[220px] w-full">
+          <AreaChart data={cumulativeData} margin={{ left: 4, right: 4, top: 4 }}>
+            <defs>
+              <linearGradient id="fillCumulative" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--color-cumulative)" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="var(--color-cumulative)" stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="date"
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              minTickGap={24}
+            />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              width={40}
+              tickFormatter={(v: number) => fmt(v)}
+            />
+            <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+            <Area
+              dataKey="cumulative"
+              type="monotone"
+              fill="url(#fillCumulative)"
+              stroke="var(--color-cumulative)"
+              strokeWidth={2}
+            />
+          </AreaChart>
+        </ChartContainer>
+      </div>
+
+      {/* Growth per day */}
+      <div className="rounded-xl border bg-card p-5">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold">Growth per day</h3>
+            <p className="mt-0.5 text-meta text-muted-foreground">
+              Daily performance over the last 30 days
+            </p>
+          </div>
+          <MetricToggle metric={dailyMetric} onChange={setDailyMetric} />
+        </div>
+        <ChartContainer config={dailyConfig} className="aspect-auto h-[220px] w-full">
+          <BarChart data={dailyData} margin={{ left: 4, right: 4, top: 4 }}>
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="date"
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              minTickGap={24}
+            />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              width={40}
+              tickFormatter={(v: number) => fmt(v)}
+              allowDecimals={false}
+            />
+            <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+            <Bar dataKey="daily" fill="var(--color-daily)" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ChartContainer>
+      </div>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------
 // PAGE
 // -----------------------------------------------------------
 export default function AnalyticsPage() {
@@ -336,6 +554,9 @@ export default function AnalyticsPage() {
           sub={`${summary.totalPublished} published posts`}
         />
       </div>
+
+      {/* Growth charts */}
+      <GrowthCharts posts={posts} />
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* ── Posts table ──────────────────────────── */}
