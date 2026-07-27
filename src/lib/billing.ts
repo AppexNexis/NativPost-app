@@ -9,11 +9,12 @@
  * Import these in API routes to enforce limits before processing requests.
  */
 
-import { and, count, eq, gte, isNotNull, isNull, sum } from 'drizzle-orm';
+import { and, count, eq, gte, isNotNull, isNull } from 'drizzle-orm';
 
+import { getOrgCloudinaryStorageBytes } from '@/lib/cloudinary-storage';
 import { fireEmailEvent } from '@/lib/email-webhook';
 import { getDb } from '@/libs/DB';
-import { contentItemSchema, mediaAssetSchema, organizationSchema, publishingQueueSchema } from '@/models/Schema';
+import { contentItemSchema, organizationSchema, publishingQueueSchema } from '@/models/Schema';
 
 import {
   FREE_PLAN_FEATURES,
@@ -518,16 +519,15 @@ export async function getOrgUsage(orgId: string) {
 // -----------------------------------------------------------
 // MEDIA STORAGE USAGE + LIMIT
 // -----------------------------------------------------------
-/** Total bytes of media stored by an org (sum of media_asset.file_size). */
+/**
+ * Total bytes of media stored by an org.
+ *
+ * Media lives in Cloudinary (folder `nativpost/{orgId}`) and the library lists
+ * directly from there, so usage is summed from Cloudinary to match what users
+ * see — not from the `media_asset` DB table, which uploads bypass.
+ */
 export async function getOrgStorageBytes(orgId: string): Promise<number> {
-  const db = await getDb();
-  const [result] = await db
-    .select({ total: sum(mediaAssetSchema.fileSize) })
-    .from(mediaAssetSchema)
-    .where(eq(mediaAssetSchema.orgId, orgId));
-
-  // sum() returns a numeric string (or null when no rows).
-  return Number(result?.total ?? 0) || 0;
+  return getOrgCloudinaryStorageBytes(orgId);
 }
 
 export type StorageCheckResult = {

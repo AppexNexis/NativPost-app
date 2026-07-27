@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
+import { checkStorageLimit } from '@/lib/billing';
 
 cloudinary.config({
   cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
@@ -24,9 +25,19 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  // const { error, orgId } = await getAuthContext();
-  const { error } = await getAuthContext();
+  const { error, orgId } = await getAuthContext();
   if (error) return error;
+
+  // Storage backstop: the upload widget uploads straight to Cloudinary, so this
+  // signature request is the only server chokepoint. Refuse to sign when the org
+  // is already at/over its media storage cap.
+  const storageCheck = await checkStorageLimit(orgId!, 0);
+  if (!storageCheck.allowed) {
+    return NextResponse.json(
+      { error: storageCheck.reason, used: storageCheck.used, limit: storageCheck.limit },
+      { status: 403 },
+    );
+  }
 
   const body = await request.json().catch(() => ({}));
   const paramsToSign: Record<string, any> = body.paramsToSign ?? {};

@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   FileVideo,
+  HardDrive,
   HelpCircle,
   Info,
   Layers,
@@ -19,6 +20,7 @@ import {
 } from 'lucide-react';
 import type { CloudinaryUploadWidgetOptions } from 'next-cloudinary';
 import { CldUploadWidget } from 'next-cloudinary';
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -981,10 +983,25 @@ export default function MediaLibraryPage() {
   });
   const sets = setsData ?? [];
 
+  // Media storage usage vs. plan limit (summed live from Cloudinary server-side).
+  const { data: storageUsage, refetch: refetchStorage } = useQuery({
+    queryKey: ['media-storage-usage'],
+    queryFn: async (): Promise<{ usedBytes: number; limitBytes: number }> => {
+      const res = await fetch('/api/media-assets/usage');
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}`);
+      }
+      return res.json();
+    },
+  });
+  const storageLimit = storageUsage?.limitBytes ?? -1;
+  const storageUsed = storageUsage?.usedBytes ?? 0;
+  const isStorageFull = storageLimit !== -1 && storageUsed >= storageLimit;
+
   const handleQueuesEnd = async () => {
     setIsFinalizingUpload(true);
     try {
-      await refetchAssets();
+      await Promise.all([refetchAssets(), refetchStorage()]);
     } finally {
       setIsFinalizingUpload(false);
       setShowUploader(false);
@@ -1001,6 +1018,7 @@ export default function MediaLibraryPage() {
       const res = await fetch(`/api/media-library?${params}`, { method: 'DELETE' });
       if (res.ok) {
         updateAssetPages(a => a.filter(x => x.publicId !== asset.publicId), -1);
+        void refetchStorage();
         if (modal.kind === 'asset' && modal.asset.publicId === asset.publicId) {
           setModal({ kind: 'none' });
         }
@@ -1022,6 +1040,7 @@ export default function MediaLibraryPage() {
         return fetch(`/api/media-library?${params}`, { method: 'DELETE' });
       }));
       updateAssetPages(a => a.filter(x => !selectedIds.has(x.publicId)), -selectedIds.size);
+      void refetchStorage();
       setSelectedIds(new Set());
       setSelectMode(false);
     } finally {
@@ -1214,6 +1233,28 @@ export default function MediaLibraryPage() {
                 <Loader2 className="size-4 animate-spin" />
                 {' '}
                 Saving to your library...
+              </div>
+            ) : isStorageFull ? (
+              <div className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border/60 bg-muted/20 py-8 text-center">
+                <HardDrive className="size-6 text-muted-foreground/50" />
+                <p className="text-sm font-medium text-foreground">Storage full</p>
+                <p className="max-w-sm text-meta text-muted-foreground/80">
+                  You've used
+                  {' '}
+                  {formatBytes(storageUsed)}
+                  {' '}
+                  of your
+                  {' '}
+                  {formatBytes(storageLimit)}
+                  {' '}
+                  plan storage. Delete some media or upgrade to add more.
+                </p>
+                <Link
+                  href="/dashboard/billing"
+                  className="mt-1 inline-flex items-center rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                >
+                  Upgrade plan
+                </Link>
               </div>
             ) : (
               <CldUploadWidget
