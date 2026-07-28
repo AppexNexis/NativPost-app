@@ -1,8 +1,32 @@
 import React from 'react';
+import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  Bold,
+  Italic,
+  Underline,
+} from 'lucide-react';
 import { useEditor } from '../EditorContext';
+import { ColorField } from '../ColorField';
 import { getEditorKind } from '@/lib/editor/content-type-registry';
-
-const FONTS = ['Inter', 'Roboto', 'Montserrat', 'Oswald', 'Playfair Display'];
+import { EDITOR_FONTS } from '@/lib/editor/fonts';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
+import { cn } from '@/utils/Helpers';
 
 const TEXT_COLORS = [
   '#ffffff', '#000000', '#ef4444', '#f97316', '#f59e0b',
@@ -24,6 +48,52 @@ const CTA_COLORS = [
   'rgba(134, 79, 254, 0.85)', '#864FFE', '#ef4444', '#22c55e',
   '#3b82f6', '#f59e0b', '#ec4899', 'rgba(0,0,0,0.7)',
 ];
+
+// A compact icon/label segmented toggle group — no new radix dependency.
+function SegmentedGroup<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label?: string; icon?: React.ReactNode; title?: string }[];
+  value: T | undefined;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex overflow-hidden rounded-lg border border-border">
+      {options.map((opt, i) => (
+        <button
+          key={opt.value}
+          type="button"
+          title={opt.title}
+          onClick={() => onChange(opt.value)}
+          className={cn(
+            'flex flex-1 items-center justify-center gap-1 py-2 text-xs font-medium transition-colors',
+            i > 0 && 'border-l border-border',
+            value === opt.value
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+          )}
+        >
+          {opt.icon}
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Field({ label, right, children }: { label: string; right?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between">
+        <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</label>
+        {right}
+      </div>
+      {children}
+    </div>
+  );
+}
 
 export function TextTab() {
   const { state, dispatch } = useEditor();
@@ -71,340 +141,277 @@ export function TextTab() {
     dispatch({ type: 'UPDATE_SCRIPT', payload: { slideCopy: next } });
   };
 
+  const textareaClass
+    = 'w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
+
+  const fontFamily = state.style.fontFamily || 'Inter';
+  const fontSize = state.style.fontSize || 30;
+  const dimPct = Math.round((state.style.backgroundDimming ?? 0.3) * 100);
+  const mentionOn = (state.script as any).mentionBusiness !== 'false';
+  const animationOn = !(state.style as any).noAnimation;
+
   return (
-    <div className="space-y-5">
-      {isPerSlide ? (
-        <div className="space-y-4">
-          <div className="text-xs font-medium text-foreground">
-            PER-SLIDE TEXT
-            <span className="ml-2 text-[11px] font-normal text-muted-foreground">
-              {slideCount} slide{slideCount === 1 ? '' : 's'} — one text box each
-            </span>
+    <Accordion
+      type="multiple"
+      defaultValue={['content', 'style']}
+      className="space-y-1"
+    >
+      {/* CONTENT */}
+      <AccordionItem value="content" className="border-b-0">
+        <AccordionTrigger className="py-2 text-xs font-semibold uppercase tracking-wide text-foreground">
+          Content
+        </AccordionTrigger>
+        <AccordionContent className="pb-3 pt-1">
+          <div className="space-y-4 text-foreground">
+            {isPerSlide ? (
+              <div className="space-y-4">
+                {Array.from({ length: slideCount }).map((_, i) => {
+                  const value = getSlideText(i);
+                  const words = value.trim().split(/\s+/).filter(Boolean).length;
+                  return (
+                    <Field key={i} label={`Slide ${i + 1}`} right={<span className="text-[11px] text-muted-foreground">{words} words</span>}>
+                      <textarea
+                        value={value}
+                        onChange={e => updateSlideText(i, e.target.value)}
+                        rows={3}
+                        placeholder={`Caption for slide ${i + 1}…`}
+                        className={textareaClass}
+                      />
+                    </Field>
+                  );
+                })}
+              </div>
+            ) : (
+              <>
+                <Field
+                  label="Hook"
+                  right={(() => {
+                    const words = (state.script.hookText || '').trim().split(/\s+/).filter(Boolean);
+                    const isTooLong = words.length > 12;
+                    return (
+                      <span className={`text-[11px] ${isTooLong ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                        {words.length} words
+                        {isTooLong && (
+                          <button
+                            type="button"
+                            onClick={() => updateScript('hookText', words.slice(0, 12).join(' '))}
+                            className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 hover:bg-amber-200"
+                          >
+                            Trim
+                          </button>
+                        )}
+                      </span>
+                    );
+                  })()}
+                >
+                  <textarea
+                    value={state.script.hookText || ''}
+                    onChange={e => updateScript('hookText', e.target.value)}
+                    rows={2}
+                    placeholder="Grab attention in 3 seconds…"
+                    className={textareaClass}
+                  />
+                </Field>
+
+                <Field label="Body">
+                  <textarea
+                    value={state.script.bodyText || ''}
+                    onChange={e => updateScript('bodyText', e.target.value)}
+                    rows={4}
+                    placeholder="Main content…"
+                    className={textareaClass}
+                  />
+                </Field>
+
+                <Field label="CTA">
+                  <textarea
+                    value={state.script.ctaText || ''}
+                    onChange={e => updateScript('ctaText', e.target.value)}
+                    rows={2}
+                    placeholder="Follow for more…"
+                    className={textareaClass}
+                  />
+                </Field>
+              </>
+            )}
+
+            {/* Mention Business */}
+            <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+              <div>
+                <span className="text-xs font-medium text-foreground">Mention business</span>
+                <p className="text-[11px] text-muted-foreground">Weave brand name into the copy</p>
+              </div>
+              <Switch
+                checked={mentionOn}
+                onCheckedChange={checked => updateScript('mentionBusiness' as any, checked ? 'true' : 'false')}
+              />
+            </div>
           </div>
-          {Array.from({ length: slideCount }).map((_, i) => {
-            const value = getSlideText(i);
-            const words = value.trim().split(/\s+/).filter(Boolean).length;
-            return (
-              <div key={i}>
-                <div className="mb-1.5 flex items-center justify-between">
-                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Slide {i + 1}
-                  </label>
-                  <span className="text-[11px] text-muted-foreground">{words} words</span>
+        </AccordionContent>
+      </AccordionItem>
+
+      {/* STYLE */}
+      <AccordionItem value="style" className="border-b-0">
+        <AccordionTrigger className="py-2 text-xs font-semibold uppercase tracking-wide text-foreground">
+          Style
+        </AccordionTrigger>
+        <AccordionContent className="pb-3 pt-1">
+          <div className="space-y-3 text-foreground">
+            {/* Font */}
+            <Field label="Font">
+              <Select value={fontFamily} onValueChange={v => updateStyle('fontFamily', v)}>
+                <SelectTrigger className="h-9" style={{ fontFamily }}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EDITOR_FONTS.map(name => (
+                    <SelectItem key={name} value={name} style={{ fontFamily: name }}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            {/* Size */}
+            <Field label="Size" right={<span className="text-xs text-muted-foreground">{fontSize}px</span>}>
+              <Slider
+                min={16}
+                max={120}
+                step={1}
+                value={[fontSize]}
+                onValueChange={vals => updateStyle('fontSize', vals[0] ?? fontSize)}
+              />
+            </Field>
+
+            {/* Text color */}
+            <Field label="Text color">
+              <ColorField
+                value={state.style.color || '#ffffff'}
+                onChange={v => updateStyle('color', v)}
+                swatches={TEXT_COLORS}
+                fallbackHex="#ffffff"
+              />
+            </Field>
+
+            {/* Alignment + weight/style */}
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Align">
+                <SegmentedGroup
+                  value={state.style.align as 'left' | 'center' | 'right' | undefined}
+                  onChange={v => updateStyle('align', v)}
+                  options={[
+                    { value: 'left', icon: <AlignLeft className="size-4" />, title: 'Left' },
+                    { value: 'center', icon: <AlignCenter className="size-4" />, title: 'Center' },
+                    { value: 'right', icon: <AlignRight className="size-4" />, title: 'Right' },
+                  ]}
+                />
+              </Field>
+              <Field label="Format">
+                <div className="flex overflow-hidden rounded-lg border border-border">
+                  <button
+                    type="button"
+                    title="Bold"
+                    onClick={() => updateStyle('weight', state.style.weight === 'bold' ? 'normal' : 'bold')}
+                    className={cn(
+                      'flex flex-1 items-center justify-center py-2 transition-colors',
+                      state.style.weight === 'bold'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    )}
+                  >
+                    <Bold className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    title="Italic"
+                    onClick={() => updateStyle('italic', !state.style.italic)}
+                    className={cn(
+                      'flex flex-1 items-center justify-center border-l border-border py-2 transition-colors',
+                      state.style.italic
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    )}
+                  >
+                    <Italic className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    title="Underline"
+                    onClick={() => updateStyle('underline', !state.style.underline)}
+                    className={cn(
+                      'flex flex-1 items-center justify-center border-l border-border py-2 transition-colors',
+                      state.style.underline
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    )}
+                  >
+                    <Underline className="size-4" />
+                  </button>
                 </div>
-                <textarea
-                  value={value}
-                  onChange={e => updateSlideText(i, e.target.value)}
-                  rows={3}
-                  placeholder={`Caption for slide ${i + 1}…`}
-                  className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              </Field>
+            </div>
+
+            {/* Text background */}
+            <Field label="Text background">
+              <div className="space-y-2">
+                <SegmentedGroup
+                  value={(state.style.backgroundColor ?? '#000000') as string}
+                  onChange={v => updateStyle('backgroundColor', v)}
+                  options={TEXT_BG_PRESETS.map(p => ({ value: p.value, label: p.label }))}
+                />
+                <ColorField
+                  value={(state.style.backgroundColor ?? '#000000') as string}
+                  onChange={v => updateStyle('backgroundColor', v)}
+                  fallbackHex="#000000"
                 />
               </div>
-            );
-          })}
-        </div>
-      ) : (
-        <>
-          {/* Hook */}
-          <div>
-            <div className="mb-1.5 flex items-center justify-between">
-              <label className="text-xs font-medium text-foreground">HOOK</label>
-              <div className="flex items-center gap-2">
-                {state.timing?.hook?.durationSeconds && (
-                  <span className="text-[11px] text-muted-foreground">{state.timing.hook.durationSeconds}s</span>
-                )}
-                {(() => {
-                  const words = (state.script.hookText || '').trim().split(/\s+/).filter(Boolean);
-                  const isTooLong = words.length > 12;
-                  return (
-                    <span className={`text-[11px] ${isTooLong ? 'text-amber-600' : 'text-muted-foreground'}`}>
-                      {words.length} words
-                      {isTooLong && (
-                        <button
-                          type="button"
-                          onClick={() => updateScript('hookText', words.slice(0, 12).join(' '))}
-                          className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 hover:bg-amber-200"
-                        >
-                          Trim
-                        </button>
-                      )}
-                    </span>
-                  );
-                })()}
-              </div>
-            </div>
-            <textarea
-              value={state.script.hookText || ''}
-              onChange={e => updateScript('hookText', e.target.value)}
-              rows={2}
-              placeholder="Grab attention in 3 seconds…"
-              className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
+            </Field>
 
-          {/* Body */}
-          <div>
-            <div className="mb-1.5 flex items-center justify-between">
-              <label className="text-xs font-medium text-foreground">BODY</label>
-              {state.timing?.body?.durationSeconds && (
-                <span className="text-[11px] text-muted-foreground">{state.timing.body.durationSeconds}s</span>
-              )}
-            </div>
-            <textarea
-              value={state.script.bodyText || ''}
-              onChange={e => updateScript('bodyText', e.target.value)}
-              rows={4}
-              placeholder="Main content…"
-              className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
-
-          {/* CTA */}
-          <div>
-            <div className="mb-1.5 flex items-center justify-between">
-              <label className="text-xs font-medium text-foreground">CTA</label>
-              {state.timing?.cta?.durationSeconds && (
-                <span className="text-[11px] text-muted-foreground">{state.timing.cta.durationSeconds}s</span>
-              )}
-            </div>
-            <textarea
-              value={state.script.ctaText || ''}
-              onChange={e => updateScript('ctaText', e.target.value)}
-              rows={2}
-              placeholder="Follow for more…"
-              className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
-        </>
-      )}
-
-      {/* Mention Business toggle */}
-      <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
-        <div>
-          <label className="text-xs font-medium text-foreground">MENTION BUSINESS</label>
-          <p className="text-[11px] text-muted-foreground">Weave brand name into the copy</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            const current = (state.script as any).mentionBusiness !== 'false';
-            updateScript('mentionBusiness' as any, current ? 'false' : 'true');
-          }}
-          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-            (state.script as any).mentionBusiness !== 'false' ? 'bg-primary' : 'bg-muted-foreground/30'
-          }`}
-        >
-          <span className={`inline-block size-3.5 rounded-full bg-white transition-transform ${
-            (state.script as any).mentionBusiness !== 'false' ? 'translate-x-[18px]' : 'translate-x-1'
-          }`} />
-        </button>
-      </div>
-
-      <div className="border-t border-border" />
-
-      {/* Font */}
-      <div>
-        <label className="mb-1.5 block text-xs font-medium text-foreground">FONT</label>
-        <select
-          value={state.style.fontFamily || 'Inter'}
-          onChange={e => updateStyle('fontFamily', e.target.value)}
-          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-        >
-          {FONTS.map(f => <option key={f} value={f}>{f}</option>)}
-        </select>
-      </div>
-
-      {/* Size */}
-      <div>
-        <div className="mb-1.5 flex items-center justify-between">
-          <label className="text-xs font-medium text-foreground">SIZE</label>
-          <span className="text-xs text-muted-foreground">{state.style.fontSize || 30}px</span>
-        </div>
-        <input
-          type="range"
-          min={16}
-          max={120}
-          value={state.style.fontSize || 30}
-          onChange={e => updateStyle('fontSize', parseInt(e.target.value))}
-          className="w-full accent-primary"
-        />
-      </div>
-
-      {/* Text Color */}
-      <div>
-        <label className="mb-2 block text-xs font-medium text-foreground">TEXT COLOR</label>
-        <div className="flex flex-wrap gap-2">
-          {TEXT_COLORS.map(c => (
-            <button
-              key={c}
-              onClick={() => updateStyle('color', c)}
-              className={`size-7 rounded-full border-2 transition-transform hover:scale-110 ${
-                state.style.color === c ? 'border-primary scale-110' : 'border-border'
-              }`}
-              style={{ backgroundColor: c }}
-              title={c}
-            />
-          ))}
-          <input
-            type="color"
-            value={state.style.color || '#ffffff'}
-            onChange={e => updateStyle('color', e.target.value)}
-            className="size-7 cursor-pointer rounded-full border-2 border-border bg-transparent p-0"
-            title="Custom color"
-          />
-        </div>
-      </div>
-
-      {/* Text background pill */}
-      <div>
-        <label className="mb-2 block text-xs font-medium text-foreground">TEXT BACKGROUND</label>
-        <div className="flex rounded-lg border border-border overflow-hidden">
-          {TEXT_BG_PRESETS.map(preset => (
-            <button
-              key={preset.label}
-              onClick={() => updateStyle('backgroundColor', preset.value)}
-              className={`flex-1 py-2 text-xs font-medium transition-colors ${
-                (state.style.backgroundColor ?? '#000000') === preset.value
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
-            >
-              <span
-                className="inline-block size-3 rounded-full border border-white/20 align-middle mr-1"
-                style={{ backgroundColor: preset.value }}
+            {/* Background dim */}
+            <Field label="Background dim" right={<span className="text-xs text-muted-foreground">{dimPct}%</span>}>
+              <Slider
+                min={0}
+                max={80}
+                step={1}
+                value={[dimPct]}
+                onValueChange={vals => updateStyle('backgroundDimming', (vals[0] ?? dimPct) / 100)}
               />
-              {preset.label}
-            </button>
-          ))}
-        </div>
-      </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Darkens the source image/video so original text doesn&apos;t bleed through.
+              </p>
+            </Field>
 
-      {/* Background dim (full-bleed scrim) — separate from text pill */}
-      <div>
-        <div className="mb-1.5 flex items-center justify-between">
-          <label className="text-xs font-medium text-foreground">BACKGROUND DIM</label>
-          <span className="text-xs text-muted-foreground">
-            {Math.round((state.style.backgroundDimming ?? 0.3) * 100)}%
-          </span>
-        </div>
-        <input
-          type="range"
-          min={0}
-          max={80}
-          value={Math.round((state.style.backgroundDimming ?? 0.3) * 100)}
-          onChange={e => updateStyle('backgroundDimming', parseInt(e.target.value) / 100)}
-          className="w-full accent-primary"
-        />
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          Darkens the source image/video so original text doesn't bleed through.
-        </p>
-      </div>
+            {/* CTA button color */}
+            <Field label="CTA button color">
+              <ColorField
+                value={(state.style as any).ctaBackgroundColor || '#864FFE'}
+                onChange={v => updateStyle('ctaBackgroundColor', v)}
+                swatches={CTA_COLORS}
+                fallbackHex="#864FFE"
+              />
+            </Field>
 
-      {/* Alignment */}
-      <div>
-        <label className="mb-2 block text-xs font-medium text-foreground">ALIGNMENT</label>
-        <div className="flex rounded-lg border border-border overflow-hidden">
-          {(['left', 'center', 'right'] as const).map(align => (
-            <button
-              key={align}
-              onClick={() => updateStyle('align', align)}
-              className={`flex-1 py-2 text-xs font-medium capitalize transition-colors ${
-                state.style.align === align
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
-            >
-              {align}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Bold / Italic */}
-      <div className="flex gap-2">
-        <button
-          onClick={() => updateStyle('weight', state.style.weight === 'bold' ? 'normal' : 'bold')}
-          className={`flex-1 rounded-lg border py-2 text-sm font-bold transition-colors ${
-            state.style.weight === 'bold'
-              ? 'border-primary bg-primary/10 text-primary'
-              : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground'
-          }`}
-        >
-          B
-        </button>
-        <button
-          onClick={() => updateStyle('italic', !state.style.italic)}
-          className={`flex-1 rounded-lg border py-2 text-sm italic transition-colors ${
-            state.style.italic
-              ? 'border-primary bg-primary/10 text-primary'
-              : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground'
-          }`}
-        >
-          I
-        </button>
-        <button
-          onClick={() => updateStyle('underline', !state.style.underline)}
-          className={`flex-1 rounded-lg border py-2 text-sm underline transition-colors ${
-            state.style.underline
-              ? 'border-primary bg-primary/10 text-primary'
-              : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground'
-          }`}
-        >
-          U
-        </button>
-      </div>
-
-      <div className="border-t border-border" />
-
-      {/* CTA Background Color */}
-      <div>
-        <label className="mb-2 block text-xs font-medium text-foreground">CTA BUTTON COLOR</label>
-        <div className="flex flex-wrap gap-2">
-          {CTA_COLORS.map((c, i) => (
-            <button
-              key={i}
-              onClick={() => updateStyle('ctaBackgroundColor', c)}
-              className={`size-7 rounded-full border-2 transition-transform hover:scale-110 ${
-                (state.style as any).ctaBackgroundColor === c ? 'border-primary scale-110' : 'border-border'
-              }`}
-              style={{ backgroundColor: c }}
-            />
-          ))}
-          <input
-            type="color"
-            value={(state.style as any).ctaBackgroundColor || '#864FFE'}
-            onChange={e => updateStyle('ctaBackgroundColor', e.target.value)}
-            className="size-7 cursor-pointer rounded-full border-2 border-border bg-transparent p-0"
-            title="Custom CTA color"
-          />
-        </div>
-      </div>
-
-      {/* Animation Toggle — video-only. Slideshow/carousel/data_story swap
-          slides on fixed cadence and don't render Remotion's fade-in overlays,
-          so the toggle is meaningless there. Gate on editor kind rather than
-          hiding via CSS so the setting cannot silently persist between remixes. */}
-      {kind === 'video' && (
-        <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
-          <div>
-            <label className="text-xs font-medium text-foreground">ANIMATION</label>
-            <p className="text-[11px] text-muted-foreground">Sequential text fade-in</p>
+            {/* Animation — video-only. Slideshow/carousel/data_story swap
+                slides on fixed cadence and don't render Remotion's fade-in
+                overlays, so the toggle is meaningless there. Gate on editor
+                kind rather than hiding via CSS so the setting cannot silently
+                persist between remixes. */}
+            {kind === 'video' && (
+              <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+                <div>
+                  <span className="text-xs font-medium text-foreground">Animation</span>
+                  <p className="text-[11px] text-muted-foreground">Sequential text fade-in</p>
+                </div>
+                <Switch
+                  checked={animationOn}
+                  onCheckedChange={checked => updateStyle('noAnimation', !checked)}
+                />
+              </div>
+            )}
           </div>
-          <button
-            onClick={() => {
-              const current = (state.style as any).noAnimation;
-              dispatch({ type: 'UPDATE_STYLE', payload: { noAnimation: !current } });
-            }}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-              (state.style as any).noAnimation ? 'bg-muted-foreground/30' : 'bg-primary'
-            }`}
-          >
-            <span className={`inline-block size-3.5 rounded-full bg-white transition-transform ${
-              (state.style as any).noAnimation ? 'translate-x-1' : 'translate-x-[18px]'
-            }`} />
-          </button>
-        </div>
-      )}
-    </div>
+        </AccordionContent>
+      </AccordionItem>
+    </Accordion>
   );
 }

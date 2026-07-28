@@ -10,31 +10,16 @@ import {
   Video,
 } from 'remotion';
 
-// ── Font registration (mirrors engine-side; keeps preview & render in sync) ───
-import { loadFont as loadInter } from '@remotion/google-fonts/Inter';
-import { loadFont as loadRoboto } from '@remotion/google-fonts/Roboto';
-import { loadFont as loadMontserrat } from '@remotion/google-fonts/Montserrat';
-import { loadFont as loadOswald } from '@remotion/google-fonts/Oswald';
-import { loadFont as loadPlayfair } from '@remotion/google-fonts/PlayfairDisplay';
+// ── Font registration ─────────────────────────────────────────────────────────
+// Single source of truth in @/lib/editor/fonts. Importing it runs the
+// loadFont() side effects that register every editor font's @font-face, and
+// keeps preview + engine in sync (see the WYSIWYG contract in that file).
+import { resolveFont } from '@/lib/editor/fonts';
 
 import { EDITOR_FIXED_DURATION_SECONDS } from '@/lib/editor-constants';
 
 import { isVideoUrl } from './media-detect';
 import { limitBodyMaybe, limitCtaMaybe, limitHookMaybe } from './text-limits';
-
-const FONT_REGISTRY: Record<string, { fontFamily: string }> = {
-  'Inter': loadInter(),
-  'Roboto': loadRoboto(),
-  'Montserrat': loadMontserrat(),
-  'Oswald': loadOswald(),
-  'Playfair Display': loadPlayfair(),
-};
-
-function resolveFont(fontFamily?: string): string {
-  const inter = FONT_REGISTRY['Inter']?.fontFamily ?? 'Inter';
-  if (!fontFamily) return inter;
-  return FONT_REGISTRY[fontFamily]?.fontFamily || fontFamily;
-}
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Loader2, Music, Volume2, X, Play, Pause } from 'lucide-react';
 
 import { useEditor } from '../EditorContext';
+import { Slider } from '@/components/ui/slider';
 
 // ---------------------------------------------------------------------------
 // Types — mirrors /api/audio-library response
@@ -222,13 +223,12 @@ export function AudioTab() {
                   </div>
                   <span className="text-xs font-medium text-foreground">{state.audioTrack.volume ?? 80}%</span>
                 </div>
-                <input
-                  type="range"
+                <Slider
                   min={0}
                   max={100}
-                  value={state.audioTrack.volume ?? 80}
-                  onChange={e => handleVolumeChange(parseInt(e.target.value))}
-                  className="w-full accent-primary"
+                  step={1}
+                  value={[state.audioTrack.volume ?? 80]}
+                  onValueChange={vals => handleVolumeChange(vals[0] ?? 0)}
                 />
               </div>
 
