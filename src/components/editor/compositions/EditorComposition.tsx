@@ -207,7 +207,7 @@ export function EditorComposition({
   // composition space, matching the engine renderer exactly (fontSize * 1.5).
   // This Player renders the same 1080px composition and is scaled down by CSS,
   // so the multiplier MUST match the engine or published video text drifts bigger.
-  const fontSize = Math.round((style.fontSize || 20) * 1.5);
+  const fontSize = Math.round((style.fontSize || 30) * 1.5);
 
   // ── Canonical caption spec (MIRRORED byte-for-byte with the engine renderer
   // at NativPost-engine/video-renderer/src/compositions/EditorComposition.tsx).
