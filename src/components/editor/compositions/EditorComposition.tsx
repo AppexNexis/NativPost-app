@@ -157,8 +157,16 @@ function FadeInText({ text, style, startFrame, duration, noAnimation }: {
   const frame = useCurrentFrame();
   const localFrame = frame - startFrame;
 
+  // text-align belongs on the block wrapper; the highlight span is display:inline
+  // (transforms are ignored on inline elements, so animation lives on the wrapper).
+  const { textAlign, ...spanStyle } = style;
+
   if (noAnimation) {
-    return <div style={style}>{text}</div>;
+    return (
+      <div style={{ width: '100%', textAlign }}>
+        <span style={spanStyle}>{text}</span>
+      </div>
+    );
   }
 
   if (localFrame < 0 || localFrame > duration) return null;
@@ -166,7 +174,11 @@ function FadeInText({ text, style, startFrame, duration, noAnimation }: {
   const opacity = interpolate(localFrame, [0, 10], [0, 1], { extrapolateRight: 'clamp' });
   const y = interpolate(localFrame, [0, 10], [20, 0], { extrapolateRight: 'clamp' });
 
-  return <div style={{ opacity, transform: `translateY(${y}px)`, ...style }}>{text}</div>;
+  return (
+    <div style={{ opacity, transform: `translateY(${y}px)`, width: '100%', textAlign }}>
+      <span style={spanStyle}>{text}</span>
+    </div>
+  );
 }
 
 // ── EditorComposition ──────────────────────────────────────────────────────────
@@ -191,28 +203,48 @@ export function EditorComposition({
   const isHookVideoContent = ['video_hook', 'ugc', 'talking_head'].includes(contentType);
   const isSlideshow = contentType === 'slideshow';
 
-  const fontSize = style.fontSize || 20;
+  // WYSIWYG: scale editor font (authored at ~360px phone mockup) to the 1080px
+  // composition space, matching the engine renderer exactly (fontSize * 1.5).
+  // This Player renders the same 1080px composition and is scaled down by CSS,
+  // so the multiplier MUST match the engine or published video text drifts bigger.
+  const fontSize = Math.round((style.fontSize || 20) * 1.5);
+
+  // ── Canonical caption spec (MIRRORED byte-for-byte with the engine renderer
+  // at NativPost-engine/video-renderer/src/compositions/EditorComposition.tsx).
+  // Default look: per-line "highlight" — a solid bright box that hugs each line
+  // of text (box-decoration-break: clone), the usefastlane style. Users can set
+  // backgroundColor to 'transparent' for a boxless stroke+shadow caption.
+  const captionBg = style.backgroundColor ?? '#000000';
+  const hasBox = captionBg !== 'transparent';
   const textBaseStyle: React.CSSProperties = {
     fontFamily: resolveFont(style.fontFamily),
     fontSize: `${fontSize}px`,
     color: style.color || '#ffffff',
-    // Default to transparent (no dark slab over the whole video). Users can opt
-    // into a Subtle / Strong preset via TextTab.
-    backgroundColor: style.backgroundColor ?? 'transparent',
     textAlign: textAlignFrom(style.align),
-    fontWeight: style.weight === 'bold' ? 'bold' : 'normal',
+    fontWeight: style.weight === 'normal' ? 600 : 800,
     fontStyle: style.italic ? 'italic' : 'normal',
     textDecoration: style.underline ? 'underline' : 'none',
-    lineHeight: 1.6,
-    letterSpacing: '0.02em',
-    padding: '14px 20px',
-    borderRadius: '8px',
+    lineHeight: 1.5,
+    letterSpacing: '-0.01em',
     wordBreak: 'break-word',
-    display: 'inline-block',
-    maxWidth: '100%',
-    // A subtle text shadow keeps light text legible on bright backgrounds
-    // without the heavy slab.
-    textShadow: '0 1px 3px rgba(0, 0, 0, 0.35)',
+    // Per-line highlight requires display:inline so each wrapped line gets its
+    // own box; box-decoration-break clones padding + radius onto every line.
+    display: 'inline',
+    boxDecorationBreak: 'clone',
+    WebkitBoxDecorationBreak: 'clone',
+    ...(hasBox
+      ? {
+          backgroundColor: captionBg,
+          // em-based padding/radius scale with font size, so the box hugs the
+          // text identically at preview (small px) and render (large px).
+          padding: '0.16em 0.42em',
+          borderRadius: '0.18em',
+          boxShadow: '0 6px 24px rgba(0, 0, 0, 0.28)',
+        }
+      : {
+          textShadow: '0 2px 10px rgba(0, 0, 0, 0.55)',
+          WebkitTextStroke: '0.6px rgba(0, 0, 0, 0.4)',
+        }),
   };
 
   const pos = layoutPosition(layout, width, height);

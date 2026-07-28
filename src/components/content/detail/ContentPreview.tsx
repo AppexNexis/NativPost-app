@@ -219,7 +219,7 @@ export function ContentPreview({
                     fontSize={(enrichment.editorStyle as any)?.fontSize as number | undefined}
                     fontFamily={(enrichment.editorStyle as any)?.fontFamily as string | undefined}
                     color={(enrichment.editorStyle as any)?.color as string | undefined}
-                    fontWeight={(enrichment.editorStyle as any)?.weight === 'bold' ? 700 : 400}
+                    fontWeight={(enrichment.editorStyle as any)?.weight === 'normal' ? 600 : 800}
                     fontStyle={(enrichment.editorStyle as any)?.italic ? 'italic' : undefined}
                     textDecoration={(enrichment.editorStyle as any)?.underline ? 'underline' : undefined}
                     textStroke={false}

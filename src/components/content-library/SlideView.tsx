@@ -14,11 +14,14 @@
  * ── CSS properties to keep in sync with slide.ts ────────────────
  *   .bg            → object-fit:cover; position:absolute; inset:0
  *   .dim           → background:rgba(0,0,0,N); position:absolute; inset:0; pointer-events:none
- *   .caption-box   → background-color:C; padding:16px 24px; border-radius:8px
- *   .caption-text  → font-weight:700; line-height:1.3; color:white;
- *                    text-shadow:0 1px 3px rgba(0,0,0,0.6);
- *                    IF textStroke: add -webkit-text-stroke:1px black;
- *                    font-size:Npx; text-align:A; word-break:break-word
+ *   .caption-block → text-align:A; max-width:90% (95% wall)  [block wrapper]
+ *   .caption-text  → display:inline; box-decoration-break:clone;
+ *                    font-weight:800; line-height:1.5; letter-spacing:-0.01em;
+ *                    color:white; word-break:break-word;
+ *                    IF box: background-color:C; padding:0.16em 0.42em;
+ *                            border-radius:0.18em; box-shadow:0 6px 24px rgba(0,0,0,0.28);
+ *                    ELSE:   text-shadow:0 2px 10px rgba(0,0,0,0.55);
+ *                            IF textStroke: -webkit-text-stroke:0.6px rgba(0,0,0,0.4)
  *   layout/bottom  → position:absolute; inset:auto 0 0 0; display:flex;
  *                    align-items:flex-end; justify-content:center; padding:1rem
  *   layout/center  → position:absolute; inset:0; display:flex;
@@ -80,10 +83,13 @@ export function SlideView({
   className,
 }: SlideViewProps) {
   const isWall = layout === 'wall_of_text';
-  const hasBox = captionBackgroundColor && captionBackgroundColor !== 'transparent';
-  const displayFontSize = fontSize
-    ? Math.round(fontSize * (isWall ? 0.7 : 0.5))
-    : undefined;
+  // Highlight box is the default look; only an explicit 'transparent' disables it.
+  const boxColor = captionBackgroundColor === 'transparent'
+    ? null
+    : (captionBackgroundColor || '#000000');
+  const hasBox = !!boxColor;
+  // Scale authored (1080px) font down for this preview mockup (~360px): x0.5 / x0.7.
+  const displayFontSize = Math.round((fontSize || 20) * (isWall ? 0.7 : 0.5));
 
   // Layout positioning — matches slide.ts layout switch
   const getContainerClass = () => {
@@ -103,32 +109,36 @@ export function SlideView({
   const containerClass = getContainerClass();
   const textAlign = align === 'left' || align === 'right' ? align : 'center';
 
-  // Base text styling — stroke off by default (clean, solid text).
-  // Use textShadow alone for subtle contrast on dark areas.
-  // When textStroke is enabled, add full stroke + shadow for legibility
-  // on any background, even without a caption box.
+  // Canonical caption spec — MIRRORED byte-for-byte with the image engine at
+  // NativPost-engine/image-engine/src/routes/slide.ts. Default look: per-line
+  // "highlight" — a solid box hugging each wrapped line (box-decoration-break:
+  // clone), the usefastlane style. text-align lives on the wrapper (below).
   const textStyle: React.CSSProperties = {
-    fontWeight: fontWeight ?? 700,
-    lineHeight: 1.3,
+    fontWeight: fontWeight ?? 800,
+    lineHeight: 1.5,
+    letterSpacing: '-0.01em',
     color: color || '#ffffff',
-    fontSize: displayFontSize || undefined,
-    textAlign,
+    fontSize: displayFontSize,
     wordBreak: 'break-word',
-    textShadow: '0 1px 3px rgba(0,0,0,0.6)',
     fontFamily: fontFamily || undefined,
     fontStyle: fontStyle || undefined,
     textDecoration: textDecoration || undefined,
+    // Per-line highlight requires display:inline so each wrapped line gets its
+    // own box; box-decoration-break clones padding + radius onto every line.
+    display: 'inline',
+    boxDecorationBreak: 'clone',
+    WebkitBoxDecorationBreak: 'clone',
   };
 
-  if (textStroke) {
-    textStyle.WebkitTextStroke = '1px black';
-  }
-
   if (hasBox) {
-    textStyle.backgroundColor = captionBackgroundColor;
-    textStyle.padding = '16px 24px';
-    textStyle.borderRadius = '8px';
-    textStyle.maxWidth = isWall ? '95%' : '90%';
+    textStyle.backgroundColor = boxColor;
+    // em-based padding/radius so the box hugs the text identically across sizes.
+    textStyle.padding = '0.16em 0.42em';
+    textStyle.borderRadius = '0.18em';
+    textStyle.boxShadow = '0 6px 24px rgba(0,0,0,0.28)';
+  } else {
+    textStyle.textShadow = '0 2px 10px rgba(0,0,0,0.55)';
+    if (textStroke) textStyle.WebkitTextStroke = '0.6px rgba(0,0,0,0.4)';
   }
 
   return (
@@ -150,14 +160,13 @@ export function SlideView({
         />
       )}
 
-      {/* Caption overlay */}
+      {/* Caption overlay. The block wrapper carries text-align + max-width so the
+          text wraps; the inline span produces the per-line highlight boxes. */}
       {text && (
         <div className={`pointer-events-none ${containerClass}`}>
-          {hasBox ? (
-            <div style={textStyle}>{text}</div>
-          ) : (
-            <p style={textStyle}>{text}</p>
-          )}
+          <div style={{ textAlign, maxWidth: isWall ? '95%' : '90%' }}>
+            <span style={textStyle}>{text}</span>
+          </div>
         </div>
       )}
     </div>

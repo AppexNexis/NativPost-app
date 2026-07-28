@@ -53,14 +53,33 @@ export function UGCAdComposition({ script, style, mediaSlots, audioTrack, audioU
   const fontFamily = style.fontFamily || 'Inter';
   const base = style.fontSize || 48;
   const color = style.color || '#ffffff';
-  const bgColor = style.backgroundColor || 'rgba(0,0,0,0.5)';
+  const captionBg = style.backgroundColor ?? '#000000';
+  const hasBox = captionBg !== 'transparent';
   const ctaBg = style.ctaBackgroundColor || '#864FFE';
   const align = style.align || 'center';
   const alignItems = align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center';
-  const bodyWeight = style.weight === 'bold' ? 700 : 400;
   const italicStyle = style.italic ? 'italic' : 'normal';
   const underlineDeco = style.underline ? 'underline' : 'none';
   const noAnimation = style.noAnimation === true;
+
+  // usefastlane per-line highlight — the box hugs each wrapped line
+  // (display:inline + box-decoration-break:clone), matching EditorComposition.
+  const captionBoxStyle = hasBox
+    ? { backgroundColor: captionBg, padding: '0.16em 0.42em', borderRadius: '0.18em', boxShadow: '0 6px 24px rgba(0,0,0,0.28)' }
+    : { textShadow: '0 2px 10px rgba(0,0,0,0.55)', WebkitTextStroke: '0.6px rgba(0,0,0,0.4)' };
+  const captionSpanBase = {
+    fontFamily,
+    color,
+    fontStyle: italicStyle,
+    textDecoration: underlineDeco,
+    lineHeight: 1.5,
+    letterSpacing: '-0.01em',
+    wordBreak: 'break-word',
+    display: 'inline',
+    boxDecorationBreak: 'clone',
+    WebkitBoxDecorationBreak: 'clone',
+    ...captionBoxStyle,
+  };
 
   const fadeIn = (from: number, to: number) => (
     noAnimation ? 1 : interpolate(frame, [from, to], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
@@ -113,60 +132,30 @@ export function UGCAdComposition({ script, style, mediaSlots, audioTrack, audioU
         {hookText && (
           <div
             style={{
-              backgroundColor: bgColor,
-              padding: '14px 22px',
-              borderRadius: 8,
               maxWidth: '92%',
+              textAlign: align,
               opacity: fadeIn(0, 15),
               transform: `translateY(${riseIn(0, 15)}px)`,
             }}
           >
-            <p
-              style={{
-                fontFamily,
-                fontSize: base * 1.15,
-                color,
-                fontWeight: 700,
-                fontStyle: italicStyle,
-                textDecoration: underlineDeco,
-                textAlign: align,
-                lineHeight: 1.3,
-                margin: 0,
-                textShadow: '0 2px 4px rgba(0,0,0,0.35)',
-              }}
-            >
+            <span style={{ ...captionSpanBase, fontSize: base * 1.15, fontWeight: 800 }}>
               {hookText}
-            </p>
+            </span>
           </div>
         )}
 
         {bodyText && (
           <div
             style={{
-              backgroundColor: bgColor,
-              padding: '12px 20px',
-              borderRadius: 8,
               maxWidth: '92%',
+              textAlign: align,
               opacity: fadeIn(15, 30),
               transform: `translateY(${riseIn(15, 30)}px)`,
             }}
           >
-            <p
-              style={{
-                fontFamily,
-                fontSize: base,
-                color,
-                fontWeight: bodyWeight,
-                fontStyle: italicStyle,
-                textDecoration: underlineDeco,
-                textAlign: align,
-                lineHeight: 1.4,
-                margin: 0,
-                textShadow: '0 2px 4px rgba(0,0,0,0.35)',
-              }}
-            >
+            <span style={{ ...captionSpanBase, fontSize: base, fontWeight: style.weight === 'normal' ? 600 : 800 }}>
               {bodyText}
-            </p>
+            </span>
           </div>
         )}
 

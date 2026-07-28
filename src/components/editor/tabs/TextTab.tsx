@@ -9,15 +9,15 @@ const TEXT_COLORS = [
   '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899',
 ];
 
-// Three subtle presets — no more full-slab dark backgrounds that covered
-// the whole video. "None" is the new default; "Subtle"/"Strong" add a small
-// pill behind the text for legibility on busy backgrounds.
+// Per-line "highlight" backgrounds — a solid box that hugs each wrapped line
+// of text (the usefastlane look), rendered via box-decoration-break in every
+// preview + engine. "Highlight" (solid black, white text) is the default;
+// "None" removes the box and falls back to a soft shadow for legibility.
 const TEXT_BG_PRESETS: { label: string; value: string }[] = [
-  { label: 'None',   value: 'transparent' },
-  { label: 'Subtle', value: 'rgba(0,0,0,0.25)' },
-  { label: 'Strong', value: 'rgba(0,0,0,0.6)' },
-  { label: 'Solid',  value: '#000000' },
-  { label: 'White',  value: '#ffffff' },
+  { label: 'Highlight', value: '#000000' },
+  { label: 'White',     value: '#ffffff' },
+  { label: 'Subtle',    value: 'rgba(0,0,0,0.5)' },
+  { label: 'None',      value: 'transparent' },
 ];
 
 const CTA_COLORS = [
@@ -264,7 +264,7 @@ export function TextTab() {
               key={preset.label}
               onClick={() => updateStyle('backgroundColor', preset.value)}
               className={`flex-1 py-2 text-xs font-medium transition-colors ${
-                state.style.backgroundColor === preset.value
+                (state.style.backgroundColor ?? '#000000') === preset.value
                   ? 'bg-primary text-primary-foreground'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}

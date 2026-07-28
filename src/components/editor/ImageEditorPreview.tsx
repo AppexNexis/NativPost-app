@@ -361,7 +361,7 @@ export function ImageEditorPreview() {
               single_image we still show hook/body/cta together. */}
           {activeSlide?.url && (() => {
             const align = (state.style?.align as 'left' | 'center' | 'right') || 'center';
-            const fontWeight = state.style?.weight === 'bold' ? 700 : 400;
+            const fontWeight = state.style?.weight === 'normal' ? 600 : 800;
             const fontStyle = state.style?.italic ? 'italic' : 'normal';
             const textDecoration = state.style?.underline ? 'underline' : 'none';
             const baseFontFamily = state.style?.fontFamily || 'Inter';
@@ -401,7 +401,7 @@ export function ImageEditorPreview() {
                   fontSize={state.style?.fontSize}
                   fontFamily={state.style?.fontFamily}
                   color={state.style?.color}
-                  fontWeight={state.style?.weight === 'bold' ? 700 : 400}
+                  fontWeight={state.style?.weight === 'normal' ? 600 : 800}
                   fontStyle={state.style?.italic ? 'italic' : 'normal'}
                   textDecoration={state.style?.underline ? 'underline' : 'none'}
                   textStroke={false}

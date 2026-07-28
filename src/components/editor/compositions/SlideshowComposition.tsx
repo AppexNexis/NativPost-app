@@ -48,12 +48,33 @@ export function SlideshowComposition({ script, style, layout, mediaSlots, slides
   const fontFamily = style.fontFamily || 'Inter';
   const fontSize = style.fontSize || 48;
   const color = style.color || '#ffffff';
-  const bgColor = style.backgroundColor || 'transparent';
+  const captionBg = style.backgroundColor ?? '#000000';
+  const hasBox = captionBg !== 'transparent';
   const align = style.align || 'center';
-  const fontWeight = style.weight === 'bold' ? 700 : 400;
+  const fontWeight = style.weight === 'normal' ? 600 : 800;
   const fontStyle = style.italic ? 'italic' : 'normal';
   const textDecoration = style.underline ? 'underline' : 'none';
   const dim = Math.max(0, Math.min(1, style.backgroundDimming ?? 0));
+
+  // usefastlane per-line highlight — the box hugs each wrapped line
+  // (display:inline + box-decoration-break:clone), matching EditorComposition.
+  const captionBoxStyle = hasBox
+    ? { backgroundColor: captionBg, padding: '0.16em 0.42em', borderRadius: '0.18em', boxShadow: '0 6px 24px rgba(0,0,0,0.28)' }
+    : { textShadow: '0 2px 10px rgba(0,0,0,0.55)', WebkitTextStroke: '0.6px rgba(0,0,0,0.4)' };
+  const captionSpanBase = {
+    fontFamily,
+    color,
+    fontWeight,
+    fontStyle,
+    textDecoration,
+    lineHeight: 1.5,
+    letterSpacing: '-0.01em',
+    wordBreak: 'break-word',
+    display: 'inline',
+    boxDecorationBreak: 'clone',
+    WebkitBoxDecorationBreak: 'clone',
+    ...captionBoxStyle,
+  };
 
   const layoutKey = layout || 'centered';
   const isWall = layoutKey === 'wall_of_text';
@@ -133,27 +154,13 @@ export function SlideshowComposition({ script, style, layout, mediaSlots, slides
                 >
                   <div
                     style={{
-                      backgroundColor: bgColor,
-                      padding: bgColor === 'transparent' ? 0 : '16px 24px',
-                      borderRadius: 8,
+                      textAlign: align,
                       maxWidth: isWall ? '95%' : '90%',
                     }}
                   >
-                    <p
-                      style={{
-                        fontFamily,
-                        fontSize: isWall ? fontSize * 1.15 : fontSize,
-                        color,
-                        fontWeight,
-                        fontStyle,
-                        textDecoration,
-                        textAlign: align,
-                        lineHeight: 1.3,
-                        margin: 0,
-                      }}
-                    >
+                    <span style={{ ...captionSpanBase, fontSize: isWall ? fontSize * 1.15 : fontSize }}>
                       {copyText}
-                    </p>
+                    </span>
                   </div>
                 </AbsoluteFill>
               )}

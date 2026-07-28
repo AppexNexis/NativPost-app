@@ -34,6 +34,14 @@ export type SlideRenderInput = {
   fontFamily?: string | null;
   /** Font color. */
   color?: string | null;
+  /** Font weight (e.g. 400 normal, 800 bold highlight). */
+  fontWeight?: number | null;
+  /** Italic text. */
+  italic?: boolean | null;
+  /** Underlined text. */
+  underline?: boolean | null;
+  /** Line height. */
+  lineHeight?: number | null;
 };
 
 export type SlideRenderResult = {
@@ -69,6 +77,10 @@ export async function renderSlideImage(input: SlideRenderInput): Promise<SlideRe
         fontSize: input.fontSize || undefined,
         fontFamily: input.fontFamily || undefined,
         color: input.color || undefined,
+        fontWeight: input.fontWeight || undefined,
+        italic: input.italic || undefined,
+        underline: input.underline || undefined,
+        lineHeight: input.lineHeight || undefined,
       }),
     });
 
@@ -110,6 +122,10 @@ export async function renderAllSlides(
     fontSize?: number | null;
     fontFamily?: string | null;
     color?: string | null;
+    fontWeight?: number | null;
+    italic?: boolean | null;
+    underline?: boolean | null;
+    lineHeight?: number | null;
   },
 ): Promise<string[]> {
   if (slides.length === 0) return [];
@@ -127,6 +143,10 @@ export async function renderAllSlides(
         fontSize: styleOpts?.fontSize,
         fontFamily: styleOpts?.fontFamily,
         color: styleOpts?.color,
+        fontWeight: styleOpts?.fontWeight,
+        italic: styleOpts?.italic,
+        underline: styleOpts?.underline,
+        lineHeight: styleOpts?.lineHeight,
       }),
     ),
   );

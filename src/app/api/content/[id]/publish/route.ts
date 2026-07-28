@@ -113,6 +113,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           fontSize: (editorStyle?.fontSize as number) || null,
           fontFamily: (editorStyle?.fontFamily as string) || null,
           color: (editorStyle?.color as string) || null,
+          fontWeight: editorStyle?.weight === 'normal' ? 600 : (editorStyle?.weight ? 800 : null),
+          italic: (editorStyle?.italic as boolean) ?? null,
+          underline: (editorStyle?.underline as boolean) ?? null,
         });
 
         item.graphicUrls = renderedUrls as any;
