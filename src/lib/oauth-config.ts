@@ -85,7 +85,7 @@ export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
     scopes: [
       'whatsapp_business_messaging',
       'whatsapp_business_management',
-      'business_management',        // needed to list WABAs
+      'business_management', // needed to list WABAs
     ],
     clientIdEnv: 'META_APP_ID',
     clientSecretEnv: 'META_APP_SECRET',
@@ -151,7 +151,7 @@ export const PLATFORM_CONFIGS: Record<SocialPlatform, PlatformConfig> = {
     name: 'TikTok',
     authUrl: 'https://www.tiktok.com/v2/auth/authorize/',
     tokenUrl: 'https://open.tiktokapis.com/v2/oauth/token/',
-    scopes: ['user.info.basic', 'video.publish', 'video.upload'],
+    scopes: ['user.info.basic', 'user.info.stats', 'video.publish', 'video.upload', 'video.list'],
     clientIdEnv: 'TIKTOK_CLIENT_KEY',
     clientSecretEnv: 'TIKTOK_CLIENT_SECRET',
     scopeSeparator: ',',
@@ -204,10 +204,14 @@ const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 // -----------------------------------------------------------
 export async function getOAuthUrl(platform: SocialPlatform): Promise<string | null> {
   const config = PLATFORM_CONFIGS[platform];
-  if (!config) return null;
+  if (!config) {
+    return null;
+  }
 
   const clientId = process.env[config.clientIdEnv];
-  if (!clientId) return null;
+  if (!clientId) {
+    return null;
+  }
 
   const callbackUrl = `${BASE_URL}/api/social-accounts/callback`;
 
@@ -220,7 +224,9 @@ export async function getOAuthUrl(platform: SocialPlatform): Promise<string | nu
     platform,
     nonce: crypto.randomUUID(),
   };
-  if (verifier) statePayload.cv = verifier;
+  if (verifier) {
+    statePayload.cv = verifier;
+  }
   const state = Buffer.from(JSON.stringify(statePayload)).toString('base64url');
 
   const params = new URLSearchParams({
@@ -264,7 +270,9 @@ export async function exchangeCodeForTokens(
   const config = PLATFORM_CONFIGS[platform];
   const clientId = process.env[config.clientIdEnv];
   const clientSecret = process.env[config.clientSecretEnv];
-  if (!clientId || !clientSecret) return null;
+  if (!clientId || !clientSecret) {
+    return null;
+  }
 
   const callbackUrl = `${BASE_URL}/api/social-accounts/callback`;
 
@@ -293,7 +301,9 @@ export async function exchangeCodeForTokens(
   if (config.pkceMethod !== 'none' && state) {
     try {
       const decoded = JSON.parse(Buffer.from(state, 'base64url').toString());
-      if (decoded.cv) body.code_verifier = decoded.cv;
+      if (decoded.cv) {
+        body.code_verifier = decoded.cv;
+      }
     } catch {
       console.error(`[OAuth] Failed to decode PKCE verifier from state for ${platform}`);
     }
