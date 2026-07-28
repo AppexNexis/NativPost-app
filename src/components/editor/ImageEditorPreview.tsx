@@ -345,9 +345,10 @@ export function ImageEditorPreview() {
             </div>
           )}
 
-          {/* Full-bleed background dim scrim — only for single_image.
-              Per-slide mode: SlideView handles dim internally. */}
-          {!isPerSlide && activeSlide?.url && (state.style?.backgroundDimming ?? 0) > 0 && (
+          {/* Full-bleed background dim scrim — only for the legacy layered
+              fallback. single_image and per-slide modes render through
+              SlideView, which handles dim internally (avoids double-dim). */}
+          {!isPerSlide && contentType !== 'single_image' && activeSlide?.url && (state.style?.backgroundDimming ?? 0) > 0 && (
             <div
               className="pointer-events-none absolute inset-0"
               style={{
@@ -387,8 +388,16 @@ export function ImageEditorPreview() {
               : align === 'right' ? 'items-end text-right'
               : 'items-center text-center';
 
-            if (isPerSlide) {
-              const caption = readSlideCopy(activeIndex) || state.script.bodyText || '';
+            // single_image and per-slide kinds render through SlideView so the
+            // preview is byte-for-byte with the published bake (slide.ts, which
+            // SlideView mirrors). single_image bakes one caption (hookText, then
+            // bodyText) — the SAME single-caption source the publish route uses
+            // (see publish/route.ts single_image branch), so no body/cta boxes
+            // are shown that would not survive publish.
+            if (isPerSlide || contentType === 'single_image') {
+              const caption = isPerSlide
+                ? (readSlideCopy(activeIndex) || state.script.bodyText || '')
+                : (state.script.hookText || state.script.bodyText || '');
               if (!caption) return null;
               return (
                 <SlideView
@@ -409,7 +418,8 @@ export function ImageEditorPreview() {
               );
             }
 
-            // single_image / fallback: keep hook/body/cta layered
+            // Legacy layered fallback (non-single_image image kinds with a
+            // single slide): keep hook/body/cta layered.
             if (!state.script.hookText && !state.script.bodyText && !state.script.ctaText) {
               return null;
             }

@@ -127,8 +127,14 @@ export async function GET(request: NextRequest) {
           error?: string;
         }> = [];
 
-        // ── Slideshow / single_image: render slides via image-engine ──────
-        if (item.contentType === 'slideshow' || item.contentType === 'single_image') {
+        // ── Multi-slide image kinds / single_image: render slides via engine ──
+        // slideshow / carousel share the per-slide caption bake; single_image
+        // bakes one caption. All must go through the Puppeteer slide render so
+        // published images are WYSIWYG with the editor preview.
+        // NOTE: data_story is excluded — it is a VIDEO_CONTENT_TYPE (v2.ts) and
+        // publishes through the video compile path, not as static slides.
+        const MULTI_SLIDE_IMAGE_KINDS = ['slideshow', 'carousel'];
+        if (MULTI_SLIDE_IMAGE_KINDS.includes(item.contentType) || item.contentType === 'single_image') {
           const enrichment = (item.enrichmentData as Record<string, unknown> | null) ?? {};
           const editorScript = enrichment.editorScript as Record<string, unknown> | undefined;
           const sourceMediaSlots = enrichment.sourceMediaSlots as Record<string, unknown> | undefined;
@@ -137,7 +143,7 @@ export async function GET(request: NextRequest) {
           let slides: Array<{ url: string }> = [];
           let slideCopy: (string | null | undefined)[] = [];
 
-          if (item.contentType === 'slideshow' && sourceMediaSlots?.slides && Array.isArray(sourceMediaSlots.slides)) {
+          if (MULTI_SLIDE_IMAGE_KINDS.includes(item.contentType) && sourceMediaSlots?.slides && Array.isArray(sourceMediaSlots.slides)) {
             slides = sourceMediaSlots.slides.map((s: unknown) => {
               if (typeof s === 'string') return { url: s };
               if (s && typeof s === 'object') return { url: (s as { url?: string }).url ?? '' };

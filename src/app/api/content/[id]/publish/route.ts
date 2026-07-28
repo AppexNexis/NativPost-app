@@ -61,18 +61,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Each slide image gets text overlays baked in via headless Chrome,
     // matching the detail page's GalleryPreview styling exactly. Works for
     // both multi-slide (carousel) and single-image publishes.
-    if (item.contentType === 'slideshow' || item.contentType === 'single_image') {
+    // Multi-slide image kinds (slideshow / carousel) share the same per-slide
+    // caption bake; single_image bakes one caption. All must go through the
+    // Puppeteer slide render so published images are WYSIWYG with the editor
+    // preview (SlideView / ImageEditorPreview).
+    // NOTE: data_story is intentionally NOT here — it is in VIDEO_CONTENT_TYPES
+    // (v2.ts) and publishes through the video compile path below, so baking it
+    // as static slides would break its .mp4 platform dispatch.
+    const MULTI_SLIDE_IMAGE_KINDS = ['slideshow', 'carousel'];
+    if (MULTI_SLIDE_IMAGE_KINDS.includes(item.contentType) || item.contentType === 'single_image') {
       const enrichment = (item.enrichmentData as Record<string, unknown> | null) ?? {};
       const editorScript = enrichment.editorScript as Record<string, unknown> | undefined;
       const sourceMediaSlots = enrichment.sourceMediaSlots as Record<string, unknown> | undefined;
       const editorStyle = enrichment.editorStyle as Record<string, unknown> | undefined;
 
-      // Gather slides: for slideshow use sourceMediaSlots.slides, for
+      // Gather slides: for multi-slide kinds use sourceMediaSlots.slides, for
       // single_image use sourceMediaSlots.background or graphicUrls[0].
       let slides: Array<{ url: string }> = [];
       let slideCopy: (string | null | undefined)[] = [];
 
-      if (item.contentType === 'slideshow' && sourceMediaSlots?.slides && Array.isArray(sourceMediaSlots.slides)) {
+      if (MULTI_SLIDE_IMAGE_KINDS.includes(item.contentType) && sourceMediaSlots?.slides && Array.isArray(sourceMediaSlots.slides)) {
         slides = sourceMediaSlots.slides.map((s: unknown) => {
           if (typeof s === 'string') return { url: s };
           if (s && typeof s === 'object') return { url: (s as { url?: string }).url ?? '' };

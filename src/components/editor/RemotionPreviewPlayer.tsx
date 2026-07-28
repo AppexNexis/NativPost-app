@@ -5,7 +5,6 @@ import { Player } from '@remotion/player';
 
 import { EditorComposition } from './compositions/EditorComposition';
 import { SlideshowComposition } from './compositions/SlideshowComposition';
-import { WallOfTextComposition } from './compositions/WallOfTextComposition';
 import { DataStoryComposition } from './compositions/DataStoryComposition';
 import { EDITOR_TOTAL_FRAMES, EDITOR_FPS } from '@/lib/editor-constants';
 
@@ -17,19 +16,21 @@ import { EDITOR_TOTAL_FRAMES, EDITOR_FPS } from '@/lib/editor-constants';
 // composition purely by aspectRatio (EditorVideo-vertical/square/landscape),
 // NOT by contentType. That composition scales fontSize * 1.5 for the 1080px
 // render space. The per-type overlay compositions below use a RAW fontSize,
-// so previewing ugc/video_hook/talking_head/green_screen through them made
-// the preview text ~1.5x smaller than the published MP4 (and drifted the
-// layout: corner inset vs PiP). All background+text-overlay video types must
-// therefore preview through EditorComposition — the byte-for-byte mirror of
-// what actually publishes. slideshow/carousel/data_story/wall_of_text keep
-// their dedicated compositions (genuinely distinct render models).
+// so previewing ugc/video_hook/talking_head/green_screen/wall_of_text through
+// them made the preview text ~1.5x smaller than the published MP4 (and drifted
+// the layout). wall_of_text is NOT a distinct engine composition either: the
+// engine EditorComposition treats it as a 'centered' layout case, so it must
+// preview through EditorComposition too. All background+text-overlay video
+// types therefore preview through EditorComposition — the byte-for-byte mirror
+// of what actually publishes. Only slideshow/carousel/data_story keep dedicated
+// compositions (image-kind: they publish via the Image Engine, not this path).
 const COMPOSITION_BY_TYPE: Record<string, React.ComponentType<any>> = {
   slideshow: SlideshowComposition,
   carousel: SlideshowComposition,
   data_story: DataStoryComposition,
-  wall_of_text: WallOfTextComposition,
   // Overlay-video types — background media + baked text overlays. These publish
   // via the engine EditorComposition, so their preview MUST use it too.
+  wall_of_text: EditorComposition,
   talking_head: EditorComposition,
   green_screen: EditorComposition,
   video_hook: EditorComposition,
