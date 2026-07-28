@@ -24,7 +24,6 @@ export const VIDEO_CONTENT_TYPES = [
   'reel',
   'ugc',
   'ugc_ad',
-  'data_story',
   'wall_of_text',
   'talking_head',
   'green_screen',

@@ -38,7 +38,6 @@ const VOICE_OVER_ELIGIBLE = new Set([
   'green_screen_meme',
   'video_hook',
   'video_hook_demo',
-  'data_story',
   'wall_of_text',
 ]);
 

@@ -65,10 +65,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // caption bake; single_image bakes one caption. All must go through the
     // Puppeteer slide render so published images are WYSIWYG with the editor
     // preview (SlideView / ImageEditorPreview).
-    // NOTE: data_story is intentionally NOT here — it is in VIDEO_CONTENT_TYPES
-    // (v2.ts) and publishes through the video compile path below, so baking it
-    // as static slides would break its .mp4 platform dispatch.
-    const MULTI_SLIDE_IMAGE_KINDS = ['slideshow', 'carousel'];
+    // data_story is a static image carousel (NOT a video type): it publishes
+    // as baked slides here, same as slideshow/carousel. It is deliberately out
+    // of VIDEO_CONTENT_TYPES (v2.ts) so publishers dispatch it as photos.
+    const MULTI_SLIDE_IMAGE_KINDS = ['slideshow', 'carousel', 'data_story'];
     if (MULTI_SLIDE_IMAGE_KINDS.includes(item.contentType) || item.contentType === 'single_image') {
       const enrichment = (item.enrichmentData as Record<string, unknown> | null) ?? {};
       const editorScript = enrichment.editorScript as Record<string, unknown> | undefined;

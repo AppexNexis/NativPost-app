@@ -87,7 +87,7 @@ const CONTENT_TYPES: ContentTypeDef[] = [
   { id: 'slideshow', label: 'Slideshow', description: 'Multi-slide video montage', icon: Layers, platforms: ['instagram', 'tiktok', 'facebook', 'youtube', 'whatsapp'] },
   { id: 'reel', label: 'Video', description: 'Reel, Short, or video post', icon: Video, platforms: ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube', 'snapchat', 'whatsapp'] },
   { id: 'ugc', label: 'UGC', description: 'User-generated content style', icon: Megaphone, platforms: ['instagram', 'tiktok', 'whatsapp'] },
-  { id: 'data_story', label: 'Data Story', description: 'Animated stats & numbers', icon: BarChart2, platforms: ['linkedin', 'instagram', 'youtube', 'whatsapp'] },
+  { id: 'data_story', label: 'Data Story', description: 'Stats & numbers carousel', icon: BarChart2, platforms: ['linkedin', 'instagram', 'youtube', 'whatsapp'] },
   { id: 'wall_of_text', label: 'Wall of Text', description: 'Full-screen text motion', icon: Type, platforms: ['instagram', 'tiktok', 'facebook', 'whatsapp'] },
   { id: 'talking_head', label: 'Talking Head', description: 'Speaker with text overlay', icon: User, platforms: ['instagram', 'tiktok', 'youtube', 'facebook', 'whatsapp'] },
   { id: 'green_screen', label: 'Green Screen', description: 'Subject with keyed background', icon: Clapperboard, platforms: ['instagram', 'tiktok', 'youtube', 'whatsapp'] },
