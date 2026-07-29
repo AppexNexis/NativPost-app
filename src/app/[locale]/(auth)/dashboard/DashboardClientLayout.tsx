@@ -54,7 +54,7 @@ import { useOrgCredits } from '@/features/credits/useOrgCredits';
 import { type BillingGateState, BillingGate } from '@/features/dashboard/BillingGate';
 import { useOrgSync } from '@/hooks/useOrgSync';
 import type { NavItem } from '@/lib/roles';
-import { getNavForRole, getUserRole, isTeamMember } from '@/lib/roles';
+import { getFooterNavForRole, getNavForRole, getUserRole, isTeamMember } from '@/lib/roles';
 
 const ICONS: Record<string, typeof Calendar> = {
   BarChart3,
@@ -137,6 +137,7 @@ export default function DashboardClientLayout({
 
   const role = getUserRole(orgRole);
   const navGroups = getNavForRole(role);
+  const footerNav = getFooterNavForRole(role);
   const isTeam = isTeamMember(role);
 
   const orgId = organization?.id;
@@ -477,6 +478,16 @@ export default function DashboardClientLayout({
             })}
           </nav>
 
+          {/* Pinned footer cluster — secondary account/resource links kept out
+              of the scrolling list so the primary nav fits one viewport. */}
+          {footerNav.length > 0 && (
+            <div className="shrink-0 border-t px-3 py-2">
+              <div className="space-y-0.5">
+                {footerNav.map(item => renderNavItem(item, true))}
+              </div>
+            </div>
+          )}
+
           {/* Admin ops — NativPost staff only */}
           {isNativPostStaff && (
             <div className="shrink-0 border-t px-3 py-2">
@@ -589,6 +600,16 @@ export default function DashboardClientLayout({
               >
                 Feedback
               </button>
+              <a
+                href="https://docs.nativpost.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Documentation"
+                title="Docs"
+                className="hidden size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-fast hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
+              >
+                <BookOpen className="size-5" />
+              </a>
               <a
                 href="https://discord.com/invite/N5SgkwfCAY"
                 target="_blank"
