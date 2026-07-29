@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   AlignCenter,
   AlignLeft,
@@ -7,10 +6,8 @@ import {
   Italic,
   Underline,
 } from 'lucide-react';
-import { useEditor } from '../EditorContext';
-import { ColorField } from '../ColorField';
-import { getEditorKind } from '@/lib/editor/content-type-registry';
-import { EDITOR_FONTS } from '@/lib/editor/fonts';
+import React from 'react';
+
 import {
   Accordion,
   AccordionContent,
@@ -26,11 +23,24 @@ import {
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
+import { getEditorKind } from '@/lib/editor/content-type-registry';
+import { EDITOR_FONTS } from '@/lib/editor/fonts';
 import { cn } from '@/utils/Helpers';
 
+import { ColorField } from '../ColorField';
+import { useEditor } from '../EditorContext';
+
 const TEXT_COLORS = [
-  '#ffffff', '#000000', '#ef4444', '#f97316', '#f59e0b',
-  '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899',
+  '#ffffff',
+  '#000000',
+  '#ef4444',
+  '#f97316',
+  '#f59e0b',
+  '#22c55e',
+  '#06b6d4',
+  '#3b82f6',
+  '#8b5cf6',
+  '#ec4899',
 ];
 
 // Per-line "highlight" backgrounds — a solid box that hugs each wrapped line
@@ -39,14 +49,20 @@ const TEXT_COLORS = [
 // "None" removes the box and falls back to a soft shadow for legibility.
 const TEXT_BG_PRESETS: { label: string; value: string }[] = [
   { label: 'Highlight', value: '#000000' },
-  { label: 'White',     value: '#ffffff' },
-  { label: 'Subtle',    value: 'rgba(0,0,0,0.5)' },
-  { label: 'None',      value: 'transparent' },
+  { label: 'White', value: '#ffffff' },
+  { label: 'Subtle', value: 'rgba(0,0,0,0.5)' },
+  { label: 'None', value: 'transparent' },
 ];
 
 const CTA_COLORS = [
-  'rgba(134, 79, 254, 0.85)', '#864FFE', '#ef4444', '#22c55e',
-  '#3b82f6', '#f59e0b', '#ec4899', 'rgba(0,0,0,0.7)',
+  'rgba(134, 79, 254, 0.85)',
+  '#864FFE',
+  '#ef4444',
+  '#22c55e',
+  '#3b82f6',
+  '#f59e0b',
+  '#ec4899',
+  'rgba(0,0,0,0.7)',
 ];
 
 // A compact icon/label segmented toggle group — no new radix dependency.
@@ -119,7 +135,9 @@ export function TextTab() {
 
   const getSlideText = (i: number): string => {
     const entry = state.script?.slideCopy?.[i];
-    if (!entry) return '';
+    if (!entry) {
+      return '';
+    }
     return typeof entry === 'string' ? entry : (entry.text || '');
   };
 
@@ -150,16 +168,29 @@ export function TextTab() {
   const mentionOn = (state.script as any).mentionBusiness !== 'false';
   const animationOn = !(state.style as any).noAnimation;
 
+  // Muted one-line preview shown on the collapsed Content header so the copy
+  // is legible at a glance without expanding the section.
+  const contentPreview = (isPerSlide
+    ? getSlideText(0)
+    : state.script.hookText || state.script.bodyText || state.script.ctaText || '').trim();
+
   return (
     <Accordion
       type="multiple"
-      defaultValue={['content', 'style']}
+      defaultValue={['style']}
       className="space-y-1"
     >
       {/* CONTENT */}
       <AccordionItem value="content" className="border-b-0">
         <AccordionTrigger className="py-2 text-xs font-semibold uppercase tracking-wide text-foreground">
-          Content
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            Content
+            {contentPreview && (
+              <span className="min-w-0 flex-1 truncate text-[11px] font-normal normal-case tracking-normal text-muted-foreground">
+                {contentPreview}
+              </span>
+            )}
+          </span>
         </AccordionTrigger>
         <AccordionContent className="pb-3 pt-1">
           <div className="space-y-4 text-foreground">
@@ -169,7 +200,17 @@ export function TextTab() {
                   const value = getSlideText(i);
                   const words = value.trim().split(/\s+/).filter(Boolean).length;
                   return (
-                    <Field key={i} label={`Slide ${i + 1}`} right={<span className="text-[11px] text-muted-foreground">{words} words</span>}>
+                    <Field
+                      key={i}
+                      label={`Slide ${i + 1}`}
+                      right={(
+                        <span className="text-[11px] text-muted-foreground">
+                          {words}
+                          {' '}
+                          words
+                        </span>
+                      )}
+                    >
                       <textarea
                         value={value}
                         onChange={e => updateSlideText(i, e.target.value)}
@@ -190,7 +231,9 @@ export function TextTab() {
                     const isTooLong = words.length > 12;
                     return (
                       <span className={`text-[11px] ${isTooLong ? 'text-amber-600' : 'text-muted-foreground'}`}>
-                        {words.length} words
+                        {words.length}
+                        {' '}
+                        words
                         {isTooLong && (
                           <button
                             type="button"
@@ -274,7 +317,15 @@ export function TextTab() {
             </Field>
 
             {/* Size */}
-            <Field label="Size" right={<span className="text-xs text-muted-foreground">{fontSize}px</span>}>
+            <Field
+              label="Size"
+              right={(
+                <span className="text-xs text-muted-foreground">
+                  {fontSize}
+                  px
+                </span>
+              )}
+            >
               <Slider
                 min={16}
                 max={120}
@@ -369,7 +420,15 @@ export function TextTab() {
             </Field>
 
             {/* Background dim */}
-            <Field label="Background dim" right={<span className="text-xs text-muted-foreground">{dimPct}%</span>}>
+            <Field
+              label="Background dim"
+              right={(
+                <span className="text-xs text-muted-foreground">
+                  {dimPct}
+                  %
+                </span>
+              )}
+            >
               <Slider
                 min={0}
                 max={80}
