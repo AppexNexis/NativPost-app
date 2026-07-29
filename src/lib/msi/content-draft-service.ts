@@ -26,8 +26,8 @@ async function loadDraft(jobId: string): Promise<ContentPostDraft | null> {
     .from(msiJobSchema)
     .where(eq(msiJobSchema.id, jobId))
     .limit(1);
-  const DRAFTABLE = job?.jobType === 'content_post' || job?.jobType === 'content_piece';
-  if (!job || !DRAFTABLE || !job.contentItemId) {
+  const DRAFTABLE_TYPES = ['content_post', 'content_piece', 'ugc_video'];
+  if (!job || !DRAFTABLE_TYPES.includes(job.jobType) || !job.contentItemId) {
     return null;
   }
   const [content] = await db

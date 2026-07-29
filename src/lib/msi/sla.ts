@@ -15,6 +15,8 @@ export const JOB_SLA_HOURS: Record<JobType, number> = {
   content_post: 24,
   // Managed Content: operator drafts a library piece + review.
   content_piece: 24,
+  // Managed UGC: producing a short-form video takes longer than a static post.
+  ugc_video: 72,
   pause_account: 4,
   resume_account: 4,
   transfer_ownership: 72,

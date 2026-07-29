@@ -239,7 +239,7 @@ export default async function AdminMsiAccountJobsPage({ params }: RouteParams) {
                         )
                       : null}
 
-                    {(job.jobType === 'content_post' || job.jobType === 'content_piece') && (
+                    {(job.jobType === 'content_post' || job.jobType === 'content_piece' || job.jobType === 'ugc_video') && (
                       <ContentPostDraft jobId={job.id} />
                     )}
 

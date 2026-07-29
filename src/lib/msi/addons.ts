@@ -214,8 +214,16 @@ export const ADDON_CATALOG: MsiAddon[] = [
     tagline: 'AI or real creators produce short-form video from your product.',
     description:
       'Send a product; get TikToks, Reels, and Shorts back, from AI creators or, on request, real creators. Introduces a creator supply chain, so it carries its own operational weight.',
-    status: 'planned',
+    status: 'available',
     whoPerforms: 'ai_plus_human',
+    whoFor: 'You need a steady stream of short-form video but can\'t film it yourself.',
+    whatWeDo: [
+      'Turn your product into short-form video',
+      'AI creators, or real creators on request',
+      'TikToks, Reels, and Shorts',
+      'Delivered to your library, ready to post',
+    ],
+    timeSaved: 'Replaces a UGC creator on retainer',
     pricing: { kind: 'per_deliverable', fromUsd: 25 },
     priority: 7,
   },

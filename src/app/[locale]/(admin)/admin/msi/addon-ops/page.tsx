@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Loader2, Megaphone, MessageCircle } from 'lucide-react';
+import { ArrowLeft, BarChart3, Loader2, Megaphone, MessageCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -24,6 +24,14 @@ type CommunityTarget = {
   accountName: string | null;
   platform: string;
 };
+type ReviewReport = {
+  id: string;
+  orgId: string;
+  managedAccountId: string;
+  accountName: string | null;
+  billingPeriod: string;
+  headline: string;
+};
 
 function usd(cents: number): string {
   return `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -32,6 +40,7 @@ function usd(cents: number): string {
 export default function AddonOpsPage() {
   const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
   const [targets, setTargets] = useState<CommunityTarget[]>([]);
+  const [reports, setReports] = useState<ReviewReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [spendInput, setSpendInput] = useState<Record<string, string>>({});
   const [replyInput, setReplyInput] = useState<Record<string, string>>({});
@@ -40,12 +49,14 @@ export default function AddonOpsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [c, t] = await Promise.all([
-        fetch('/api/admin/msi/ad-campaigns').then(r => r.json()),
-        fetch('/api/admin/msi/community/targets').then(r => r.json()),
+      const [c, t, r] = await Promise.all([
+        fetch('/api/admin/msi/ad-campaigns').then(res => res.json()),
+        fetch('/api/admin/msi/community/targets').then(res => res.json()),
+        fetch('/api/admin/msi/analytics-reports').then(res => res.json()),
       ]);
       setCampaigns(c.campaigns ?? []);
       setTargets(t.targets ?? []);
+      setReports(r.reports ?? []);
     } catch {
       toast.error('Failed to load add-on ops');
     } finally {
@@ -103,6 +114,23 @@ export default function AddonOpsPage() {
       }
       toast.success(`Logged ${count} replies`);
       setReplyInput(prev => ({ ...prev, [t.managedAccountId]: '' }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deliverReport(id: string) {
+    setBusy(`deliver-${id}`);
+    try {
+      const res = await fetch(`/api/admin/msi/analytics-reports/${id}/deliver`, { method: 'POST' });
+      const body = await res.json();
+      if (!res.ok) {
+        throw new Error(body.error || `Server returned ${res.status}`);
+      }
+      toast.success('Report delivered to the customer');
+      await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed');
     } finally {
@@ -207,6 +235,36 @@ export default function AddonOpsPage() {
                         {busy === `log-${t.managedAccountId}` ? <Loader2 className="size-3.5 animate-spin" /> : 'Log'}
                       </Button>
                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Analytics reports awaiting delivery */}
+          <section className="mt-8">
+            <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+              <BarChart3 className="size-4 text-muted-foreground" />
+              Analytics reports to deliver
+              <span className="text-xs font-normal text-muted-foreground">({reports.length})</span>
+            </h2>
+            {reports.length === 0 ? (
+              <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+                No reports awaiting delivery.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {reports.map(r => (
+                  <div key={r.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">
+                        {r.accountName || 'Managed account'} · {r.billingPeriod}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{r.headline}</p>
+                    </div>
+                    <Button size="sm" disabled={busy === `deliver-${r.id}`} onClick={() => deliverReport(r.id)}>
+                      {busy === `deliver-${r.id}` ? <Loader2 className="size-3.5 animate-spin" /> : 'Deliver'}
+                    </Button>
                   </div>
                 ))}
               </div>

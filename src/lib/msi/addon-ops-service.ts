@@ -10,6 +10,7 @@ import {
   managedAccountSchema,
   msiAdCampaignSchema,
   msiAddonSubscriptionSchema,
+  msiAnalyticsReportSchema,
 } from '@/models/Schema';
 
 export interface AdminAdCampaign {
@@ -73,4 +74,42 @@ export async function listCommunityTargets(): Promise<CommunityTarget[]> {
     )
     .where(eq(managedAccountSchema.lifecycleState, 'live'))
     .orderBy(managedAccountSchema.orgId);
+}
+
+export interface ReviewReport {
+  id: string;
+  orgId: string;
+  managedAccountId: string;
+  accountName: string | null;
+  billingPeriod: string;
+  headline: string;
+}
+
+/** Analytics reports awaiting operator delivery (status in_review), newest first. */
+export async function listReportsForReview(): Promise<ReviewReport[]> {
+  const rows = await db
+    .select({
+      id: msiAnalyticsReportSchema.id,
+      orgId: msiAnalyticsReportSchema.orgId,
+      managedAccountId: msiAnalyticsReportSchema.managedAccountId,
+      accountName: managedAccountSchema.displayName,
+      billingPeriod: msiAnalyticsReportSchema.billingPeriod,
+      summary: msiAnalyticsReportSchema.summary,
+    })
+    .from(msiAnalyticsReportSchema)
+    .leftJoin(
+      managedAccountSchema,
+      eq(msiAnalyticsReportSchema.managedAccountId, managedAccountSchema.id),
+    )
+    .where(eq(msiAnalyticsReportSchema.status, 'in_review'))
+    .orderBy(desc(msiAnalyticsReportSchema.createdAt));
+
+  return rows.map(r => ({
+    id: r.id,
+    orgId: r.orgId,
+    managedAccountId: r.managedAccountId,
+    accountName: r.accountName,
+    billingPeriod: r.billingPeriod,
+    headline: ((r.summary ?? {}) as { headline?: string }).headline ?? 'Monthly report',
+  }));
 }

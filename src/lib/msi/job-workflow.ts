@@ -37,6 +37,9 @@ export const JOB_TYPES = [
   // Managed Content add-on (docs §19): an operator drafts a content piece; on QA
   // approval the linked content_item is marked approved (delivered to library).
   'content_piece',
+  // Managed UGC add-on (docs §19): produce a short-form video from a product; on
+  // QA approval the content is delivered + a per-deliverable fee is billed.
+  'ugc_video',
   'pause_account',
   'resume_account',
   'transfer_ownership',

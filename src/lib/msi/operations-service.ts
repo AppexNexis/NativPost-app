@@ -15,8 +15,10 @@ import {
   msiTaskSchema,
 } from '@/models/Schema';
 
+import { billOneOffInvoiceItem } from './addon-billing';
 import { buildActivityEvent } from './audit';
 import { recordPublishEvent } from './billing-service';
+import { UGC_PRICE_CENTS } from './managed-ugc';
 import { enqueueManagedPublish } from './publishing-service';
 import { transitionJob } from './job-workflow';
 import type { AccountState } from './lifecycle';
@@ -184,6 +186,23 @@ export async function reviewJob(
           .where(eq(contentItemSchema.id, job.contentItemId));
       } catch (deliverErr) {
         console.error('[MSI] content_piece → approve failed:', deliverErr);
+      }
+    }
+    if (job.jobType === 'ugc_video' && job.orgId && job.contentItemId) {
+      // Managed UGC (docs §19): approval delivers the video to the library AND
+      // bills the $25 per-deliverable fee. Best-effort — never fails QA.
+      try {
+        await db
+          .update(contentItemSchema)
+          .set({ status: 'approved' })
+          .where(eq(contentItemSchema.id, job.contentItemId));
+        await billOneOffInvoiceItem({
+          orgId: job.orgId,
+          amountCents: UGC_PRICE_CENTS,
+          description: 'Managed UGC video',
+        });
+      } catch (ugcErr) {
+        console.error('[MSI] ugc_video → deliver/bill failed:', ugcErr);
       }
     }
     return { state: 'completed' as const };
