@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, BarChart3, Loader2, Megaphone, MessageCircle } from 'lucide-react';
+import { ArrowLeft, BarChart3, Loader2, Megaphone, MessageCircle, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -32,6 +32,13 @@ type ReviewReport = {
   billingPeriod: string;
   headline: string;
 };
+type ServiceRequest = { orgId: string; addonId: string; activatedAt: string | null };
+
+const ADDON_LABEL: Record<string, string> = {
+  managed_influencer: 'Influencer Outreach',
+  managed_localization: 'Localization',
+  managed_recovery: 'Account Recovery',
+};
 
 function usd(cents: number): string {
   return `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -41,6 +48,7 @@ export default function AddonOpsPage() {
   const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
   const [targets, setTargets] = useState<CommunityTarget[]>([]);
   const [reports, setReports] = useState<ReviewReport[]>([]);
+  const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [spendInput, setSpendInput] = useState<Record<string, string>>({});
   const [replyInput, setReplyInput] = useState<Record<string, string>>({});
@@ -49,14 +57,16 @@ export default function AddonOpsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [c, t, r] = await Promise.all([
+      const [c, t, r, s] = await Promise.all([
         fetch('/api/admin/msi/ad-campaigns').then(res => res.json()),
         fetch('/api/admin/msi/community/targets').then(res => res.json()),
         fetch('/api/admin/msi/analytics-reports').then(res => res.json()),
+        fetch('/api/admin/msi/service-requests').then(res => res.json()),
       ]);
       setCampaigns(c.campaigns ?? []);
       setTargets(t.targets ?? []);
       setReports(r.reports ?? []);
+      setRequests(s.requests ?? []);
     } catch {
       toast.error('Failed to load add-on ops');
     } finally {
@@ -265,6 +275,37 @@ export default function AddonOpsPage() {
                     <Button size="sm" disabled={busy === `deliver-${r.id}`} onClick={() => deliverReport(r.id)}>
                       {busy === `deliver-${r.id}` ? <Loader2 className="size-3.5 animate-spin" /> : 'Deliver'}
                     </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Quote-priced service requests (Influencer / Localization / Recovery) */}
+          <section className="mt-8">
+            <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+              <Sparkles className="size-4 text-muted-foreground" />
+              Service requests — follow up with a quote
+              <span className="text-xs font-normal text-muted-foreground">({requests.length})</span>
+            </h2>
+            {requests.length === 0 ? (
+              <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+                No custom-service requests.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {requests.map(req => (
+                  <div key={`${req.orgId}-${req.addonId}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card p-4">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground">{ADDON_LABEL[req.addonId] ?? req.addonId}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        org {req.orgId.slice(0, 16)}…
+                        {req.activatedAt ? ` · requested ${new Date(req.activatedAt).toLocaleDateString()}` : ''}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:bg-amber-950/30 dark:text-amber-400">
+                      Awaiting quote
+                    </span>
                   </div>
                 ))}
               </div>

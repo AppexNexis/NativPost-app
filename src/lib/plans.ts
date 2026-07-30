@@ -72,7 +72,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     annualPriceUsd: 0,
     isFree: true,
     features: {
-      postsPerMonth: 3, // 3 posts for the whole free window
+      postsPerMonth: 5, // 5 posts for the whole free window
       platformsLimit: 2, // can connect 2 platforms
       brandProfilesLimit: 1,
       teamMembersLimit: 1,
@@ -109,7 +109,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     annualPriceUsd: 182,
     popular: false,
     features: {
-      postsPerMonth: 15,
+      postsPerMonth: 50,
       platformsLimit: 3,
       brandProfilesLimit: 1,
       teamMembersLimit: 2,
@@ -146,7 +146,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     annualPriceUsd: 374,
     popular: true,
     features: {
-      postsPerMonth: 40,
+      postsPerMonth: -1, // unlimited — AI credits + Blitz/day are the real cost gates
       platformsLimit: 6,
       brandProfilesLimit: 1,
       teamMembersLimit: 5,
@@ -183,7 +183,7 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     annualPriceUsd: 758,
     popular: false,
     features: {
-      postsPerMonth: 80,
+      postsPerMonth: -1, // unlimited — AI credits + Blitz/day are the real cost gates
       platformsLimit: -1,
       brandProfilesLimit: 1,
       teamMembersLimit: 10,
@@ -294,7 +294,7 @@ export const FREE_PLAN_ID = 'free';
 // FREE PLAN
 // Auto-granted to every org at signup — no card, no setup fee.
 // Runs for FREE_TRIAL_DAYS, then the org must pick a paid plan.
-//   - 3 posts total (for the whole free window, not per month)
+//   - 5 posts total (for the whole free window, not per month)
 //   - 1 platform max per post, 2 social accounts connectable
 //   - text posts ONLY (no image, carousel, video)
 //   - Monthly Plan: not available (0 topics)

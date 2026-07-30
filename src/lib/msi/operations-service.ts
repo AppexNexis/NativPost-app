@@ -13,6 +13,7 @@ import {
   msiActivityLogSchema,
   msiJobSchema,
   msiTaskSchema,
+  publishingQueueSchema,
 } from '@/models/Schema';
 
 import { billOneOffInvoiceItem } from './addon-billing';
@@ -167,6 +168,27 @@ export async function reviewJob(
       // Managed Posting (docs §19): an approved operator-drafted post now enters
       // the standard publish pipeline. Best-effort — a hiccup must not fail QA.
       try {
+        // Surface it in the customer's "Published to" panel: insert a queued
+        // publishing_queue row (mirrors the publish route) that the worker flips
+        // to published + permalink when the publish_post job completes. Matched
+        // by (contentItemId, socialAccountId) === managed_account.socialAccountId.
+        const [acct] = await db
+          .select({
+            socialAccountId: managedAccountSchema.socialAccountId,
+            platform: managedAccountSchema.platform,
+          })
+          .from(managedAccountSchema)
+          .where(eq(managedAccountSchema.id, job.managedAccountId))
+          .limit(1);
+        if (acct?.socialAccountId) {
+          await db.insert(publishingQueueSchema).values({
+            contentItemId: job.contentItemId,
+            socialAccountId: acct.socialAccountId,
+            platform: acct.platform,
+            scheduledFor: new Date(),
+            status: 'queued',
+          });
+        }
         await enqueueManagedPublish({
           orgId: job.orgId,
           managedAccountId: job.managedAccountId,

@@ -186,7 +186,7 @@ export async function POST(request: NextRequest) {
                 ? session.customer
                 : (session.customer as Stripe.Customer | null)?.id ?? null,
               billingInterval: session.metadata?.billingInterval ?? 'month',
-              postsPerMonth: 3,
+              postsPerMonth: 5,
               platformsLimit: 2,
               updatedAt: new Date(),
             })

@@ -179,7 +179,7 @@ async function handlePaystackSuccess(data: Record<string, unknown>) {
         planStatus: 'trialing',
         trialEndsAt,
         ...(billingInt ? { billingInterval: billingInt } : {}),
-        postsPerMonth: 3,
+        postsPerMonth: 5,
         platformsLimit: 2,
         updatedAt: new Date(),
       })

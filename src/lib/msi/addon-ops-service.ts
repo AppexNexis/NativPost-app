@@ -3,7 +3,7 @@
 // Community active (where operators log replies). Staff-only — the routes that
 // call these live under /api/admin (middleware-gated).
 
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 import {
@@ -112,4 +112,32 @@ export async function listReportsForReview(): Promise<ReviewReport[]> {
     billingPeriod: r.billingPeriod,
     headline: ((r.summary ?? {}) as { headline?: string }).headline ?? 'Monthly report',
   }));
+}
+
+// High-touch, quote-priced add-ons: activation is a request the team follows up
+// on with a quote (no self-serve fulfilment).
+const QUOTE_ADDONS = ['managed_influencer', 'managed_localization', 'managed_recovery'];
+
+export interface ServiceRequest {
+  orgId: string;
+  addonId: string;
+  activatedAt: Date | null;
+}
+
+/** Orgs that requested a quote-priced add-on (operator follow-up list). */
+export async function listServiceRequests(): Promise<ServiceRequest[]> {
+  return db
+    .select({
+      orgId: msiAddonSubscriptionSchema.orgId,
+      addonId: msiAddonSubscriptionSchema.addonId,
+      activatedAt: msiAddonSubscriptionSchema.activatedAt,
+    })
+    .from(msiAddonSubscriptionSchema)
+    .where(
+      and(
+        eq(msiAddonSubscriptionSchema.status, 'active'),
+        inArray(msiAddonSubscriptionSchema.addonId, QUOTE_ADDONS),
+      ),
+    )
+    .orderBy(desc(msiAddonSubscriptionSchema.activatedAt));
 }

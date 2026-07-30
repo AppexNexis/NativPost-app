@@ -44,6 +44,7 @@ const ADDON_WORKFLOWS: Record<string, { label: string; href: string }> = {
   managed_ads: { label: 'Manage campaigns', href: '/dashboard/infrastructure/addons/managed-ads' },
   managed_community: { label: 'View activity', href: '/dashboard/infrastructure/addons/managed-community' },
   managed_ugc: { label: 'Request a video', href: '/dashboard/infrastructure/addons/managed-ugc' },
+  managed_expansion: { label: 'Add accounts', href: '/dashboard/infrastructure/new' },
 };
 
 type ApiResponse = { addons: Addon[]; subscriptions: Subscription[] };
@@ -174,6 +175,8 @@ export default function AddonsPage() {
               const selectedTier = tierChoice[addon.id] ?? sub?.tierId ?? tiers[0]?.id;
               const isPending = pendingId === addon.id;
               const isPlanned = addon.status === 'planned';
+              // Custom / per-case add-ons are high-touch: activation is a quote request.
+              const isQuote = addon.pricing.kind === 'custom' || addon.pricing.kind === 'per_case';
 
               return (
                 <div
@@ -190,7 +193,7 @@ export default function AddonsPage() {
                     {isActive ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400">
                         <Check className="size-2.5" />
-                        {isPlanned ? 'Requested' : 'Active'}
+                        {isPlanned || isQuote ? 'Requested' : 'Active'}
                       </span>
                     ) : (
                       isPlanned && (
@@ -264,7 +267,7 @@ export default function AddonsPage() {
                         disabled={isPending}
                         onClick={() => mutate(addon.id, 'deactivate')}
                       >
-                        {isPending ? <Loader2 className="size-3.5 animate-spin" /> : isPlanned ? 'Cancel request' : 'Deactivate'}
+                        {isPending ? <Loader2 className="size-3.5 animate-spin" /> : (isPlanned || isQuote) ? 'Cancel request' : 'Deactivate'}
                       </Button>
                     ) : (
                       <Button
@@ -273,7 +276,13 @@ export default function AddonsPage() {
                         disabled={isPending}
                         onClick={() => mutate(addon.id, 'activate', isTiered ? selectedTier : undefined)}
                       >
-                        {isPending ? <Loader2 className="size-3.5 animate-spin" /> : isPlanned ? 'Request early access' : 'Activate'}
+                        {isPending
+                          ? <Loader2 className="size-3.5 animate-spin" />
+                          : isPlanned
+                            ? 'Request early access'
+                            : isQuote
+                              ? 'Request a quote'
+                              : 'Activate'}
                       </Button>
                     )}
                   </div>
