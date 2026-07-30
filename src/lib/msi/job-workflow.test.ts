@@ -52,6 +52,18 @@ describe('job workflow', () => {
     ).toBe('assigned');
   });
 
+  it('auto-assigns API-executed jobs without an operator or device', () => {
+    // official_api publishes are run by the adapter, not a human operator.
+    expect(transitionJob('queued', 'assigned', { apiExecuted: true })).toBe('assigned');
+  });
+
+  it('auto-completes an authored publish (in_progress → completed), no review queue', () => {
+    // Publishing is the approval — a publish_post job skips peer_review/qa.
+    expect(transitionJob('in_progress', 'completed', { autoApproved: true })).toBe('completed');
+    // But it is NOT allowed without the flag (provisioning still needs review).
+    expect(() => transitionJob('in_progress', 'completed', {})).toThrow(/auto-approved/);
+  });
+
   it('blocks submission to peer_review without evidence', () => {
     expect(() =>
       transitionJob('in_progress', 'peer_review', { evidenceAttached: false }),

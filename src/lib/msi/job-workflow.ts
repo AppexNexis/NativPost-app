@@ -54,14 +54,25 @@ export type JobType = (typeof JOB_TYPES)[number];
 export type JobTransitionContext = {
   hasOperator?: boolean;
   hasDevice?: boolean;
+  // API-executed jobs (official_api): the platform API adapter does the work, so
+  // no operator/device is needed — the job auto-assigns.
+  apiExecuted?: boolean;
   evidenceAttached?: boolean;
   reviewerApproved?: boolean;
   qaApproved?: boolean;
+  // Publishing IS the approval for a customer/operator-authored post — the
+  // publish_post job auto-completes without a manual review queue. Any human
+  // review for managed content happens upstream on the draft, before publish.
+  autoApproved?: boolean;
   attempts?: number;
   maxAttempts?: number;
 };
 
 const requireAssignment: Guard<JobTransitionContext> = (ctx) => {
+  // official_api work needs no human operator/device — the adapter is the worker.
+  if (ctx.apiExecuted) {
+    return true;
+  }
   if (!ctx.hasOperator) {
     return 'no operator assigned';
   }
@@ -85,6 +96,9 @@ const canRetry: Guard<JobTransitionContext> = ctx =>
     ? true
     : 'retry limit reached';
 
+const requireAutoApprove: Guard<JobTransitionContext> = ctx =>
+  ctx.autoApproved ? true : 'not auto-approved (route through peer_review → qa)';
+
 export const jobWorkflow = createMachine<JobState, JobTransitionContext>({
   states: JOB_STATES,
   initial: 'queued',
@@ -96,6 +110,8 @@ export const jobWorkflow = createMachine<JobState, JobTransitionContext>({
     in_progress: {
       blocked: true,
       peer_review: requireEvidence,
+      // Auto-complete path for publish_post (publishing is the approval).
+      completed: requireAutoApprove,
       failed: true,
       cancelled: true,
     },

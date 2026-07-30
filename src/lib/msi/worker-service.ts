@@ -26,6 +26,7 @@ import {
 import type { DeviceSlot, OperatorSlot } from './allocation';
 import { planAllocations } from './allocation';
 import { buildActivityEvent } from './audit';
+import { recordPublishEvent } from './billing-service';
 import { facebookClient } from './clients/facebook-client';
 import { linkedinClient } from './clients/linkedin-client';
 import { metaInstagramClient } from './clients/meta-client';
@@ -115,6 +116,49 @@ async function syncManagedPublicationRow(params: {
         eq(publishingQueueSchema.socialAccountId, params.socialAccountId),
       ),
     );
+}
+
+// Auto-complete a published `publish_post` job (docs §13/§19). Publishing IS the
+// approval — the customer authored + authorized the post (or an operator's draft
+// was already reviewed upstream on the content_post), so there is no manual
+// review queue: the job goes in_progress → completed, the "Published to" row is
+// marked published, and the billable event fires. Provisioning jobs still route
+// through peer_review → qa. Assumes the job is currently `in_progress`.
+async function autoCompletePublishJob(params: {
+  jobId: string;
+  contentItemId: string | null;
+  socialAccountId: string | null | undefined;
+  platformPostId: string | null;
+  permalink: string | null;
+  at: Date;
+}): Promise<void> {
+  transitionJob('in_progress', 'completed', { autoApproved: true });
+  await db
+    .update(msiJobSchema)
+    .set({
+      state: 'completed',
+      completedAt: params.at,
+      executionHandle: null,
+      platformPostId: params.platformPostId,
+    })
+    .where(eq(msiJobSchema.id, params.jobId));
+  await db
+    .update(msiTaskSchema)
+    .set({ status: 'done', completedAt: params.at })
+    .where(eq(msiTaskSchema.jobId, params.jobId));
+  await syncManagedPublicationRow({
+    contentItemId: params.contentItemId,
+    socialAccountId: params.socialAccountId,
+    status: 'published',
+    platformPostId: params.platformPostId,
+    permalink: params.permalink,
+  });
+  // Bill on the terminal success path (idempotent on job_id). Best-effort.
+  try {
+    await recordPublishEvent(params.jobId, params.at);
+  } catch (billingErr) {
+    console.error('[MSI] recordPublishEvent (auto-complete) failed:', billingErr);
+  }
 }
 
 export async function runWorkerTick(now: Date = new Date()) {
@@ -219,8 +263,43 @@ export async function runWorkerTick(now: Date = new Date()) {
   // --- Allocation: assign an operator + device to queued jobs (queued → assigned) ---
   const assignedThisTick = new Set<string>();
   const queuedJobs = jobRows.filter(j => j.state === 'queued');
-  if (queuedJobs.length > 0) {
-    const jobsWithCountry = queuedJobs
+
+  // API-executed jobs (official_api) need NO operator/device — the platform API
+  // adapter does the work. Auto-assign them so the start pass can run them;
+  // otherwise they hang in `queued` forever (there is no operator to allocate).
+  for (const j of queuedJobs) {
+    const acct = accountById.get(j.managedAccountId);
+    if (!acct) {
+      continue;
+    }
+    const strategy = resolveStrategy({
+      executionStrategy: acct.executionStrategy,
+      platform: acct.platform,
+    });
+    if (strategy === 'official_api') {
+      transitionJob('queued', 'assigned', { apiExecuted: true });
+      await db
+        .update(msiJobSchema)
+        .set({ state: 'assigned' })
+        .where(eq(msiJobSchema.id, j.id));
+      await db.insert(msiActivityLogSchema).values(
+        buildActivityEvent({
+          managedAccountId: j.managedAccountId,
+          jobId: j.id,
+          actorType: 'system',
+          action: 'auto_assigned',
+          detail: { reason: 'API-executed job — no operator required' },
+        }),
+      );
+      assignedThisTick.add(j.id);
+    }
+  }
+
+  // Remaining queued jobs are operator-backed (manual / delegated_access) and go
+  // through capacity-based allocation below.
+  const operatorQueuedJobs = queuedJobs.filter(j => !assignedThisTick.has(j.id));
+  if (operatorQueuedJobs.length > 0) {
+    const jobsWithCountry = operatorQueuedJobs
       .map(j => ({
         id: j.id,
         managedAccountId: j.managedAccountId,
@@ -382,7 +461,18 @@ export async function runWorkerTick(now: Date = new Date()) {
         .set({ state: 'in_progress', startedAt })
         .where(eq(msiJobSchema.id, intent.jobId));
 
-      if (outcome.nextState === 'peer_review') {
+      if (outcome.nextState === 'peer_review' && isPublishJob) {
+        // Sync publish completed at start (e.g. LinkedIn/Facebook) → publishing
+        // IS the approval, auto-complete with no manual review queue.
+        await autoCompletePublishJob({
+          jobId: intent.jobId,
+          contentItemId: startJob?.contentItemId ?? null,
+          socialAccountId: startAccount?.socialAccountId,
+          platformPostId: result.platformPostId ?? null,
+          permalink: result.evidenceUrl ?? null,
+          at: startedAt,
+        });
+      } else if (outcome.nextState === 'peer_review') {
         transitionJob('in_progress', 'peer_review', { evidenceAttached: true });
         await db
           .update(msiJobSchema)
@@ -399,16 +489,6 @@ export async function runWorkerTick(now: Date = new Date()) {
             .update(msiTaskSchema)
             .set({ status: 'done', completedAt: startedAt })
             .where(eq(msiTaskSchema.jobId, intent.jobId));
-        }
-        // Post is live on the platform → mirror onto "Published to".
-        if (isPublishJob) {
-          await syncManagedPublicationRow({
-            contentItemId: startJob?.contentItemId ?? null,
-            socialAccountId: startAccount?.socialAccountId,
-            status: 'published',
-            platformPostId: result.platformPostId ?? null,
-            permalink: result.evidenceUrl ?? null,
-          });
         }
       } else if (outcome.nextState === 'failed') {
         transitionJob('in_progress', 'failed');
@@ -494,7 +574,17 @@ export async function runWorkerTick(now: Date = new Date()) {
     }
 
     const at = new Date();
-    if (outcome.resolution === 'completed') {
+    if (outcome.resolution === 'completed' && job.jobType === 'publish_post') {
+      // Publishing IS the approval — auto-complete, no manual review queue.
+      await autoCompletePublishJob({
+        jobId: job.id,
+        contentItemId: job.contentItemId,
+        socialAccountId: account.socialAccountId,
+        platformPostId: outcome.platformPostId ?? result.platformPostId ?? null,
+        permalink: result.evidenceUrl ?? null,
+        at,
+      });
+    } else if (outcome.resolution === 'completed') {
       transitionJob('in_progress', 'peer_review', { evidenceAttached: true });
       await db
         .update(msiJobSchema)
@@ -510,15 +600,6 @@ export async function runWorkerTick(now: Date = new Date()) {
           .update(msiTaskSchema)
           .set({ status: 'done', completedAt: at })
           .where(eq(msiTaskSchema.jobId, job.id));
-      }
-      if (job.jobType === 'publish_post') {
-        await syncManagedPublicationRow({
-          contentItemId: job.contentItemId,
-          socialAccountId: account.socialAccountId,
-          status: 'published',
-          platformPostId: outcome.platformPostId ?? result.platformPostId ?? null,
-          permalink: result.evidenceUrl ?? null,
-        });
       }
     } else {
       transitionJob('in_progress', 'failed');
