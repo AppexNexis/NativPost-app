@@ -19,6 +19,25 @@ import { enhanceImage } from '@/lib/cloudinary-enhance';
 // Vercel Hobby cap; the compile step needs budget before publisher dispatch
 export const maxDuration = 300;
 
+// Fire-and-forget: nudge the MSI worker so a managed publish starts immediately
+// instead of waiting for the 5-minute cron. Best-effort — the scheduled cron is
+// the guaranteed fallback, so a failure here only means the publish is slightly
+// slower, never lost. Never throws into the request path.
+function kickManagedWorker(): void {
+  const secret = process.env.CRON_SECRET;
+  const base = process.env.NEXT_PUBLIC_APP_URL;
+  if (!secret || !base) {
+    return;
+  }
+  void fetch(`${base}/api/cron/msi-worker`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+    body: '{}',
+  }).catch(() => {
+    // best-effort; the scheduled cron is the fallback
+  });
+}
+
 type RouteParams = {
   params: Promise<{ id: string }>;
 };
@@ -458,6 +477,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       } catch (emailErr) {
         console.error('[Email] Failed to send publish notification:', emailErr);
       }
+    }
+
+    // A managed account was targeted → nudge the worker to start it now instead
+    // of waiting for the scheduled cron (best-effort; cron is the fallback).
+    if (results.some(r => r.managed && r.queued)) {
+      kickManagedWorker();
     }
 
     return NextResponse.json({ published: someSucceeded, results });

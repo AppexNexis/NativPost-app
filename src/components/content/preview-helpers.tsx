@@ -120,6 +120,85 @@ export function getOverlayText(item: ContentItem | null | undefined): string {
   return item.caption ?? '';
 }
 
+// ── Caption style resolver ────────────────────────────────────────────────
+// Maps enrichmentData.editorStyle (the canonical key the render / publish /
+// detail-page pipelines all read) into the per-line "highlight" caption spec.
+// Mirrors SlideView.tsx / the image engine so the card preview WYSIWYG-matches
+// the editor, blitz, and content-detail rendering.
+export function getCaptionStyle(item: ContentItem) {
+  const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
+  const style = (enrichment.editorStyle ?? {}) as Record<string, any>;
+  return {
+    align: (style.align as string) || 'center',
+    layout: (enrichment.editorLayout as string) || 'centered',
+    backgroundColor: style.backgroundColor as string | undefined,
+    color: (style.color as string) || '#ffffff',
+    fontFamily: (style.fontFamily as string) || undefined,
+    fontSize: typeof style.fontSize === 'number' ? style.fontSize : 28,
+    fontWeight: style.weight === 'normal' ? 600 : 800,
+    fontStyle: (style.italic ? 'italic' : undefined) as 'italic' | undefined,
+    textDecoration: (style.underline ? 'underline' : undefined) as 'underline' | undefined,
+    backgroundDimming: typeof style.backgroundDimming === 'number' ? style.backgroundDimming : 0,
+  };
+}
+
+// Renders the caption overlay exactly the way the editor / blitz / detail page
+// render it: a per-line highlight box (box-decoration-break: clone) with the
+// authored font, weight, color, alignment and layout. `scale` shrinks the
+// authored (1080px-basis) fontSize down to the small card preview.
+export function HighlightCaption({ item, text, scale }: { item: ContentItem; text: string; scale: number }) {
+  const s = getCaptionStyle(item);
+  const boxColor = s.backgroundColor === 'transparent' ? null : (s.backgroundColor || '#000000');
+  const hasBox = !!boxColor;
+  const displayFontSize = Math.max(8, Math.round(s.fontSize * scale));
+  const textAlign: 'left' | 'right' | 'center'
+    = s.align === 'left' || s.align === 'right' ? s.align : 'center';
+  const vAlign = s.layout === 'top_caption'
+    ? 'items-start'
+    : s.layout === 'bottom_caption'
+      ? 'items-end'
+      : 'items-center';
+
+  const span: React.CSSProperties = {
+    fontWeight: s.fontWeight,
+    lineHeight: 1.5,
+    letterSpacing: '-0.01em',
+    color: s.color,
+    fontSize: displayFontSize,
+    wordBreak: 'break-word',
+    fontFamily: s.fontFamily,
+    fontStyle: s.fontStyle,
+    textDecoration: s.textDecoration,
+    display: 'inline',
+    boxDecorationBreak: 'clone',
+    WebkitBoxDecorationBreak: 'clone',
+  };
+  if (hasBox) {
+    span.backgroundColor = boxColor;
+    span.padding = '0.16em 0.42em';
+    span.borderRadius = '0.18em';
+    span.boxShadow = '0 6px 24px rgba(0,0,0,0.28)';
+  } else {
+    span.textShadow = '0 2px 10px rgba(0,0,0,0.55)';
+  }
+
+  return (
+    <>
+      {s.backgroundDimming > 0 && (
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{ backgroundColor: `rgba(0,0,0,${Math.min(1, Math.max(0, s.backgroundDimming))})` }}
+        />
+      )}
+      <div className={`pointer-events-none absolute inset-0 flex ${vAlign} justify-center p-2`}>
+        <div style={{ textAlign, maxWidth: '92%' }}>
+          <span style={span}>{text}</span>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Video-type check ──────────────────────────────────────────────────────
 export function isVideoContentType(item: ContentItem | null | undefined): boolean {
   if (!item) return false;

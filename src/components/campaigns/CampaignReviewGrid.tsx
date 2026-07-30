@@ -184,6 +184,105 @@ function getOverlayText(item: ReviewItem): string {
   return item.caption ?? '';
 }
 
+// Never-throw date coercion for the calendar view. date-fns parseISO throws a
+// TypeError when handed a non-string (e.g. a Date object) and format() throws a
+// RangeError on an Invalid Date — either blanks the whole calendar with an
+// unhandled render error. Blitz campaigns uniquely hit this: the grid view
+// never reads campaign.startDate, but the calendar does, and the wizard's local
+// campaign object can carry startDate as a Date rather than a yyyy-MM-dd string
+// (the static type says string, but the runtime value diverges). This helper
+// accepts string | Date | number | null and never throws.
+function toDate(v: unknown): Date | null {
+  if (!v) {
+    return null;
+  }
+  try {
+    const d = typeof v === 'string' ? parseISO(v) : new Date(v as string | number | Date);
+    return d instanceof Date && !Number.isNaN(d.getTime()) ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+// Canonical per-line "highlight" caption spec, mapped from enrichmentData.
+// Mirrors the WYSIWYG source of truth in SlideView.tsx / the image engine and
+// the detail-page GalleryPreview mapping (ContentPreview.tsx). Duplicated here
+// (not imported) so campaigns stay independent of content-library.
+function getCaptionStyle(item: ReviewItem) {
+  const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
+  const style = (enrichment.editorStyle ?? {}) as Record<string, any>;
+  return {
+    align: (style.align as string) || 'center',
+    layout: (enrichment.editorLayout as string) || 'centered',
+    backgroundColor: style.backgroundColor as string | undefined,
+    color: (style.color as string) || '#ffffff',
+    fontFamily: (style.fontFamily as string) || undefined,
+    fontSize: typeof style.fontSize === 'number' ? style.fontSize : 28,
+    fontWeight: style.weight === 'normal' ? 600 : 800,
+    fontStyle: (style.italic ? 'italic' : undefined) as 'italic' | undefined,
+    textDecoration: (style.underline ? 'underline' : undefined) as 'underline' | undefined,
+    backgroundDimming: typeof style.backgroundDimming === 'number' ? style.backgroundDimming : 0,
+  };
+}
+
+// Renders the caption overlay for a card exactly the way the editor / blitz /
+// detail page render it: a per-line highlight box (box-decoration-break: clone)
+// with the authored font, weight, color, alignment and layout. `scale` shrinks
+// the authored (1080px-basis) fontSize down to the small card preview.
+function HighlightCaption({ item, text, scale }: { item: ReviewItem; text: string; scale: number }) {
+  const s = getCaptionStyle(item);
+  // Highlight box is the default; only an explicit 'transparent' disables it.
+  const boxColor = s.backgroundColor === 'transparent' ? null : (s.backgroundColor || '#000000');
+  const hasBox = !!boxColor;
+  const displayFontSize = Math.max(8, Math.round(s.fontSize * scale));
+  const textAlign: 'left' | 'right' | 'center'
+    = s.align === 'left' || s.align === 'right' ? s.align : 'center';
+  const vAlign = s.layout === 'top_caption'
+    ? 'items-start'
+    : s.layout === 'bottom_caption'
+      ? 'items-end'
+      : 'items-center';
+
+  const span: React.CSSProperties = {
+    fontWeight: s.fontWeight,
+    lineHeight: 1.5,
+    letterSpacing: '-0.01em',
+    color: s.color,
+    fontSize: displayFontSize,
+    wordBreak: 'break-word',
+    fontFamily: s.fontFamily,
+    fontStyle: s.fontStyle,
+    textDecoration: s.textDecoration,
+    display: 'inline',
+    boxDecorationBreak: 'clone',
+    WebkitBoxDecorationBreak: 'clone',
+  };
+  if (hasBox) {
+    span.backgroundColor = boxColor;
+    span.padding = '0.16em 0.42em';
+    span.borderRadius = '0.18em';
+    span.boxShadow = '0 6px 24px rgba(0,0,0,0.28)';
+  } else {
+    span.textShadow = '0 2px 10px rgba(0,0,0,0.55)';
+  }
+
+  return (
+    <>
+      {s.backgroundDimming > 0 && (
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{ backgroundColor: `rgba(0,0,0,${Math.min(1, Math.max(0, s.backgroundDimming))})` }}
+        />
+      )}
+      <div className={`pointer-events-none absolute inset-0 flex ${vAlign} justify-center p-2`}>
+        <div style={{ textAlign, maxWidth: '92%' }}>
+          <span style={span}>{text}</span>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Content type label ────────────────────────────────────────────────────────
 function ctLabel(contentType: string | null | undefined): string {
   if (!contentType) {
@@ -537,22 +636,10 @@ function PostCard({
           </div>
         )}
 
-        {/* Centered hook/caption overlay — mirrors how the post will look on
-            the platform (usefastlane pattern). White text with black stroke
-            keeps it readable over any background. */}
-        {overlayText && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-2.5">
-            <p
-              className="line-clamp-4 text-center text-micro font-semibold leading-tight text-white"
-              style={{
-                textShadow:
-                  '1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000, 0 0 4px rgba(0,0,0,0.55)',
-              }}
-            >
-              {overlayText}
-            </p>
-          </div>
-        )}
+        {/* Caption overlay — rendered exactly like the editor / blitz / detail
+            page: per-line highlight box + authored font/color/align/weight from
+            enrichmentData.editorStyle (WYSIWYG with the published post). */}
+        {overlayText && <HighlightCaption item={item} text={overlayText} scale={0.22} />}
 
         {/* Content type pill */}
         {typeLabel && !approved && (
@@ -674,11 +761,10 @@ function CalendarView({
     d instanceof Date && !Number.isNaN(d.getTime());
 
   const scheduledDates = contentItems
-    .map(it => (it.scheduledDate ? parseISO(it.scheduledDate) : null))
+    .map(it => toDate(it.scheduledDate))
     .filter(isValidDate);
 
-  const campaignStartRaw = campaign.startDate ? parseISO(campaign.startDate) : null;
-  const campaignStart = isValidDate(campaignStartRaw) ? campaignStartRaw : null;
+  const campaignStart = toDate(campaign.startDate);
 
   const earliestDate = scheduledDates.length > 0
     ? scheduledDates.reduce((a, b) => (a < b ? a : b))
@@ -708,18 +794,8 @@ function CalendarView({
 
   const getItems = (day: Date) =>
     contentItems.filter((it) => {
-      if (!it.scheduledDate) {
-        return false;
-      }
-      try {
-        const d = parseISO(it.scheduledDate);
-        if (!isValidDate(d)) {
-          return false;
-        }
-        return isSameDay(d, day);
-      } catch {
-        return false;
-      }
+      const d = toDate(it.scheduledDate);
+      return isValidDate(d) && isSameDay(d, day);
     });
 
   return (
@@ -862,19 +938,7 @@ function CalendarCard({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={thumb!} alt="" className="size-full object-cover" />
           )}
-          {overlayText && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-1.5">
-              <p
-                className="line-clamp-3 text-center text-[9px] font-semibold leading-tight text-white"
-                style={{
-                  textShadow:
-                    '1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000, 0 0 3px rgba(0,0,0,0.55)',
-                }}
-              >
-                {overlayText}
-              </p>
-            </div>
-          )}
+          {overlayText && <HighlightCaption item={item} text={overlayText} scale={0.13} />}
           {primaryPlatform && (
             <div className="absolute left-1 top-1 origin-top-left scale-75">
               <PlatformIcon platform={primaryPlatform} />

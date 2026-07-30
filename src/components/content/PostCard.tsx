@@ -21,6 +21,7 @@ import {
   getOverlayText,
   getThumb,
   getVideoUrl,
+  HighlightCaption,
   isVideoContentType,
   PlatformIcon,
 } from './preview-helpers';
@@ -118,16 +119,11 @@ export function PostCard({
                 </div>
               )}
 
-        {/* Overlay text — centered, white with black stroke, matches on-platform look */}
+        {/* Caption overlay — per-line highlight box with the authored
+            font/color/align from enrichmentData.editorStyle, matching the
+            editor / blitz / content-detail rendering (WYSIWYG). */}
         {overlayText && (thumb || videoUrl) && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-3">
-            <p
-              className="line-clamp-5 text-center text-sm font-bold leading-tight text-white"
-              style={{ WebkitTextStroke: '1px black', textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}
-            >
-              {overlayText}
-            </p>
-          </div>
+          <HighlightCaption item={item} text={overlayText} scale={0.22} />
         )}
 
         {/* Top-left: checkbox (hover/selected) */}
