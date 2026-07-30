@@ -123,7 +123,7 @@ export function PostCard({
             font/color/align from enrichmentData.editorStyle, matching the
             editor / blitz / content-detail rendering (WYSIWYG). */}
         {overlayText && (thumb || videoUrl) && (
-          <HighlightCaption item={item} text={overlayText} scale={0.22} />
+          <HighlightCaption item={item} text={overlayText} />
         )}
 
         {/* Top-left: checkbox (hover/selected) */}

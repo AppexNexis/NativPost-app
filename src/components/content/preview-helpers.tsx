@@ -14,6 +14,12 @@ import type { ContentItem } from '@/types/v2';
 // ── Constants ─────────────────────────────────────────────────────────────
 export const VIDEO_RE = /\.(mp4|webm|mov|m4v)(\?|$)/i;
 
+// The content-detail page renders SlideView inside a fixed 360px-wide portrait
+// frame (GalleryPreview.frameWidthFor for 9:16). HighlightCaption calibrates its
+// container-query caption sizing against this same basis so cards are a true
+// proportional copy of the detail frame at any width (byte-identical at 360px).
+const DETAIL_FRAME_WIDTH = 360;
+
 // Content types whose canonical preview is a video (rendered via <video>
 // with autoplay muted loop, poster = getThumb fallback).
 export const VIDEO_CONTENT_TYPES = new Set<string>([
@@ -143,28 +149,50 @@ export function getCaptionStyle(item: ContentItem) {
 }
 
 // Renders the caption overlay exactly the way the editor / blitz / detail page
-// render it: a per-line highlight box (box-decoration-break: clone) with the
-// authored font, weight, color, alignment and layout. `scale` shrinks the
-// authored (1080px-basis) fontSize down to the small card preview.
-export function HighlightCaption({ item, text, scale }: { item: ContentItem; text: string; scale: number }) {
+// render it. This is a BYTE-FOR-BYTE mirror of the caption + dim layers in
+// SlideView.tsx (the canonical renderer used by GalleryPreview on the detail
+// page and mirrored by the image engine) — same 0.5 / 0.7 (wall) fontSize
+// scale, same layout-specific padding (p-4 / p-6), same 90% / 95% maxWidth,
+// same per-line highlight box spec. Nothing is hardcoded per-caller so the
+// card preview WYSIWYG-matches the content-detail page and Blitz.
+export function HighlightCaption({ item, text }: { item: ContentItem; text: string }) {
   const s = getCaptionStyle(item);
+  const isWall = s.layout === 'wall_of_text';
   const boxColor = s.backgroundColor === 'transparent' ? null : (s.backgroundColor || '#000000');
   const hasBox = !!boxColor;
-  const displayFontSize = Math.max(8, Math.round(s.fontSize * scale));
   const textAlign: 'left' | 'right' | 'center'
     = s.align === 'left' || s.align === 'right' ? s.align : 'center';
-  const vAlign = s.layout === 'top_caption'
-    ? 'items-start'
-    : s.layout === 'bottom_caption'
-      ? 'items-end'
-      : 'items-center';
+
+  // The detail page renders SlideView inside a fixed 360px-wide frame
+  // (GalleryPreview.frameWidthFor). At that width SlideView draws the caption at
+  // `fontSize * 0.5` (0.7 wall) px and its container padding at 16px (p-4) /
+  // 24px (p-6, centered). Cards here are arbitrary widths (grid ~200px, calendar
+  // ~80px), so instead of a fixed px we express BOTH the font size and the
+  // container padding in container-query units relative to that same 360px
+  // basis. The card becomes a true proportional copy of the detail frame at any
+  // width, and is byte-identical at 360px. (Box padding/radius are already em-
+  // based, so they scale with the font automatically.)
+  const basisFontPx = (s.fontSize || 20) * (isWall ? 0.7 : 0.5);
+  const fontCqw = (basisFontPx / DETAIL_FRAME_WIDTH) * 100;
+  const padPx = s.layout === 'centered' ? 24 : 16;
+  const padCqw = (padPx / DETAIL_FRAME_WIDTH) * 100;
+
+  // Layout positioning — matches SlideView.getContainerClass() (padding applied
+  // separately in cqw below).
+  const posClass = s.layout === 'top_caption'
+    ? 'absolute inset-x-0 top-0 flex items-start justify-center'
+    : s.layout === 'centered'
+      ? 'absolute inset-0 flex items-center justify-center'
+      : s.layout === 'wall_of_text'
+        ? 'absolute inset-0 flex items-center justify-center'
+        : 'absolute inset-x-0 bottom-0 flex items-end justify-center';
 
   const span: React.CSSProperties = {
     fontWeight: s.fontWeight,
     lineHeight: 1.5,
     letterSpacing: '-0.01em',
     color: s.color,
-    fontSize: displayFontSize,
+    fontSize: `${fontCqw}cqw`,
     wordBreak: 'break-word',
     fontFamily: s.fontFamily,
     fontStyle: s.fontStyle,
@@ -183,19 +211,21 @@ export function HighlightCaption({ item, text, scale }: { item: ContentItem; tex
   }
 
   return (
-    <>
+    // containerType makes 1cqw == 1% of this overlay's (== the card's) width, so
+    // the caption scales with the card. Children read cqw from this ancestor.
+    <div className="pointer-events-none absolute inset-0" style={{ containerType: 'inline-size' }}>
       {s.backgroundDimming > 0 && (
         <div
-          className="pointer-events-none absolute inset-0"
+          className="absolute inset-0"
           style={{ backgroundColor: `rgba(0,0,0,${Math.min(1, Math.max(0, s.backgroundDimming))})` }}
         />
       )}
-      <div className={`pointer-events-none absolute inset-0 flex ${vAlign} justify-center p-2`}>
-        <div style={{ textAlign, maxWidth: '92%' }}>
+      <div className={posClass} style={{ padding: `${padCqw}cqw` }}>
+        <div style={{ textAlign, maxWidth: isWall ? '95%' : '90%' }}>
           <span style={span}>{text}</span>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 

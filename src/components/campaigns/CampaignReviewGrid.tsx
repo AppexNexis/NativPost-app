@@ -226,29 +226,55 @@ function getCaptionStyle(item: ReviewItem) {
 }
 
 // Renders the caption overlay for a card exactly the way the editor / blitz /
-// detail page render it: a per-line highlight box (box-decoration-break: clone)
-// with the authored font, weight, color, alignment and layout. `scale` shrinks
-// the authored (1080px-basis) fontSize down to the small card preview.
-function HighlightCaption({ item, text, scale }: { item: ReviewItem; text: string; scale: number }) {
+// detail page render it. BYTE-FOR-BYTE mirror of the caption + dim layers in
+// SlideView.tsx (the canonical renderer used by GalleryPreview on the detail
+// page and mirrored by the image engine): same 0.5 / 0.7 (wall) fontSize scale,
+// same layout-specific padding (p-4 / p-6), same 90% / 95% maxWidth, same
+// per-line highlight box spec. Nothing hardcoded per-caller so the campaign
+// card preview WYSIWYG-matches the content-detail page and Blitz.
+// The content-detail page renders SlideView inside a fixed 360px-wide portrait
+// frame (GalleryPreview.frameWidthFor for 9:16). We calibrate the container-query
+// caption sizing against this same basis so cards are a true proportional copy of
+// the detail frame at any width (byte-identical at 360px). Duplicated (not
+// imported) so campaigns stay independent of content-library.
+const DETAIL_FRAME_WIDTH = 360;
+
+function HighlightCaption({ item, text }: { item: ReviewItem; text: string }) {
   const s = getCaptionStyle(item);
+  const isWall = s.layout === 'wall_of_text';
   // Highlight box is the default; only an explicit 'transparent' disables it.
   const boxColor = s.backgroundColor === 'transparent' ? null : (s.backgroundColor || '#000000');
   const hasBox = !!boxColor;
-  const displayFontSize = Math.max(8, Math.round(s.fontSize * scale));
   const textAlign: 'left' | 'right' | 'center'
     = s.align === 'left' || s.align === 'right' ? s.align : 'center';
-  const vAlign = s.layout === 'top_caption'
-    ? 'items-start'
-    : s.layout === 'bottom_caption'
-      ? 'items-end'
-      : 'items-center';
+
+  // At 360px SlideView draws the caption at `fontSize * 0.5` (0.7 wall) px and
+  // its container padding at 16px (p-4) / 24px (p-6, centered). Cards here are
+  // arbitrary widths (grid ~200px, calendar ~80px), so express BOTH the font
+  // size and container padding in container-query units relative to that 360px
+  // basis — the card is a true proportional copy of the detail frame at any
+  // width. Box padding/radius are em-based so they scale with the font.
+  const basisFontPx = (s.fontSize || 20) * (isWall ? 0.7 : 0.5);
+  const fontCqw = (basisFontPx / DETAIL_FRAME_WIDTH) * 100;
+  const padPx = s.layout === 'centered' ? 24 : 16;
+  const padCqw = (padPx / DETAIL_FRAME_WIDTH) * 100;
+
+  // Layout positioning — matches SlideView.getContainerClass() (padding applied
+  // separately in cqw below).
+  const posClass = s.layout === 'top_caption'
+    ? 'absolute inset-x-0 top-0 flex items-start justify-center'
+    : s.layout === 'centered'
+      ? 'absolute inset-0 flex items-center justify-center'
+      : s.layout === 'wall_of_text'
+        ? 'absolute inset-0 flex items-center justify-center'
+        : 'absolute inset-x-0 bottom-0 flex items-end justify-center';
 
   const span: React.CSSProperties = {
     fontWeight: s.fontWeight,
     lineHeight: 1.5,
     letterSpacing: '-0.01em',
     color: s.color,
-    fontSize: displayFontSize,
+    fontSize: `${fontCqw}cqw`,
     wordBreak: 'break-word',
     fontFamily: s.fontFamily,
     fontStyle: s.fontStyle,
@@ -267,19 +293,21 @@ function HighlightCaption({ item, text, scale }: { item: ReviewItem; text: strin
   }
 
   return (
-    <>
+    // containerType makes 1cqw == 1% of this overlay's (== the card's) width so
+    // the caption scales with the card. Children read cqw from this ancestor.
+    <div className="pointer-events-none absolute inset-0" style={{ containerType: 'inline-size' }}>
       {s.backgroundDimming > 0 && (
         <div
-          className="pointer-events-none absolute inset-0"
+          className="absolute inset-0"
           style={{ backgroundColor: `rgba(0,0,0,${Math.min(1, Math.max(0, s.backgroundDimming))})` }}
         />
       )}
-      <div className={`pointer-events-none absolute inset-0 flex ${vAlign} justify-center p-2`}>
-        <div style={{ textAlign, maxWidth: '92%' }}>
+      <div className={posClass} style={{ padding: `${padCqw}cqw` }}>
+        <div style={{ textAlign, maxWidth: isWall ? '95%' : '90%' }}>
           <span style={span}>{text}</span>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -639,7 +667,7 @@ function PostCard({
         {/* Caption overlay — rendered exactly like the editor / blitz / detail
             page: per-line highlight box + authored font/color/align/weight from
             enrichmentData.editorStyle (WYSIWYG with the published post). */}
-        {overlayText && <HighlightCaption item={item} text={overlayText} scale={0.22} />}
+        {overlayText && <HighlightCaption item={item} text={overlayText} />}
 
         {/* Content type pill */}
         {typeLabel && !approved && (
@@ -938,7 +966,7 @@ function CalendarCard({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={thumb!} alt="" className="size-full object-cover" />
           )}
-          {overlayText && <HighlightCaption item={item} text={overlayText} scale={0.13} />}
+          {overlayText && <HighlightCaption item={item} text={overlayText} />}
           {primaryPlatform && (
             <div className="absolute left-1 top-1 origin-top-left scale-75">
               <PlatformIcon platform={primaryPlatform} />
