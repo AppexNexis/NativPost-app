@@ -1,11 +1,17 @@
 'use client';
 
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  Bold,
   ChevronLeft,
   ChevronRight,
   ImageIcon,
+  Italic,
   Plus,
   RefreshCw,
+  Underline,
   VolumeX,
   X,
 } from 'lucide-react';
@@ -32,6 +38,13 @@ import { Separator } from '@/components/ui/separator';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { ColorField } from '@/components/editor/ColorField';
+import { getEditorKind } from '@/lib/editor/content-type-registry';
+// Importing EDITOR_FONTS runs the fonts.ts loadFont() side effects, which
+// inject the @font-face rules globally — that is what makes the registry
+// families render in this modal's own preview without next/font.
+import { EDITOR_FONTS } from '@/lib/editor/fonts';
+import { cn } from '@/utils/Helpers';
 import type { ContentItem } from '@/types/v2';
 
 export type CampaignPostEditModalProps = {
@@ -42,21 +55,71 @@ export type CampaignPostEditModalProps = {
   onSaved: (updated: ContentItem) => void;
 };
 
-const FONTS = [
-  { label: 'System UI', value: 'ui-sans-serif, system-ui, sans-serif' },
-  { label: 'Inter', value: 'Inter, sans-serif' },
-  { label: 'Georgia', value: 'Georgia, serif' },
-  { label: 'Arial', value: 'Arial, sans-serif' },
-  { label: 'Courier', value: 'Courier New, monospace' },
+// Quick-pick swatches — mirror the shared TextTab so the campaign editor and
+// the standalone/Blitz editor offer the identical palette.
+const TEXT_COLORS = [
+  '#ffffff', '#000000', '#ef4444', '#f97316', '#f59e0b',
+  '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899',
 ];
 
-const WEIGHTS: { label: string; value: number }[] = [
-  { label: 'Light', value: 300 },
-  { label: 'Regular', value: 400 },
-  { label: 'Medium', value: 500 },
-  { label: 'Semi-bold', value: 600 },
-  { label: 'Bold', value: 700 },
+// Per-line "highlight" backgrounds (usefastlane look), rendered via
+// box-decoration-break in the preview + engine. "None" = transparent, which
+// falls back to a soft shadow for legibility.
+const TEXT_BG_PRESETS: { label: string; value: string }[] = [
+  { label: 'Highlight', value: '#000000' },
+  { label: 'White', value: '#ffffff' },
+  { label: 'Subtle', value: 'rgba(0,0,0,0.5)' },
+  { label: 'None', value: 'transparent' },
 ];
+
+const CTA_COLORS = [
+  'rgba(134, 79, 254, 0.85)', '#864FFE', '#ef4444', '#22c55e',
+  '#3b82f6', '#f59e0b', '#ec4899', 'rgba(0,0,0,0.7)',
+];
+
+// Migrate the legacy `background: 'white' | 'none' | 'snapchat'` enum written
+// by the old campaign modal to a canonical `backgroundColor` string. Anything
+// unrecognised falls back to transparent (no box).
+function migrateLegacyBackground(bg: unknown): string {
+  if (bg === 'white') return '#ffffff';
+  if (bg === 'snapchat') return '#FFFC00';
+  return 'transparent';
+}
+
+// A compact icon/label segmented toggle group — mirrors TextTab's helper so the
+// two editors look identical (no new radix dependency).
+function SegmentedGroup<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label?: string; icon?: React.ReactNode; title?: string }[];
+  value: T | undefined;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex overflow-hidden rounded-lg border border-border">
+      {options.map((opt, i) => (
+        <button
+          key={opt.value}
+          type="button"
+          title={opt.title}
+          onClick={() => onChange(opt.value)}
+          className={cn(
+            'flex flex-1 items-center justify-center gap-1 py-2 text-xs font-medium transition-colors',
+            i > 0 && 'border-l border-border',
+            value === opt.value
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+          )}
+        >
+          {opt.icon}
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 type SlideEntry = { url: string; caption?: string };
 
@@ -153,9 +216,17 @@ export function CampaignPostEditModal({
   const [item, setItem] = useState<ContentItem>(contentItem);
   const enrichment = (item.enrichmentData ?? {}) as Record<string, unknown>;
   const script = (enrichment.editorScript ?? {}) as Record<string, unknown>;
-  const textStyle = (script.textStyle ?? {}) as Record<string, unknown>;
+  // Style is canonically stored at enrichmentData.editorStyle (what the render,
+  // publish, and preview pipelines all read). editorScript.textStyle is the
+  // modal's own mirror. Fall back to editorStyle so a post styled elsewhere
+  // still loads with its real values.
+  const textStyle = (script.textStyle
+    ?? enrichment.editorStyle
+    ?? {}) as Record<string, unknown>;
 
   const isSlideshow = item.contentType === 'slideshow';
+  const kind = getEditorKind(item.contentType);
+  const isVideo = kind === 'video';
 
   // ── Slides state (slideshow mode) ─────────────────────────────────────────
   const [slides, setSlides] = useState<SlideEntry[]>(() => resolveSlides(enrichment));
@@ -204,16 +275,36 @@ export function CampaignPostEditModal({
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [regenError, setRegenError] = useState<string | null>(null);
 
-  // ── Right panel — text style ──────────────────────────────────────────────
-  const [fontFamily, setFontFamily] = useState(String(textStyle.fontFamily ?? FONTS[0]!.value));
-  const [fontWeight, setFontWeight] = useState(Number(textStyle.fontWeight ?? 500));
-  const [fontSize, setFontSize] = useState(Number(textStyle.fontSize ?? 16));
+  // ── Right panel — text style (canonical TextStyle schema, matching the
+  //    shared editor so campaign posts render WYSIWYG through the same
+  //    pipeline). Legacy fields (fontWeight number, strokeWidth/strokeColor,
+  //    background enum) are migrated on read and no longer written. ──────────
+  const [fontFamily, setFontFamily] = useState(() => {
+    const stored = String(textStyle.fontFamily ?? '');
+    return EDITOR_FONTS.includes(stored) ? stored : 'Inter';
+  });
+  const [fontSize, setFontSize] = useState(Number(textStyle.fontSize ?? 30));
   const [textColor, setTextColor] = useState(String(textStyle.color ?? '#FFFFFF'));
-  const [strokeWidth, setStrokeWidth] = useState(Number(textStyle.strokeWidth ?? 3));
-  const [strokeColor, setStrokeColor] = useState(String(textStyle.strokeColor ?? '#000000'));
-  const [background, setBackground] = useState<'white' | 'none' | 'snapchat'>(
-    (textStyle.background as 'white' | 'none' | 'snapchat') ?? 'none',
+  const [align, setAlign] = useState<'left' | 'center' | 'right'>(
+    (textStyle.align as 'left' | 'center' | 'right') ?? 'center',
   );
+  const [weight, setWeight] = useState<'normal' | 'bold'>(() => {
+    if (textStyle.weight === 'bold' || textStyle.weight === 'normal') {
+      return textStyle.weight;
+    }
+    // Migrate the legacy numeric fontWeight.
+    return Number(textStyle.fontWeight ?? 400) >= 600 ? 'bold' : 'normal';
+  });
+  const [italic, setItalic] = useState(Boolean(textStyle.italic ?? false));
+  const [underline, setUnderline] = useState(Boolean(textStyle.underline ?? false));
+  const [backgroundColor, setBackgroundColor] = useState<string>(
+    typeof textStyle.backgroundColor === 'string'
+      ? textStyle.backgroundColor
+      : migrateLegacyBackground(textStyle.background),
+  );
+  const [backgroundDimming, setBackgroundDimming] = useState(Number(textStyle.backgroundDimming ?? 0));
+  const [ctaBackgroundColor, setCtaBackgroundColor] = useState(String(textStyle.ctaBackgroundColor ?? '#864FFE'));
+  const [noAnimation, setNoAnimation] = useState(Boolean(textStyle.noAnimation ?? false));
 
   // ── Saving ────────────────────────────────────────────────────────────────
   const [isSaving, setIsSaving] = useState(false);
@@ -227,17 +318,9 @@ export function CampaignPostEditModal({
 
   // (anyPickerOpen state guard removed — using pickerWasOpen ref instead to
   //  avoid the race where state resets before Radix fires the outer dialog event)
-  const STROKE_DIRS: [number, number][] = [[1, 0], [0, 1], [-1, 0], [0, -1]];
-  const tShadow
-    = strokeWidth > 0
-      ? STROKE_DIRS.map(([dx, dy]) => `${strokeColor} ${dx * strokeWidth}px ${dy * strokeWidth}px 0`).join(', ')
-      : 'none';
-  const bgStyle: React.CSSProperties
-    = background === 'white'
-      ? { backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: 4, padding: '4px 8px' }
-      : background === 'snapchat'
-        ? { backgroundColor: '#FFFC00', borderRadius: 4, padding: '4px 8px' }
-        : {};
+  // Per-line highlight box hugs each wrapped line (usefastlane look). "None"
+  // (transparent) falls back to a soft shadow for legibility.
+  const hasHighlight = backgroundColor !== 'transparent' && backgroundColor !== '';
 
   const handleRegenerate = useCallback(async () => {
     if (isRegenerating || reRollsRemaining <= 0) {
@@ -287,13 +370,32 @@ export function CampaignPostEditModal({
           }
         : enrichment.sourceMediaSlots;
 
+      // Canonical TextStyle payload. Written to BOTH editorScript.textStyle
+      // (the modal's mirror) and top-level editorStyle — the key the render,
+      // publish, and preview pipelines actually read (reconstruct-render-input,
+      // publish/route, ContentPreview). Without editorStyle the post renders
+      // with default styling and none of these edits reach the published post.
+      const textStylePayload = {
+        fontFamily,
+        fontSize,
+        color: textColor,
+        align,
+        weight,
+        italic,
+        underline,
+        backgroundColor,
+        backgroundDimming,
+        ctaBackgroundColor,
+        noAnimation,
+      };
+
       const updatedScript = isSlideshow
         ? {
             ...(script as Record<string, unknown>),
             // Persist per-slide captions so they survive reload
             slideCopy: slides.map(s => s.caption ?? ''),
             hookText: slides[0]?.caption ?? script.hookText,
-            textStyle: { fontFamily, fontWeight, fontSize, color: textColor, strokeWidth, strokeColor, background },
+            textStyle: textStylePayload,
           }
         : {
             ...(script as Record<string, unknown>),
@@ -301,7 +403,7 @@ export function CampaignPostEditModal({
             // up in the render pipeline (Remotion <Audio/> reads from
             // enrichmentData.editorScript.audioTrack).
             audioTrack: audioTrack ?? null,
-            textStyle: { fontFamily, fontWeight, fontSize, color: textColor, strokeWidth, strokeColor, background },
+            textStyle: textStylePayload,
           };
 
       const updatedEnrichment = {
@@ -309,6 +411,7 @@ export function CampaignPostEditModal({
         mentionFrequency: mentionBusiness ? 'often' : 'never',
         sourceMediaSlots: updatedSlots,
         editorScript: updatedScript,
+        editorStyle: textStylePayload,
       };
       const res = await fetch(`/api/content/${item.id}`, {
         method: 'PATCH',
@@ -332,12 +435,16 @@ export function CampaignPostEditModal({
     slides,
     mentionBusiness,
     fontFamily,
-    fontWeight,
     fontSize,
     textColor,
-    strokeWidth,
-    strokeColor,
-    background,
+    align,
+    weight,
+    italic,
+    underline,
+    backgroundColor,
+    backgroundDimming,
+    ctaBackgroundColor,
+    noAnimation,
     audioTrack,
   ]);
 
@@ -606,22 +713,45 @@ export function CampaignPostEditModal({
                   )
                 )}
 
+                {/* Background dim scrim — darkens the source media so its own
+                    text doesn't bleed through (mirrors the engine scrim). */}
+                {backgroundDimming > 0 && (
+                  <div
+                    className="pointer-events-none absolute inset-0 bg-black"
+                    style={{ opacity: backgroundDimming }}
+                  />
+                )}
+
                 {/* Centered overlay text */}
                 {overlayText && (
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
                     <p
-                      className="text-center font-semibold leading-snug"
+                      className="leading-snug"
                       style={{
                         fontFamily,
-                        fontWeight,
+                        fontWeight: weight === 'bold' ? 700 : 400,
+                        fontStyle: italic ? 'italic' : 'normal',
+                        textDecoration: underline ? 'underline' : 'none',
+                        textAlign: align,
                         fontSize: `${Math.max(10, Math.round(fontSize * 0.85))}px`,
                         color: textColor,
-                        textShadow: tShadow,
+                        textShadow: hasHighlight ? 'none' : '0 1px 4px rgba(0,0,0,0.7)',
                         maxWidth: '90%',
-                        ...bgStyle,
                       }}
                     >
-                      {overlayText}
+                      <span
+                        style={hasHighlight
+                          ? {
+                              backgroundColor,
+                              boxDecorationBreak: 'clone',
+                              WebkitBoxDecorationBreak: 'clone',
+                              padding: '0.1em 0.3em',
+                              borderRadius: 4,
+                            }
+                          : undefined}
+                      >
+                        {overlayText}
+                      </span>
                     </p>
                   </div>
                 )}
@@ -733,38 +863,22 @@ export function CampaignPostEditModal({
                     </div>
                   )}
 
-                  {/* Font */}
+                  {/* Font — each item rendered in its own typeface (WYSIWYG
+                      registry keys shared with the standalone/Blitz editor) */}
                   <div className="space-y-1.5">
                     <Label className="text-[10px] text-muted-foreground">Font</Label>
                     <Select value={fontFamily} onValueChange={setFontFamily}>
-                      <SelectTrigger className="h-8 text-xs">
+                      <SelectTrigger className="h-8 text-xs" style={{ fontFamily }}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {FONTS.map(f => (
-                          <SelectItem key={f.value} value={f.value} className="text-xs">
-                            {f.label}
+                        {EDITOR_FONTS.map(name => (
+                          <SelectItem key={name} value={name} className="text-xs" style={{ fontFamily: name }}>
+                            {name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                  </div>
-
-                  {/* Weight */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-[10px] text-muted-foreground">Weight</Label>
-                      <span className="text-[10px] font-medium">
-                        {WEIGHTS.find(w => w.value === fontWeight)?.label ?? fontWeight}
-                      </span>
-                    </div>
-                    <Slider
-                      min={300}
-                      max={700}
-                      step={100}
-                      value={[fontWeight]}
-                      onValueChange={([v]) => setFontWeight(v!)}
-                    />
                   </div>
 
                   {/* Size */}
@@ -777,102 +891,144 @@ export function CampaignPostEditModal({
                       </span>
                     </div>
                     <Slider
-                      min={8}
-                      max={48}
+                      min={16}
+                      max={120}
                       step={1}
                       value={[fontSize]}
                       onValueChange={([v]) => setFontSize(v!)}
                     />
                   </div>
 
-                  {/* Color */}
+                  {/* Text color */}
                   <div className="space-y-1.5">
                     <Label className="text-[10px] text-muted-foreground">Color</Label>
-                    <div className="flex gap-2">
-                      <input
-                        type="color"
-                        value={textColor}
-                        onChange={e => setTextColor(e.target.value)}
-                        className="size-8 cursor-pointer rounded-md border"
+                    <ColorField
+                      value={textColor}
+                      onChange={setTextColor}
+                      swatches={TEXT_COLORS}
+                      fallbackHex="#ffffff"
+                    />
+                  </div>
+
+                  {/* Alignment + B / I / U */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">Align</Label>
+                      <SegmentedGroup
+                        value={align}
+                        onChange={setAlign}
+                        options={[
+                          { value: 'left', icon: <AlignLeft className="size-3.5" />, title: 'Left' },
+                          { value: 'center', icon: <AlignCenter className="size-3.5" />, title: 'Center' },
+                          { value: 'right', icon: <AlignRight className="size-3.5" />, title: 'Right' },
+                        ]}
                       />
-                      <input
-                        type="text"
-                        value={textColor.toUpperCase()}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (/^#[0-9A-F]{0,6}$/i.test(v)) {
-                            setTextColor(v);
-                          }
-                        }}
-                        className="h-8 flex-1 rounded-md border bg-background px-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary/40"
-                        maxLength={7}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">Format</Label>
+                      <div className="flex overflow-hidden rounded-lg border border-border">
+                        <button
+                          type="button"
+                          title="Bold"
+                          onClick={() => setWeight(weight === 'bold' ? 'normal' : 'bold')}
+                          className={cn(
+                            'flex flex-1 items-center justify-center py-2 transition-colors',
+                            weight === 'bold'
+                              ? 'bg-primary text-primary-foreground'
+                              : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                          )}
+                        >
+                          <Bold className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          title="Italic"
+                          onClick={() => setItalic(!italic)}
+                          className={cn(
+                            'flex flex-1 items-center justify-center border-l border-border py-2 transition-colors',
+                            italic
+                              ? 'bg-primary text-primary-foreground'
+                              : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                          )}
+                        >
+                          <Italic className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          title="Underline"
+                          onClick={() => setUnderline(!underline)}
+                          className={cn(
+                            'flex flex-1 items-center justify-center border-l border-border py-2 transition-colors',
+                            underline
+                              ? 'bg-primary text-primary-foreground'
+                              : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                          )}
+                        >
+                          <Underline className="size-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Text background (per-line highlight) */}
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] text-muted-foreground">Text background</Label>
+                    <div className="space-y-2">
+                      <SegmentedGroup
+                        value={backgroundColor}
+                        onChange={setBackgroundColor}
+                        options={TEXT_BG_PRESETS.map(p => ({ value: p.value, label: p.label }))}
+                      />
+                      <ColorField
+                        value={backgroundColor}
+                        onChange={setBackgroundColor}
+                        fallbackHex="#000000"
                       />
                     </div>
                   </div>
 
-                  {/* Stroke width */}
+                  {/* Background dim */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label className="text-[10px] text-muted-foreground">Stroke</Label>
+                      <Label className="text-[10px] text-muted-foreground">Background dim</Label>
                       <span className="text-[10px] font-medium">
-                        {strokeWidth}
-                        px
+                        {Math.round(backgroundDimming * 100)}
+                        %
                       </span>
                     </div>
                     <Slider
                       min={0}
-                      max={10}
-                      step={0.5}
-                      value={[strokeWidth]}
-                      onValueChange={([v]) => setStrokeWidth(v!)}
+                      max={80}
+                      step={1}
+                      value={[Math.round(backgroundDimming * 100)]}
+                      onValueChange={([v]) => setBackgroundDimming((v ?? 0) / 100)}
                     />
                   </div>
 
-                  {/* Stroke color */}
+                  {/* CTA button color */}
                   <div className="space-y-1.5">
-                    <Label className="text-[10px] text-muted-foreground">Stroke Color</Label>
-                    <div className="flex gap-2">
-                      <input
-                        type="color"
-                        value={strokeColor}
-                        onChange={e => setStrokeColor(e.target.value)}
-                        className="size-8 cursor-pointer rounded-md border"
-                      />
-                      <input
-                        type="text"
-                        value={strokeColor.toUpperCase()}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (/^#[0-9A-F]{0,6}$/i.test(v)) {
-                            setStrokeColor(v);
-                          }
-                        }}
-                        className="h-8 flex-1 rounded-md border bg-background px-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary/40"
-                        maxLength={7}
-                      />
-                    </div>
+                    <Label className="text-[10px] text-muted-foreground">CTA button color</Label>
+                    <ColorField
+                      value={ctaBackgroundColor}
+                      onChange={setCtaBackgroundColor}
+                      swatches={CTA_COLORS}
+                      fallbackHex="#864FFE"
+                    />
                   </div>
 
-                  {/* Background */}
-                  <div className="space-y-1.5">
-                    <Label className="text-[10px] text-muted-foreground">Background</Label>
-                    <div className="flex gap-1.5">
-                      {(['white', 'none', 'snapchat'] as const).map(bg => (
-                        <button
-                          key={bg}
-                          type="button"
-                          onClick={() => setBackground(bg)}
-                          className={`flex-1 rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-colors ${
-                            background === bg
-                              ? 'border-primary bg-primary text-primary-foreground'
-                              : 'border-border bg-background text-foreground hover:bg-muted'
-                          }`}
-                        >
-                          {bg === 'snapchat' ? 'Snap' : bg.charAt(0).toUpperCase() + bg.slice(1)}
-                        </button>
-                      ))}
+                  {/* Animation — video only (matches the shared TextTab gate) */}
+                  {isVideo && (
+                    <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+                      <div>
+                        <span className="text-xs font-medium text-foreground">Animation</span>
+                        <p className="text-[10px] text-muted-foreground">Sequential text fade-in</p>
+                      </div>
+                      <Switch
+                        checked={!noAnimation}
+                        onCheckedChange={checked => setNoAnimation(!checked)}
+                      />
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             </ScrollArea>
