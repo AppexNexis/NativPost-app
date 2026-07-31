@@ -1086,6 +1086,69 @@ const SCRUBBED_PREFIXES = [
   'view on twitter',
   'view on youtube',
 ];
+/**
+ * The source text a template contributes to a generated post.
+ *
+ * WHY THIS EXISTS: generation used to read `template.structure.caption`, a key
+ * NOTHING writes. The seed pipeline's AI enrichment
+ * (lib/template-seed/ai.ts) asks the model for `structure.hook/body/cta`, and
+ * `TemplateStructure` has no `caption` field at all — so for every video
+ * template the source caption resolved to '', which meant:
+ *
+ *   - `applyBrandVoice` returned immediately without calling the model, so the
+ *     brand voice never reached a published post;
+ *   - `buildEditorScript` got nothing, so copy fell back to the small
+ *     `FALLBACK_HOOKS` pool — which is why cards repeat each other's captions.
+ *
+ * Slide-based templates DO carry `slideCaptions` (scraped from the source
+ * post), which is why slideshows looked fine and videos didn't.
+ *
+ * Order matters: the hook is the headline the template was built around, so it
+ * leads. Body follows as supporting context. The CTA is deliberately excluded —
+ * it's the template's own call to action ("Follow for the full breakdown"),
+ * not the brand's, and the campaign appends its own mention separately.
+ */
+function resolveTemplateSourceText(template: CampaignTemplateRow, variant = 0): string {
+  const structure = (template.structure ?? {}) as Record<string, any>;
+
+  // Legacy/explicit caption wins if a row ever carries one.
+  const explicit = typeof structure.caption === 'string' ? structure.caption : '';
+  if (explicit.trim()) {
+    return sanitizeCaption(explicit);
+  }
+
+  const hook = typeof structure.hook?.text === 'string' ? structure.hook.text.trim() : '';
+  const body = typeof structure.body?.text === 'string' ? structure.body.text.trim() : '';
+
+  // `variant` is how many times this template has already been drawn in this
+  // batch. A big campaign (200-400 posts) exhausts the template pool and
+  // starts reusing rows; without this every reuse would resolve to the SAME
+  // source text, get the same brand-voice rewrite (the cache is keyed on
+  // templateId + caption), and publish as a duplicate. Each pass takes a
+  // different slice of the template's own copy, so one template yields three
+  // genuinely different captions before anything repeats. Past that the
+  // caller falls back to the hook pool.
+  const slices = [
+    [hook, body].filter(Boolean).join('\n'),
+    body,
+    hook,
+  ].filter(Boolean);
+  const fromStructure = slices.length > 0 ? slices[variant % slices.length]! : '';
+  if (fromStructure) {
+    return sanitizeCaption(fromStructure);
+  }
+
+  // Slide templates: the scraped per-slide text.
+  const slideCaptions = template.slideCaptions;
+  if (Array.isArray(slideCaptions)) {
+    return sanitizeCaption(slideCaptions.join('\n'));
+  }
+  if (slideCaptions && typeof slideCaptions === 'object') {
+    return sanitizeCaption(Object.values(slideCaptions).join('\n'));
+  }
+  return '';
+}
+
 function sanitizeCaption(raw: string): string {
   if (!raw) {
     return '';
@@ -1134,13 +1197,17 @@ export async function generateCampaignPosts(
   const { maxPosts } = opts;
   const postsPerDay = campaign.postsPerDay || 1;
   const campaignLengthDays = campaign.campaignLengthDays || 7;
-  const accountsCount = Math.max(1, ((campaign.targetAccounts as any[]) || []).length);
-  // Prefer the row-stored totalPosts when present — the POST route
-  // computes accounts × postsPerDay × days there. Fall back to computing
-  // locally so older campaign rows still generate correctly.
+  // Prefer the row-stored totalPosts when present — the wizard computes
+  // postsPerDay × days there. Fall back to computing locally so older
+  // campaign rows still generate correctly.
+  //
+  // Account count is NOT a multiplier: "2 posts per day" means 2 ideas a day,
+  // and publishing cross-posts each idea to one account per platform. It used
+  // to multiply here and in the wizard, which turned a 2/day × 14d campaign
+  // into 112 posts instead of 28.
   const totalPosts = campaign.totalPosts && campaign.totalPosts > 0
     ? campaign.totalPosts
-    : accountsCount * postsPerDay * campaignLengthDays;
+    : postsPerDay * campaignLengthDays;
   // Phase 1 must fill the ENTIRE campaign window, not just one day.
   // Blitz's per-day generation model (which this code was cloned from)
   // relies on subsequent auto-refill calls, but Campaigns need the whole
@@ -1469,7 +1536,17 @@ export async function generateCampaignPosts(
   // The old fallthrough biased toward the most-abundant content type
   // (typically slideshow), which produced monotype Blitz queues even
   // when the campaign mix asked for diverse types.
-  const templatePosts: Array<{ template: CampaignTemplateRow; hookText: string }> = [];
+  const templatePosts: Array<{ template: CampaignTemplateRow; hookText: string; variant: number }> = [];
+  // How many times each template has already been drawn in THIS batch. A
+  // campaign larger than the template pool restarts the pool and reuses rows;
+  // the count becomes the text `variant` so a reused template produces a
+  // different caption instead of a duplicate post.
+  const drawCountByTemplate = new Map<string, number>();
+  const nextVariant = (templateId: string): number => {
+    const used = drawCountByTemplate.get(templateId) ?? 0;
+    drawCountByTemplate.set(templateId, used + 1);
+    return used;
+  };
   for (let i = 0; i < postsToCreate; i++) {
     // Try up to uniqueMixTypes.length attempts to find a type with available
     // templates. If all types are exhausted, fall through to "any unused".
@@ -1481,7 +1558,7 @@ export async function generateCampaignPosts(
       if (picked.length > 0) {
         const t = picked[Math.floor(Math.random() * picked.length)]!;
         usedTemplateIds.add(t.id);
-        templatePosts.push({ template: t, hookText: pickUniqueHook(t.contentType) });
+        templatePosts.push({ template: t, hookText: pickUniqueHook(t.contentType), variant: nextVariant(t.id) });
         // Consume one from the batch plan quota for this type. When quota
         // hits 0, nextType() will skip it on the next iteration.
         if (planQuota[target] !== undefined && planQuota[target] > 0) {
@@ -1508,20 +1585,35 @@ export async function generateCampaignPosts(
       if (restart.length > 0) {
         const t = restart[Math.floor(Math.random() * restart.length)]!;
         usedTemplateIds.add(t.id);
-        templatePosts.push({ template: t, hookText: pickUniqueHook(t.contentType) });
+        templatePosts.push({ template: t, hookText: pickUniqueHook(t.contentType), variant: nextVariant(t.id) });
         continue;
       }
       break;
     }
     const t = all[Math.floor(Math.random() * all.length)]!;
     usedTemplateIds.add(t.id);
-    templatePosts.push({ template: t, hookText: pickUniqueHook(t.contentType) });
+    templatePosts.push({ template: t, hookText: pickUniqueHook(t.contentType), variant: nextVariant(t.id) });
   }
 
   console.log(
     `[Campaign] Phase 1: allocated ${templatePosts.length} template posts `
     + `(target=${postsToCreate}, available=${templates.length})`,
   );
+
+  // Uniqueness headroom. Each template yields 3 distinct captions (see
+  // `resolveTemplateSourceText` variants) before the caller has to fall back
+  // to the finite hook pool — and `pickUniqueHook` returns a DUPLICATE
+  // silently once that pool is spent. Warn while it's still diagnosable
+  // rather than letting a large campaign quietly ship repeated copy.
+  const uniqueCaptionCapacity = templates.length * 3;
+  if (postsToCreate > uniqueCaptionCapacity) {
+    console.warn(
+      `[Campaign] Uniqueness risk: ${postsToCreate} posts requested but only `
+      + `${templates.length} templates (~${uniqueCaptionCapacity} distinct captions). `
+      + `Posts beyond that fall back to the shared hook pool and may repeat — `
+      + `add more approved templates for this content mix.`,
+    );
+  }
 
   // ── Brand-voice prewarm ────────────────────────────────────────────────
   // The insert loop below is sequential and calls `applyBrandVoice` per post,
@@ -1539,19 +1631,16 @@ export async function generateCampaignPosts(
   const prewarmPlatform = Array.isArray(targetPlatforms) ? targetPlatforms[0] : null;
   try {
     const warmStart = Date.now();
-    const { warmed, failed } = await prewarmBrandVoice(
+    const { warmed, failed, skippedEmpty } = await prewarmBrandVoice(
       templatePosts
         // The loop drops non-renderable types before it reaches the rewrite,
         // so warming them would buy nothing and still cost a call.
         .filter(({ template }) => RENDERABLE_CONTENT_TYPES.has(template.contentType))
-        .map(({ template }) => ({
+        // MUST derive the source text exactly as the insert loop does, or the
+        // cache keys differ and every post pays for its rewrite twice.
+        .map(({ template, variant }) => ({
           profile,
-          sourceCaption: sanitizeCaption(template.structure?.caption
-            || (Array.isArray(template.slideCaptions) ? template.slideCaptions.join('\n') : '')
-            || (typeof template.slideCaptions === 'object' && template.slideCaptions !== null
-              ? Object.values(template.slideCaptions).join('\n')
-              : '')
-            || ''),
+          sourceCaption: resolveTemplateSourceText(template, variant),
           contentType: template.contentType,
           platform: prewarmPlatform,
           templateId: template.id,
@@ -1559,7 +1648,8 @@ export async function generateCampaignPosts(
         })),
     );
     console.log(
-      `[Campaign] Brand-voice prewarm: ${warmed} warmed, ${failed} failed `
+      `[Campaign] Brand-voice prewarm: ${warmed} warmed, ${failed} failed, `
+      + `${skippedEmpty} skipped (template has no caption to rewrite) `
       + `in ${Date.now() - warmStart}ms`,
     );
   } catch (err) {
@@ -1645,7 +1735,7 @@ export async function generateCampaignPosts(
     });
   } catch { /* best-effort */ }
 
-  for (const { template, hookText } of templatePosts) {
+  for (const { template, hookText, variant } of templatePosts) {
     try {
       let sourceMediaSlots = buildSourceMediaSlots(template);
       let _insufficientAssets = false;
@@ -1681,13 +1771,7 @@ export async function generateCampaignPosts(
       // Build a proper editor script from the template's caption data so the
       // Blitz card shows per-slide text (slideshows), bodyText (video hooks),
       // etc. Only fall back to pickUniqueHook when no caption is available.
-      // Content-template rows store the original caption as structure.caption
-      // or slideCaptions — neither is guaranteed, so fall back gracefully.
-      const rawTemplateCaption = sanitizeCaption(template.structure?.caption
-        || (Array.isArray(template.slideCaptions) ? template.slideCaptions.join('\n') : '')
-        || (typeof template.slideCaptions === 'object' && template.slideCaptions !== null
-          ? Object.values(template.slideCaptions).join('\n') : '')
-        || '');
+      const rawTemplateCaption = resolveTemplateSourceText(template, variant);
 
       // Rewrite the source caption in the brand voice + roll for a
       // brand-name mention per campaign.mentionFrequency. Cached by
@@ -2809,10 +2893,43 @@ export async function scheduleCampaignPosts(
     .from(socialAccountSchema)
     .where(and(eq(socialAccountSchema.orgId, orgId), eq(socialAccountSchema.isActive, true)));
 
+  const [campaign] = await db
+    .select()
+    .from(campaignSchema)
+    .where(eq(campaignSchema.id, campaignId))
+    .limit(1);
+
+  // ── Distribution strategy: cross-post across platforms ──────────────────
+  // One account PER PLATFORM per post, round-robin within that platform's
+  // selected accounts; the post then goes to every platform it targets. So a
+  // campaign publishes the same idea to Facebook + Instagram + LinkedIn, and
+  // rotates across multiple pages on the same platform rather than posting
+  // identical content to all of them.
+  //
+  // The pool is the accounts the user actually chose in the wizard
+  // (`campaign.targetAccounts`). Before this, scheduling ignored that entirely
+  // and took `accounts.find(a => a.platform === platform)` — the first active
+  // account of the platform — so picking a specific page had no effect on
+  // where anything published. Campaigns with no selection (legacy rows) keep
+  // the old behaviour via the fallback below.
+  const selectedByPlatform = new Map<string, string[]>();
+  for (const target of (campaign?.targetAccounts as { accountId: string; platform: string }[] | null) ?? []) {
+    if (!target?.platform || !target?.accountId) {
+      continue;
+    }
+    // Only accounts that are still connected and active can receive a post.
+    if (!accounts.some((a: any) => a.id === target.accountId)) {
+      continue;
+    }
+    const pool = selectedByPlatform.get(target.platform) ?? [];
+    pool.push(target.accountId);
+    selectedByPlatform.set(target.platform, pool);
+  }
+
   let scheduledCount = 0;
   let skippedCount = 0;
 
-  for (const row of items) {
+  for (const [index, row] of items.entries()) {
     const contentItem = row.ci;
     const cc = row.cc;
     if (!contentItem) {
@@ -2825,17 +2942,32 @@ export async function scheduleCampaignPosts(
       continue;
     }
 
+    // The post's own slot in the campaign drives the rotation, so the spread
+    // across a platform's accounts is deterministic and even.
+    const rotation = typeof cc.sequenceIndex === 'number' ? cc.sequenceIndex : index;
+
+    // Campaign schedule lives on the join row. Fall back to "now" so a post
+    // with no slot still publishes rather than never becoming due.
+    const scheduledFor = cc.scheduledDate
+      ? combineDateAndTime(cc.scheduledDate, cc.scheduledTime || '09:00')
+      : new Date();
+
     const platforms = (contentItem.targetPlatforms as string[]) || [];
+    const chosenAccountIds: string[] = [];
 
     for (const platform of platforms) {
-      const account = accounts.find((a: any) => a.platform === platform);
+      const pool = selectedByPlatform.get(platform) ?? [];
+      const account = pool.length > 0
+        ? accounts.find((a: any) => a.id === pool[rotation % pool.length])
+        // No explicit selection for this platform (legacy campaign) — fall
+        // back to the first active account, which is what shipped before.
+        : accounts.find((a: any) => a.platform === platform);
+
       if (!account) {
         continue;
       }
 
-      const scheduledFor = cc.scheduledDate
-        ? combineDateAndTime(cc.scheduledDate, cc.scheduledTime || '09:00')
-        : new Date();
+      chosenAccountIds.push(account.id);
 
       await db.insert(publishingQueueSchema).values({
         contentItemId: contentItem.id,
@@ -2848,9 +2980,23 @@ export async function scheduleCampaignPosts(
       scheduledCount++;
     }
 
-    // Update content item status to scheduled
+    // Mark the item due.
+    //
+    // `scheduledFor` is the critical part: the publisher cron selects on
+    // `content_item.scheduled_for <= now()`, and this function used to set
+    // only `status`. The column is nullable with no default, so every campaign
+    // post sat at status='scheduled' with scheduled_for NULL — `NULL <= now()`
+    // is NULL, never true, so campaign posts were never picked up and NOTHING
+    // auto-published. `targetAccountIds` carries the per-platform account
+    // choice through to the publisher, which honours it the same way the
+    // manual publish route does.
     await db.update(contentItemSchema)
-      .set({ status: 'scheduled', updatedAt: new Date() })
+      .set({
+        status: 'scheduled',
+        scheduledFor,
+        targetAccountIds: chosenAccountIds,
+        updatedAt: new Date(),
+      })
       .where(eq(contentItemSchema.id, contentItem.id));
   }
 

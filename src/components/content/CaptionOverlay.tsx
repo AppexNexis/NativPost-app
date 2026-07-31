@@ -201,6 +201,12 @@ type Props = {
   text?: string;
 };
 
+/**
+ * Item-driven wrapper: resolves the spec from a saved post, then hands off to
+ * `CaptionLayer`. Surfaces whose style isn't saved yet — the campaign post
+ * editor, whose controls live in React state — build a spec with
+ * `buildCaptionSpec` and render `CaptionLayer` directly.
+ */
 export function CaptionOverlay({ item, text }: Props) {
   const spec = useMemo(() => {
     const overlay = text === undefined
@@ -209,6 +215,10 @@ export function CaptionOverlay({ item, text }: Props) {
     return resolveCaptionSpec(item, overlay);
   }, [item, text]);
 
+  return <CaptionLayer spec={spec} />;
+}
+
+export function CaptionLayer({ spec }: { spec: CaptionSpec | null }) {
   // Text is wrapped in the 360px basis: the frame minus its padding, times the
   // caption block's max width, minus the highlight box's own horizontal padding
   // (0.42em a side). Identical inputs to the detail frame ⇒ identical breaks.

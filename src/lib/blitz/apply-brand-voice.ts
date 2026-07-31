@@ -361,15 +361,24 @@ export const BRAND_VOICE_CONCURRENCY = 8;
 export async function prewarmBrandVoice(
   items: ApplyBrandVoiceOpts[],
   concurrency: number = BRAND_VOICE_CONCURRENCY,
-): Promise<{ warmed: number; failed: number }> {
+): Promise<{ warmed: number; failed: number; skippedEmpty: number }> {
   if (items.length === 0) {
-    return { warmed: 0, failed: 0 };
+    return { warmed: 0, failed: 0, skippedEmpty: 0 };
   }
 
   // Collapse duplicates up front — two posts sharing a template and caption
-  // resolve to one cache key, so there's no point paying twice.
+  // resolve to one cache key, so there's no point paying twice. Items with no
+  // source caption are dropped: `applyBrandVoice` returns immediately for
+  // those without calling the model, so counting them as "warmed" reports work
+  // that never happened (a batch of 50 empty captions logged "50 warmed in
+  // 1ms", which reads like a cache hit rather than a no-op).
   const byKey = new Map<string, ApplyBrandVoiceOpts>();
+  let skippedEmpty = 0;
   for (const item of items) {
+    if (!item.sourceCaption?.trim()) {
+      skippedEmpty++;
+      continue;
+    }
     const key = buildCacheKey(item);
     if (!byKey.has(key) && cacheGet(key) === undefined) {
       byKey.set(key, item);
@@ -401,5 +410,5 @@ export async function prewarmBrandVoice(
     Array.from({ length: Math.min(concurrency, pending.length) }, () => worker()),
   );
 
-  return { warmed, failed };
+  return { warmed, failed, skippedEmpty };
 }

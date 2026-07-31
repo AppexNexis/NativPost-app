@@ -266,11 +266,17 @@ export function CampaignWizard({
     try {
       const perDay = Math.max(1, Math.min(3, campaign.postsPerDay ?? 1));
       const days = campaign.campaignLengthDays ?? 7;
-      const accountsCount = Math.max(1, validTargets.length);
+      // "2 posts per day" means 2 IDEAS per day, not 2 per account per day.
+      // Account count is deliberately NOT a multiplier: publishing cross-posts
+      // each idea to one account per platform (see scheduleCampaignPosts), so
+      // selecting more accounts widens the reach of the same posts rather than
+      // demanding more of them. Multiplying here made a 2/day × 14d campaign
+      // generate 112 posts instead of 28 — 4× the generation cost for content
+      // the user never asked for.
       const submitCampaign = {
         ...campaign,
         postsPerDay: perDay,
-        totalPosts: accountsCount * perDay * days,
+        totalPosts: perDay * days,
       };
 
       let campaignId: string;
@@ -1243,11 +1249,19 @@ function StepLaunch({ campaign }: StepProps) {
 // ============================================================
 // UTILS
 // ============================================================
+// Posts per day means IDEAS per day. Account count is not a multiplier —
+// publishing cross-posts each idea to one account per platform, so adding
+// accounts widens reach rather than multiplying how much gets written.
+//
+// This is what the "Posts" stat on the Generate step shows, and it MUST match
+// the `totalPosts` submitted in handleGenerate and the server-side fallback in
+// generateCampaignPosts. All three multiplied by account count before, so a
+// 2/day × 14d campaign advertised, requested and generated 112 posts instead
+// of 28.
 function calculateTotalPosts(campaign: Partial<Campaign>): number {
-  const accounts = (campaign.targetAccounts ?? []).length || 1;
   const postsPerDay = campaign.postsPerDay ?? 3;
   const days = campaign.campaignLengthDays ?? 7;
-  return accounts * postsPerDay * days;
+  return postsPerDay * days;
 }
 
 const STEP_COMPONENTS: React.FC<any>[] = [

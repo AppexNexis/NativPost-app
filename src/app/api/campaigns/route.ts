@@ -62,10 +62,16 @@ export async function POST(request: NextRequest) {
     // totalPosts as its loop bound — a wrong value here caps the whole
     // campaign to one day or produces zero-post reviews.
     const targetAccountsBody = Array.isArray(body.targetAccounts) ? body.targetAccounts : [];
+    // Account count is NOT a multiplier. "2 posts per day" means 2 IDEAS per
+    // day; publishing cross-posts each idea to one account per platform (see
+    // scheduleCampaignPosts), so selecting more accounts widens reach rather
+    // than multiplying how much content gets written. This route is
+    // authoritative — it overrides whatever the wizard sent — so the
+    // multiplier here is what actually produced 112 posts for a 2/day × 14d
+    // campaign that should be 28.
     const perDay = Math.max(1, Math.min(3, Number(body.postsPerDay ?? 1)));
     const days = Math.max(1, Number(body.campaignLengthDays ?? 7));
-    const accountsCount = Math.max(1, targetAccountsBody.length);
-    const computedTotalPosts = accountsCount * perDay * days;
+    const computedTotalPosts = perDay * days;
 
     const [created] = await db
       .insert(campaignSchema)

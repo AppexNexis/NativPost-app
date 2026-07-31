@@ -15,8 +15,11 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
+import { buildCaptionSpec } from '@/components/content/caption-spec';
+import { CaptionLayer } from '@/components/content/CaptionOverlay';
+import { ColorField } from '@/components/editor/ColorField';
 import { type AudioSelection, AudioSelectModal } from '@/components/media/AudioSelectModal';
 import { MediaPickerModal } from '@/components/media/MediaPickerModal';
 import { Button } from '@/components/ui/button';
@@ -38,14 +41,13 @@ import { Separator } from '@/components/ui/separator';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { ColorField } from '@/components/editor/ColorField';
 import { getEditorKind } from '@/lib/editor/content-type-registry';
 // Importing EDITOR_FONTS runs the fonts.ts loadFont() side effects, which
 // inject the @font-face rules globally — that is what makes the registry
 // families render in this modal's own preview without next/font.
 import { EDITOR_FONTS } from '@/lib/editor/fonts';
-import { cn } from '@/utils/Helpers';
 import type { ContentItem } from '@/types/v2';
+import { cn } from '@/utils/Helpers';
 
 export type CampaignPostEditModalProps = {
   campaignId: string;
@@ -58,8 +60,16 @@ export type CampaignPostEditModalProps = {
 // Quick-pick swatches — mirror the shared TextTab so the campaign editor and
 // the standalone/Blitz editor offer the identical palette.
 const TEXT_COLORS = [
-  '#ffffff', '#000000', '#ef4444', '#f97316', '#f59e0b',
-  '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899',
+  '#ffffff',
+  '#000000',
+  '#ef4444',
+  '#f97316',
+  '#f59e0b',
+  '#22c55e',
+  '#06b6d4',
+  '#3b82f6',
+  '#8b5cf6',
+  '#ec4899',
 ];
 
 // Per-line "highlight" backgrounds (usefastlane look), rendered via
@@ -73,16 +83,26 @@ const TEXT_BG_PRESETS: { label: string; value: string }[] = [
 ];
 
 const CTA_COLORS = [
-  'rgba(134, 79, 254, 0.85)', '#864FFE', '#ef4444', '#22c55e',
-  '#3b82f6', '#f59e0b', '#ec4899', 'rgba(0,0,0,0.7)',
+  'rgba(134, 79, 254, 0.85)',
+  '#864FFE',
+  '#ef4444',
+  '#22c55e',
+  '#3b82f6',
+  '#f59e0b',
+  '#ec4899',
+  'rgba(0,0,0,0.7)',
 ];
 
 // Migrate the legacy `background: 'white' | 'none' | 'snapchat'` enum written
 // by the old campaign modal to a canonical `backgroundColor` string. Anything
 // unrecognised falls back to transparent (no box).
 function migrateLegacyBackground(bg: unknown): string {
-  if (bg === 'white') return '#ffffff';
-  if (bg === 'snapchat') return '#FFFC00';
+  if (bg === 'white') {
+    return '#ffffff';
+  }
+  if (bg === 'snapchat') {
+    return '#FFFC00';
+  }
   return 'transparent';
 }
 
@@ -318,9 +338,43 @@ export function CampaignPostEditModal({
 
   // (anyPickerOpen state guard removed — using pickerWasOpen ref instead to
   //  avoid the race where state resets before Radix fires the outer dialog event)
-  // Per-line highlight box hugs each wrapped line (usefastlane look). "None"
-  // (transparent) falls back to a soft shadow for legibility.
-  const hasHighlight = backgroundColor !== 'transparent' && backgroundColor !== '';
+
+  // Live preview geometry, resolved from the controls above rather than from
+  // the saved item, so dragging a slider updates the preview through the same
+  // resolver the published post will use. `layout` isn't editable here, so it
+  // comes from the item.
+  const livePreviewSpec = useMemo(
+    () => buildCaptionSpec({
+      contentType: item.contentType ?? '',
+      layout: (enrichment.editorLayout as string) || 'centered',
+      style: {
+        align,
+        backgroundColor,
+        color: textColor,
+        fontFamily,
+        fontSize,
+        weight,
+        italic,
+        underline,
+        backgroundDimming,
+      },
+      text: overlayText,
+    }),
+    [
+      item.contentType,
+      enrichment.editorLayout,
+      align,
+      backgroundColor,
+      textColor,
+      fontFamily,
+      fontSize,
+      weight,
+      italic,
+      underline,
+      backgroundDimming,
+      overlayText,
+    ],
+  );
 
   const handleRegenerate = useCallback(async () => {
     if (isRegenerating || reRollsRemaining <= 0) {
@@ -713,48 +767,18 @@ export function CampaignPostEditModal({
                   )
                 )}
 
-                {/* Background dim scrim — darkens the source media so its own
-                    text doesn't bleed through (mirrors the engine scrim). */}
-                {backgroundDimming > 0 && (
-                  <div
-                    className="pointer-events-none absolute inset-0 bg-black"
-                    style={{ opacity: backgroundDimming }}
-                  />
-                )}
+                {/* Caption overlay — the SAME renderer the posts grid, campaign
+                    review, blitz and content-detail previews use, driven by
+                    this editor's live control state instead of a saved post.
+                    It owns the dim scrim too, so there is no separate one here.
 
-                {/* Centered overlay text */}
-                {overlayText && (
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
-                    <p
-                      className="leading-snug"
-                      style={{
-                        fontFamily,
-                        fontWeight: weight === 'bold' ? 700 : 400,
-                        fontStyle: italic ? 'italic' : 'normal',
-                        textDecoration: underline ? 'underline' : 'none',
-                        textAlign: align,
-                        fontSize: `${Math.max(10, Math.round(fontSize * 0.85))}px`,
-                        color: textColor,
-                        textShadow: hasHighlight ? 'none' : '0 1px 4px rgba(0,0,0,0.7)',
-                        maxWidth: '90%',
-                      }}
-                    >
-                      <span
-                        style={hasHighlight
-                          ? {
-                              backgroundColor,
-                              boxDecorationBreak: 'clone',
-                              WebkitBoxDecorationBreak: 'clone',
-                              padding: '0.1em 0.3em',
-                              borderRadius: 4,
-                            }
-                          : undefined}
-                      >
-                        {overlayText}
-                      </span>
-                    </p>
-                  </div>
-                )}
+                    This used to be a bespoke block: fontSize * 0.85 (against a
+                    canonical * 0.5), line-height 1.375 vs 1.5, padding
+                    0.1em/0.3em vs 0.16em/0.42em, a fixed 4px radius, no box
+                    shadow, weight 400/700 vs 600/800, and always centred
+                    regardless of layout. Editing a caption showed you something
+                    the published post would never look like. */}
+                <CaptionLayer spec={livePreviewSpec} />
 
                 {/* Slide counter badge */}
                 {isSlideshow && slides.length > 0 && (

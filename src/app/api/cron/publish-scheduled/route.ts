@@ -2,7 +2,13 @@ import { and, eq, lte } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+import { enhanceImage } from '@/lib/cloudinary-enhance';
+import { reconstructRenderInput } from '@/lib/editor/reconstruct-render-input';
+import { renderEditorVideoServer, RenderTimeoutError } from '@/lib/editor/render-editor-video-server';
+import { renderAllSlides } from '@/lib/editor/render-slide-image';
 import { sendPublishedNotification } from '@/lib/email';
+import { notifyPublishFailed, notifyPublishSucceeded } from '@/lib/notifications';
+import { notifyPostFailed, notifyPostPublished } from '@/lib/notify-connect';
 import { publishToplatform } from '@/lib/social-publish';
 import { fireWebhook } from '@/lib/webhook-dispatcher';
 import { getDb } from '@/libs/DB';
@@ -11,13 +17,7 @@ import {
   publishingQueueSchema,
   socialAccountSchema,
 } from '@/models/Schema';
-import { notifyPostFailed, notifyPostPublished } from '@/lib/notify-connect';
-import { notifyPublishFailed, notifyPublishSucceeded } from '@/lib/notifications';
 import { isVideoContentType } from '@/types/v2';
-import { renderEditorVideoServer, RenderTimeoutError } from '@/lib/editor/render-editor-video-server';
-import { reconstructRenderInput } from '@/lib/editor/reconstruct-render-input';
-import { renderAllSlides } from '@/lib/editor/render-slide-image';
-import { enhanceImage } from '@/lib/cloudinary-enhance';
 
 // Vercel Hobby cap; compile step for each video post needs budget
 export const maxDuration = 300;
@@ -25,7 +25,9 @@ export const maxDuration = 300;
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY || '';
 
 async function getOrgAdminEmail(orgId: string): Promise<string | null> {
-  if (!CLERK_SECRET_KEY) return null;
+  if (!CLERK_SECRET_KEY) {
+    return null;
+  }
   try {
     const res = await fetch(
       `https://api.clerk.com/v1/organizations/${orgId}/memberships?limit=10`,
@@ -36,17 +38,23 @@ async function getOrgAdminEmail(orgId: string): Promise<string | null> {
         },
       },
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      return null;
+    }
     const data = await res.json();
     const memberships: any[] = data.data ?? data ?? [];
     const admin = memberships.find(m => m.role === 'org:admin') ?? memberships[0];
-    if (!admin?.public_user_data?.user_id) return null;
+    if (!admin?.public_user_data?.user_id) {
+      return null;
+    }
 
     const userRes = await fetch(
       `https://api.clerk.com/v1/users/${admin.public_user_data.user_id}`,
       { headers: { Authorization: `Bearer ${CLERK_SECRET_KEY}` } },
     );
-    if (!userRes.ok) return null;
+    if (!userRes.ok) {
+      return null;
+    }
     const user = await userRes.json();
     const primaryEmail = user.email_addresses?.find(
       (e: any) => e.id === user.primary_email_address_id,
@@ -146,8 +154,12 @@ export async function GET(request: NextRequest) {
 
           if (MULTI_SLIDE_IMAGE_KINDS.includes(item.contentType) && sourceMediaSlots?.slides && Array.isArray(sourceMediaSlots.slides)) {
             slides = sourceMediaSlots.slides.map((s: unknown) => {
-              if (typeof s === 'string') return { url: s };
-              if (s && typeof s === 'object') return { url: (s as { url?: string }).url ?? '' };
+              if (typeof s === 'string') {
+                return { url: s };
+              }
+              if (s && typeof s === 'object') {
+                return { url: (s as { url?: string }).url ?? '' };
+              }
               return { url: '' };
             }).filter(s => s.url.length > 0);
 
@@ -161,7 +173,9 @@ export async function GET(request: NextRequest) {
             const bgUrl = sourceMediaSlots?.background && typeof sourceMediaSlots.background === 'object'
               ? (sourceMediaSlots.background as { url?: string }).url ?? ''
               : (item.graphicUrls as string[] | undefined)?.[0] ?? '';
-            if (bgUrl) slides = [{ url: bgUrl }];
+            if (bgUrl) {
+              slides = [{ url: bgUrl }];
+            }
             slideCopy = [editorScript?.hookText as string || editorScript?.bodyText as string || null];
           }
 
@@ -299,9 +313,22 @@ export async function GET(request: NextRequest) {
         const graphicUrls = (item.graphicUrls as string[]) || [];
         const platformCaptions = (item.platformSpecific as Record<string, unknown>) || {};
 
+        // Account-level targeting, matching /api/content/[id]/publish. The
+        // scheduler picks ONE account per platform for each post (cross-post
+        // across platforms, rotate across a platform's pages) and records the
+        // choice here. Without this the cron took `accounts.find(by platform)`
+        // — the first active account — so choosing a specific page in the
+        // campaign wizard had no effect on where the post actually landed.
+        // Empty selection (legacy items, Blitz) keeps the old first-match
+        // behaviour.
+        const selectedAccountIds = (item.targetAccountIds as string[] | null) ?? [];
+
         // 3. Publish to each platform
         for (const platform of platforms) {
-          const account = accounts.find(a => a.platform === platform);
+          const account = accounts.find(
+            a => a.platform === platform
+              && (selectedAccountIds.length === 0 || selectedAccountIds.includes(a.id)),
+          );
 
           if (!account) {
             platformResults.push({ platform, success: false, error: `No connected ${platform} account` });
@@ -402,7 +429,9 @@ export async function GET(request: NextRequest) {
 
           getOrgAdminEmail(item.orgId)
             .then((email) => {
-              if (!email) return;
+              if (!email) {
+                return;
+              }
               return sendPublishedNotification(email, item.orgId, successPlatforms, item.caption);
             })
             .catch(err => console.error(`[Cron] Email notification failed for post ${item.id}:`, err));

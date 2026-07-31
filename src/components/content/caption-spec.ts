@@ -115,19 +115,70 @@ export function getOverlayTextParts(item: ContentItem | null | undefined): Overl
   return { text: item.caption ?? '', scale: 1 };
 }
 
+/**
+ * The authored text style, as stored on `enrichmentData.editorStyle` — and as
+ * held in local state by the campaign post editor while you drag its controls.
+ * Both feed `buildCaptionSpec`, which is what keeps the editor's live preview
+ * and the saved post's preview identical.
+ */
+export type CaptionStyleInput = {
+  align?: string | null;
+  backgroundColor?: string | null;
+  color?: string | null;
+  fontFamily?: string | null;
+  fontSize?: number | null;
+  /** 'normal' | 'bold' — anything but 'normal' is treated as bold. */
+  weight?: string | null;
+  italic?: boolean | null;
+  underline?: boolean | null;
+  backgroundDimming?: number | null;
+};
+
 // ── Spec resolver ─────────────────────────────────────────────────────────
 export function resolveCaptionSpec(
   item: ContentItem | null | undefined,
   overlay: OverlayText,
 ): CaptionSpec | null {
-  if (!item || !overlay.text.trim()) {
+  if (!item) {
+    return null;
+  }
+  const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
+  return buildCaptionSpec({
+    contentType: item.contentType ?? '',
+    layout: (enrichment.editorLayout as string) || 'centered',
+    style: (enrichment.editorStyle ?? {}) as CaptionStyleInput,
+    text: overlay.text,
+    scale: overlay.scale,
+  });
+}
+
+/**
+ * Resolve geometry from explicit inputs rather than from a saved item.
+ *
+ * `resolveCaptionSpec` is the wrapper for anything rendering a stored post; the
+ * campaign post editor calls this directly because its style lives in React
+ * state that hasn't been saved yet. One resolver means a caption cannot look
+ * one way while you're editing it and another way once it's saved.
+ */
+export function buildCaptionSpec({
+  contentType,
+  layout = 'centered',
+  style,
+  text,
+  scale = 1,
+}: {
+  contentType: string;
+  layout?: string | null;
+  style: CaptionStyleInput;
+  text: string;
+  scale?: number;
+}): CaptionSpec | null {
+  if (!text.trim()) {
     return null;
   }
 
-  const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
-  const style = (enrichment.editorStyle ?? {}) as Record<string, any>;
-  const layout = (enrichment.editorLayout as string) || 'centered';
-  const contentType = item.contentType ?? '';
+  const overlay = { text, scale };
+  const resolvedLayout = layout || 'centered';
 
   const align: 'left' | 'center' | 'right'
     = style.align === 'left' || style.align === 'right' ? style.align : 'center';
@@ -158,14 +209,14 @@ export function resolveCaptionSpec(
     // ── SlideView geometry (content-detail GalleryPreview) ──
     // fontSize * 0.5 (0.7 for wall_of_text), p-4 / p-6, 90% / 95% max width,
     // no scrim unless the style asks for one.
-    const isWall = layout === 'wall_of_text';
+    const isWall = resolvedLayout === 'wall_of_text';
     return {
       ...common,
       fontPx: (typeof style.fontSize === 'number' ? style.fontSize : 20)
         * (isWall ? 0.7 : 0.5) * overlay.scale,
-      framePadPx: layout === 'centered' ? 24 : 16,
+      framePadPx: resolvedLayout === 'centered' ? 24 : 16,
       maxWidthPct: isWall ? 95 : 90,
-      position: slideViewPosition(layout),
+      position: slideViewPosition(resolvedLayout),
       dimming: clamp(typeof style.backgroundDimming === 'number' ? style.backgroundDimming : 0, 0, 1),
     };
   }
@@ -181,7 +232,7 @@ export function resolveCaptionSpec(
     fontPx: compositionFontPx * COMPOSITION_SCALE,
     framePadPx: Math.round(COMPOSITION_WIDTH * 0.06) * COMPOSITION_SCALE,
     maxWidthPct: 90,
-    position: editorCompositionPosition(layout),
+    position: editorCompositionPosition(resolvedLayout),
     dimming: clamp(typeof style.backgroundDimming === 'number' ? style.backgroundDimming : 0.3, 0, 0.8),
   };
 }

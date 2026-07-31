@@ -26,6 +26,23 @@ type Db = any;
 
 const AUDIO_HARD_CAP_SEC = 15;
 
+// ── TTS circuit breaker ────────────────────────────────────────────────────
+// Voice-over is generated per post, and a campaign generates up to hundreds at
+// a time. When ElevenLabs rejects at the ACCOUNT level — bad key (401), plan
+// doesn't cover the configured voice (402), forbidden (403) — every post in
+// the batch gets the same answer. Observed in production: one 112-post
+// campaign made 112 identical 402 calls and wrote 112 identical error lines.
+//
+// The first such rejection trips this breaker; subsequent posts skip the call
+// entirely. Module-level, so its lifetime is the serverless instance, and the
+// cooldown lets a plan upgrade take effect without a redeploy. Per-post
+// failures (timeouts, 5xx, script too long) do NOT trip it — those are worth
+// retrying individually.
+const NON_RETRYABLE_TTS = /\((401|402|403)\)/;
+const TTS_COOLDOWN_MS = 10 * 60 * 1000;
+let ttsDisabledUntil = 0;
+let ttsDisabledReason = '';
+
 // Video content types that get spoken voice-over. Excludes `slideshow`
 // which will get music beds in Phase B (voice over image slides feels
 // wrong; slideshows use music like TikTok/IG carousels).
@@ -185,6 +202,19 @@ export async function generateAudioForBlitzItem(opts: GenerateAudioOpts): Promis
     return; // Cache hit.
   }
 
+  // Circuit breaker — see `ttsDisabledUntil`. An account-level rejection
+  // applies to every post in the batch, so once one trips there is nothing to
+  // gain by asking 111 more times.
+  if (Date.now() < ttsDisabledUntil) {
+    await writeAudioState(db, contentItemId, enrichment, {
+      status: 'skipped',
+      voiceId,
+      scriptHash,
+      failureReason: ttsDisabledReason || 'voice-over temporarily unavailable',
+    });
+    return;
+  }
+
   // Mark pending so client polls see progress immediately.
   await writeAudioState(db, contentItemId, enrichment, {
     status: 'pending',
@@ -258,12 +288,29 @@ export async function generateAudioForBlitzItem(opts: GenerateAudioOpts): Promis
       timings: computeTimings(usedHook, usedBody, usedCta, durationMs),
     });
   } catch (err: any) {
-    console.error('[BlitzAudio] TTS failed:', err?.message || err);
+    const message = (err?.message || 'unknown').toString();
+
+    // Account-level rejections (bad key, plan doesn't allow this voice,
+    // forbidden) are not per-post failures — they will reject every post in
+    // the batch identically. Trip the breaker so the rest of the run skips the
+    // call, and log once instead of once per post: a 112-post campaign was
+    // emitting 112 identical 402s.
+    if (NON_RETRYABLE_TTS.test(message) && Date.now() >= ttsDisabledUntil) {
+      ttsDisabledUntil = Date.now() + TTS_COOLDOWN_MS;
+      ttsDisabledReason = message.slice(0, 200);
+      console.error(
+        `[BlitzAudio] Account-level TTS rejection — skipping voice-over for `
+        + `${TTS_COOLDOWN_MS / 60000} min: ${ttsDisabledReason}`,
+      );
+    } else {
+      console.error('[BlitzAudio] TTS failed:', message);
+    }
+
     await writeAudioState(db, contentItemId, enrichment, {
       status: 'failed',
       voiceId,
       scriptHash,
-      failureReason: (err?.message || 'unknown').toString().slice(0, 200),
+      failureReason: message.slice(0, 200),
     });
   }
 }
