@@ -12,6 +12,10 @@ import {
 } from 'lucide-react';
 import React, { useState } from 'react';
 
+// The caption overlay + overlay-text resolution are shared with the posts grid
+// so a campaign card and a posts card can never drift from each other — or from
+// the blitz / content-detail previews they both mirror.
+import { getOverlayText, HighlightCaption } from '@/components/content/preview-helpers';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -157,33 +161,6 @@ function getVideoUrl(item: ReviewItem): string | null {
   return null;
 }
 
-// Returns the hook / body text that should be overlaid on the card thumbnail
-// so the grid preview matches how the post will look on the platform
-// (mirroring the usefastlane review grid: caption sits on top of the media).
-function getOverlayText(item: ReviewItem): string {
-  const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
-  const script = (enrichment.editorScript ?? {}) as Record<string, any>;
-  // Slideshow: prefer the first slide caption (rendered on slide 1)
-  if (item.contentType === 'slideshow') {
-    const slideCopy = Array.isArray(script.slideCopy) ? script.slideCopy : [];
-    if (slideCopy[0] && typeof slideCopy[0] === 'string') {
-      return slideCopy[0];
-    }
-    const slides = (enrichment.sourceMediaSlots as Record<string, any>)?.slides;
-    if (Array.isArray(slides) && slides[0]?.caption) {
-      return String(slides[0].caption);
-    }
-  }
-  // Video / static types: hookText first, then bodyText, then caption
-  if (script.hookText && typeof script.hookText === 'string') {
-    return script.hookText;
-  }
-  if (script.bodyText && typeof script.bodyText === 'string') {
-    return script.bodyText;
-  }
-  return item.caption ?? '';
-}
-
 // Never-throw date coercion for the calendar view. date-fns parseISO throws a
 // TypeError when handed a non-string (e.g. a Date object) and format() throws a
 // RangeError on an Invalid Date — either blanks the whole calendar with an
@@ -202,113 +179,6 @@ function toDate(v: unknown): Date | null {
   } catch {
     return null;
   }
-}
-
-// Canonical per-line "highlight" caption spec, mapped from enrichmentData.
-// Mirrors the WYSIWYG source of truth in SlideView.tsx / the image engine and
-// the detail-page GalleryPreview mapping (ContentPreview.tsx). Duplicated here
-// (not imported) so campaigns stay independent of content-library.
-function getCaptionStyle(item: ReviewItem) {
-  const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
-  const style = (enrichment.editorStyle ?? {}) as Record<string, any>;
-  return {
-    align: (style.align as string) || 'center',
-    layout: (enrichment.editorLayout as string) || 'centered',
-    backgroundColor: style.backgroundColor as string | undefined,
-    color: (style.color as string) || '#ffffff',
-    fontFamily: (style.fontFamily as string) || undefined,
-    fontSize: typeof style.fontSize === 'number' ? style.fontSize : 28,
-    fontWeight: style.weight === 'normal' ? 600 : 800,
-    fontStyle: (style.italic ? 'italic' : undefined) as 'italic' | undefined,
-    textDecoration: (style.underline ? 'underline' : undefined) as 'underline' | undefined,
-    backgroundDimming: typeof style.backgroundDimming === 'number' ? style.backgroundDimming : 0,
-  };
-}
-
-// Renders the caption overlay for a card exactly the way the editor / blitz /
-// detail page render it. BYTE-FOR-BYTE mirror of the caption + dim layers in
-// SlideView.tsx (the canonical renderer used by GalleryPreview on the detail
-// page and mirrored by the image engine): same 0.5 / 0.7 (wall) fontSize scale,
-// same layout-specific padding (p-4 / p-6), same 90% / 95% maxWidth, same
-// per-line highlight box spec. Nothing hardcoded per-caller so the campaign
-// card preview WYSIWYG-matches the content-detail page and Blitz.
-// The content-detail page renders SlideView inside a fixed 360px-wide portrait
-// frame (GalleryPreview.frameWidthFor for 9:16). We calibrate the container-query
-// caption sizing against this same basis so cards are a true proportional copy of
-// the detail frame at any width (byte-identical at 360px). Duplicated (not
-// imported) so campaigns stay independent of content-library.
-const DETAIL_FRAME_WIDTH = 360;
-
-function HighlightCaption({ item, text }: { item: ReviewItem; text: string }) {
-  const s = getCaptionStyle(item);
-  const isWall = s.layout === 'wall_of_text';
-  // Highlight box is the default; only an explicit 'transparent' disables it.
-  const boxColor = s.backgroundColor === 'transparent' ? null : (s.backgroundColor || '#000000');
-  const hasBox = !!boxColor;
-  const textAlign: 'left' | 'right' | 'center'
-    = s.align === 'left' || s.align === 'right' ? s.align : 'center';
-
-  // At 360px SlideView draws the caption at `fontSize * 0.5` (0.7 wall) px and
-  // its container padding at 16px (p-4) / 24px (p-6, centered). Cards here are
-  // arbitrary widths (grid ~200px, calendar ~80px), so express BOTH the font
-  // size and container padding in container-query units relative to that 360px
-  // basis — the card is a true proportional copy of the detail frame at any
-  // width. Box padding/radius are em-based so they scale with the font.
-  const basisFontPx = (s.fontSize || 20) * (isWall ? 0.7 : 0.5);
-  const fontCqw = (basisFontPx / DETAIL_FRAME_WIDTH) * 100;
-  const padPx = s.layout === 'centered' ? 24 : 16;
-  const padCqw = (padPx / DETAIL_FRAME_WIDTH) * 100;
-
-  // Layout positioning — matches SlideView.getContainerClass() (padding applied
-  // separately in cqw below).
-  const posClass = s.layout === 'top_caption'
-    ? 'absolute inset-x-0 top-0 flex items-start justify-center'
-    : s.layout === 'centered'
-      ? 'absolute inset-0 flex items-center justify-center'
-      : s.layout === 'wall_of_text'
-        ? 'absolute inset-0 flex items-center justify-center'
-        : 'absolute inset-x-0 bottom-0 flex items-end justify-center';
-
-  const span: React.CSSProperties = {
-    fontWeight: s.fontWeight,
-    lineHeight: 1.5,
-    letterSpacing: '-0.01em',
-    color: s.color,
-    fontSize: `${fontCqw}cqw`,
-    wordBreak: 'break-word',
-    fontFamily: s.fontFamily,
-    fontStyle: s.fontStyle,
-    textDecoration: s.textDecoration,
-    display: 'inline',
-    boxDecorationBreak: 'clone',
-    WebkitBoxDecorationBreak: 'clone',
-  };
-  if (hasBox) {
-    span.backgroundColor = boxColor;
-    span.padding = '0.16em 0.42em';
-    span.borderRadius = '0.18em';
-    span.boxShadow = '0 6px 24px rgba(0,0,0,0.28)';
-  } else {
-    span.textShadow = '0 2px 10px rgba(0,0,0,0.55)';
-  }
-
-  return (
-    // containerType makes 1cqw == 1% of this overlay's (== the card's) width so
-    // the caption scales with the card. Children read cqw from this ancestor.
-    <div className="pointer-events-none absolute inset-0" style={{ containerType: 'inline-size' }}>
-      {s.backgroundDimming > 0 && (
-        <div
-          className="absolute inset-0"
-          style={{ backgroundColor: `rgba(0,0,0,${Math.min(1, Math.max(0, s.backgroundDimming))})` }}
-        />
-      )}
-      <div className={posClass} style={{ padding: `${padCqw}cqw` }}>
-        <div style={{ textAlign, maxWidth: isWall ? '95%' : '90%' }}>
-          <span style={span}>{text}</span>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // ── Content type label ────────────────────────────────────────────────────────
@@ -485,10 +355,13 @@ function SchedulePicker({
   onChange: (date: string, time: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const selected = date ? parseISO(date) : undefined;
+  // Same never-throw coercion the calendar view uses: the picker renders in both
+  // views, so a Date-typed or malformed scheduledDate here would take the whole
+  // grid down the way it used to take down the calendar.
+  const selected = toDate(date) ?? undefined;
 
-  const label = date
-    ? `${format(parseISO(date), 'MMM d')}${time ? `, ${time}` : ''}`
+  const label = selected
+    ? `${format(selected, 'MMM d')}${time ? `, ${time}` : ''}`
     : 'Set schedule';
 
   return (
@@ -542,8 +415,9 @@ function InfoPopover({ item, campaignPlatforms }: { item: ReviewItem; campaignPl
       ? item.targetPlatforms.map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(', ')
       : '—';
 
-  const scheduledLabel = item.scheduledDate
-    ? `${format(parseISO(item.scheduledDate), 'EEE, MMM d')}${item.scheduledTime ? `, ${item.scheduledTime}` : ''}`
+  const scheduledOn = toDate(item.scheduledDate);
+  const scheduledLabel = scheduledOn
+    ? `${format(scheduledOn, 'EEE, MMM d')}${item.scheduledTime ? `, ${item.scheduledTime}` : ''}`
     : 'Unscheduled';
 
   return (
@@ -667,7 +541,7 @@ function PostCard({
         {/* Caption overlay — rendered exactly like the editor / blitz / detail
             page: per-line highlight box + authored font/color/align/weight from
             enrichmentData.editorStyle (WYSIWYG with the published post). */}
-        {overlayText && <HighlightCaption item={item} text={overlayText} />}
+        {overlayText && <HighlightCaption item={item} />}
 
         {/* Content type pill */}
         {typeLabel && !approved && (
@@ -966,7 +840,7 @@ function CalendarCard({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={thumb!} alt="" className="size-full object-cover" />
           )}
-          {overlayText && <HighlightCaption item={item} text={overlayText} />}
+          {overlayText && <HighlightCaption item={item} />}
           {primaryPlatform && (
             <div className="absolute left-1 top-1 origin-top-left scale-75">
               <PlatformIcon platform={primaryPlatform} />

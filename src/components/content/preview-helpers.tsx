@@ -11,14 +11,11 @@ import React from 'react';
 
 import type { ContentItem } from '@/types/v2';
 
+import { getOverlayTextParts } from './caption-spec';
+import { CaptionOverlay } from './CaptionOverlay';
+
 // ── Constants ─────────────────────────────────────────────────────────────
 export const VIDEO_RE = /\.(mp4|webm|mov|m4v)(\?|$)/i;
-
-// The content-detail page renders SlideView inside a fixed 360px-wide portrait
-// frame (GalleryPreview.frameWidthFor for 9:16). HighlightCaption calibrates its
-// container-query caption sizing against this same basis so cards are a true
-// proportional copy of the detail frame at any width (byte-identical at 360px).
-const DETAIL_FRAME_WIDTH = 360;
 
 // Content types whose canonical preview is a video (rendered via <video>
 // with autoplay muted loop, poster = getThumb fallback).
@@ -36,7 +33,9 @@ export const VIDEO_CONTENT_TYPES = new Set<string>([
 // Returns the best available image URL for a card preview.
 // Never returns a video URL (mp4/webm/mov) since those can't display in <img>.
 export function getThumb(item: ContentItem | null | undefined): string | null {
-  if (!item) return null;
+  if (!item) {
+    return null;
+  }
   const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
   const mediaSlots = (enrichment.sourceMediaSlots ?? {}) as Record<string, any>;
   const snapshot = (enrichment.templateSnapshot ?? {}) as Record<string, any>;
@@ -45,7 +44,9 @@ export function getThumb(item: ContentItem | null | undefined): string | null {
   const slides = mediaSlots.slides;
   if (Array.isArray(slides) && slides.length > 0) {
     const url = slides[0]?.url;
-    if (url && typeof url === 'string' && !VIDEO_RE.test(url)) return url;
+    if (url && typeof url === 'string' && !VIDEO_RE.test(url)) {
+      return url;
+    }
   }
 
   // 2. Template snapshot thumbnailUrl.
@@ -60,7 +61,9 @@ export function getThumb(item: ContentItem | null | undefined): string | null {
   }
   if (tus && typeof tus === 'object' && !Array.isArray(tus)) {
     const first = Object.values(tus)[0];
-    if (typeof first === 'string' && !VIDEO_RE.test(first)) return first;
+    if (typeof first === 'string' && !VIDEO_RE.test(first)) {
+      return first;
+    }
   }
 
   // 4. Background slot: thumbnailUrl → image-only url.
@@ -68,7 +71,9 @@ export function getThumb(item: ContentItem | null | undefined): string | null {
   if (bg.thumbnailUrl && typeof bg.thumbnailUrl === 'string' && !VIDEO_RE.test(bg.thumbnailUrl)) {
     return bg.thumbnailUrl;
   }
-  if (bg.url && bg.assetType !== 'video' && !VIDEO_RE.test(bg.url)) return bg.url;
+  if (bg.url && bg.assetType !== 'video' && !VIDEO_RE.test(bg.url)) {
+    return bg.url;
+  }
 
   // 5. hookVideo / demoVideo thumbnail images.
   const hookVid = (mediaSlots.hookVideo ?? {}) as Record<string, any>;
@@ -82,7 +87,9 @@ export function getThumb(item: ContentItem | null | undefined): string | null {
 
   // 6. graphicUrls — skip video URLs.
   const gUrl = item.graphicUrls?.[0];
-  if (gUrl && typeof gUrl === 'string' && !VIDEO_RE.test(gUrl)) return gUrl;
+  if (gUrl && typeof gUrl === 'string' && !VIDEO_RE.test(gUrl)) {
+    return gUrl;
+  }
 
   return null;
 }
@@ -91,20 +98,32 @@ export function getThumb(item: ContentItem | null | undefined): string | null {
 // Returns the raw video URL for video-type content, used for hover/autoplay
 // <video> rendering.
 export function getVideoUrl(item: ContentItem | null | undefined): string | null {
-  if (!item) return null;
+  if (!item) {
+    return null;
+  }
   const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
   const mediaSlots = (enrichment.sourceMediaSlots ?? {}) as Record<string, any>;
   const bg = (mediaSlots.background ?? {}) as Record<string, any>;
-  if (bg.url && (bg.assetType === 'video' || VIDEO_RE.test(String(bg.url)))) return String(bg.url);
+  if (bg.url && (bg.assetType === 'video' || VIDEO_RE.test(String(bg.url)))) {
+    return String(bg.url);
+  }
   const hookVid = (mediaSlots.hookVideo ?? {}) as Record<string, any>;
-  if (hookVid.url && VIDEO_RE.test(String(hookVid.url))) return String(hookVid.url);
+  if (hookVid.url && VIDEO_RE.test(String(hookVid.url))) {
+    return String(hookVid.url);
+  }
   const demoVid = (mediaSlots.demoVideo ?? {}) as Record<string, any>;
-  if (demoVid.url && VIDEO_RE.test(String(demoVid.url))) return String(demoVid.url);
+  if (demoVid.url && VIDEO_RE.test(String(demoVid.url))) {
+    return String(demoVid.url);
+  }
   const snapshot = (enrichment.templateSnapshot ?? {}) as Record<string, any>;
   const srcUrl = snapshot.sourceUrl || snapshot.mediaUrl;
-  if (srcUrl && typeof srcUrl === 'string' && VIDEO_RE.test(srcUrl)) return srcUrl;
+  if (srcUrl && typeof srcUrl === 'string' && VIDEO_RE.test(srcUrl)) {
+    return srcUrl;
+  }
   const gUrl = item.graphicUrls?.[0];
-  if (gUrl && typeof gUrl === 'string' && VIDEO_RE.test(gUrl)) return gUrl;
+  if (gUrl && typeof gUrl === 'string' && VIDEO_RE.test(gUrl)) {
+    return gUrl;
+  }
   return null;
 }
 
@@ -112,132 +131,31 @@ export function getVideoUrl(item: ContentItem | null | undefined): string | null
 // Returns the hook / body text overlaid on the card thumbnail so the preview
 // matches how the post will look on the platform (usefastlane pattern).
 export function getOverlayText(item: ContentItem | null | undefined): string {
-  if (!item) return '';
-  const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
-  const script = (enrichment.editorScript ?? {}) as Record<string, any>;
-  if (item.contentType === 'slideshow') {
-    const slideCopy = Array.isArray(script.slideCopy) ? script.slideCopy : [];
-    if (slideCopy[0] && typeof slideCopy[0] === 'string') return slideCopy[0];
-    const slides = (enrichment.sourceMediaSlots as Record<string, any>)?.slides;
-    if (Array.isArray(slides) && slides[0]?.caption) return String(slides[0].caption);
-  }
-  if (script.hookText && typeof script.hookText === 'string') return script.hookText;
-  if (script.bodyText && typeof script.bodyText === 'string') return script.bodyText;
-  return item.caption ?? '';
+  return getOverlayTextParts(item).text;
 }
 
-// ── Caption style resolver ────────────────────────────────────────────────
-// Maps enrichmentData.editorStyle (the canonical key the render / publish /
-// detail-page pipelines all read) into the per-line "highlight" caption spec.
-// Mirrors SlideView.tsx / the image engine so the card preview WYSIWYG-matches
-// the editor, blitz, and content-detail rendering.
-export function getCaptionStyle(item: ContentItem) {
-  const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
-  const style = (enrichment.editorStyle ?? {}) as Record<string, any>;
-  return {
-    align: (style.align as string) || 'center',
-    layout: (enrichment.editorLayout as string) || 'centered',
-    backgroundColor: style.backgroundColor as string | undefined,
-    color: (style.color as string) || '#ffffff',
-    fontFamily: (style.fontFamily as string) || undefined,
-    fontSize: typeof style.fontSize === 'number' ? style.fontSize : 28,
-    fontWeight: style.weight === 'normal' ? 600 : 800,
-    fontStyle: (style.italic ? 'italic' : undefined) as 'italic' | undefined,
-    textDecoration: (style.underline ? 'underline' : undefined) as 'underline' | undefined,
-    backgroundDimming: typeof style.backgroundDimming === 'number' ? style.backgroundDimming : 0,
-  };
-}
-
-// Renders the caption overlay exactly the way the editor / blitz / detail page
-// render it. This is a BYTE-FOR-BYTE mirror of the caption + dim layers in
-// SlideView.tsx (the canonical renderer used by GalleryPreview on the detail
-// page and mirrored by the image engine) — same 0.5 / 0.7 (wall) fontSize
-// scale, same layout-specific padding (p-4 / p-6), same 90% / 95% maxWidth,
-// same per-line highlight box spec. Nothing is hardcoded per-caller so the
-// card preview WYSIWYG-matches the content-detail page and Blitz.
-export function HighlightCaption({ item, text }: { item: ContentItem; text: string }) {
-  const s = getCaptionStyle(item);
-  const isWall = s.layout === 'wall_of_text';
-  const boxColor = s.backgroundColor === 'transparent' ? null : (s.backgroundColor || '#000000');
-  const hasBox = !!boxColor;
-  const textAlign: 'left' | 'right' | 'center'
-    = s.align === 'left' || s.align === 'right' ? s.align : 'center';
-
-  // The detail page renders SlideView inside a fixed 360px-wide frame
-  // (GalleryPreview.frameWidthFor). At that width SlideView draws the caption at
-  // `fontSize * 0.5` (0.7 wall) px and its container padding at 16px (p-4) /
-  // 24px (p-6, centered). Cards here are arbitrary widths (grid ~200px, calendar
-  // ~80px), so instead of a fixed px we express BOTH the font size and the
-  // container padding in container-query units relative to that same 360px
-  // basis. The card becomes a true proportional copy of the detail frame at any
-  // width, and is byte-identical at 360px. (Box padding/radius are already em-
-  // based, so they scale with the font automatically.)
-  const basisFontPx = (s.fontSize || 20) * (isWall ? 0.7 : 0.5);
-  const fontCqw = (basisFontPx / DETAIL_FRAME_WIDTH) * 100;
-  const padPx = s.layout === 'centered' ? 24 : 16;
-  const padCqw = (padPx / DETAIL_FRAME_WIDTH) * 100;
-
-  // Layout positioning — matches SlideView.getContainerClass() (padding applied
-  // separately in cqw below).
-  const posClass = s.layout === 'top_caption'
-    ? 'absolute inset-x-0 top-0 flex items-start justify-center'
-    : s.layout === 'centered'
-      ? 'absolute inset-0 flex items-center justify-center'
-      : s.layout === 'wall_of_text'
-        ? 'absolute inset-0 flex items-center justify-center'
-        : 'absolute inset-x-0 bottom-0 flex items-end justify-center';
-
-  const span: React.CSSProperties = {
-    fontWeight: s.fontWeight,
-    lineHeight: 1.5,
-    letterSpacing: '-0.01em',
-    color: s.color,
-    fontSize: `${fontCqw}cqw`,
-    wordBreak: 'break-word',
-    fontFamily: s.fontFamily,
-    fontStyle: s.fontStyle,
-    textDecoration: s.textDecoration,
-    display: 'inline',
-    boxDecorationBreak: 'clone',
-    WebkitBoxDecorationBreak: 'clone',
-  };
-  if (hasBox) {
-    span.backgroundColor = boxColor;
-    span.padding = '0.16em 0.42em';
-    span.borderRadius = '0.18em';
-    span.boxShadow = '0 6px 24px rgba(0,0,0,0.28)';
-  } else {
-    span.textShadow = '0 2px 10px rgba(0,0,0,0.55)';
-  }
-
-  return (
-    // containerType makes 1cqw == 1% of this overlay's (== the card's) width, so
-    // the caption scales with the card. Children read cqw from this ancestor.
-    <div className="pointer-events-none absolute inset-0" style={{ containerType: 'inline-size' }}>
-      {s.backgroundDimming > 0 && (
-        <div
-          className="absolute inset-0"
-          style={{ backgroundColor: `rgba(0,0,0,${Math.min(1, Math.max(0, s.backgroundDimming))})` }}
-        />
-      )}
-      <div className={posClass} style={{ padding: `${padCqw}cqw` }}>
-        <div style={{ textAlign, maxWidth: isWall ? '95%' : '90%' }}>
-          <span style={span}>{text}</span>
-        </div>
-      </div>
-    </div>
-  );
+// Renders the caption overlay the way the canonical preview for this content
+// type renders it — EditorComposition (blitz + content-detail video) or
+// SlideView (content-detail slides/images). All geometry lives in
+// `caption-spec.ts`; all drawing lives in `CaptionOverlay.tsx`. This wrapper
+// exists so callers keep a single import site.
+export function HighlightCaption({ item, text }: { item: ContentItem; text?: string }) {
+  return <CaptionOverlay item={item} text={text} />;
 }
 
 // ── Video-type check ──────────────────────────────────────────────────────
 export function isVideoContentType(item: ContentItem | null | undefined): boolean {
-  if (!item) return false;
+  if (!item) {
+    return false;
+  }
   return VIDEO_CONTENT_TYPES.has(item.contentType ?? '');
 }
 
 // ── Content type label ────────────────────────────────────────────────────
 export function ctLabel(contentType: string | null | undefined): string {
-  if (!contentType) return '—';
+  if (!contentType) {
+    return '—';
+  }
   return contentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
