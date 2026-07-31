@@ -6,6 +6,7 @@ import {
   Check,
   Info,
   LayoutGrid,
+  List,
   Pencil,
   RefreshCw,
   Trash2,
@@ -19,6 +20,13 @@ import { getOverlayText, HighlightCaption } from '@/components/content/preview-h
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   Popover,
   PopoverContent,
@@ -165,10 +173,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // The calendar is always a 7-column week, never "however many days the campaign
 // happens to run".
 const WEEK_COLUMNS = 'repeat(7, minmax(0, 1fr))';
-// How many posts a day cell shows before collapsing behind "+N more".
+// How many posts a day cell lists before the rest move behind "+N more".
 const DAY_PREVIEW_LIMIT = 3;
 
-const dayKey = (day: Date) => format(day, 'yyyy-MM-dd');
+// Week grid vs. chronological list. Both render the same campaign; which one
+// leads depends on how the campaign is shaped (see `isBurst`).
+type CalendarMode = 'week' | 'agenda';
 
 // Never-throw date coercion for the calendar view. date-fns parseISO throws a
 // TypeError when handed a non-string (e.g. a Date object) and format() throws a
@@ -303,6 +313,7 @@ export function CampaignReviewGrid({
             contentItems={contentItems}
             campaign={campaign}
             campaignPlatforms={campaignPlatforms}
+            canReRoll={reRolls > 0}
             onEdit={(id) => {
               const it = contentItems.find(i => i.id === id);
               if (it) {
@@ -311,6 +322,7 @@ export function CampaignReviewGrid({
             }}
             onReRoll={id => reRolls > 0 && onReRoll(id)}
             onDelete={onDelete}
+            onApprove={onApprove}
             onScheduleChange={onScheduleChange}
           />
         )}
@@ -493,12 +505,16 @@ function PostCard({
   const angleColor = item.angleColor ?? '#f97316';
   const typeLabel = item.contentType ? ctLabel(item.contentType) : null;
   const overlayText = getOverlayText(item);
+  // Gate the <video> on viewport intersection. A long campaign — or the day
+  // view, which can open 19 cards at once — otherwise mounts that many decoders
+  // simultaneously. Same treatment the posts grid gives its cards.
+  const [cardRef, inView] = useInView<HTMLDivElement>({ rootMargin: '200px', once: false });
 
   return (
-    <div className={`overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md ${approved ? 'ring-2 ring-emerald-400' : ''}`}>
+    <div ref={cardRef} className={`overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md ${approved ? 'ring-2 ring-emerald-400' : ''}`}>
       {/* Thumbnail */}
       <div className="relative aspect-[9/16] cursor-pointer overflow-hidden bg-muted" onClick={onEdit}>
-        {isVideoType && videoUrl ? (
+        {isVideoType && videoUrl && inView ? (
         /* Video type: autoplay muted loop (matches usefastlane grid) */
 
           <video
@@ -651,21 +667,28 @@ function CalendarView({
   contentItems,
   campaign,
   campaignPlatforms,
+  canReRoll,
   onEdit,
   onReRoll,
   onDelete,
+  onApprove,
   onScheduleChange,
 }: {
   contentItems: ReviewItem[];
   campaign: Campaign;
   campaignPlatforms: string[];
+  canReRoll: boolean;
   onEdit: (id: string) => void;
   onReRoll: (id: string) => void;
   onDelete: (id: string) => void;
+  onApprove: (id: string) => void;
   onScheduleChange: (itemId: string, date: string, time: string) => void;
 }) {
-  // Which day cell (if any) is showing its full post list.
-  const [expandedDay, setExpandedDay] = useState<string | null>(null);
+  // The day whose full post list is open in the day view, if any.
+  const [openDay, setOpenDay] = useState<Date | null>(null);
+  // null = follow the campaign shape (see `isBurst` below). Once the user picks
+  // a mode explicitly we stop overriding them.
+  const [modeOverride, setModeOverride] = useState<CalendarMode | null>(null);
 
   // Derive the actual date range from the scheduled posts, not from
   // campaignLengthDays which may be stale or capped to 7. Every parseISO is
@@ -720,218 +743,530 @@ function CalendarView({
     && day.getTime() <= startOfDay(lastDay).getTime();
 
   const getItems = (day: Date) =>
-    contentItems.filter((it) => {
-      const d = toDate(it.scheduledDate);
-      return isValidDate(d) && isSameDay(d, day);
-    });
+    contentItems
+      .filter((it) => {
+        const d = toDate(it.scheduledDate);
+        return isValidDate(d) && isSameDay(d, day);
+      })
+      // Chronological within the day — a Blitz posts several times a day and the
+      // order it publishes in is the order you want to review it in.
+      .sort((a, b) => (a.scheduledTime ?? '').localeCompare(b.scheduledTime ?? ''));
+
+  // A Blitz schedules its whole run on one or two days, where a week grid is
+  // six empty columns and one crowded one. Default those to the agenda and let
+  // multi-day campaigns keep the grid — until the user picks, then honour that.
+  const isBurst = totalDays <= 2;
+  const mode: CalendarMode = modeOverride ?? (isBurst ? 'agenda' : 'week');
+  const rangeDays = Array.from({ length: totalDays }, (_, i) => addDays(start, i));
 
   return (
     <div className="space-y-4">
-      <p className="text-sm font-medium text-muted-foreground">
-        {format(start, 'MMM d')}
-        {' '}
-        –
-        {format(latestDate, 'MMM d, yyyy')}
-        {' '}
-        ·
-        {contentItems.length}
-        {' '}
-        posts
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium text-muted-foreground">
+          {format(start, 'MMM d')}
+          {' '}
+          –
+          {format(latestDate, 'MMM d, yyyy')}
+          {' '}
+          ·
+          {contentItems.length}
+          {' '}
+          posts
+        </p>
 
-      <ScrollArea className="w-full">
-        <div className="min-w-[600px] space-y-3 pb-2">
-          {weeks.map((week, wi) => (
-            <div key={wi}>
-              {/* Day name headers — only first week */}
-              {wi === 0 && (
-                <div className="mb-1 grid gap-2" style={{ gridTemplateColumns: WEEK_COLUMNS }}>
-                  {week.map((day, di) => (
-                    <div key={di} className="text-center text-micro font-semibold text-muted-foreground">
-                      {format(day, 'EEE')}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="grid gap-2" style={{ gridTemplateColumns: WEEK_COLUMNS }}>
-                {week.map((day, di) => {
-                  const dayItems = getItems(day);
-                  const today = isToday(day);
-                  const active = inRange(day);
-                  return (
-                    <div
-                      key={di}
-                      className={`min-h-[140px] rounded-xl border p-2 ${
-                        !active
-                          ? 'border-dashed border-border/40 bg-transparent'
-                          : today
-                            ? 'border-primary/50 bg-primary/5'
-                            : 'border-border bg-muted/20'
-                      }`}
-                    >
-                      {/* Date number */}
-                      <div className="mb-2 flex justify-center">
-                        <span
-                          className={`flex size-6 items-center justify-center rounded-full text-xs font-semibold ${
-                            today
-                              ? 'bg-primary text-primary-foreground'
-                              : active
-                                ? 'text-muted-foreground'
-                                : 'text-muted-foreground/30'
-                          }`}
-                        >
-                          {format(day, 'd')}
-                        </span>
-                      </div>
-
-                      {/* A Blitz can land its whole run on one day, so a cell is
-                          collapsed past DAY_PREVIEW_LIMIT rather than growing
-                          into an unreadable column of full-size cards. */}
-                      <div className="space-y-1.5">
-                        {(expandedDay === dayKey(day) ? dayItems : dayItems.slice(0, DAY_PREVIEW_LIMIT)).map(item => (
-                          <CalendarCard
-                            key={item.id}
-                            item={item}
-                            campaignPlatforms={campaignPlatforms}
-                            onEdit={() => onEdit(item.id)}
-                            onReRoll={() => onReRoll(item.id)}
-                            onDelete={() => onDelete(item.id)}
-                            onScheduleChange={(d, t) => onScheduleChange(item.id, d, t)}
-                          />
-                        ))}
-
-                        {dayItems.length > DAY_PREVIEW_LIMIT && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-full px-1 text-[10px] text-muted-foreground"
-                            onClick={() => setExpandedDay(expandedDay === dayKey(day) ? null : dayKey(day))}
-                          >
-                            {expandedDay === dayKey(day)
-                              ? 'Show less'
-                              : `+${dayItems.length - DAY_PREVIEW_LIMIT} more`}
-                          </Button>
-                        )}
-
-                        {dayItems.length === 0 && active && (
-                          <div className="flex items-center justify-center py-3">
-                            <span className="text-[10px] text-muted-foreground/30">–</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+        <div className="flex overflow-hidden rounded-lg border">
+          <Button
+            variant={mode === 'week' ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 rounded-none px-2.5 text-xs"
+            onClick={() => setModeOverride('week')}
+          >
+            <CalendarDays className="mr-1.5 size-3.5" />
+            Week
+          </Button>
+          <Separator orientation="vertical" className="h-7" />
+          <Button
+            variant={mode === 'agenda' ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 rounded-none px-2.5 text-xs"
+            onClick={() => setModeOverride('agenda')}
+          >
+            <List className="mr-1.5 size-3.5" />
+            Agenda
+          </Button>
         </div>
-      </ScrollArea>
+      </div>
+
+      {mode === 'agenda' && (
+        <AgendaView
+          days={rangeDays}
+          getItems={getItems}
+          campaignPlatforms={campaignPlatforms}
+          canReRoll={canReRoll}
+          onEdit={onEdit}
+          onReRoll={onReRoll}
+          onDelete={onDelete}
+          onApprove={onApprove}
+          onScheduleChange={onScheduleChange}
+        />
+      )}
+
+      {mode === 'week' && (
+        <ScrollArea className="w-full">
+          <div className="min-w-[600px] space-y-3 pb-2">
+            {weeks.map((week, wi) => (
+              <div key={wi}>
+                {/* Day name headers — only first week */}
+                {wi === 0 && (
+                  <div className="mb-1 grid gap-2" style={{ gridTemplateColumns: WEEK_COLUMNS }}>
+                    {week.map((day, di) => (
+                      <div key={di} className="text-center text-micro font-semibold text-muted-foreground">
+                        {format(day, 'EEE')}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="grid gap-2" style={{ gridTemplateColumns: WEEK_COLUMNS }}>
+                  {week.map((day, di) => {
+                    const dayItems = getItems(day);
+                    const today = isToday(day);
+                    const active = inRange(day);
+                    return (
+                      <div
+                        key={di}
+                        className={`min-h-[140px] rounded-xl border p-2 ${
+                          !active
+                            ? 'border-dashed border-border/40 bg-transparent'
+                            : today
+                              ? 'border-primary/50 bg-primary/5'
+                              : 'border-border bg-muted/20'
+                        }`}
+                      >
+                        {/* Date number — a button once the day has posts, so the
+                          whole cell has one obvious way into the day view. */}
+                        <div className="mb-2 flex justify-center">
+                          {dayItems.length > 0
+                            ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenDay(day)}
+                                  className={`flex size-6 items-center justify-center rounded-full text-xs font-semibold transition-colors ${
+                                    today
+                                      ? 'bg-primary text-primary-foreground'
+                                      : 'text-foreground hover:bg-muted'
+                                  }`}
+                                  aria-label={`Open ${format(day, 'EEEE, MMMM d')} · ${dayItems.length} posts`}
+                                >
+                                  {format(day, 'd')}
+                                </button>
+                              )
+                            : (
+                                <span
+                                  className={`flex size-6 items-center justify-center rounded-full text-xs font-semibold ${
+                                    today
+                                      ? 'bg-primary text-primary-foreground'
+                                      : active
+                                        ? 'text-muted-foreground'
+                                        : 'text-muted-foreground/30'
+                                  }`}
+                                >
+                                  {format(day, 'd')}
+                                </span>
+                              )}
+                        </div>
+
+                        {/* Compact event rows, not full cards. A Blitz can land
+                          its whole run on one day; the cell stays scannable and
+                          the overflow goes to the day view. */}
+                        <div className="space-y-1">
+                          {dayItems.slice(0, DAY_PREVIEW_LIMIT).map(item => (
+                            <CalendarEventRow
+                              key={item.id}
+                              item={item}
+                              onOpen={() => setOpenDay(day)}
+                            />
+                          ))}
+
+                          {dayItems.length > DAY_PREVIEW_LIMIT && (
+                            <button
+                              type="button"
+                              onClick={() => setOpenDay(day)}
+                              className="w-full rounded-md px-1 py-0.5 text-left text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                            >
+                              {`+${dayItems.length - DAY_PREVIEW_LIMIT} more`}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
+      )}
+
+      {/* Day view — the full list for one day, at card size. Week-mode cells
+          stay scannable; this is where a crowded day is actually worked. */}
+      <DayDetailDialog
+        day={openDay}
+        items={openDay ? getItems(openDay) : []}
+        campaignPlatforms={campaignPlatforms}
+        canReRoll={canReRoll}
+        onClose={() => setOpenDay(null)}
+        onEdit={(id) => {
+          setOpenDay(null);
+          onEdit(id);
+        }}
+        onReRoll={onReRoll}
+        onDelete={onDelete}
+        onApprove={onApprove}
+        onScheduleChange={onScheduleChange}
+      />
     </div>
   );
 }
 
-// ── Calendar card (post inside a calendar day) ────────────────────────────────
-function CalendarCard({
-  item,
+// ── Agenda view ───────────────────────────────────────────────────────────────
+// A chronological list grouped by day. This is the right lead view for a Blitz:
+// its whole run lands on one or two days, so a week grid spends six columns
+// saying "nothing here" and crams everything into the seventh. Days with no
+// posts are skipped entirely rather than rendered as empty cells.
+function AgendaView({
+  days,
+  getItems,
   campaignPlatforms,
+  canReRoll,
   onEdit,
   onReRoll,
   onDelete,
+  onApprove,
+  onScheduleChange,
+}: {
+  days: Date[];
+  getItems: (day: Date) => ReviewItem[];
+  campaignPlatforms: string[];
+  canReRoll: boolean;
+  onEdit: (id: string) => void;
+  onReRoll: (id: string) => void;
+  onDelete: (id: string) => void;
+  onApprove: (id: string) => void;
+  onScheduleChange: (itemId: string, date: string, time: string) => void;
+}) {
+  const populated = days
+    .map(day => ({ day, items: getItems(day) }))
+    .filter(({ items }) => items.length > 0);
+
+  if (populated.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed py-10 text-center">
+        <p className="text-body text-muted-foreground">No posts scheduled yet</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {populated.map(({ day, items }) => {
+        const approved = items.filter(i => i.status === 'approved').length;
+        return (
+          <div key={day.toISOString()} className="space-y-2">
+            {/* Day header */}
+            <div className="flex items-baseline gap-2 border-b pb-1.5">
+              <h4 className={`text-sm font-semibold ${isToday(day) ? 'text-primary' : 'text-foreground'}`}>
+                {format(day, 'EEEE, MMMM d')}
+              </h4>
+              <span className="text-meta text-muted-foreground">
+                {items.length}
+                {items.length === 1 ? ' post' : ' posts'}
+                {' · '}
+                {approved}
+                {' approved'}
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {items.map(item => (
+                <AgendaRow
+                  key={item.id}
+                  item={item}
+                  campaignPlatforms={campaignPlatforms}
+                  canReRoll={canReRoll}
+                  onEdit={() => onEdit(item.id)}
+                  onReRoll={() => onReRoll(item.id)}
+                  onDelete={() => onDelete(item.id)}
+                  onApprove={() => onApprove(item.id)}
+                  onScheduleChange={(d, t) => onScheduleChange(item.id, d, t)}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Agenda row (one post in the agenda list) ──────────────────────────────────
+// Wide enough for a real preview plus the full action set, so a Blitz can be
+// reviewed top-to-bottom without opening anything.
+function AgendaRow({
+  item,
+  campaignPlatforms,
+  canReRoll,
+  onEdit,
+  onReRoll,
+  onDelete,
+  onApprove,
   onScheduleChange,
 }: {
   item: ReviewItem;
   campaignPlatforms: string[];
+  canReRoll: boolean;
   onEdit: () => void;
   onReRoll: () => void;
   onDelete: () => void;
+  onApprove: () => void;
   onScheduleChange: (date: string, time: string) => void;
 }) {
-  const [cardRef, inView] = useInView<HTMLDivElement>({ rootMargin: '200px' });
   const thumb = getThumb(item);
   const videoUrl = getVideoUrl(item);
   const isVideoType = VIDEO_CONTENT_TYPES.has(item.contentType ?? '');
+  const approved = item.status === 'approved';
   const primaryPlatform = campaignPlatforms[0] ?? (Array.isArray(item.targetPlatforms) ? String(item.targetPlatforms[0] ?? '') : '');
-  const angleColor = item.angleColor ?? '#f97316';
-  const hasMedia = isVideoType ? !!videoUrl : !!thumb;
   const overlayText = getOverlayText(item);
+  const [cardRef, inView] = useInView<HTMLDivElement>({ rootMargin: '200px', once: false });
 
   return (
-    <div ref={cardRef} className="overflow-hidden rounded-lg border bg-card shadow-sm">
-      {/* Thumbnail */}
-      {hasMedia && (
-        <div
-          className="relative aspect-[9/16] cursor-pointer overflow-hidden"
-          onClick={onEdit}
-        >
-          {isVideoType && videoUrl && inView ? (
+    <div
+      ref={cardRef}
+      className={`flex gap-3 rounded-xl border bg-card p-2.5 transition-shadow hover:shadow-sm ${
+        approved ? 'ring-1 ring-emerald-400/60' : ''
+      }`}
+    >
+      {/* Preview */}
+      <button
+        type="button"
+        onClick={onEdit}
+        className="relative aspect-[9/16] w-14 shrink-0 overflow-hidden rounded-lg bg-muted"
+      >
+        {isVideoType && videoUrl && inView
+          ? (
+              <video
+                src={videoUrl}
+                poster={thumb ?? undefined}
+                className="size-full object-cover"
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="none"
+              />
+            )
+          : thumb
+            ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={thumb} alt="" loading="lazy" className="size-full object-cover" />
+              )
+            : null}
+        {overlayText && (thumb || videoUrl) && <HighlightCaption item={item} />}
+      </button>
 
-            <video
-              src={videoUrl}
-              poster={thumb ?? undefined}
-              className="size-full object-cover"
-              autoPlay
-              muted
-              loop
-              playsInline
-              preload="none"
-            />
-          ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={thumb!} alt="" className="size-full object-cover" />
-          )}
-          {overlayText && <HighlightCaption item={item} />}
-          {primaryPlatform && (
-            <div className="absolute left-1 top-1 origin-top-left scale-75">
-              <PlatformIcon platform={primaryPlatform} />
-            </div>
-          )}
-          {item.angleName && (
-            <div
-              className="absolute inset-x-1 bottom-1 truncate rounded-full px-1.5 py-0.5 text-center text-[8px] font-semibold text-white"
-              style={{ backgroundColor: angleColor }}
-            >
-              {item.angleName}
-            </div>
+      {/* Detail */}
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex items-start gap-2">
+          <button type="button" onClick={onEdit} className="group min-w-0 flex-1 text-left">
+            <p className="line-clamp-2 text-xs leading-relaxed text-foreground group-hover:text-primary">
+              {item.caption ?? ''}
+            </p>
+          </button>
+
+          {approved && (
+            <Badge className="shrink-0 bg-emerald-500 px-1.5 py-0 text-[9px] text-white">Approved</Badge>
           )}
         </div>
-      )}
 
-      <div className="space-y-1 p-1.5">
-        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
-        <p
-          className="line-clamp-2 cursor-pointer text-[10px] leading-snug text-foreground hover:text-primary"
-          onClick={onEdit}
-        >
-          {item.caption ?? ''}
-        </p>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
+          {item.scheduledTime && <span className="font-medium text-foreground">{item.scheduledTime}</span>}
+          <span>{ctLabel(item.contentType)}</span>
+          {item.angleName && (
+            <span
+              className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold text-white"
+              style={{ backgroundColor: item.angleColor ?? '#f97316' }}
+            >
+              {item.angleName}
+            </span>
+          )}
+          {primaryPlatform && (
+            <span className="origin-left scale-75">
+              <PlatformIcon platform={primaryPlatform} />
+            </span>
+          )}
+        </div>
 
-        {/* Time */}
-        <SchedulePicker
-          date={item.scheduledDate}
-          time={item.scheduledTime}
-          onChange={onScheduleChange}
-        />
+        <div className="mt-auto flex items-center gap-1">
+          <SchedulePicker
+            date={item.scheduledDate}
+            time={item.scheduledTime}
+            onChange={onScheduleChange}
+          />
 
-        {/* Actions */}
-        <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="sm" className="size-6 p-0" onClick={onEdit}>
-            <Pencil className="size-2.5" />
-          </Button>
-          <Button variant="ghost" size="sm" className="size-6 p-0" onClick={onReRoll}>
-            <RefreshCw className="size-2.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto size-6 p-0 text-muted-foreground hover:text-destructive"
-            onClick={onDelete}
-          >
-            <Trash2 className="size-2.5" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" className="size-7 p-0" onClick={onEdit}>
+                <Pencil className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Edit</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" className="size-7 p-0" onClick={onReRoll} disabled={!canReRoll}>
+                <RefreshCw className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Re-roll</TooltipContent>
+          </Tooltip>
+
+          {!approved && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="size-7 p-0 text-muted-foreground hover:text-emerald-600"
+                  onClick={onApprove}
+                >
+                  <Check className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Approve</TooltipContent>
+            </Tooltip>
+          )}
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto size-7 p-0 text-muted-foreground hover:text-destructive"
+                onClick={onDelete}
+              >
+                <Trash2 className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Delete</TooltipContent>
+          </Tooltip>
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Day view ──────────────────────────────────────────────────────────────────
+// Opened from a day cell. Reuses the grid-view PostCard so a post looks and
+// behaves the same everywhere in review — same preview, same actions.
+function DayDetailDialog({
+  day,
+  items,
+  campaignPlatforms,
+  canReRoll,
+  onClose,
+  onEdit,
+  onReRoll,
+  onDelete,
+  onApprove,
+  onScheduleChange,
+}: {
+  day: Date | null;
+  items: ReviewItem[];
+  campaignPlatforms: string[];
+  canReRoll: boolean;
+  onClose: () => void;
+  onEdit: (id: string) => void;
+  onReRoll: (id: string) => void;
+  onDelete: (id: string) => void;
+  onApprove: (id: string) => void;
+  onScheduleChange: (itemId: string, date: string, time: string) => void;
+}) {
+  const approved = items.filter(i => i.status === 'approved').length;
+
+  return (
+    <Dialog open={!!day} onOpenChange={open => !open && onClose()}>
+      <DialogContent className="max-w-5xl">
+        <DialogHeader>
+          <DialogTitle>{day ? format(day, 'EEEE, MMMM d') : ''}</DialogTitle>
+          <DialogDescription>
+            {items.length}
+            {items.length === 1 ? ' post' : ' posts'}
+            {' scheduled · '}
+            {approved}
+            {' approved'}
+          </DialogDescription>
+        </DialogHeader>
+
+        <ScrollArea className="max-h-[70vh]">
+          <div className="grid grid-cols-2 gap-3 pr-3 sm:grid-cols-3 lg:grid-cols-4">
+            {items.map(item => (
+              <PostCard
+                key={item.id}
+                item={item}
+                campaignPlatforms={campaignPlatforms}
+                canReRoll={canReRoll}
+                onEdit={() => onEdit(item.id)}
+                onReRoll={() => onReRoll(item.id)}
+                onDelete={() => onDelete(item.id)}
+                onApprove={() => onApprove(item.id)}
+                onScheduleChange={(d, t) => onScheduleChange(item.id, d, t)}
+              />
+            ))}
+          </div>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Calendar event row (one post inside a day cell) ───────────────────────────
+// Deliberately compact: at a ~120px column a full 9:16 card is unreadable and
+// pushes the week off-screen. Thumbnail + time + caption is the pattern every
+// calendar UI converges on; the media lives in the day view.
+function CalendarEventRow({ item, onOpen }: { item: ReviewItem; onOpen: () => void }) {
+  const thumb = getThumb(item);
+  const accent = item.angleColor ?? '#f97316';
+  const approved = item.status === 'approved';
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      // The angle colour rides on the row's left border rather than a separate
+      // pill — at a ~120px column every pixel belongs to the caption.
+      className="flex w-full items-center gap-1.5 overflow-hidden rounded-md border border-l-2 border-transparent bg-background/70 p-1 pl-1.5 text-left transition-colors hover:border-border hover:bg-muted"
+      style={{ borderLeftColor: accent }}
+    >
+      <span className="relative h-8 w-[18px] shrink-0 overflow-hidden rounded-[3px] bg-muted">
+        {thumb && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={thumb} alt="" loading="lazy" className="size-full object-cover" />
+        )}
+      </span>
+
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[10px] font-medium leading-tight text-foreground">
+          {item.caption || ctLabel(item.contentType)}
+        </span>
+        <span className="block truncate text-[9px] leading-tight text-muted-foreground">
+          {item.scheduledTime ?? ''}
+          {item.scheduledTime ? ' · ' : ''}
+          {ctLabel(item.contentType)}
+        </span>
+      </span>
+
+      {approved && <Check className="size-3 shrink-0 text-emerald-500" />}
+    </button>
   );
 }
