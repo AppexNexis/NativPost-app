@@ -76,6 +76,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         .limit(1);
 
       if (existing) {
+        // Re-kick it. A job can be sitting at 'queued' because its runner
+        // never picked it up — an unsynced Inngest app, or a chunk that parked
+        // itself back on the queue between cron ticks. Returning the id
+        // without a kick made pressing Generate again a no-op, so a stranded
+        // job could only be rescued by waiting for the cron. The claim is
+        // atomic, so this is harmless if a runner already has it.
+        waitUntil(
+          drainOneJob(db, { jobId: existing.id, sweepStale: false })
+            .then(result => console.warn('[CampaignGenerate] Re-kick drain result:', JSON.stringify(result)))
+            .catch((err: any) => console.warn('[CampaignGenerate] Re-kick threw:', err?.message)),
+        );
+
         return NextResponse.json(
           { jobId: existing.id, campaignId: id, status: 'queued', existing: true },
           { status: 200 },
@@ -287,14 +299,36 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // depended on the tab, but it now no longer depends on this invocation
     // staying alive either).
     //
-    // FALLBACK — the original in-process kick. Used when Inngest isn't
-    // configured for this deployment, or when the send fails. `waitUntil`
-    // keeps the invocation alive past the response so the drain gets a run at
-    // it; the drain is chunked, so if it runs out of budget it parks the job
-    // back on the queue with progress intact.
+    // ALWAYS — the in-process kick, so generation starts NOW.
     //
-    // BACKSTOP — either way, the GH Actions cron drains queued jobs every
-    // 2 minutes, so a job can never be stranded by a runner being down.
+    // This is deliberately NOT gated on whether Inngest is configured. Having
+    // the keys set does not mean the app has been synced with Inngest, and an
+    // unsynced app accepts the event and triggers nothing ("No functions
+    // triggered by this event"). Gating the kick on `isInngestConfigured()`
+    // therefore made a half-configured Inngest strictly WORSE than none:
+    // generation sat untouched until a GitHub cron tick — minutes, and those
+    // ticks run late — with the UI stuck on "Generating… 0 of N".
+    //
+    // Running both is safe by construction. `drainOneJob` claims via
+    // `UPDATE … WHERE status='queued' RETURNING`, so exactly one runner wins;
+    // the loser sees the job isn't claimable and no-ops. And because
+    // `generateCampaignPosts` derives what's left from rows on disk, even a
+    // perfect race cannot double-insert past the campaign's quota.
+    waitUntil(
+      drainOneJob(db, { jobId: job!.id, sweepStale: false })
+        .then((result) => {
+          console.warn('[CampaignGenerate] Kick drain result:', JSON.stringify(result));
+        })
+        .catch((kickErr: any) => {
+          console.warn('[CampaignGenerate] Kick drain threw (cron will retry):', kickErr?.message);
+        }),
+    );
+
+    // ALSO hand it to Inngest when configured. Once the app is synced, Inngest
+    // drives the remaining chunks as durable steps — picking up wherever the
+    // in-process kick ran out of budget, since a parked job goes back to
+    // 'queued' with its progress intact. Until then this is a no-op and the
+    // kick above (plus the 2-minute cron backstop) does the work.
     let dispatched = false;
     if (isInngestConfigured()) {
       try {
@@ -304,27 +338,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         });
         dispatched = true;
       } catch (sendErr: any) {
-        console.warn(
-          '[CampaignGenerate] Inngest send failed, falling back to in-process kick:',
-          sendErr?.message,
-        );
+        console.warn('[CampaignGenerate] Inngest send failed (kick already running):', sendErr?.message);
       }
     }
 
-    if (!dispatched) {
-      waitUntil(
-        drainOneJob(db, { jobId: job!.id, sweepStale: false })
-          .then((result) => {
-            console.warn('[CampaignGenerate] Kick drain result:', JSON.stringify(result));
-          })
-          .catch((kickErr: any) => {
-            console.warn('[CampaignGenerate] Kick drain threw (cron will retry):', kickErr?.message);
-          }),
-      );
-    }
-
     return NextResponse.json(
-      { jobId: job!.id, campaignId: id, status: 'queued', runner: dispatched ? 'inngest' : 'inline' },
+      { jobId: job!.id, campaignId: id, status: 'queued', runner: dispatched ? 'inline+inngest' : 'inline' },
       { status: 202 },
     );
   } catch (err: any) {
