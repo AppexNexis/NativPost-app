@@ -1,10 +1,17 @@
 name: Drain Campaign Generation Queue
 
+# BACKSTOP, not the primary runner. Campaign generation is dispatched to
+# Inngest (see src/lib/inngest/functions/campaign-generate.ts), which drives a
+# job to completion as durable chunk steps. This workflow exists so a job can
+# never be stranded when Inngest is unconfigured, unreachable, or a run dies:
+# each POST claims one queued job and works it until its time budget is spent,
+# then parks it back on the queue with progress intact. A large campaign is
+# therefore finished by successive ticks even with no other runner involved.
+#
+# GitHub's scheduler is best-effort and routinely runs late under load. That is
+# acceptable for a backstop; it is why it is not the primary path.
 on:
   schedule:
-    # Every 2 minutes. Long-running campaigns can take up to Vercel's 300s
-    # per-invocation cap, but each POST processes at most one job, so this
-    # tick rate covers backlog while keeping API load modest.
     - cron: '*/2 * * * *'
   workflow_dispatch:
 

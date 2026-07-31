@@ -6,6 +6,8 @@ import { NextResponse } from 'next/server';
 import { getAuthContext } from '@/lib/auth';
 import { checkFeatureAccess, checkPostLimit, hasActiveSubscription } from '@/lib/billing';
 import { drainOneJob } from '@/lib/campaigns/drain-job';
+import { isBlitzCampaign } from '@/lib/campaigns/is-blitz';
+import { CAMPAIGN_GENERATE_EVENT, inngest, isInngestConfigured } from '@/lib/inngest/client';
 import { getConnectedPlatforms, NoConnectedChannelsError } from '@/lib/social/connected-platforms';
 import { getDb } from '@/libs/DB';
 import {
@@ -155,7 +157,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // effective target list here so the client renders the "connect an
     // account" CTA (via NO_CONNECTED_CHANNELS) instead of enqueuing a
     // job that would produce posts with nowhere to publish.
-    if (campaign.name === 'Today\'s Blitz') {
+    if (isBlitzCampaign(campaign)) {
       const { resolveBlitzTargetAccounts } = await import('@/lib/blitz/resolve-target-accounts');
       const { socialAccountSchema } = await import('@/models/Schema');
       const socialAccounts = await db
@@ -205,28 +207,35 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const nextResetAt = new Date(startOfDay);
     nextResetAt.setDate(nextResetAt.getDate() + 1);
 
-    const todaysRows = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(contentItemSchema)
-      .where(
-        and(
-          eq(contentItemSchema.campaignId, id),
-          gte(contentItemSchema.createdAt, startOfDay),
-          inArray(contentItemSchema.status, ['pending_review', 'approved', 'skipped']),
-        ),
-      );
-    const todayCount = todaysRows[0]?.count ?? 0;
-    const dailyLimit = campaign.postsPerDay || 10;
-    if (todayCount >= dailyLimit) {
-      return NextResponse.json(
-        {
-          dailyLimitReached: true,
-          count: todayCount,
-          limit: dailyLimit,
-          nextResetAt: nextResetAt.toISOString(),
-        },
-        { status: 200 },
-      );
+    // Blitz ONLY. A campaign's quota is its whole window, not a day's worth —
+    // applying this gate to campaigns meant the second generate of the day
+    // returned `dailyLimitReached` for a campaign that had barely started.
+    // `generateCampaignPosts` enforces the matching quota server-side; this is
+    // just the fast path that avoids enqueuing a job with nothing to do.
+    if (isBlitzCampaign(campaign)) {
+      const todaysRows = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(contentItemSchema)
+        .where(
+          and(
+            eq(contentItemSchema.campaignId, id),
+            gte(contentItemSchema.createdAt, startOfDay),
+            inArray(contentItemSchema.status, ['pending_review', 'approved', 'skipped']),
+          ),
+        );
+      const todayCount = todaysRows[0]?.count ?? 0;
+      const dailyLimit = campaign.postsPerDay || 10;
+      if (todayCount >= dailyLimit) {
+        return NextResponse.json(
+          {
+            dailyLimitReached: true,
+            count: todayCount,
+            limit: dailyLimit,
+            nextResetAt: nextResetAt.toISOString(),
+          },
+          { status: 200 },
+        );
+      }
     }
 
     // 2c. No-templates: NOT a hard block. Blitz must always work per user
@@ -269,24 +278,53 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .set({ status: 'generating', updatedAt: new Date() })
       .where(eq(campaignSchema.id, id));
 
-    // 5. Kick the processor in-process so the user doesn't wait for the
-    //    cron tick. `waitUntil` keeps the Vercel invocation alive after
-    //    the response is sent, so the drain runs to completion. No HTTP
-    //    hop, no `CRON_SECRET` dependency — the GH Actions cron still
-    //    drains the backlog every 2 minutes if this invocation is cut
-    //    short or the drain throws.
-    waitUntil(
-      drainOneJob(db, { jobId: job!.id, sweepStale: false })
-        .then((result) => {
-          console.warn('[CampaignGenerate] Kick drain result:', JSON.stringify(result));
-        })
-        .catch((kickErr: any) => {
-          console.warn('[CampaignGenerate] Kick drain threw (cron will retry):', kickErr?.message);
-        }),
-    );
+    // 5. Hand the job to a runner.
+    //
+    // PREFERRED — Inngest. The run is a sequence of durable chunk steps, so a
+    // campaign of any size completes: no single invocation has to hold the
+    // whole generation, a killed step is retried without redoing the ones
+    // before it, and the work survives the user closing the tab (it never
+    // depended on the tab, but it now no longer depends on this invocation
+    // staying alive either).
+    //
+    // FALLBACK — the original in-process kick. Used when Inngest isn't
+    // configured for this deployment, or when the send fails. `waitUntil`
+    // keeps the invocation alive past the response so the drain gets a run at
+    // it; the drain is chunked, so if it runs out of budget it parks the job
+    // back on the queue with progress intact.
+    //
+    // BACKSTOP — either way, the GH Actions cron drains queued jobs every
+    // 2 minutes, so a job can never be stranded by a runner being down.
+    let dispatched = false;
+    if (isInngestConfigured()) {
+      try {
+        await inngest.send({
+          name: CAMPAIGN_GENERATE_EVENT,
+          data: { jobId: job!.id, campaignId: id, orgId: orgId! },
+        });
+        dispatched = true;
+      } catch (sendErr: any) {
+        console.warn(
+          '[CampaignGenerate] Inngest send failed, falling back to in-process kick:',
+          sendErr?.message,
+        );
+      }
+    }
+
+    if (!dispatched) {
+      waitUntil(
+        drainOneJob(db, { jobId: job!.id, sweepStale: false })
+          .then((result) => {
+            console.warn('[CampaignGenerate] Kick drain result:', JSON.stringify(result));
+          })
+          .catch((kickErr: any) => {
+            console.warn('[CampaignGenerate] Kick drain threw (cron will retry):', kickErr?.message);
+          }),
+      );
+    }
 
     return NextResponse.json(
-      { jobId: job!.id, campaignId: id, status: 'queued' },
+      { jobId: job!.id, campaignId: id, status: 'queued', runner: dispatched ? 'inngest' : 'inline' },
       { status: 202 },
     );
   } catch (err: any) {

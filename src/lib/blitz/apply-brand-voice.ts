@@ -52,8 +52,13 @@ export type ApplyBrandVoiceResult = {
 // -----------------------------------------------------------
 // Simple in-process LRU cache. Bounded to prevent Vercel Lambda
 // memory drift across cold starts. Keyed on templateId + brand hash.
+//
+// Sized to hold a whole generation chunk with room to spare. `prewarmBrandVoice`
+// fills the cache for every post in a chunk before the insert loop reads it
+// back, so the ceiling must exceed the chunk size or early entries would be
+// evicted before their post is reached and re-pay for the rewrite.
 // -----------------------------------------------------------
-const CACHE_MAX = 500;
+const CACHE_MAX = 1000;
 const cache = new Map<string, string>();
 
 function cachePut(key: string, value: string): void {
@@ -322,4 +327,79 @@ ${source}`;
   }
 
   return { caption: final, mentionInjected, cached };
+}
+
+// -----------------------------------------------------------
+// Prewarm
+// -----------------------------------------------------------
+
+/**
+ * Default fan-out for `prewarmBrandVoice`. Haiku is happy well above this;
+ * the limit is here so a 400-post campaign doesn't open 400 sockets at once
+ * inside a serverless invocation. Tune with the `concurrency` argument.
+ */
+export const BRAND_VOICE_CONCURRENCY = 8;
+
+/**
+ * Populate the rewrite cache for a batch of posts, N at a time.
+ *
+ * WHY: `generateCampaignPosts` calls `applyBrandVoice` once per post from
+ * inside a strictly sequential insert loop. Each call is a blocking Haiku
+ * round trip, and the cache key includes the templateId — and generation
+ * deliberately picks a *unique template per post* — so it missed on
+ * essentially every post. That made generation time linear in posts × LLM
+ * latency: ~3-6 minutes for 112 posts, well past any serverless time limit.
+ *
+ * Running the same calls up front with bounded concurrency turns that into
+ * (posts / concurrency) × latency, and leaves the loop's own `applyBrandVoice`
+ * call as a pure cache hit. The loop is untouched: same inputs, same cache
+ * key, same result — only the wall-clock changes.
+ *
+ * Fails soft per item. A rewrite that errors here simply isn't cached, and
+ * the loop pays for it the old way instead of the batch failing.
+ */
+export async function prewarmBrandVoice(
+  items: ApplyBrandVoiceOpts[],
+  concurrency: number = BRAND_VOICE_CONCURRENCY,
+): Promise<{ warmed: number; failed: number }> {
+  if (items.length === 0) {
+    return { warmed: 0, failed: 0 };
+  }
+
+  // Collapse duplicates up front — two posts sharing a template and caption
+  // resolve to one cache key, so there's no point paying twice.
+  const byKey = new Map<string, ApplyBrandVoiceOpts>();
+  for (const item of items) {
+    const key = buildCacheKey(item);
+    if (!byKey.has(key) && cacheGet(key) === undefined) {
+      byKey.set(key, item);
+    }
+  }
+  const pending = Array.from(byKey.values());
+
+  let warmed = 0;
+  let failed = 0;
+  let cursor = 0;
+
+  const worker = async (): Promise<void> => {
+    while (cursor < pending.length) {
+      const item = pending[cursor++];
+      if (!item) {
+        return;
+      }
+      try {
+        await applyBrandVoice(item);
+        warmed++;
+      } catch {
+        // Cached on success only; a miss just means the loop pays for it.
+        failed++;
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, pending.length) }, () => worker()),
+  );
+
+  return { warmed, failed };
 }

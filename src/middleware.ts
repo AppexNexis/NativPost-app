@@ -90,6 +90,11 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
         || req.nextUrl.pathname.startsWith('/api/billing/paystack-webhook')
         || req.nextUrl.pathname.startsWith('/api/cron/')
         || req.nextUrl.pathname.startsWith('/api/ai-studio/webhook/')
+        // Inngest calls back in to run each step of a durable function. It
+        // authenticates with a signed request (INNGEST_SIGNING_KEY), not a
+        // Clerk session, so it must bypass this gate — the org context comes
+        // from the job row, never from the caller.
+        || req.nextUrl.pathname.startsWith('/api/inngest')
         // Public /api/v1 surface — authenticated via bearer API keys,
         // NOT Clerk sessions. See src/lib/require-api-key.ts.
         || req.nextUrl.pathname.startsWith('/api/v1/')

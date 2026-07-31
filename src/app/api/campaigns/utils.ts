@@ -5,13 +5,16 @@
 import { waitUntil } from '@vercel/functions';
 import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 
-import { applyBrandVoice } from '@/lib/blitz/apply-brand-voice';
+import { applyBrandVoice, prewarmBrandVoice } from '@/lib/blitz/apply-brand-voice';
 import { applySetToSlots, InsufficientAssetsError } from '@/lib/blitz/apply-set-to-slots';
 import { buildEditorScript, buildReasoning, deriveTopicLabel } from '@/lib/blitz/build-editor-script';
 import { buildSourceMediaSlots } from '@/lib/blitz/build-source-media-slots';
 import { generateAudioForBlitzItem } from '@/lib/blitz/generate-audio';
 import { generateBlitzSlideCaptions } from '@/lib/blitz/generate-slide-captions';
+import { inventoryMediaSet, type MediaInventory } from '@/lib/blitz/inventory-media-set';
 import { pickDefaultSet } from '@/lib/blitz/pick-default-set';
+import { isBlitzCampaign } from '@/lib/campaigns/is-blitz';
+import { runWithConcurrency } from '@/lib/concurrency';
 import {
   getConnectedPlatforms,
   NoConnectedChannelsError,
@@ -29,7 +32,6 @@ import {
   publishingQueueSchema,
   socialAccountSchema,
 } from '@/models/Schema';
-import { inventoryMediaSet, type MediaInventory } from '@/lib/blitz/inventory-media-set';
 
 export const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 export const ENGINE_URL = process.env.NATIVPOST_ENGINE_URL || 'http://localhost:8000';
@@ -39,6 +41,11 @@ export const API_KEY = process.env.NATIVPOST_ENGINE_API_KEY || '';
 // Mirrors COMPOSITION_BY_TYPE in src/components/editor/RemotionPreviewPlayer.tsx.
 // Anything else can't be previewed on the Blitz swipe card and must be
 // skipped at insert time rather than persisting a dead row.
+// How many deferred per-post jobs (slide captions, voice-over) run at once
+// after a chunk's inserts. Keeps background fan-out flat as campaigns grow —
+// see `deferredPostWork` in generateCampaignPosts.
+const DEFERRED_WORK_CONCURRENCY = 5;
+
 const RENDERABLE_CONTENT_TYPES = new Set([
   'slideshow',
   'carousel',
@@ -184,7 +191,13 @@ function isTypeFeasibleForPlanner(
     return { feasible: false, reason: 'no images and no templates' };
   }
   const videoTypes = new Set([
-    'ugc', 'talking_head', 'video_hook', 'video_hook_demo', 'green_screen', 'reel', 'scene',
+    'ugc',
+    'talking_head',
+    'video_hook',
+    'video_hook_demo',
+    'green_screen',
+    'reel',
+    'scene',
   ]);
   if (videoTypes.has(templateContentType)) {
     if (vids >= 1 || templateCount > 0) {
@@ -579,7 +592,32 @@ export type GenerationResult = {
   // assets than the slideshow template's required slides.
   skippedInsufficientAssets?: number;
   // Set when the org has already hit its per-day cap for this campaign.
+  // Blitz only — a campaign that has filled its window reports
+  // `campaignComplete` instead.
   dailyLimitReached?: boolean;
+  // True when this call satisfied the caller's quota — the campaign's whole
+  // window, or Blitz's daily allowance. The chunk driver stops on it, so it
+  // must be true the moment there is nothing left to generate, or the driver
+  // spends a whole extra chunk finding that out.
+  quotaSatisfied?: boolean;
+  // Posts already on disk for this campaign BEFORE this call ran. With
+  // `campaignTarget` it lets a chunked caller report cumulative progress
+  // without re-counting.
+  existingCount?: number;
+  // The campaign's full window target. NOT the number this call inserted —
+  // a chunked call inserts at most `maxPosts`. Callers writing progress back
+  // to the campaign row must use this as the denominator, or a chunk's count
+  // overwrites the campaign total (a 112-post campaign became a 2-post one).
+  campaignTarget?: number;
+};
+
+export type GenerateCampaignOpts = {
+  /**
+   * Cap on posts created by THIS call. Omit to fill the whole remaining
+   * window in one go. The next call resumes from the rows this one wrote,
+   * because `remaining` is derived from disk rather than carried in memory.
+   */
+  maxPosts?: number;
 };
 
 // ── Engine campaign request builder ───────────────────────────────────────────
@@ -1091,7 +1129,9 @@ export async function generateCampaignPosts(
   onProgress?: (progress: GenerationProgress) => void | Promise<void>,
   onPostComplete?: (event: PostCompleteEvent) => void | Promise<void>,
   onPostError?: (event: PostErrorEvent) => void | Promise<void>,
+  opts: GenerateCampaignOpts = {},
 ): Promise<GenerationResult> {
+  const { maxPosts } = opts;
   const postsPerDay = campaign.postsPerDay || 1;
   const campaignLengthDays = campaign.campaignLengthDays || 7;
   const accountsCount = Math.max(1, ((campaign.targetAccounts as any[]) || []).length);
@@ -1105,9 +1145,9 @@ export async function generateCampaignPosts(
   // Blitz's per-day generation model (which this code was cloned from)
   // relies on subsequent auto-refill calls, but Campaigns need the whole
   // schedule up-front so the Review grid and Calendar can show every slot.
-  // NOTE: The daily-cap gate later in this function may lower this to
-  // (dailyLimit - existingTodayCount). See `enforcedPostsToCreate` below.
+  // The quota gate below splits those two contracts — see `isBlitz`.
   let postsToCreate = totalPosts;
+  const isBlitz = isBlitzCampaign(campaign);
 
   const contentMix = (campaign.contentMix as Record<string, number>) || {};
   const campaignAngles = (campaign.angles as { angleId: string; weight: number }[]) || [];
@@ -1123,32 +1163,38 @@ export async function generateCampaignPosts(
     throw new Error('No Brand Profile found. Complete your Brand Profile first.');
   }
 
-  // ── Daily-cap gate (Blitz-critical) ────────────────────────────────────
-  // The generic campaign generator was cloned from the Blitz per-day model
-  // and never got a "how many did we already insert today" check. Concurrent
-  // /generate kicks + auto-refill effects + stale-sweep flipping items to
-  // 'failed' let the queue overshoot the user's postsPerDay setting — the
-  // "You've seen 15 of 10 posts" bug. Compute the shortfall vs today's cap
-  // BEFORE touching templates so we never insert past it.
+  // ── Quota gate ─────────────────────────────────────────────────────────
+  // Blitz and Campaigns share this generator but have opposite contracts, so
+  // the quota is computed differently for each. See lib/campaigns/is-blitz.
   //
-  // "Today" is the calendar day in server local time; failed items are
-  // re-attemptable and don't consume the cap.
+  // BLITZ — daily cap. Concurrent /generate kicks + auto-refill effects +
+  // stale-sweep flipping items to 'failed' let the queue overshoot the user's
+  // postsPerDay setting (the "You've seen 15 of 10 posts" bug), so we compute
+  // the shortfall vs today's cap BEFORE touching templates. "Today" is the
+  // calendar day in server local time; 'failed' items are re-attemptable and
+  // don't consume the cap. 'rejected' MUST count — without it, rejecting a
+  // card made auto-refill see a lower count, fire another /generate and
+  // produce a second full batch (postsPerDay=10 → 20 cards). Rejecting is an
+  // explicit "no", not a request to regenerate.
   //
-  // Bug 1 fix (Blitz 2× overshoot): 'rejected' MUST be included. Without
-  // it, when a Pro user rejects Blitz cards, auto-refill sees a lower
-  // `existingTodayCount`, fires another /generate, and produces a second
-  // full batch — postsPerDay=10 → 20 cards. Rejecting is an explicit "no",
-  // not a request to regenerate. Only 'failed' stays excluded because it
-  // represents an actual pipeline error worth retrying.
-  const dailyLimit = postsPerDay;
+  // CAMPAIGNS — window quota. A campaign is a fixed schedule that Review and
+  // Calendar render in full, so the target is the whole window and the
+  // shortfall is measured against everything created for THIS campaign, not
+  // today. That also makes the function resumable: because "remaining" is
+  // derived from rows on disk, calling it repeatedly (see `maxPosts`) picks up
+  // where the last call stopped instead of restarting or double-inserting.
+  const REVIEWABLE_STATUSES = ['pending_review', 'approved', 'skipped', 'rejected'];
   const _now = new Date();
   const _startOfDay = new Date(
     _now.getFullYear(),
     _now.getMonth(),
     _now.getDate(),
   );
-  const todayCountRows = await db
-    .select({ contentItemId: campaignContentSchema.contentItemId })
+  // Counted in the database rather than by fetching ids — this runs once per
+  // chunk, and a late chunk of a 400-post campaign would otherwise pull every
+  // row it has already written just to measure the length.
+  const existingCountRows = await db
+    .select({ count: sql<number>`count(*)::int` })
     .from(campaignContentSchema)
     .innerJoin(
       contentItemSchema,
@@ -1158,17 +1204,27 @@ export async function generateCampaignPosts(
       and(
         eq(campaignContentSchema.campaignId, campaign.id),
         eq(contentItemSchema.orgId, orgId),
-        gte(contentItemSchema.createdAt, _startOfDay),
-        inArray(contentItemSchema.status, ['pending_review', 'approved', 'skipped', 'rejected']),
+        ...(isBlitz ? [gte(contentItemSchema.createdAt, _startOfDay)] : []),
+        inArray(contentItemSchema.status, REVIEWABLE_STATUSES),
       ),
     );
-  const existingTodayCount = todayCountRows.length;
-  const remainingToday = Math.max(0, dailyLimit - existingTodayCount);
-  postsToCreate = Math.min(totalPosts, remainingToday);
+  const existingCount = existingCountRows[0]?.count ?? 0;
+  const quotaLimit = isBlitz ? postsPerDay : totalPosts;
+  const remainingInQuota = Math.max(0, quotaLimit - existingCount);
+  postsToCreate = Math.min(totalPosts, remainingInQuota);
+
+  // Chunking: a caller may ask for at most N posts per invocation so a large
+  // campaign is spread across several durable steps rather than one function
+  // that gets killed at the platform's time limit. The next call recomputes
+  // `remaining` from the rows this one wrote and continues.
+  if (maxPosts && maxPosts > 0) {
+    postsToCreate = Math.min(postsToCreate, maxPosts);
+  }
+
   if (postsToCreate === 0) {
     console.log(
-      `[Campaign] Daily cap reached: existing=${existingTodayCount} `
-      + `limit=${dailyLimit} — skipping generation.`,
+      `[Campaign] Quota reached (${isBlitz ? 'blitz/daily' : 'campaign/window'}): `
+      + `existing=${existingCount} limit=${quotaLimit} — skipping generation.`,
     );
     return {
       totalPosts: 0,
@@ -1176,7 +1232,10 @@ export async function generateCampaignPosts(
       failedPosts: 0,
       contentItemIds: [],
       skippedInsufficientAssets: 0,
-      dailyLimitReached: true,
+      // Only Blitz can hit a *daily* limit; a full campaign is simply complete.
+      dailyLimitReached: isBlitz,
+      quotaSatisfied: true,
+      existingCount,
     };
   }
 
@@ -1464,6 +1523,49 @@ export async function generateCampaignPosts(
     + `(target=${postsToCreate}, available=${templates.length})`,
   );
 
+  // ── Brand-voice prewarm ────────────────────────────────────────────────
+  // The insert loop below is sequential and calls `applyBrandVoice` per post,
+  // which is a blocking Haiku round trip. Because the cache key includes the
+  // templateId — and allocation deliberately gives every post a DIFFERENT
+  // template — that missed on essentially every post, making generation time
+  // linear in posts × LLM latency (~3-6 min for 112 posts, past any
+  // serverless limit).
+  //
+  // Running the identical calls here with bounded concurrency collapses that
+  // to (posts / concurrency) × latency and leaves the loop's own call as a
+  // cache hit. Same inputs, same cache key, same output — the loop is
+  // unchanged. Fails soft: an item that errors just isn't cached and the loop
+  // pays for it the old way.
+  const prewarmPlatform = Array.isArray(targetPlatforms) ? targetPlatforms[0] : null;
+  try {
+    const warmStart = Date.now();
+    const { warmed, failed } = await prewarmBrandVoice(
+      templatePosts
+        // The loop drops non-renderable types before it reaches the rewrite,
+        // so warming them would buy nothing and still cost a call.
+        .filter(({ template }) => RENDERABLE_CONTENT_TYPES.has(template.contentType))
+        .map(({ template }) => ({
+          profile,
+          sourceCaption: sanitizeCaption(template.structure?.caption
+            || (Array.isArray(template.slideCaptions) ? template.slideCaptions.join('\n') : '')
+            || (typeof template.slideCaptions === 'object' && template.slideCaptions !== null
+              ? Object.values(template.slideCaptions).join('\n')
+              : '')
+            || ''),
+          contentType: template.contentType,
+          platform: prewarmPlatform,
+          templateId: template.id,
+          mentionFrequency: campaign.mentionFrequency as any,
+        })),
+    );
+    console.log(
+      `[Campaign] Brand-voice prewarm: ${warmed} warmed, ${failed} failed `
+      + `in ${Date.now() - warmStart}ms`,
+    );
+  } catch (err) {
+    console.warn('[Campaign] Brand-voice prewarm failed, falling back to inline:', err);
+  }
+
   // Preload video pool + baseImageUrl for every enabled influencer once
   // before ANY insertion path so all three sites (template posts, engine
   // supplement, fallback) can hydrate sourceMediaSlots without N+1 queries.
@@ -1509,6 +1611,17 @@ export async function generateCampaignPosts(
       console.warn('[Campaign] Failed to load influencer video map:', err);
     }
   }
+
+  // ── Deferred per-post work ─────────────────────────────────────────────
+  // Slide-caption generation (an LLM call) and voice-over synthesis (an
+  // ElevenLabs call) used to be registered as their own `waitUntil` the moment
+  // each post was inserted — up to two background promises per post, with no
+  // limit. At 400 posts that is ~800 requests in flight inside one invocation.
+  // They're collected here instead and drained after the insert loop with a
+  // fixed concurrency, so the fan-out no longer scales with campaign size.
+  // Still fire-and-forget: the post is usable without them and the card polls
+  // for the result, so nothing waits on this.
+  const deferredPostWork: Array<() => Promise<unknown>> = [];
 
   // Insert template posts with media set substitution
   let inserted = 0;
@@ -1767,60 +1880,35 @@ export async function generateCampaignPosts(
           && editorScript.slideCopy.length === slideUrls.length
           && new Set(editorScript.slideCopy.filter(Boolean)).size === slideUrls.length;
       if (isSlideshowType && slideUrls.length > 1 && !hasUniquePerSlide) {
-        try {
-          waitUntil(
-            generateBlitzSlideCaptions({
-              db,
-              orgId,
-              contentItemId: contentItem.id,
-              contentType: resolvedContentType,
-              slideUrls,
-              hookText: editorScript.hookText,
-              contextCaption: templateCaption,
-            }).catch((err: any) => {
-              console.error('[Campaign] slide caption gen failed:', err?.message || err);
-            }),
-          );
-        } catch (err) {
-          // waitUntil throws outside Vercel runtime (e.g. local dev without
-          // the shim). Fire the promise anyway so local dev still gets
-          // the captions.
-          void generateBlitzSlideCaptions({
+        const captionItemId = contentItem.id;
+        deferredPostWork.push(() =>
+          generateBlitzSlideCaptions({
             db,
             orgId,
-            contentItemId: contentItem.id,
+            contentItemId: captionItemId,
             contentType: resolvedContentType,
             slideUrls,
             hookText: editorScript.hookText,
             contextCaption: templateCaption,
-          }).catch((e: any) => {
-            console.error('[Campaign] slide caption gen (local) failed:', e?.message || e);
-          });
-        }
-      }
-
-      // Fire-and-forget ElevenLabs voice-over generation for video
-      // Blitz items. Gated internally on ENABLE_BLITZ_AUDIO_VIDEO env,
-      // content-type eligibility (excludes slideshow), and voice
-      // configured on brand_profile. Silent no-op on all skip paths
-      // per the "Blitz must always work" invariant.
-      try {
-        waitUntil(
-          generateAudioForBlitzItem({
-            db,
-            contentItemId: contentItem.id,
           }).catch((err: any) => {
-            console.error('[Campaign] voice-over gen failed:', err?.message || err);
+            console.error('[Campaign] slide caption gen failed:', err?.message || err);
           }),
         );
-      } catch {
-        void generateAudioForBlitzItem({
-          db,
-          contentItemId: contentItem.id,
-        }).catch((e: any) => {
-          console.error('[Campaign] voice-over gen (local) failed:', e?.message || e);
-        });
       }
+
+      // ElevenLabs voice-over for video Blitz items. Gated internally on
+      // ENABLE_BLITZ_AUDIO_VIDEO env, content-type eligibility (excludes
+      // slideshow), and voice configured on brand_profile. Silent no-op on all
+      // skip paths per the "Blitz must always work" invariant.
+      const audioItemId = contentItem.id;
+      deferredPostWork.push(() =>
+        generateAudioForBlitzItem({
+          db,
+          contentItemId: audioItemId,
+        }).catch((err: any) => {
+          console.error('[Campaign] voice-over gen failed:', err?.message || err);
+        }),
+      );
 
       await db.insert(campaignContentSchema).values({
         campaignId: campaign.id,
@@ -2553,6 +2641,27 @@ export async function generateCampaignPosts(
     }
   }
 
+  // ── Drain the deferred per-post work ───────────────────────────────────
+  // One bounded run for the whole chunk instead of two unbounded `waitUntil`s
+  // per post. Fire-and-forget: `waitUntil` keeps the invocation alive until it
+  // settles, but generation does not block on it — posts are complete and
+  // reviewable without their voice-over or per-slide captions, and the card
+  // polls for those to fill in.
+  if (deferredPostWork.length > 0) {
+    const drainDeferred = runWithConcurrency(
+      deferredPostWork,
+      DEFERRED_WORK_CONCURRENCY,
+      (err, i) => console.warn(`[Campaign] Deferred post work ${i} failed:`, err),
+    );
+    try {
+      waitUntil(drainDeferred);
+    } catch {
+      // waitUntil throws outside the Vercel runtime (local dev without the
+      // shim). The promise is already running; just don't hold the response.
+      void drainDeferred;
+    }
+  }
+
   const totalEnginePosts = engineResult?.total_posts ?? inserted;
 
   console.log(
@@ -2565,6 +2674,15 @@ export async function generateCampaignPosts(
     completedPosts: totalEnginePosts - failedPosts,
     failedPosts,
     contentItemIds,
+    // Window target + what was already there, so a chunked caller can report
+    // cumulative progress (existingCount + inserted) against the real
+    // denominator instead of against this chunk's size.
+    campaignTarget: totalPosts,
+    existingCount,
+    // Measured against the quota this run was working to — the campaign window
+    // for campaigns, the daily allowance for Blitz — so the chunk driver stops
+    // as soon as the last needed post lands.
+    quotaSatisfied: existingCount + contentItemIds.length >= quotaLimit,
     // Surface the count of posts skipped because a Media Set didn't have
     // enough distinct assets for the slideshow it was substituting into.
     // Consumed by the /generate route response so the UI can explain why
