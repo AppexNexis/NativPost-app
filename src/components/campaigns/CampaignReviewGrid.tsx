@@ -1,6 +1,6 @@
 'use client';
 
-import { addDays, format, isSameDay, isToday, parseISO } from 'date-fns';
+import { addDays, format, isSameDay, isToday, parseISO, startOfDay, startOfWeek } from 'date-fns';
 import {
   CalendarDays,
   Check,
@@ -160,6 +160,15 @@ function getVideoUrl(item: ReviewItem): string | null {
   }
   return null;
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+// The calendar is always a 7-column week, never "however many days the campaign
+// happens to run".
+const WEEK_COLUMNS = 'repeat(7, minmax(0, 1fr))';
+// How many posts a day cell shows before collapsing behind "+N more".
+const DAY_PREVIEW_LIMIT = 3;
+
+const dayKey = (day: Date) => format(day, 'yyyy-MM-dd');
 
 // Never-throw date coercion for the calendar view. date-fns parseISO throws a
 // TypeError when handed a non-string (e.g. a Date object) and format() throws a
@@ -655,6 +664,9 @@ function CalendarView({
   onDelete: (id: string) => void;
   onScheduleChange: (itemId: string, date: string, time: string) => void;
 }) {
+  // Which day cell (if any) is showing its full post list.
+  const [expandedDay, setExpandedDay] = useState<string | null>(null);
+
   // Derive the actual date range from the scheduled posts, not from
   // campaignLengthDays which may be stale or capped to 7. Every parseISO is
   // followed by a validity check because date-fns v4 throws RangeError on
@@ -686,13 +698,26 @@ function CalendarView({
     ? Math.min(rawTotalDays, 90)
     : Math.max(1, (campaign.campaignLengthDays ?? 7));
 
-  const days = Array.from({ length: totalDays }, (_, i) => addDays(start, i));
+  // Lay the range out on a REAL week grid — snapped back to the Sunday of the
+  // first week and padded forward to a whole number of weeks. Packing "days
+  // since start" into rows of 7 instead meant the column count tracked the
+  // campaign length, so a Blitz that schedules every post on one day rendered
+  // as a single full-width column of giant cards. Every week is 7 columns now;
+  // days outside the campaign range render as muted spacers.
+  const gridStart = startOfWeek(start, { weekStartsOn: 0 });
+  const leadingDays = Math.max(0, Math.round((start.getTime() - gridStart.getTime()) / DAY_MS));
+  const paddedDays = Math.ceil((leadingDays + totalDays) / 7) * 7;
 
-  // Split into weeks
   const weeks: Date[][] = [];
-  for (let i = 0; i < days.length; i += 7) {
-    weeks.push(days.slice(i, i + 7));
+  for (let i = 0; i < paddedDays; i += 7) {
+    weeks.push(Array.from({ length: 7 }, (_, d) => addDays(gridStart, i + d)));
   }
+
+  const firstDay = start;
+  const lastDay = addDays(start, totalDays - 1);
+  const inRange = (day: Date) =>
+    day.getTime() >= startOfDay(firstDay).getTime()
+    && day.getTime() <= startOfDay(lastDay).getTime();
 
   const getItems = (day: Date) =>
     contentItems.filter((it) => {
@@ -720,10 +745,7 @@ function CalendarView({
             <div key={wi}>
               {/* Day name headers — only first week */}
               {wi === 0 && (
-                <div
-                  className="mb-1 grid gap-2"
-                  style={{ gridTemplateColumns: `repeat(${week.length}, minmax(0, 1fr))` }}
-                >
+                <div className="mb-1 grid gap-2" style={{ gridTemplateColumns: WEEK_COLUMNS }}>
                   {week.map((day, di) => (
                     <div key={di} className="text-center text-micro font-semibold text-muted-foreground">
                       {format(day, 'EEE')}
@@ -732,20 +754,20 @@ function CalendarView({
                 </div>
               )}
 
-              <div
-                className="grid gap-2"
-                style={{ gridTemplateColumns: `repeat(${week.length}, minmax(0, 1fr))` }}
-              >
+              <div className="grid gap-2" style={{ gridTemplateColumns: WEEK_COLUMNS }}>
                 {week.map((day, di) => {
                   const dayItems = getItems(day);
                   const today = isToday(day);
+                  const active = inRange(day);
                   return (
                     <div
                       key={di}
                       className={`min-h-[140px] rounded-xl border p-2 ${
-                        today
-                          ? 'border-primary/50 bg-primary/5'
-                          : 'border-border bg-muted/20'
+                        !active
+                          ? 'border-dashed border-border/40 bg-transparent'
+                          : today
+                            ? 'border-primary/50 bg-primary/5'
+                            : 'border-border bg-muted/20'
                       }`}
                     >
                       {/* Date number */}
@@ -754,15 +776,20 @@ function CalendarView({
                           className={`flex size-6 items-center justify-center rounded-full text-xs font-semibold ${
                             today
                               ? 'bg-primary text-primary-foreground'
-                              : 'text-muted-foreground'
+                              : active
+                                ? 'text-muted-foreground'
+                                : 'text-muted-foreground/30'
                           }`}
                         >
                           {format(day, 'd')}
                         </span>
                       </div>
 
+                      {/* A Blitz can land its whole run on one day, so a cell is
+                          collapsed past DAY_PREVIEW_LIMIT rather than growing
+                          into an unreadable column of full-size cards. */}
                       <div className="space-y-1.5">
-                        {dayItems.map(item => (
+                        {(expandedDay === dayKey(day) ? dayItems : dayItems.slice(0, DAY_PREVIEW_LIMIT)).map(item => (
                           <CalendarCard
                             key={item.id}
                             item={item}
@@ -773,7 +800,21 @@ function CalendarView({
                             onScheduleChange={(d, t) => onScheduleChange(item.id, d, t)}
                           />
                         ))}
-                        {dayItems.length === 0 && (
+
+                        {dayItems.length > DAY_PREVIEW_LIMIT && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-full px-1 text-[10px] text-muted-foreground"
+                            onClick={() => setExpandedDay(expandedDay === dayKey(day) ? null : dayKey(day))}
+                          >
+                            {expandedDay === dayKey(day)
+                              ? 'Show less'
+                              : `+${dayItems.length - DAY_PREVIEW_LIMIT} more`}
+                          </Button>
+                        )}
+
+                        {dayItems.length === 0 && active && (
                           <div className="flex items-center justify-center py-3">
                             <span className="text-[10px] text-muted-foreground/30">–</span>
                           </div>
