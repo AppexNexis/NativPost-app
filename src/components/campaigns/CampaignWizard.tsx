@@ -1193,7 +1193,9 @@ function StepReview({
   onEdit: (itemId: string) => void;
   onReRoll: (itemId: string) => void;
   onDelete: (itemId: string) => void;
-  onApprove: (itemId: string) => void;
+  // Promise-returning: the wizard PATCHes then updates state, and the review
+  // grid awaits these to drive its bulk-approve progress state.
+  onApprove: (itemId: string) => void | Promise<void>;
   onScheduleChange: (itemId: string, date: string, time: string) => void;
   onItemUpdated?: (updated: ContentItem) => void;
 }) {

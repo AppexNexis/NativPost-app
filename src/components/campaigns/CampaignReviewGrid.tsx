@@ -41,6 +41,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useInView } from '@/hooks/useInView';
+import { mapWithConcurrency } from '@/lib/concurrency';
 import type { Campaign, ContentItem } from '@/types/v2';
 
 import { CampaignPostEditModal } from './CampaignPostEditModal';
@@ -224,7 +225,10 @@ type CampaignReviewGridProps = {
   onEdit: (itemId: string) => void;
   onReRoll: (itemId: string) => void;
   onDelete: (itemId: string) => void;
-  onApprove: (itemId: string) => void;
+  // Returns a promise from the wizard, which PATCHes and then updates local
+  // state. Typed as `void` before, which threw that promise away — so "Approve
+  // all" had no way to know when the work finished.
+  onApprove: (itemId: string) => void | Promise<void>;
   onSkip?: (itemId: string) => void;
   onScheduleChange: (itemId: string, date: string, time: string) => void;
   onItemUpdated?: (updated: ContentItem) => void;
@@ -243,7 +247,32 @@ export function CampaignReviewGrid({
 }: CampaignReviewGridProps) {
   const [view, setView] = useState<'grid' | 'calendar'>('grid');
   const [editingItem, setEditingItem] = useState<ReviewItem | null>(null);
+  const [isApprovingAll, setIsApprovingAll] = useState(false);
   const reRolls = campaign.reRollsRemaining ?? 0;
+
+  // ── Bulk approve ────────────────────────────────────────────────────────
+  const approvedCount = contentItems.filter(i => i.status === 'approved').length;
+  const pendingApproval = contentItems.filter(i => i.status !== 'approved');
+  const allApproved = contentItems.length > 0 && pendingApproval.length === 0;
+
+  const handleApproveAll = async () => {
+    if (isApprovingAll || pendingApproval.length === 0) {
+      return;
+    }
+    setIsApprovingAll(true);
+    try {
+      // Only the ones that still need it — the old handler looped EVERY item
+      // and re-approved posts that were already approved.
+      //
+      // Bounded concurrency because this is one HTTP PATCH per post: a
+      // 300-post campaign firing them all at once would hammer the API and
+      // the connection pool. Settled, not all-or-nothing, so one failure
+      // doesn't abandon the rest.
+      await mapWithConcurrency(pendingApproval, 6, item => Promise.resolve(onApprove(item.id)));
+    } finally {
+      setIsApprovingAll(false);
+    }
+  };
 
   // Derive platforms from the campaign's target accounts
   const campaignPlatforms = Array.from(
@@ -330,21 +359,49 @@ export function CampaignReviewGrid({
         {/* ── Bulk approve ── */}
         <div className="flex items-center justify-between rounded-xl border bg-muted/30 px-4 py-3">
           <span className="text-body text-muted-foreground">
-            {contentItems.filter(i => i.status === 'approved').length}
+            {approvedCount}
             {' '}
             /
             {contentItems.length}
             {' '}
             approved
           </span>
-          <Button
-            size="sm"
-            className="bg-emerald-600 text-white hover:bg-emerald-700"
-            onClick={() => contentItems.forEach(i => onApprove(i.id))}
-          >
-            <Check className="mr-1.5 size-3.5" />
-            Approve all
-          </Button>
+
+          {/* Once everything is approved there is nothing left to do, so the
+              action is replaced by its result. Previously the button stayed
+              live and unchanged at 7/7, so clicking it re-approved already
+              approved posts and gave no sign anything had happened. */}
+          {allApproved
+            ? (
+                <span className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-emerald-600">
+                  <Check className="size-4" />
+                  All approved
+                </span>
+              )
+            : (
+                <Button
+                  size="sm"
+                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+                  disabled={isApprovingAll || pendingApproval.length === 0}
+                  onClick={handleApproveAll}
+                >
+                  {isApprovingAll
+                    ? (
+                        <>
+                          <RefreshCw className="mr-1.5 size-3.5 animate-spin" />
+                          Approving…
+                        </>
+                      )
+                    : (
+                        <>
+                          <Check className="mr-1.5 size-3.5" />
+                          Approve
+                          {' '}
+                          {pendingApproval.length}
+                        </>
+                      )}
+                </Button>
+              )}
         </div>
       </div>
 
