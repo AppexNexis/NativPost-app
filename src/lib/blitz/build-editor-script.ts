@@ -15,34 +15,78 @@
  * 60-90 char hooks read as filler). Overlays still word-wrap safely.
  *   - slideshow / carousel     ≤ 110 chars / slide
  *   - wall_of_text             ≤ 300 chars (wallText)
- *   - hooks (all card types)   ≤ 120 chars
+ *   - hooks (all card types)   ← TEXT_LIMITS.hook (the renderer's own cap)
  *   - body (video card types)  ≤ 200 chars
  */
 
+import { TEXT_LIMITS } from '@/components/editor/compositions/text-limits';
+
 const SLIDE_CHAR_CAP = 110;
 const WALL_CHAR_CAP = 300;
-const HOOK_CHAR_CAP = 120;
+// Sourced from the renderer's own caps so this stage can never allow through
+// more than the compiled MP4 will fit. Three literals used to encode the hook
+// limit — here, TEXT_LIMITS.hook, and the generation budget — and when they
+// disagreed the longest one won at write time and the shortest one chopped at
+// render time, leaving a trailing ellipsis in published captions.
+const HOOK_CHAR_CAP = TEXT_LIMITS.hook;
 const BODY_CHAR_CAP = 200;
 const CTA_CHAR_CAP = 60;
 
+/**
+ * Fit text to a caption box WITHOUT advertising that anything was cut.
+ *
+ * This used to append an ellipsis, which is how "…" ended up rendered inside
+ * caption boxes on published posts. A trailing "…" reads as broken software,
+ * not as a stylistic choice — and the real fix is upstream: generation is
+ * given the character budget so copy arrives short enough to render whole
+ * (see the length constraints in applyBrandVoice). This is the last-resort
+ * net for text that still overshoots.
+ *
+ * When it does have to cut, it ends on a complete sentence wherever possible,
+ * so the result reads as a deliberately short line rather than a severed one.
+ */
 function clip(s: string | undefined, cap: number): string | undefined {
-  if (!s) return undefined;
+  if (!s) {
+    return undefined;
+  }
   const t = s.trim();
-  if (!t) return undefined;
-  if (t.length <= cap) return t;
-  // Prefer a whole word boundary near the cap. Append ellipsis so the
-  // reader knows the text continues — mid-sentence cuts look like a bug.
+  if (!t) {
+    return undefined;
+  }
+  if (t.length <= cap) {
+    return t;
+  }
+
   const slice = t.slice(0, cap);
+
+  // Prefer the last sentence end inside the budget — a whole thought.
+  const lastSentenceEnd = Math.max(
+    slice.lastIndexOf('. '),
+    slice.lastIndexOf('! '),
+    slice.lastIndexOf('? '),
+  );
+  if (lastSentenceEnd > cap * 0.3) {
+    return slice.slice(0, lastSentenceEnd + 1).trimEnd();
+  }
+  // A sentence that ends exactly at the boundary still counts.
+  if (/[.!?]$/.test(slice.trimEnd())) {
+    return slice.trimEnd();
+  }
+
+  // Otherwise fall back to a word boundary and drop any dangling punctuation,
+  // so the line ends cleanly instead of mid-clause.
   const lastSpace = slice.lastIndexOf(' ');
-  const trimmed = (lastSpace > cap * 0.6 ? slice.slice(0, lastSpace) : slice).trimEnd();
-  return `${trimmed}…`;
+  const trimmed = (lastSpace > cap * 0.5 ? slice.slice(0, lastSpace) : slice).trimEnd();
+  return trimmed.replace(/[\s,;:—–-]+$/, '');
 }
 
 function splitLines(caption: string | undefined): string[] {
-  if (!caption) return [];
+  if (!caption) {
+    return [];
+  }
   return caption
     .split(/\r?\n+/)
-    .map((l) => l.trim())
+    .map(l => l.trim())
     .filter(Boolean);
 }
 
@@ -68,8 +112,8 @@ export function buildEditorScript(
       ? lines.slice(0, slideCount)
       : padWith(lines, slideCount, '');
     const slideCopy = perSlideRaw
-      .map((s) => clip(s, SLIDE_CHAR_CAP))
-      .map((s) => s ?? '')
+      .map(s => clip(s, SLIDE_CHAR_CAP))
+      .map(s => s ?? '')
       .filter((_, i) => i < slideCount);
     return {
       hookText: clip(lines[0], HOOK_CHAR_CAP),
@@ -122,13 +166,17 @@ export function buildReasoning(
   const angleName = post.angle_name?.trim() || null;
   const topicLabel = post.topic_label?.trim() || null;
   const parts: string[] = [];
-  if (topicLabel) parts.push(topicLabel + '.');
-  else if (angleName) parts.push(`Angle: ${angleName}.`);
-  else parts.push('Selected from your active content mix and audience angles.');
+  if (topicLabel) {
+    parts.push(`${topicLabel}.`);
+  } else if (angleName) {
+    parts.push(`Angle: ${angleName}.`);
+  } else {
+    parts.push('Selected from your active content mix and audience angles.');
+  }
   if (template.sourcePlatform && template.sourceCreator) {
     parts.push(`Remixed from @${template.sourceCreator} on ${capitalize(template.sourcePlatform)}.`);
   }
-  const hasMetrics = [template.viewCount, template.likeCount, template.commentCount].some((n) => typeof n === 'number' && n > 0);
+  const hasMetrics = [template.viewCount, template.likeCount, template.commentCount].some(n => typeof n === 'number' && n > 0);
   return {
     whyThisContent: parts.join(' '),
     angleName,
@@ -163,26 +211,38 @@ export function deriveTopicLabel(template: {
   const candidates: string[] = [];
   // 1. structure.hooks (array of short phrases)
   const hooks = template.structure?.hooks;
-  if (Array.isArray(hooks)) candidates.push(...hooks.filter((h): h is string => typeof h === 'string'));
+  if (Array.isArray(hooks)) {
+    candidates.push(...hooks.filter((h): h is string => typeof h === 'string'));
+  }
   // 2. structure.caption first line
   const capLine = typeof template.structure?.caption === 'string' ? template.structure.caption.split(/\r?\n/)[0] : '';
-  if (capLine) candidates.push(capLine);
+  if (capLine) {
+    candidates.push(capLine);
+  }
   // 3. First slide caption
   const slides = parseSlideStrings(template.slideCaptions);
-  if (slides[0]) candidates.push(slides[0]);
+  if (slides[0]) {
+    candidates.push(slides[0]);
+  }
   // Pick the first candidate that yields a compact, cased phrase.
   for (const raw of candidates) {
     const label = toTopicLabel(raw);
-    if (label) return label;
+    if (label) {
+      return label;
+    }
   }
   // 4. Fallback: titlecased first niche
   const niche = template.niches?.[0];
-  if (niche) return toTitleCase(niche);
+  if (niche) {
+    return toTitleCase(niche);
+  }
   return null;
 }
 
 function toTopicLabel(raw: string): string | null {
-  if (!raw) return null;
+  if (!raw) {
+    return null;
+  }
   // Strip hashtags, mentions, urls, emojis.
   let s = raw
     .replace(/https?:\/\/\S+/g, '')
@@ -190,12 +250,18 @@ function toTopicLabel(raw: string): string | null {
     .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
     .replace(/\s+/g, ' ')
     .trim();
-  if (!s) return null;
+  if (!s) {
+    return null;
+  }
   // First sentence.
   s = (s.split(/[.!?]/)[0] || '').trim();
-  if (!s) return null;
+  if (!s) {
+    return null;
+  }
   const words = s.split(' ').filter(Boolean);
-  if (words.length < 2) return null;
+  if (words.length < 2) {
+    return null;
+  }
   // Cap at 5 words / 40 chars for a punchy pill.
   const trimmed = words.slice(0, 5).join(' ');
   const capped = trimmed.length > 40 ? trimmed.slice(0, 40).replace(/\s+\S*$/, '') : trimmed;
@@ -207,10 +273,14 @@ function toTitleCase(s: string): string {
     .toLowerCase()
     .split(/\s+/)
     .map((w, i) => {
-      if (!w) return w;
+      if (!w) {
+        return w;
+      }
       // Preserve small words in the middle in lowercase for readability.
       const small = new Set(['and', 'or', 'the', 'a', 'an', 'of', 'to', 'in', 'on', 'for', 'with']);
-      if (i > 0 && small.has(w)) return w;
+      if (i > 0 && small.has(w)) {
+        return w;
+      }
       return w.charAt(0).toUpperCase() + w.slice(1);
     })
     .join(' ');
@@ -219,20 +289,26 @@ function toTitleCase(s: string): string {
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 function parseSlideStrings(input: any): string[] {
-  if (!input) return [];
-  if (Array.isArray(input)) return input.filter((u): u is string => typeof u === 'string' && u.length > 0);
+  if (!input) {
+    return [];
+  }
+  if (Array.isArray(input)) {
+    return input.filter((u): u is string => typeof u === 'string' && u.length > 0);
+  }
   if (typeof input === 'object') {
     const keys = Object.keys(input);
-    const allNumeric = keys.length > 0 && keys.every((k) => /^\d+$/.test(k));
+    const allNumeric = keys.length > 0 && keys.every(k => /^\d+$/.test(k));
     const orderedKeys = allNumeric ? keys.sort((a, b) => Number(a) - Number(b)) : keys;
     return orderedKeys
-      .map((k) => (input as Record<string, string>)[k])
+      .map(k => (input as Record<string, string>)[k])
       .filter((u): u is string => typeof u === 'string' && u.length > 0);
   }
   return [];
 }
 
 function padWith<T>(arr: T[], targetLen: number, filler: T): T[] {
-  if (arr.length >= targetLen) return arr;
+  if (arr.length >= targetLen) {
+    return arr;
+  }
   return [...arr, ...Array(targetLen - arr.length).fill(filler)];
 }

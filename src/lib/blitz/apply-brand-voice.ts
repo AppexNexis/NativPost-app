@@ -15,6 +15,11 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 
+// Pure constants module (no React) — imported so the generation budget and the
+// renderer's cap are literally the same number rather than two literals that
+// drift. See DEFAULT_CAPTION_BUDGET below.
+import { TEXT_LIMITS } from '@/components/editor/compositions/text-limits';
+
 export type BrandProfileLike = {
   brandName?: string | null;
   industry?: string | null;
@@ -38,7 +43,50 @@ export type ApplyBrandVoiceOpts = {
   hookText?: string | null;
   templateId?: string | null;
   mentionFrequency?: MentionFrequency;
+  /**
+   * Hard character budget for the rewritten caption. Passed into the prompt so
+   * the model WRITES to fit, instead of us cutting afterwards and leaving a
+   * visible "…" in the caption box. Defaults to DEFAULT_CAPTION_BUDGET.
+   */
+  maxChars?: number;
 };
+
+/**
+ * Default caption budget — what generation is TOLD to write within.
+ *
+ * Must equal the tightest cap any renderer enforces, which is
+ * `TEXT_LIMITS.hook` in compositions/text-limits.ts (the compiled MP4's
+ * limit). Budget higher than the renderer and copy clears the preview but
+ * gets cut when the video bakes; that mismatch is exactly how a trailing
+ * ellipsis reached published captions.
+ *
+ * Imported from TEXT_LIMITS rather than duplicated as a literal, so the two
+ * cannot drift apart no matter which one someone edits.
+ */
+export const DEFAULT_CAPTION_BUDGET: number = TEXT_LIMITS.hook;
+
+/**
+ * Strip the punctuation that reads as machine-written.
+ *
+ * Em and en dashes are the giveaway — "Your face is your brand — own it."
+ * A comma carries the same beat without the tell. Hyphens inside compound
+ * words (multi-step, hand-waving) are left alone; only dashes acting as
+ * sentence punctuation are replaced.
+ */
+export function stripAiTells(text: string): string {
+  return text
+    // Spaced em/en dash used as a clause break → comma.
+    .replace(/\s+[—–]\s+/g, ', ')
+    // Unspaced em/en dash between words → comma + space.
+    .replace(/(\w)[—–](\w)/g, '$1, $2')
+    // Any stragglers (leading/trailing) → drop.
+    .replace(/[—–]/g, '')
+    // A trailing ellipsis is the other tell: it reads as truncated output.
+    .replace(/\s*(\.{3}|…)\s*$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.!?])/g, '$1')
+    .trim();
+}
 
 export type ApplyBrandVoiceResult = {
   caption: string;
@@ -140,8 +188,10 @@ function alreadyMentions(caption: string, brandName: string): boolean {
 function appendMention(caption: string, brandName: string, platform: string | null | undefined): string {
   const p = (platform || '').toLowerCase();
   const usesHandle = p === 'twitter' || p === 'x' || p === 'instagram';
-  const suffix = usesHandle ? ` — @${brandName}` : ` — ${brandName}`;
-  const trimmed = caption.replace(/\s+$/g, '');
+  // No em dash here either — it was stamping the exact punctuation we strip
+  // from the body onto the end of every mentioning caption.
+  const trimmed = caption.replace(/[\s.,;:]+$/g, '');
+  const suffix = usesHandle ? `. @${brandName}` : `. ${brandName}`;
   return trimmed + suffix;
 }
 
@@ -229,7 +279,16 @@ Content type: ${opts.contentType}
 ${opts.platform ? `Platform: ${opts.platform}` : ''}
 ${opts.hookText ? `Hook context: ${opts.hookText}` : ''}
 
-Rewrite this caption in the brand voice above. Keep it roughly the same length. Preserve the hook. Do not add hashtags. Do not add emojis unless the tone is playful or bold. Do not restate the brand name at the end — that will be appended separately if needed. Return ONLY the rewritten caption, no quotes, no preamble.
+Rewrite this caption in the brand voice above.
+
+Hard rules:
+- MAXIMUM ${opts.maxChars ?? DEFAULT_CAPTION_BUDGET} characters. This is a hard limit, not a target. The caption is rendered inside a fixed box and anything longer gets cut, so finish the thought within the budget rather than writing long.
+- End on a complete sentence. Never trail off, and never end with an ellipsis.
+- Never use em dashes or en dashes (— or –). Use a comma, a full stop, or restructure the sentence. Hyphens inside compound words are fine.
+- Preserve the hook. Do not add hashtags. Do not add emojis unless the tone is playful or bold.
+- Do not restate the brand name at the end; it is appended separately if needed.
+
+Return ONLY the rewritten caption, no quotes, no preamble.
 
 Source caption:
 ${source}`;
@@ -280,7 +339,16 @@ Content type: ${opts.contentType}
 ${opts.platform ? `Platform: ${opts.platform}` : ''}
 ${opts.hookText ? `Hook context: ${opts.hookText}` : ''}
 
-Rewrite this caption in the brand voice above. Keep it roughly the same length. Preserve the hook. Do not add hashtags. Do not add emojis unless the tone is playful or bold. Do not restate the brand name at the end — that will be appended separately if needed. Return ONLY the rewritten caption, no quotes, no preamble.
+Rewrite this caption in the brand voice above.
+
+Hard rules:
+- MAXIMUM ${opts.maxChars ?? DEFAULT_CAPTION_BUDGET} characters. This is a hard limit, not a target. The caption is rendered inside a fixed box and anything longer gets cut, so finish the thought within the budget rather than writing long.
+- End on a complete sentence. Never trail off, and never end with an ellipsis.
+- Never use em dashes or en dashes (— or –). Use a comma, a full stop, or restructure the sentence. Hyphens inside compound words are fine.
+- Preserve the hook. Do not add hashtags. Do not add emojis unless the tone is playful or bold.
+- Do not restate the brand name at the end; it is appended separately if needed.
+
+Return ONLY the rewritten caption, no quotes, no preamble.
 
 Source caption:
 ${source}`;
@@ -317,6 +385,11 @@ ${source}`;
 
   let final = rewritten || source;
   final = stripForbidden(final, forbidden);
+  // Applied to BOTH branches on purpose: the model is told not to use dashes,
+  // but it sometimes does anyway, and the `source` fallback is scraped
+  // template copy that was never asked. This is the single place every caption
+  // passes through, so it's the only place the guarantee holds.
+  final = stripAiTells(final);
 
   // Brand-name mention roll — only fires when we have a brand name AND
   // the caption doesn't already mention it (avoids double stamps).
