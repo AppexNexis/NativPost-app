@@ -14,6 +14,8 @@
 
 import { Buffer } from 'node:buffer';
 import { isVideoContentType } from '@/types/v2';
+import type { TikTokPublishConfig } from './tiktok/resolve-settings';
+import { resolveTikTokSettings } from './tiktok/resolve-settings';
 import { publishToTwitter } from './twitter-publisher';
 import { publishToSnapchat } from './snapchat-publisher';
 
@@ -955,6 +957,10 @@ export async function publishToTikTok(
     publishMethod?: string;
   },
   platformUsername?: string,
+  // Account-level defaults (social_account.metadata.tiktokDefaults). The
+  // middle tier of the hierarchy: used for any field the campaign did not
+  // override, before falling through to what creator_info permits.
+  accountDefaults?: TikTokPublishConfig,
 ): Promise<PublishResult> {
   if (!videoUrl) {
     return { success: false, error: 'TikTok requires a video. Create a video post first.' };
@@ -989,10 +995,22 @@ export async function publishToTikTok(
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nativpost.com';
     const tiktokVideoUrl = `${appUrl}/api/media/proxy?url=${encodeURIComponent(playableUrl)}`;
 
-    const isInbox = tiktokSettings?.publishMethod === 'INBOX';
-    const privacyLevel = (!isInbox && tiktokSettings?.privacyLevel)
-      ? tiktokSettings.privacyLevel
-      : 'PUBLIC';
+    // ── Settings resolution ──────────────────────────────────────────────
+    // Campaign intent → account defaults → what TikTok currently permits.
+    // Every value sent below comes from this; nothing is guessed here. See
+    // lib/tiktok/resolve-settings.ts for why (short version: the old fallback
+    // sent an invalid privacy enum and failed every scheduled TikTok post).
+    const resolved = resolveTikTokSettings({
+      campaignOverride: tiktokSettings as TikTokPublishConfig | undefined,
+      accountDefaults,
+      creatorInfo,
+    });
+    const isInbox = resolved.publishMethod === 'INBOX';
+    const privacyLevel = resolved.privacyLevel;
+
+    if (resolved.notes.length > 0) {
+      console.warn(`[TikTok] Settings adjusted for this account: ${resolved.notes.join(' ')}`);
+    }
 
     const initRes = await fetch('https://open.tiktokapis.com/v2/post/publish/video/init/', {
       method: 'POST',
@@ -1002,14 +1020,24 @@ export async function publishToTikTok(
       },
       body: JSON.stringify({
         post_info: {
-          title: ((tiktokSettings as any)?.caption || tiktokSettings?.title || caption).slice(0, 2200),
+          // TikTok rejects an empty title with the same "post info is empty or
+          // incorrect" error as an invalid privacy level. A scheduled post
+          // whose caption never got written would hit that, so never send ''.
+          title: (
+            (tiktokSettings as any)?.caption
+            || tiktokSettings?.title
+            || caption
+            || 'New post'
+          ).slice(0, 2200),
           privacy_level: privacyLevel,
-          disable_comment: isInbox ? false : (tiktokSettings?.allowComment === true ? false : creatorInfo.commentDisabled),
-          disable_duet: isInbox ? false : (tiktokSettings?.allowDuet === true ? false : creatorInfo.duetDisabled),
-          disable_stitch: isInbox ? false : (tiktokSettings?.allowStitch === true ? false : creatorInfo.stitchDisabled),
-          brand_organic_toggle: tiktokSettings?.brandOrganicToggle ?? false,
-          brand_content_toggle: tiktokSettings?.brandContentToggle ?? false,
-          is_aigc: tiktokSettings?.isAIGC ?? false,
+          // INBOX uploads land in the creator's drafts, where they set these
+          // themselves — so the interaction flags are left open there.
+          disable_comment: isInbox ? false : !resolved.allowComment,
+          disable_duet: isInbox ? false : !resolved.allowDuet,
+          disable_stitch: isInbox ? false : !resolved.allowStitch,
+          brand_organic_toggle: resolved.brandOrganicToggle,
+          brand_content_toggle: resolved.brandContentToggle,
+          is_aigc: resolved.isAIGC,
         },
         source_info: {
           source: 'PULL_FROM_URL',
@@ -1625,7 +1653,20 @@ export async function publishToplatform(
         brandOrganicToggle?: boolean; brandContentToggle?: boolean;
         isAIGC?: boolean; caption?: string; publishMethod?: string;
       } | undefined;
-      return publishToTikTok(accessToken, caption, squareVideo ?? verticalVideo, refreshToken, onTokenRefresh, tiktokSettings, platformUsername);
+      // Account defaults ride alongside the campaign override rather than
+      // being merged into it, so the resolver can tell "campaign chose this"
+      // from "account default" and apply the hierarchy properly.
+      const tiktokAccountDefaults = ps?.tiktokAccountDefaults as TikTokPublishConfig | undefined;
+      return publishToTikTok(
+        accessToken,
+        caption,
+        squareVideo ?? verticalVideo,
+        refreshToken,
+        onTokenRefresh,
+        tiktokSettings,
+        platformUsername,
+        tiktokAccountDefaults,
+      );
     }
 
     case 'youtube':

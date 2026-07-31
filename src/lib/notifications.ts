@@ -77,7 +77,7 @@ export async function notifyPublishSucceeded(
     category: 'publish',
     title: `Published to ${platform}`,
     body: preview || 'Your post is now live.',
-    actionUrl: postId ? `/dashboard/posts/${postId}` : undefined,
+    actionUrl: postId ? `/dashboard/content/${postId}` : undefined,
     actionLabel: postId ? 'View post' : undefined,
   });
 }
@@ -94,7 +94,7 @@ export async function notifyPublishFailed(
     category: 'publish',
     title: `Failed to publish to ${platform}`,
     body: error || 'Something went wrong while publishing.',
-    actionUrl: postId ? `/dashboard/posts/${postId}` : undefined,
+    actionUrl: postId ? `/dashboard/content/${postId}` : undefined,
     actionLabel: postId ? 'Review post' : undefined,
   });
 }

@@ -675,6 +675,14 @@ export const campaignSchema = pgTable('campaign', {
   // so newly connected accounts are opt-out (auto-included) and deleted
   // accounts disappear for free. See memory nativpost-blitz-account-model.
   blitzDisabledAccountIds: jsonb('blitz_disabled_account_ids').default([]),
+  // Per-platform publishing configuration for this campaign, keyed by platform:
+  //   { tiktok: { publishMethod, privacyLevel, allowComment, isAIGC, ... } }
+  // Carries the user's INTENT (values may be the USE_ACCOUNT_DEFAULT sentinel),
+  // which the publisher resolves against account defaults and live creator_info
+  // at publish time. See lib/tiktok/resolve-settings.ts. Without this the
+  // scheduler had nothing to publish from and guessed — sending an invalid
+  // TikTok privacy level and failing every scheduled TikTok post.
+  platformSettings: jsonb('platform_settings').default({}),
   totalEngagement: integer('total_engagement').default(0),
   avgEngagementRate: real('avg_engagement_rate'),
   updatedAt: timestamp('updated_at', { mode: 'date' })

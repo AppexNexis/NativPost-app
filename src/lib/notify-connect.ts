@@ -81,7 +81,7 @@ export async function notifyPostPublished(
     platform,
     caption,
     engagementUrl: postId
-      ? `https://app.nativpost.com/dashboard/posts/${postId}`
+      ? `https://app.nativpost.com/dashboard/content/${postId}`
       : undefined,
   });
 }

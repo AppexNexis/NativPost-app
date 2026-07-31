@@ -358,6 +358,20 @@ export async function GET(request: NextRequest) {
           // ── Build merged platformSpecific ────────────────────────────────
           let mergedPlatformData: Record<string, unknown> = { ...platformCaptions };
 
+          // TikTok: supply the account's saved defaults as the middle tier of
+          // the settings hierarchy (campaign override → account default →
+          // creator_info). Passed separately from the campaign's own config so
+          // the resolver can tell an explicit choice from an inherited one.
+          if (platform === 'tiktok') {
+            const meta = (account.metadata ?? {}) as { tiktokDefaults?: Record<string, unknown> };
+            if (meta.tiktokDefaults) {
+              mergedPlatformData = {
+                ...mergedPlatformData,
+                tiktokAccountDefaults: meta.tiktokDefaults,
+              };
+            }
+          }
+
           // WhatsApp: inject phoneNumberId from account metadata
           if (platform === 'whatsapp' && account.metadata) {
             const meta = account.metadata as { phoneNumberId?: string; wabaId?: string };

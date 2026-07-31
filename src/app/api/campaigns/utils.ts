@@ -2990,11 +2990,20 @@ export async function scheduleCampaignPosts(
     // auto-published. `targetAccountIds` carries the per-platform account
     // choice through to the publisher, which honours it the same way the
     // manual publish route does.
+    // Carry the campaign's platform configuration onto the item so the
+    // publisher has the user's INTENT instead of guessing defaults. Merged
+    // under the existing platformSpecific bag, which is what the publisher
+    // already reads. Campaign keys win over anything already on the item.
+    const campaignPlatformSettings = (campaign?.platformSettings ?? {}) as Record<string, unknown>;
+    const itemPlatformSpecific = (contentItem.platformSpecific ?? {}) as Record<string, unknown>;
+    const mergedPlatformSpecific = { ...itemPlatformSpecific, ...campaignPlatformSettings };
+
     await db.update(contentItemSchema)
       .set({
         status: 'scheduled',
         scheduledFor,
         targetAccountIds: chosenAccountIds,
+        platformSpecific: mergedPlatformSpecific,
         updatedAt: new Date(),
       })
       .where(eq(contentItemSchema.id, contentItem.id));
