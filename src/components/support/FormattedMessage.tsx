@@ -32,8 +32,18 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
   );
 }
 
-const BULLET = /^\s*[-*•]\s+(.*)$/;
-const NUMBERED = /^\s*(\d+)[.)]\s+(.*)$/;
+// The separator and the captured text must not both be able to match a space,
+// or the two quantifiers can swap characters and backtrack polynomially. `.`
+// matches spaces, so `\s+(.*)` is ambiguous — requiring the capture to start
+// with a non-space (`\S`) makes each character's owner unambiguous.
+//
+// Worth the care: this runs over model output, which a user can steer with
+// their own input, so a pathological line is reachable rather than theoretical.
+// `\*(?!\*)` so a line that OPENS with bold ("**Blitz** does X") isn't read as
+// a bullet — that swallowed the first asterisk and rendered "*Blitz** does X".
+// Bold at the start of a line is common in exactly the output this parses.
+const BULLET = /^[ \t]*(?:[-•]|\*(?!\*))[ \t]*(\S.*)$/;
+const NUMBERED = /^[ \t]*(\d+)[.)][ \t]*(\S.*)$/;
 
 export function FormattedMessage({ content }: { content: string }) {
   const lines = content.split(/\r?\n/);

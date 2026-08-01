@@ -15,7 +15,6 @@ import type { AiCreditWallet } from '@/lib/ai-studio/server';
 
 import type { AspectRatio } from './AspectRatioPicker';
 import { BackHeader } from './BackHeader';
-import { CopilotPanel } from './CopilotPanel';
 import { CreditBadge } from './CreditBadge';
 import { InsufficientCreditsAlert } from './InsufficientCreditsAlert';
 import type { AiStudioJobView } from './JobCard';
@@ -78,49 +77,6 @@ export function AIStudioClient() {
       setAspect(nextModel.aspects[0] as AspectRatio);
     }
   }, [kind]);
-
-  // ── Copilot suggestions ──────────────────────────────────────────────────
-  // A suggestion can name a model belonging to a DIFFERENT kind than the open
-  // tab. Switching `kind` fires the reset effect above, which would overwrite
-  // the model we just set — so a cross-kind suggestion is parked here and
-  // re-applied afterwards. This effect is declared after the reset one so it
-  // runs second.
-  const pendingSuggestionRef = useRef<{ modelId: string; aspect: string } | null>(null);
-
-  useEffect(() => {
-    const pending = pendingSuggestionRef.current;
-    if (!pending) {
-      return;
-    }
-    const model = getModel(pending.modelId);
-    if (model && model.kind === kind) {
-      setModelId(pending.modelId);
-      if ((model.aspects as readonly string[]).includes(pending.aspect)) {
-        setAspect(pending.aspect as AspectRatio);
-      }
-      pendingSuggestionRef.current = null;
-    }
-  }, [kind]);
-
-  const applyCopilotSuggestion = useCallback(
-    (s: { prompt: string; modelId: string; aspect: string }) => {
-      setPrompt(s.prompt);
-      const model = getModel(s.modelId);
-      if (!model) {
-        return; // server validates against the catalogue, so this is belt-and-braces
-      }
-      if (model.kind !== kind) {
-        pendingSuggestionRef.current = { modelId: s.modelId, aspect: s.aspect };
-        setKind(model.kind);
-        return;
-      }
-      setModelId(s.modelId);
-      if ((model.aspects as readonly string[]).includes(s.aspect)) {
-        setAspect(s.aspect as AspectRatio);
-      }
-    },
-    [kind],
-  );
 
   const fetchJobs = useCallback(async () => {
     try {
@@ -392,15 +348,10 @@ export function AIStudioClient() {
             />
           )}
 
-          {/* Prompt assistant. Sits directly under the composer it fills, so the
-            path from "I don't know what to write" to a ready generation is one
-            click and never leaves the page. Hidden for Talking Head, which
-            takes a script and reference media rather than a prompt. */}
-          {kind !== 'video-lipsync' && (
-            <div className="mt-4 h-[26rem]">
-              <CopilotPanel onApply={applyCopilotSuggestion} />
-            </div>
-          )}
+          {/* The prompt assistant lives in the floating support widget
+              ("Write a prompt" tab), not inline here — it's reachable from
+              every page rather than only this one, and it kept this page
+              cluttered. See components/support/SupportChat. */}
         </div>
       </div>
     </div>
