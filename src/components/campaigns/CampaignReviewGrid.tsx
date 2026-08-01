@@ -201,6 +201,16 @@ function toDate(v: unknown): Date | null {
   }
 }
 
+// Post statuses that mean "the user has approved this", including the states
+// it moves through afterwards. Used for the review counter so a launched
+// campaign doesn't read as unapproved.
+const APPROVED_OR_BEYOND = new Set(['approved', 'scheduled', 'published']);
+
+// Statuses still awaiting a decision. Deliberately excludes 'rejected' and
+// 'skipped' — those are choices, not omissions, and bulk approve must not
+// silently reverse them.
+const AWAITING_APPROVAL = new Set(['draft', 'pending_review']);
+
 // ── Content type label ────────────────────────────────────────────────────────
 function ctLabel(contentType: string | null | undefined): string {
   if (!contentType) {
@@ -251,8 +261,16 @@ export function CampaignReviewGrid({
   const reRolls = campaign.reRollsRemaining ?? 0;
 
   // ── Bulk approve ────────────────────────────────────────────────────────
-  const approvedCount = contentItems.filter(i => i.status === 'approved').length;
-  const pendingApproval = contentItems.filter(i => i.status !== 'approved');
+  // A post counts as approved once it has moved PAST approval too. After a
+  // campaign launches its items become 'scheduled', then 'published' — reading
+  // only `=== 'approved'` made a launched campaign report "0 / 14 approved"
+  // and offer to approve posts that were already live.
+  //
+  // And only genuinely-undecided posts are approvable: 'rejected' and
+  // 'skipped' are explicit decisions, so a bulk approve must not undo them.
+  // The old `!== 'approved'` filter swept those up as well.
+  const approvedCount = contentItems.filter(i => APPROVED_OR_BEYOND.has(i.status ?? '')).length;
+  const pendingApproval = contentItems.filter(i => AWAITING_APPROVAL.has(i.status ?? ''));
   const allApproved = contentItems.length > 0 && pendingApproval.length === 0;
 
   const handleApproveAll = async () => {

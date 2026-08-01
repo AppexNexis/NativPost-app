@@ -26,14 +26,22 @@ type CampaignWizardProps = {
   initialCampaign?: Campaign | null;
 };
 
+// Where reopening a campaign should drop you.
+//
+// 'active' / 'scheduled' / 'completed' used to land on Review (step 7) — so a
+// campaign you had just launched reopened onto the approve-and-launch screen,
+// looking exactly as if the launch had never happened. Those states are past
+// review; they belong on the launch/summary step.
 function initialStepForCampaign(campaign: Campaign): number {
   switch (campaign.status) {
     case 'generating': return 6;
+    // Still being worked on — Review.
     case 'review':
+    case 'paused': return 7;
+    // Already launched — the summary step, not the approval screen.
     case 'active':
     case 'scheduled':
-    case 'paused':
-    case 'completed': return 7;
+    case 'completed': return 8;
     default: return 0;
   }
 }
@@ -325,10 +333,25 @@ export function CampaignWizard({
     }
   };
 
+  const [isLaunching, setIsLaunching] = useState(false);
+
   const handleLaunch = async () => {
-    if (generatedCampaignId) {
+    if (!generatedCampaignId || isLaunching) {
+      return;
+    }
+    setIsLaunching(true);
+    try {
       await onLaunch(generatedCampaignId);
+      // Launch flips every approved item to 'scheduled' server-side. Without a
+      // refetch the local copies still read 'approved', so the Review grid
+      // showed no sign anything had happened — the launch looked like a no-op.
+      await fetchCampaignItems(generatedCampaignId);
+      setCampaign(prev => ({ ...prev, status: 'active' }));
       setCurrentStep(8);
+    } catch (err: any) {
+      setReviewError(err?.message || 'Launch failed');
+    } finally {
+      setIsLaunching(false);
     }
   };
 
@@ -498,11 +521,13 @@ export function CampaignWizard({
           {currentStep === 7 ? (
             <button
               onClick={handleLaunch}
-              disabled={isLoading}
+              disabled={isLoading || isLaunching}
               className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
-              Continue to launch
-              <ChevronRight className="size-4" />
+              {/* Launch schedules every approved post — it needs to look like
+                  it's doing something, or the click reads as ignored. */}
+              {isLaunching ? 'Launching…' : 'Continue to launch'}
+              {!isLaunching && <ChevronRight className="size-4" />}
             </button>
           ) : currentStep === 6 ? (
             <button
