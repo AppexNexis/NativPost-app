@@ -1,5 +1,7 @@
 'use client';
 
+import { Clapperboard } from 'lucide-react';
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -13,6 +15,7 @@ import type { AiCreditWallet } from '@/lib/ai-studio/server';
 
 import type { AspectRatio } from './AspectRatioPicker';
 import { BackHeader } from './BackHeader';
+import { CopilotPanel } from './CopilotPanel';
 import { CreditBadge } from './CreditBadge';
 import { InsufficientCreditsAlert } from './InsufficientCreditsAlert';
 import type { AiStudioJobView } from './JobCard';
@@ -21,8 +24,6 @@ import { KindTabs } from './KindTabs';
 import { PromptComposer } from './PromptComposer';
 import { TalkingHeadComposer } from './TalkingHeadComposer';
 import { TemplatePresets } from './TemplatePresets';
-import Link from 'next/link';
-import { Clapperboard } from 'lucide-react';
 
 const DEFAULT_MODEL_BY_KIND: Record<AiStudioKind, string> = {
   'image': 'flux-dev',
@@ -77,6 +78,49 @@ export function AIStudioClient() {
       setAspect(nextModel.aspects[0] as AspectRatio);
     }
   }, [kind]);
+
+  // ── Copilot suggestions ──────────────────────────────────────────────────
+  // A suggestion can name a model belonging to a DIFFERENT kind than the open
+  // tab. Switching `kind` fires the reset effect above, which would overwrite
+  // the model we just set — so a cross-kind suggestion is parked here and
+  // re-applied afterwards. This effect is declared after the reset one so it
+  // runs second.
+  const pendingSuggestionRef = useRef<{ modelId: string; aspect: string } | null>(null);
+
+  useEffect(() => {
+    const pending = pendingSuggestionRef.current;
+    if (!pending) {
+      return;
+    }
+    const model = getModel(pending.modelId);
+    if (model && model.kind === kind) {
+      setModelId(pending.modelId);
+      if ((model.aspects as readonly string[]).includes(pending.aspect)) {
+        setAspect(pending.aspect as AspectRatio);
+      }
+      pendingSuggestionRef.current = null;
+    }
+  }, [kind]);
+
+  const applyCopilotSuggestion = useCallback(
+    (s: { prompt: string; modelId: string; aspect: string }) => {
+      setPrompt(s.prompt);
+      const model = getModel(s.modelId);
+      if (!model) {
+        return; // server validates against the catalogue, so this is belt-and-braces
+      }
+      if (model.kind !== kind) {
+        pendingSuggestionRef.current = { modelId: s.modelId, aspect: s.aspect };
+        setKind(model.kind);
+        return;
+      }
+      setModelId(s.modelId);
+      if ((model.aspects as readonly string[]).includes(s.aspect)) {
+        setAspect(s.aspect as AspectRatio);
+      }
+    },
+    [kind],
+  );
 
   const fetchJobs = useCallback(async () => {
     try {
@@ -289,65 +333,75 @@ export function AIStudioClient() {
         label="Dashboard"
         title="AI Studio"
         subtitle="Images, video, and Talking Head clips. Every asset syncs to your Media Library."
-        right={
+        right={(
           <>
             <Link
               href="/dashboard/ai-studio/longform"
               className="inline-flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
             >
-              <Clapperboard className="h-3.5 w-3.5" />
+              <Clapperboard className="size-3.5" />
               Long Form
             </Link>
             <CreditBadge wallet={wallet} onWallet={setWallet} />
           </>
-        }
+        )}
       />
 
       <div className="flex flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
-      <section className="flex flex-col gap-3">
-        <KindTabs value={kind} onChange={setKind} />
-        <TemplatePresets kind={kind} onSelect={handleTemplateSelect} />
-      </section>
+        <section className="flex flex-col gap-3">
+          <KindTabs value={kind} onChange={setKind} />
+          <TemplatePresets kind={kind} onSelect={handleTemplateSelect} />
+        </section>
 
-      {insufficient && (
-        <InsufficientCreditsAlert
-          required={insufficient.required}
-          available={insufficient.available}
-          onDismiss={() => setInsufficient(null)}
-        />
-      )}
-
-      {errorMessage && (
-        <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {errorMessage}
-        </div>
-      )}
-
-      <section className="flex-1">
-        <JobGrid jobs={filteredJobs} onCanceled={fetchJobs} onRetried={fetchJobs} />
-      </section>
-
-      <div className="sticky bottom-0 -mx-4 border-t border-border bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        {kind === 'video-lipsync' ? (
-          <TalkingHeadComposer onSubmit={submitLipsync} submitting={submitting} />
-        ) : (
-          <PromptComposer
-            kind={kind}
-            modelId={modelId}
-            onModelChange={setModelId}
-            prompt={prompt}
-            onPromptChange={setPrompt}
-            aspect={aspect}
-            onAspectChange={setAspect}
-            duration={duration}
-            onDurationChange={setDuration}
-            references={references}
-            onReferencesChange={setReferences}
-            onSubmit={submitStandard}
-            submitting={submitting}
+        {insufficient && (
+          <InsufficientCreditsAlert
+            required={insufficient.required}
+            available={insufficient.available}
+            onDismiss={() => setInsufficient(null)}
           />
         )}
-      </div>
+
+        {errorMessage && (
+          <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {errorMessage}
+          </div>
+        )}
+
+        <section className="flex-1">
+          <JobGrid jobs={filteredJobs} onCanceled={fetchJobs} onRetried={fetchJobs} />
+        </section>
+
+        <div className="sticky bottom-0 -mx-4 border-t border-border bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+          {kind === 'video-lipsync' ? (
+            <TalkingHeadComposer onSubmit={submitLipsync} submitting={submitting} />
+          ) : (
+            <PromptComposer
+              kind={kind}
+              modelId={modelId}
+              onModelChange={setModelId}
+              prompt={prompt}
+              onPromptChange={setPrompt}
+              aspect={aspect}
+              onAspectChange={setAspect}
+              duration={duration}
+              onDurationChange={setDuration}
+              references={references}
+              onReferencesChange={setReferences}
+              onSubmit={submitStandard}
+              submitting={submitting}
+            />
+          )}
+
+          {/* Prompt assistant. Sits directly under the composer it fills, so the
+            path from "I don't know what to write" to a ready generation is one
+            click and never leaves the page. Hidden for Talking Head, which
+            takes a script and reference media rather than a prompt. */}
+          {kind !== 'video-lipsync' && (
+            <div className="mt-4 h-[26rem]">
+              <CopilotPanel onApply={applyCopilotSuggestion} />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

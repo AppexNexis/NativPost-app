@@ -19,17 +19,19 @@ import {
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
-type Step = 'closed' | 'home' | 'form' | 'submitting';
+import { SupportChat } from './SupportChat';
+
+type Step = 'closed' | 'home' | 'chat' | 'form' | 'submitting';
 
 export default function SupportWidget({ currentPath }: { currentPath: string }) {
-  const router     = useRouter();
-  const [step,    setStep]    = useState<Step>('closed');
+  const router = useRouter();
+  const [step, setStep] = useState<Step>('closed');
   const [subject, setSubject] = useState('');
-  const [body,    setBody]    = useState('');
-  const [error,   setError]   = useState('');
+  const [body, setBody] = useState('');
+  const [error, setError] = useState('');
   const subjectRef = useRef<HTMLInputElement>(null);
 
-  const open  = () => setStep('home');
+  const open = () => setStep('home');
   const close = () => {
     setStep('closed');
     setSubject('');
@@ -51,13 +53,15 @@ export default function SupportWidget({ currentPath }: { currentPath: string }) 
     setStep('submitting');
     setError('');
     try {
-      const res  = await fetch('/api/support/tickets', {
-        method:  'POST',
+      const res = await fetch('/api/support/tickets', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ subject: subject.trim(), body: body.trim() }),
+        body: JSON.stringify({ subject: subject.trim(), body: body.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error('Failed');
+      if (!res.ok) {
+        throw new Error('Failed');
+      }
       close();
       router.push(`/dashboard/support/${data.ticket.id}`);
     } catch {
@@ -87,7 +91,7 @@ export default function SupportWidget({ currentPath }: { currentPath: string }) 
             </div>
             <button
               onClick={close}
-              className="rounded-lg p-1 hover:bg-white/10 transition-colors"
+              className="rounded-lg p-1 transition-colors hover:bg-white/10"
             >
               <ChevronDown className="size-4 text-white" />
             </button>
@@ -95,13 +99,26 @@ export default function SupportWidget({ currentPath }: { currentPath: string }) 
 
           {/* Home screen */}
           {step === 'home' && (
-            <div className="p-4 space-y-3">
+            <div className="space-y-3 p-4">
               <p className="text-sm text-muted-foreground">
                 Need help with your NativPost account? Our team and AI are here for you.
               </p>
+              {/* Instant answers first, ticket second. Most questions are
+                  "how does X work", which the assistant answers immediately —
+                  routing those through a ticket costs the user a wait and the
+                  team a reply. The ticket stays one tap away below. */}
+              <button
+                onClick={() => setStep('chat')}
+                className="w-full rounded-xl border bg-muted/40 px-4 py-3.5 text-left transition-colors hover:bg-muted/80"
+              >
+                <p className="text-sm font-medium">Ask the assistant</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Instant answers about NativPost, no waiting
+                </p>
+              </button>
               <button
                 onClick={() => setStep('form')}
-                className="w-full rounded-xl border bg-muted/40 px-4 py-3.5 text-left transition-colors hover:bg-muted/80"
+                className="block w-full rounded-xl border px-4 py-3.5 text-left transition-colors hover:bg-muted/40"
               >
                 <p className="text-sm font-medium">Open a support ticket</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
@@ -109,7 +126,9 @@ export default function SupportWidget({ currentPath }: { currentPath: string }) 
                 </p>
               </button>
               <button
-                onClick={() => { close(); router.push('/dashboard/support'); }}
+                onClick={() => {
+                  close(); router.push('/dashboard/support');
+                }}
                 className="block w-full rounded-xl border px-4 py-3.5 text-left transition-colors hover:bg-muted/40"
               >
                 <p className="text-sm font-medium">View my tickets</p>
@@ -120,15 +139,30 @@ export default function SupportWidget({ currentPath }: { currentPath: string }) 
             </div>
           )}
 
+          {/* Assistant — same endpoint as the AI Studio copilot, in support
+              mode: it answers NativPost product questions and is told to
+              suggest a ticket rather than guess when it isn't sure. */}
+          {step === 'chat' && (
+            <div className="flex h-[26rem] flex-col">
+              <SupportChat onOpenTicket={() => setStep('form')} />
+              <button
+                onClick={() => setStep('home')}
+                className="border-t px-4 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted/40"
+              >
+                Back
+              </button>
+            </div>
+          )}
+
           {/* Form */}
           {(step === 'form' || step === 'submitting') && (
-            <div className="p-4 space-y-3">
+            <div className="space-y-3 p-4">
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Subject</label>
                 <input
                   ref={subjectRef}
                   value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
+                  onChange={e => setSubject(e.target.value)}
                   placeholder="e.g. My LinkedIn posts aren't publishing"
                   disabled={step === 'submitting'}
                   className="w-full rounded-lg border bg-muted/30 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
@@ -138,13 +172,15 @@ export default function SupportWidget({ currentPath }: { currentPath: string }) 
                 <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Describe the issue</label>
                 <textarea
                   value={body}
-                  onChange={(e) => setBody(e.target.value)}
+                  onChange={e => setBody(e.target.value)}
                   placeholder="What happened? What did you expect? Any relevant details."
                   rows={4}
                   disabled={step === 'submitting'}
                   className="w-full resize-none rounded-lg border bg-muted/30 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit();
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      submit();
+                    }
                   }}
                 />
               </div>
@@ -164,7 +200,12 @@ export default function SupportWidget({ currentPath }: { currentPath: string }) 
                 >
                   {step === 'submitting'
                     ? <Loader2 className="size-4 animate-spin" />
-                    : <><Send className="size-3.5" />Send</>}
+                    : (
+                        <>
+                          <Send className="size-3.5" />
+                          Send
+                        </>
+                      )}
                 </button>
               </div>
               <p className="text-center text-[10px] text-muted-foreground">
@@ -188,7 +229,7 @@ export default function SupportWidget({ currentPath }: { currentPath: string }) 
         {step === 'closed' ? (
           <>
             <MessageCircle className="size-6" />
-            <span className="absolute inset-0 rounded-full animate-ping bg-primary opacity-20" />
+            <span className="absolute inset-0 animate-ping rounded-full bg-primary opacity-20" />
           </>
         ) : (
           <X className="size-5" />

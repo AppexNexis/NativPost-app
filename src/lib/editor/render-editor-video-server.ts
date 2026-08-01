@@ -42,6 +42,10 @@ export async function renderEditorVideoServer(
   const abortMs = opts?.abortMs ?? DEFAULT_ABORT_MS;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), abortMs);
+  // COST metric. Rendering is the dominant per-post cost — it's CPU-seconds on
+  // the engine box, orders of magnitude above the LLM and TTS calls. Wall time
+  // here is the closest proxy the app can see. Grep `[Cost] render`.
+  const renderStartedMs = Date.now();
 
   try {
     // ── Start the render job ────────────────────────────────────────────
@@ -59,6 +63,20 @@ export async function renderEditorVideoServer(
         hookVideoUrl: input.mediaSlots?.hookVideo?.url,
         slides: input.mediaSlots?.slides || [],
         audioTrack: input.audioTrack?.url ? input.audioTrack : null,
+        // ElevenLabs voice-over.
+        //
+        // `reconstructRenderInput` has always produced these (from
+        // enrichmentData.audio, gated on status === 'ready') and the payload
+        // simply never forwarded them — so the voice-over played in the
+        // in-app Remotion preview and was silent in the published MP4. Only
+        // `audioTrack`, the background music slot, made it to the engine.
+        //
+        // durationMs goes with the url because the engine sizes the
+        // composition from it: without it the render can end before the
+        // voice-over finishes. Mirrors RemotionPreviewPlayer, which extends
+        // its duration from audioDurationMs for exactly this reason.
+        voiceoverUrl: input.voiceoverUrl || null,
+        voiceoverDurationMs: input.voiceoverDurationMs || null,
       }),
     });
 
@@ -71,11 +89,14 @@ export async function renderEditorVideoServer(
 
     // ── Async path (jobId) ──────────────────────────────────────────────
     if (data.jobId) {
-      return pollEditorRenderJobServer(data.jobId as string, abortMs);
+      const url = await pollEditorRenderJobServer(data.jobId as string, abortMs);
+      logRenderCost(input, renderStartedMs, 'async');
+      return url;
     }
 
     // ── Legacy sync path ────────────────────────────────────────────────
     if (!data.url) throw new Error('Engine returned no url');
+    logRenderCost(input, renderStartedMs, 'sync');
     return data.url as string;
   } finally {
     clearTimeout(timeoutId);
@@ -128,4 +149,35 @@ async function pollEditorRenderJobServer(
     }
     // else 'rendering' | 'uploading' — keep polling
   }
+}
+
+/**
+ * COST metric for one rendered video.
+ *
+ * Render is the dominant per-post cost — CPU-seconds on the engine, orders of
+ * magnitude above the Haiku rewrite or the TTS call. The app can't see the
+ * engine's CPU time, so wall-clock across the whole render (including polling)
+ * is the usable proxy.
+ *
+ * Emitted as a single greppable line so a week of logs gives real per-post
+ * cost instead of an estimate:
+ *   grep '\[Cost\] render' | awk '{...}'
+ *
+ * `voiceover` matters because the engine sizes the composition from the
+ * narration length (calcDurationEditor) — narrated posts render longer video
+ * and therefore cost more.
+ */
+function logRenderCost(
+  input: RenderEditorVideoInput,
+  startedMs: number,
+  path: 'async' | 'sync',
+): void {
+  console.warn(
+    `[Cost] render ms=${Date.now() - startedMs} `
+    + `type=${input.contentType || 'unknown'} `
+    + `ratio=${input.aspectRatio || '9:16'} `
+    + `voiceover=${input.voiceoverUrl ? 'yes' : 'no'} `
+    + `voMs=${input.voiceoverDurationMs ?? 0} `
+    + `path=${path}`,
+  );
 }

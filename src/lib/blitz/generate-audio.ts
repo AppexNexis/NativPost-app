@@ -224,6 +224,10 @@ export async function generateAudioForBlitzItem(opts: GenerateAudioOpts): Promis
 
   // Combine into one TTS call — one Cloudinary upload, one URL, timings
   // estimated proportionally by char length. See plan §6.
+  // Characters actually sent to ElevenLabs for this post, summed across
+  // retries. This is the unit they bill on, so it's the per-post TTS cost.
+  let ttsCharsBilled = 0;
+
   const tryOnce = async (
     segments: { hook: string; body: string; cta: string },
   ): Promise<{ url: string; durationSec: number } | null> => {
@@ -231,6 +235,11 @@ export async function generateAudioForBlitzItem(opts: GenerateAudioOpts): Promis
     if (!combined) {
       return null;
     }
+    // ElevenLabs bills per character, and the 3-tier degradation below can
+    // call this up to three times — so the billed total is the SUM of every
+    // attempt, not the length of the take that finally succeeded. Accumulate
+    // it so the per-post cost in the logs is the real one.
+    ttsCharsBilled += combined.length;
     const result = await textToSpeech({
       text: combined,
       voiceId,
@@ -279,6 +288,11 @@ export async function generateAudioForBlitzItem(opts: GenerateAudioOpts): Promis
     }
 
     const durationMs = Math.round(attempt.durationSec * 1000);
+    // COST metric — grep `[Cost] tts` to total TTS characters per campaign.
+    console.warn(
+      `[Cost] tts item=${contentItemId} chars=${ttsCharsBilled} `
+      + `audioMs=${durationMs} voice=${voiceId}`,
+    );
     await writeAudioState(db, contentItemId, enrichment, {
       url: attempt.url,
       durationMs,
