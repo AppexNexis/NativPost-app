@@ -4,7 +4,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { checkFeatureAccess, checkPostLimit, hasActiveSubscription } from '@/lib/billing';
+import { checkFeatureAccess, checkPostLimit, getOrgBillingState, hasActiveSubscription } from '@/lib/billing';
 import { drainOneJob } from '@/lib/campaigns/drain-job';
 import { isBlitzCampaign } from '@/lib/campaigns/is-blitz';
 import { CAMPAIGN_GENERATE_EVENT, inngest, isInngestConfigured } from '@/lib/inngest/client';
@@ -118,20 +118,40 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: postLimit.reason }, { status: 403 });
     }
 
-    const mix = (campaign.contentMix as Record<string, number>) || {};
-    const hasImages = (mix.carousel ?? 0) > 0 || (mix.slideshow ?? 0) > 0;
-    const hasVideo = (mix.videoHook ?? 0) > 0 || (mix.greenScreen ?? 0) > 0 || (mix.talkingHead ?? 0) > 0 || (mix.wallOfText ?? 0) > 0;
-
-    if (hasImages) {
-      const imageCheck = await checkFeatureAccess(orgId!, 'imagePosts');
-      if (!imageCheck.allowed) {
-        return NextResponse.json({ error: imageCheck.reason }, { status: 403 });
+    // ── Entitlement ────────────────────────────────────────────────────────
+    // Blitz has its OWN allowance (`blitzPostsPerDay`) and is not gated by the
+    // per-content-type flags. Those flags exist to keep Free "text only" for
+    // ordinary campaigns; applying them to Blitz contradicted the plan, which
+    // grants Free 2 Blitz posts a day. Because every Blitz content type is
+    // video- or image-shaped, that gate rejected Blitz outright on Free with
+    // "This feature is not available on your current plan" — while the billing
+    // page advertised "Blitz mode · 2 posts/day". The daily cap is what bounds
+    // the cost here, and it's already enforced on the Blitz surfaces.
+    if (isBlitzCampaign(campaign)) {
+      const billingState = await getOrgBillingState(orgId!);
+      const blitzCap = billingState?.features?.blitzPostsPerDay ?? 0;
+      if (blitzCap === 0) {
+        return NextResponse.json(
+          { error: 'Blitz is not available on your current plan. Upgrade to unlock it.' },
+          { status: 403 },
+        );
       }
-    }
-    if (hasVideo) {
-      const videoCheck = await checkFeatureAccess(orgId!, 'videoGeneration');
-      if (!videoCheck.allowed) {
-        return NextResponse.json({ error: videoCheck.reason }, { status: 403 });
+    } else {
+      const mix = (campaign.contentMix as Record<string, number>) || {};
+      const hasImages = (mix.carousel ?? 0) > 0 || (mix.slideshow ?? 0) > 0;
+      const hasVideo = (mix.videoHook ?? 0) > 0 || (mix.greenScreen ?? 0) > 0 || (mix.talkingHead ?? 0) > 0 || (mix.wallOfText ?? 0) > 0;
+
+      if (hasImages) {
+        const imageCheck = await checkFeatureAccess(orgId!, 'imagePosts');
+        if (!imageCheck.allowed) {
+          return NextResponse.json({ error: imageCheck.reason }, { status: 403 });
+        }
+      }
+      if (hasVideo) {
+        const videoCheck = await checkFeatureAccess(orgId!, 'videoGeneration');
+        if (!videoCheck.allowed) {
+          return NextResponse.json({ error: videoCheck.reason }, { status: 403 });
+        }
       }
     }
 
