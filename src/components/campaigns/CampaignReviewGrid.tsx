@@ -211,6 +211,30 @@ const APPROVED_OR_BEYOND = new Set(['approved', 'scheduled', 'published']);
 // silently reverse them.
 const AWAITING_APPROVAL = new Set(['draft', 'pending_review']);
 
+/**
+ * Has the user approved this post? True for everything from approval onward.
+ *
+ * Every card, row and counter asks this, and they all used to test
+ * `status === 'approved'` individually. That made a launched campaign look
+ * unapproved everywhere at once: launch moves items to 'scheduled', so the
+ * green ring and badge vanished from cards that the summary bar was
+ * simultaneously counting as approved.
+ */
+function isApproved(status: string | null | undefined): boolean {
+  return APPROVED_OR_BEYOND.has(status ?? '');
+}
+
+/** Badge wording for an approved post — says what actually happened to it. */
+function approvedLabel(status: string | null | undefined): string {
+  if (status === 'published') {
+    return 'Published';
+  }
+  if (status === 'scheduled') {
+    return 'Scheduled';
+  }
+  return 'Approved';
+}
+
 // ── Content type label ────────────────────────────────────────────────────────
 function ctLabel(contentType: string | null | undefined): string {
   if (!contentType) {
@@ -574,7 +598,7 @@ function PostCard({
   const thumb = getThumb(item);
   const videoUrl = getVideoUrl(item);
   const isVideoType = VIDEO_CONTENT_TYPES.has(item.contentType ?? '');
-  const approved = item.status === 'approved';
+  const approved = isApproved(item.status);
   // Show first campaign platform icon (most relevant)
   const primaryPlatform = campaignPlatforms[0] ?? (Array.isArray(item.targetPlatforms) ? String(item.targetPlatforms[0] ?? '') : '');
   const angleColor = item.angleColor ?? '#f97316';
@@ -634,7 +658,7 @@ function PostCard({
         {/* Approved chip */}
         {approved && (
           <div className="absolute left-2 top-10 z-10">
-            <Badge className="bg-emerald-500 px-1.5 py-0 text-[9px] text-white">Approved</Badge>
+            <Badge className="bg-emerald-500 px-1.5 py-0 text-[9px] text-white">{approvedLabel(item.status)}</Badge>
           </div>
         )}
 
@@ -1045,7 +1069,7 @@ function AgendaView({
   return (
     <div className="space-y-5">
       {populated.map(({ day, items }) => {
-        const approved = items.filter(i => i.status === 'approved').length;
+        const approved = items.filter(i => isApproved(i.status)).length;
         return (
           <div key={day.toISOString()} className="space-y-2">
             {/* Day header */}
@@ -1109,7 +1133,7 @@ function AgendaRow({
   const thumb = getThumb(item);
   const videoUrl = getVideoUrl(item);
   const isVideoType = VIDEO_CONTENT_TYPES.has(item.contentType ?? '');
-  const approved = item.status === 'approved';
+  const approved = isApproved(item.status);
   const primaryPlatform = campaignPlatforms[0] ?? (Array.isArray(item.targetPlatforms) ? String(item.targetPlatforms[0] ?? '') : '');
   const overlayText = getOverlayText(item);
   const [cardRef, inView] = useInView<HTMLDivElement>({ rootMargin: '200px', once: false });
@@ -1159,7 +1183,7 @@ function AgendaRow({
           </button>
 
           {approved && (
-            <Badge className="shrink-0 bg-emerald-500 px-1.5 py-0 text-[9px] text-white">Approved</Badge>
+            <Badge className="shrink-0 bg-emerald-500 px-1.5 py-0 text-[9px] text-white">{approvedLabel(item.status)}</Badge>
           )}
         </div>
 
@@ -1267,7 +1291,7 @@ function DayDetailDialog({
   onApprove: (id: string) => void;
   onScheduleChange: (itemId: string, date: string, time: string) => void;
 }) {
-  const approved = items.filter(i => i.status === 'approved').length;
+  const approved = items.filter(i => isApproved(i.status)).length;
 
   return (
     <Dialog open={!!day} onOpenChange={open => !open && onClose()}>
@@ -1312,7 +1336,7 @@ function DayDetailDialog({
 function CalendarEventRow({ item, onOpen }: { item: ReviewItem; onOpen: () => void }) {
   const thumb = getThumb(item);
   const accent = item.angleColor ?? '#f97316';
-  const approved = item.status === 'approved';
+  const approved = isApproved(item.status);
 
   return (
     <button
