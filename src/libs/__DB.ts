@@ -56,9 +56,26 @@ async function initDb(): Promise<AnyDb> {
     // });
     const pool = new Pool({
       connectionString: Env.DATABASE_URL,
-      max: 1,              // was 10 — let Supavisor handle the real pooling
-      idleTimeoutMillis: 10_000,
-      connectionTimeoutMillis: 5_000,
+      max: 1, // was 10 — let Supavisor handle the real pooling
+      // Never reap the idle connection mid-invocation.
+      //
+      // This was 10s, which broke any request with a long non-DB gap in it.
+      // The publish cron is the clearest case: it polls TikTok for ~11s with
+      // no DB activity, the pool closed its ONLY connection during that gap,
+      // and the post-publish write then had to reconnect through Supavisor —
+      // failing with `08006 / EAUTHTIMEOUT` and losing the notification for a
+      // post that had published fine. Video compiles idle for far longer.
+      //
+      // In serverless there is nothing to reclaim: the container is frozen or
+      // torn down after the response either way, so an idle connection costs
+      // nothing while the invocation is alive.
+      idleTimeoutMillis: 0,
+      // Supavisor can take a moment to hand out a connection under load; 5s
+      // turned a slow handout into a hard failure.
+      connectionTimeoutMillis: 15_000,
+      // Keep the TCP socket warm so an idle stretch isn't dropped by NAT or
+      // an intermediary before we come back to it.
+      keepAlive: true,
     });
 
     // Verify connection is reachable before returning

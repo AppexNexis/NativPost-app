@@ -22,6 +22,7 @@ import {
   TwitterIcon,
   YoutubeIcon,
 } from '@/components/icons/PlatformIcons';
+import { TikTokAccountDefaults } from '@/components/tiktok/TikTokAccountDefaults';
 import {
   Tooltip,
   TooltipContent,
@@ -449,156 +450,170 @@ function SocialAccountsContent() {
                         .filter(Boolean)
                         .join(' ')}
                     >
-                    <div className="flex items-center gap-3 p-4 sm:gap-4 sm:px-5">
-                      {/* Platform icon */}
-                      <div
-                        className={[
-                          'flex size-9 shrink-0 items-center justify-center rounded-lg sm:size-10',
-                          isMediaRow ? 'bg-muted/50' : 'bg-muted',
-                        ].join(' ')}
-                      >
-                        {isMediaRow ? (
-                          <ImageIcon
-                            className="size-4 text-muted-foreground sm:size-5"
-                            aria-hidden
-                          />
-                        ) : (
-                          <PIcon className="size-4 text-muted-foreground sm:size-5" />
-                        )}
-                      </div>
-
-                      {/* Name + status */}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <p className="text-sm font-medium">{platform.name}</p>
-
-                          {platform.badgeVariant === 'media' ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
-                              <ImageIcon className="size-2.5" aria-hidden />
-                              Images &amp; video
-                            </span>
-                          ) : platform.badge ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                              <Type className="size-2.5" aria-hidden />
-                              {platform.badge}
-                            </span>
-                          ) : platform.description ? (
-                            <span className="rounded-full border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                              {platform.description}
-                            </span>
-                          ) : null}
+                      <div className="flex items-center gap-3 p-4 sm:gap-4 sm:px-5">
+                        {/* Platform icon */}
+                        <div
+                          className={[
+                            'flex size-9 shrink-0 items-center justify-center rounded-lg sm:size-10',
+                            isMediaRow ? 'bg-muted/50' : 'bg-muted',
+                          ].join(' ')}
+                        >
+                          {isMediaRow ? (
+                            <ImageIcon
+                              className="size-4 text-muted-foreground sm:size-5"
+                              aria-hidden
+                            />
+                          ) : (
+                            <PIcon className="size-4 text-muted-foreground sm:size-5" />
+                          )}
                         </div>
 
+                        {/* Name + status */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="text-sm font-medium">{platform.name}</p>
+
+                            {platform.badgeVariant === 'media' ? (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
+                                <ImageIcon className="size-2.5" aria-hidden />
+                                Images &amp; video
+                              </span>
+                            ) : platform.badge ? (
+                              <span className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                <Type className="size-2.5" aria-hidden />
+                                {platform.badge}
+                              </span>
+                            ) : platform.description ? (
+                              <span className="rounded-full border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                {platform.description}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          {connected ? (
+                            <p className="mt-0.5 text-xs text-emerald-600">
+                              {account.platformUsername
+                                ? `@${account.platformUsername}`
+                                : 'Connected'}
+                            </p>
+                          ) : isMediaRow ? (
+                            <p className="mt-0.5 text-meta text-muted-foreground">
+                              Connect to publish images &amp; videos to X
+                            </p>
+                          ) : (
+                            <p className="mt-0.5 text-meta text-muted-foreground">
+                              Not connected
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Actions */}
                         {connected ? (
-                          <p className="mt-0.5 text-xs text-emerald-600">
-                            {account.platformUsername
-                              ? `@${account.platformUsername}`
-                              : 'Connected'}
-                          </p>
-                        ) : isMediaRow ? (
-                          <p className="mt-0.5 text-meta text-muted-foreground">
-                            Connect to publish images &amp; videos to X
-                          </p>
+                          <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
+                            {/* Profile picture */}
+                            <Avatar
+                              src={account.profileImageUrl}
+                              username={account.platformUsername}
+                            />
+
+                            {/* Connected indicator — desktop */}
+                            <div className="hidden items-center gap-1.5 sm:flex">
+                              <div className="flex size-4 items-center justify-center rounded-full bg-emerald-500">
+                                <Check className="size-2.5 text-white" />
+                              </div>
+                              <span className="text-xs text-emerald-600">Connected</span>
+                            </div>
+
+                            {/* Connected dot — mobile */}
+                            <div className="flex size-5 items-center justify-center rounded-full bg-emerald-500 sm:hidden">
+                              <Check className="size-3 text-white" />
+                            </div>
+
+                            <PlatformTip tip={platform.tip} />
+
+                            <button
+                              type="button"
+                              onClick={() => disconnectAccount(account.id)}
+                              disabled={disconnecting === account.id}
+                              className="rounded-lg border px-2.5 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-50 disabled:opacity-50 sm:px-3"
+                            >
+                              {disconnecting === account.id ? (
+                                <Loader2 className="size-3 animate-spin" />
+                              ) : (
+                                'Disconnect'
+                              )}
+                            </button>
+
+                            {/* Connect an ADDITIONAL account on the same platform. */}
+                            <button
+                              type="button"
+                              onClick={() => connectPlatform(platform)}
+                              className="shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted sm:px-3"
+                            >
+                              + Add
+                            </button>
+                          </div>
                         ) : (
-                          <p className="mt-0.5 text-meta text-muted-foreground">
-                            Not connected
-                          </p>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <PlatformTip tip={platform.tip} />
+
+                            <button
+                              type="button"
+                              onClick={() => connectPlatform(platform)}
+                              className={[
+                                'shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors sm:px-4 sm:py-2',
+                                isMediaRow
+                                  ? 'border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100'
+                                  : 'bg-foreground text-background hover:opacity-90',
+                              ].join(' ')}
+                            >
+                              Connect
+                            </button>
+                          </div>
                         )}
                       </div>
 
-                      {/* Actions */}
-                      {connected ? (
-                        <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
-                          {/* Profile picture */}
+                      {/* Additional accounts connected to this same platform. */}
+                      {extraAccounts.map(extra => (
+                        <div
+                          key={extra.id}
+                          className="flex items-center gap-3 px-4 pb-3 pl-16 sm:gap-4 sm:px-5 sm:pl-[4.75rem]"
+                        >
+                          <span className="min-w-0 flex-1 truncate text-xs text-emerald-600">
+                            {extra.platformUsername ? `@${extra.platformUsername}` : 'Connected'}
+                          </span>
                           <Avatar
-                            src={account.profileImageUrl}
-                            username={account.platformUsername}
+                            src={extra.profileImageUrl}
+                            username={extra.platformUsername}
                           />
-
-                          {/* Connected indicator — desktop */}
-                          <div className="hidden items-center gap-1.5 sm:flex">
-                            <div className="flex size-4 items-center justify-center rounded-full bg-emerald-500">
-                              <Check className="size-2.5 text-white" />
-                            </div>
-                            <span className="text-xs text-emerald-600">Connected</span>
-                          </div>
-
-                          {/* Connected dot — mobile */}
-                          <div className="flex size-5 items-center justify-center rounded-full bg-emerald-500 sm:hidden">
-                            <Check className="size-3 text-white" />
-                          </div>
-
-                          <PlatformTip tip={platform.tip} />
-
                           <button
                             type="button"
-                            onClick={() => disconnectAccount(account.id)}
-                            disabled={disconnecting === account.id}
-                            className="rounded-lg border px-2.5 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-50 disabled:opacity-50 sm:px-3"
+                            onClick={() => disconnectAccount(extra.id)}
+                            disabled={disconnecting === extra.id}
+                            className="shrink-0 rounded-lg border px-2.5 py-1 text-xs font-medium text-red-500 transition-colors hover:bg-red-50 disabled:opacity-50 sm:px-3"
                           >
-                            {disconnecting === account.id ? (
+                            {disconnecting === extra.id ? (
                               <Loader2 className="size-3 animate-spin" />
                             ) : (
                               'Disconnect'
                             )}
                           </button>
-
-                          {/* Connect an ADDITIONAL account on the same platform. */}
-                          <button
-                            type="button"
-                            onClick={() => connectPlatform(platform)}
-                            className="shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted sm:px-3"
-                          >
-                            + Add
-                          </button>
                         </div>
-                      ) : (
-                        <div className="flex shrink-0 items-center gap-2">
-                          <PlatformTip tip={platform.tip} />
+                      ))}
 
-                          <button
-                            type="button"
-                            onClick={() => connectPlatform(platform)}
-                            className={[
-                              'shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors sm:px-4 sm:py-2',
-                              isMediaRow
-                                ? 'border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100'
-                                : 'bg-foreground text-background hover:opacity-90',
-                            ].join(' ')}
-                          >
-                            Connect
-                          </button>
+                      {/* TikTok is the only platform whose publish call needs
+                        options beyond a caption — privacy, direct vs inbox,
+                        interaction and disclosure flags. Setting them once
+                        here means every scheduled campaign post publishes with
+                        the account's intent instead of a fallback. */}
+                      {platform.id === 'tiktok' && connected && account && (
+                        <div className="border-t bg-muted/20 p-4 sm:px-5">
+                          <TikTokAccountDefaults
+                            accountId={account.id}
+                            accountLabel={account.platformUsername ?? undefined}
+                          />
                         </div>
                       )}
-                    </div>
-
-                    {/* Additional accounts connected to this same platform. */}
-                    {extraAccounts.map(extra => (
-                      <div
-                        key={extra.id}
-                        className="flex items-center gap-3 px-4 pb-3 pl-16 sm:gap-4 sm:px-5 sm:pl-[4.75rem]"
-                      >
-                        <span className="min-w-0 flex-1 truncate text-xs text-emerald-600">
-                          {extra.platformUsername ? `@${extra.platformUsername}` : 'Connected'}
-                        </span>
-                        <Avatar
-                          src={extra.profileImageUrl}
-                          username={extra.platformUsername}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => disconnectAccount(extra.id)}
-                          disabled={disconnecting === extra.id}
-                          className="shrink-0 rounded-lg border px-2.5 py-1 text-xs font-medium text-red-500 transition-colors hover:bg-red-50 disabled:opacity-50 sm:px-3"
-                        >
-                          {disconnecting === extra.id ? (
-                            <Loader2 className="size-3 animate-spin" />
-                          ) : (
-                            'Disconnect'
-                          )}
-                        </button>
-                      </div>
-                    ))}
                     </div>
                   );
                 })}

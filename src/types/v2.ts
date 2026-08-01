@@ -33,7 +33,9 @@ export const VIDEO_CONTENT_TYPES = [
 ] as const;
 
 export function isVideoContentType(contentType: string | null | undefined): boolean {
-  if (!contentType) return false;
+  if (!contentType) {
+    return false;
+  }
   return (VIDEO_CONTENT_TYPES as readonly string[]).includes(contentType);
 }
 
@@ -227,6 +229,13 @@ export type Campaign = {
   ownMediaMix: number;
   influencerFrequency: number;
   targetAccounts: TargetAccount[];
+  /**
+   * Per-platform publishing configuration, keyed by platform — currently
+   * `{ tiktok: TikTokPublishConfig }`. Holds the user's INTENT (values may be
+   * the USE_ACCOUNT_DEFAULT sentinel); the publisher resolves it against
+   * account defaults and live creator_info. See lib/tiktok/resolve-settings.
+   */
+  platformSettings?: Record<string, unknown>;
   postsPerDay: number;
   campaignLengthDays: number;
   startDate: string | null;

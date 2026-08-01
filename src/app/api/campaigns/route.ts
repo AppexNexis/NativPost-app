@@ -1,4 +1,4 @@
-import { eq, and, desc } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -15,7 +15,9 @@ import { campaignSchema } from '@/models/Schema';
 export async function GET(request: NextRequest) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { searchParams } = new URL(request.url);
   const status = searchParams.get('status');
@@ -51,7 +53,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   try {
     const body = await request.json();
@@ -88,6 +92,12 @@ export async function POST(request: NextRequest) {
         ownMediaMix: body.ownMediaMix ?? 50,
         influencerFrequency: body.influencerFrequency ?? 0,
         targetAccounts: targetAccountsBody,
+        // Per-platform publishing config captured in the wizard (TikTok privacy,
+        // direct vs inbox, disclosure). The scheduler reads this instead of
+        // guessing defaults at publish time.
+        platformSettings: (body.platformSettings && typeof body.platformSettings === 'object')
+          ? body.platformSettings
+          : {},
         postsPerDay: perDay,
         campaignLengthDays: days,
         startDate: body.startDate ? new Date(body.startDate) : null,

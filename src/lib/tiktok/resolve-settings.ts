@@ -163,7 +163,11 @@ export function resolveTikTokSettings({
   }
 
   // ── Commercial disclosure ──────────────────────────────────────────────
-  const isAIGC = pick(campaign.isAIGC, account.isAIGC, false);
+  // AIGC defaults to TRUE. Every post this product schedules is AI-generated,
+  // and TikTok's policy expects that to be disclosed — so the safe default is
+  // to disclose, and opting out has to be a deliberate act. The toggle is in
+  // both the campaign wizard and the account defaults for anyone who needs it.
+  const isAIGC = pick(campaign.isAIGC, account.isAIGC, true);
   const brandOrganicToggle = pick(campaign.brandOrganicToggle, account.brandOrganicToggle, false);
   let brandContentToggle = pick(campaign.brandContentToggle, account.brandContentToggle, false);
 

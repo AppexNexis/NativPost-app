@@ -4,7 +4,9 @@ import { Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
+import { TikTokSettingsFields } from '@/components/tiktok/TikTokSettingsFields';
 import { PLATFORM_LABELS } from '@/lib/platforms';
+import type { TikTokPublishConfig } from '@/lib/tiktok/resolve-settings';
 import type { Campaign, CampaignAngle, ContentAngle, ContentItem, ContentMix, SocialAccount, TargetAccount } from '@/types/v2';
 
 import { CampaignReviewGrid } from './CampaignReviewGrid';
@@ -937,6 +939,14 @@ function StepAccounts({ campaign, accounts, onUpdate }: StepProps) {
     p => (grouped[p] ?? []).length > 0,
   );
 
+  // The TikTok options panel appears only once a TikTok account is actually
+  // selected — no point asking for settings that won't be used.
+  const tiktokSelected = ((campaign.targetAccounts ?? []) as TargetAccount[])
+    .some(a => a.platform === 'tiktok');
+  const tiktokConfig = (
+    ((campaign.platformSettings ?? {}) as Record<string, unknown>).tiktok ?? {}
+  ) as TikTokPublishConfig;
+
   return (
     <div className="space-y-6">
       <div>
@@ -1005,6 +1015,43 @@ function StepAccounts({ campaign, accounts, onUpdate }: StepProps) {
       {connectedPlatforms.length > 0 && selectedIds.length === 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
           Select at least one connected account before generating your campaign.
+        </div>
+      )}
+
+      {/* TikTok needs options the other platforms don't — privacy, direct vs
+          inbox, interaction and disclosure flags. Scheduled posts have no
+          modal to ask, so the campaign captures the intent here and the
+          publisher executes it (see lib/tiktok/resolve-settings). Without this
+          the scheduler guessed, and one of its guesses was an invalid privacy
+          value that failed every scheduled TikTok post. */}
+      {tiktokSelected && (
+        <div className="space-y-4 rounded-xl border bg-card p-4">
+          <div className="flex items-start gap-3">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-black">
+              <svg viewBox="0 0 24 24" className="size-4 fill-white">
+                <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.18 8.18 0 0 0 4.78 1.52V6.79a4.85 4.85 0 0 1-1-.1z" />
+              </svg>
+            </span>
+            <div>
+              <h4 className="text-sm font-semibold text-foreground">TikTok publishing settings</h4>
+              <p className="text-xs text-muted-foreground">
+                Applied to every TikTok post in this campaign. Leave privacy on
+                “Use account default” to follow the account and adapt if TikTok
+                changes what it allows.
+              </p>
+            </div>
+          </div>
+
+          <TikTokSettingsFields
+            mode="campaign"
+            value={tiktokConfig}
+            onChange={next => onUpdate({
+              platformSettings: {
+                ...((campaign.platformSettings ?? {}) as Record<string, unknown>),
+                tiktok: next,
+              },
+            } as Partial<Campaign>)}
+          />
         </div>
       )}
     </div>
