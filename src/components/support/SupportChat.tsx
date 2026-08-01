@@ -15,6 +15,8 @@
 import { Loader2, Send } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 
+import { FormattedMessage } from './FormattedMessage';
+
 type Turn = { role: 'user' | 'assistant'; content: string };
 
 export function SupportChat({ onOpenTicket }: { onOpenTicket: () => void }) {
@@ -74,13 +76,17 @@ export function SupportChat({ onOpenTicket }: { onOpenTicket: () => void }) {
             className={turn.role === 'user' ? 'flex justify-end' : ''}
           >
             <div
-              className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${
+              className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
                 turn.role === 'user'
-                  ? 'bg-primary text-primary-foreground'
+                  ? 'whitespace-pre-wrap bg-primary text-primary-foreground'
                   : 'bg-muted text-foreground'
               }`}
             >
-              {turn.content}
+              {/* User text is shown verbatim; only assistant replies carry the
+                  light markdown that needs formatting. */}
+              {turn.role === 'user'
+                ? turn.content
+                : <FormattedMessage content={turn.content} />}
             </div>
           </div>
         ))}

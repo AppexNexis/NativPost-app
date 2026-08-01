@@ -15,6 +15,7 @@
 import { Loader2, Send, Sparkles, Wand2 } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 
+import { FormattedMessage } from '@/components/support/FormattedMessage';
 import { Button } from '@/components/ui/button';
 
 type Suggestion = {
@@ -131,7 +132,11 @@ export function CopilotPanel({ onApply, mode = 'prompt' }: Props) {
                   : 'bg-muted text-foreground'
               }`}
             >
-              {turn.content}
+              {/* User text verbatim; assistant replies may carry light
+                  markdown that would otherwise show raw asterisks. */}
+              {turn.role === 'user'
+                ? turn.content
+                : <FormattedMessage content={turn.content} />}
 
               {turn.suggestion && (
                 <div className="mt-3 rounded-md border bg-background p-3">
