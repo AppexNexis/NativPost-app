@@ -15,7 +15,7 @@ import { render } from '@react-email/components';
 import { Resend } from 'resend';
 
 import ApprovalEmail from '@/emails/ApprovalEmail';
-import PublishedEmail from '@/emails/PublishedEmail';
+import PublishedEmail, { type PublishedTarget } from '@/emails/PublishedEmail';
 import ScheduledEmail from '@/emails/ScheduledEmail';
 import WelcomeEmail from '@/emails/WelcomeEmail';
 
@@ -52,6 +52,8 @@ export async function sendPublishedNotification(
   brandName: string,
   platforms: string,
   caption: string,
+  /** Per-account detail. Optional so existing callers keep working. */
+  targets: PublishedTarget[] = [],
 ): Promise<boolean> {
   if (!process.env.RESEND_API_KEY) {
     console.warn('[Email] RESEND_API_KEY not set — skipping published notification');
@@ -60,7 +62,7 @@ export async function sendPublishedNotification(
 
   try {
     const html = await render(
-      PublishedEmail({ brandName, platforms, caption, appUrl: APP_URL }),
+      PublishedEmail({ brandName, platforms, caption, targets, appUrl: APP_URL }),
     );
 
     const { error } = await resend.emails.send({

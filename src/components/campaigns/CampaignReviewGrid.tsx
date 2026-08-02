@@ -204,7 +204,11 @@ function toDate(v: unknown): Date | null {
 // Post statuses that mean "the user has approved this", including the states
 // it moves through afterwards. Used for the review counter so a launched
 // campaign doesn't read as unapproved.
-const APPROVED_OR_BEYOND = new Set(['approved', 'scheduled', 'published']);
+// 'publishing' is the publisher's in-flight claim (see the publish cron). It is
+// transient but can last minutes on a video, and a post in it is definitionally
+// past approval — without it here the card would drop its approved tick
+// mid-publish and look like it had been reset.
+const APPROVED_OR_BEYOND = new Set(['approved', 'scheduled', 'publishing', 'published']);
 
 // Statuses still awaiting a decision. Deliberately excludes 'rejected' and
 // 'skipped' — those are choices, not omissions, and bulk approve must not

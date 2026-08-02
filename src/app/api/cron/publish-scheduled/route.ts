@@ -24,6 +24,48 @@ export const maxDuration = 300;
 
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY || '';
 
+/**
+ * Human-readable org name for emails.
+ *
+ * `sendPublishedNotification`'s second argument is `brandName` and goes
+ * straight into the subject line and the body. This cron used to pass
+ * `item.orgId`, so every published-post email read "Content for
+ * org_3CU4YYx3bZFlQbg81ni8aN6cZOa is now live". The manual publish route
+ * always resolved the real name — only the scheduled path leaked the id.
+ *
+ * Cached per invocation: one run publishes many posts, usually all for the
+ * same org, and this would otherwise be one Clerk call per post.
+ *
+ * Falls back to a generic word rather than the id — if the lookup fails, a
+ * slightly vague email still beats showing an internal identifier.
+ */
+const orgNameCache = new Map<string, string>();
+
+async function getOrgName(orgId: string): Promise<string> {
+  const cached = orgNameCache.get(orgId);
+  if (cached !== undefined) {
+    return cached;
+  }
+  let name = 'your workspace';
+  if (CLERK_SECRET_KEY) {
+    try {
+      const res = await fetch(`https://api.clerk.com/v1/organizations/${orgId}`, {
+        headers: { Authorization: `Bearer ${CLERK_SECRET_KEY}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data?.name === 'string' && data.name.trim()) {
+          name = data.name.trim();
+        }
+      }
+    } catch (err) {
+      console.error('[Cron] Failed to resolve org name:', err);
+    }
+  }
+  orgNameCache.set(orgId, name);
+  return name;
+}
+
 async function getOrgAdminEmail(orgId: string): Promise<string | null> {
   if (!CLERK_SECRET_KEY) {
     return null;
@@ -89,6 +131,30 @@ export async function GET(request: NextRequest) {
   console.log(`[Cron] Running at ${now.toISOString()}`);
 
   try {
+    // 0. Reclaim abandoned claims.
+    // A run killed mid-publish (function timeout, deploy, crash) leaves its
+    // post at 'publishing' with nothing coming back for it. Anything older
+    // than this cutoff is returned to the queue so it isn't stranded
+    // permanently. The window is comfortably longer than a worst-case publish
+    // (300s compile + per-platform calls) so it can never steal a post from a
+    // run that is still working on it — which would reintroduce the duplicate
+    // this claim exists to prevent.
+    const STALE_PUBLISH_MS = 15 * 60 * 1000;
+    const staleCutoff = new Date(Date.now() - STALE_PUBLISH_MS);
+    const reclaimed = await db
+      .update(contentItemSchema)
+      .set({ status: 'scheduled', updatedAt: new Date() })
+      .where(
+        and(
+          eq(contentItemSchema.status, 'publishing'),
+          lte(contentItemSchema.updatedAt, staleCutoff),
+        ),
+      )
+      .returning({ id: contentItemSchema.id });
+    if (reclaimed.length > 0) {
+      console.warn(`[Cron] Reclaimed ${reclaimed.length} abandoned publish(es)`);
+    }
+
     // 1. Find all due scheduled posts
     const duePosts = await db
       .select()
@@ -108,6 +174,34 @@ export async function GET(request: NextRequest) {
     const results = [];
 
     for (const item of duePosts) {
+      // ── Claim the post before publishing anything ─────────────────────────
+      // WITHOUT THIS, POSTS PUBLISH TWICE OR THREE TIMES.
+      //
+      // The row stayed 'scheduled' for the WHOLE publish — video compile
+      // (up to 300s) plus a network round trip per platform. This cron runs
+      // every 5 minutes, so any publish slower than that was still holding a
+      // 'scheduled' row when the next run selected it, and both published.
+      // Several overlapping runs meant several duplicates on the real account.
+      //
+      // The conditional UPDATE is atomic: exactly one runner flips
+      // 'scheduled' -> 'publishing' and gets a row back. Everyone else gets
+      // nothing and skips. Same guard as `drainOneJob` uses for campaign jobs.
+      const claimed = await db
+        .update(contentItemSchema)
+        .set({ status: 'publishing', updatedAt: new Date() })
+        .where(
+          and(
+            eq(contentItemSchema.id, item.id),
+            eq(contentItemSchema.status, 'scheduled'),
+          ),
+        )
+        .returning({ id: contentItemSchema.id });
+
+      if (claimed.length === 0) {
+        console.log(`[Cron] Post ${item.id} already claimed by another run — skipping`);
+        continue;
+      }
+
       console.log(`[Cron] Publishing post ${item.id} for org ${item.orgId}`);
 
       try {
@@ -133,6 +227,10 @@ export async function GET(request: NextRequest) {
           success: boolean;
           platformPostId?: string;
           error?: string;
+          /** Handle posted to — surfaced in the notification email. */
+          accountName?: string | null;
+          /** Direct link to the live post, when the platform returns one. */
+          permalink?: string | null;
         }> = [];
 
         // ── Multi-slide image kinds / single_image: render slides via engine ──
@@ -407,7 +505,15 @@ export async function GET(request: NextRequest) {
             mergedPlatformData,
           );
 
-          platformResults.push({ platform, ...result });
+          // accountName rides along so the notification email can say WHICH
+          // account it posted to, not just the channel. An org with three
+          // TikTok accounts got "published on tiktok" and had no way to tell
+          // which one from the email alone.
+          platformResults.push({
+            platform,
+            accountName: account.platformUsername || null,
+            ...result,
+          });
 
           // 4. Record in publishing queue
           await db.insert(publishingQueueSchema).values({
@@ -441,12 +547,24 @@ export async function GET(request: NextRequest) {
             .map(r => r.platform)
             .join(', ');
 
-          getOrgAdminEmail(item.orgId)
-            .then((email) => {
+          Promise.all([getOrgAdminEmail(item.orgId), getOrgName(item.orgId)])
+            .then(([email, orgName]) => {
               if (!email) {
                 return;
               }
-              return sendPublishedNotification(email, item.orgId, successPlatforms, item.caption);
+              return sendPublishedNotification(
+                email,
+                orgName,
+                successPlatforms,
+                item.caption,
+                platformResults
+                  .filter(r => r.success)
+                  .map(r => ({
+                    platform: r.platform,
+                    accountName: r.accountName ?? null,
+                    permalink: r.permalink ?? null,
+                  })),
+              );
             })
             .catch(err => console.error(`[Cron] Email notification failed for post ${item.id}:`, err));
         }

@@ -12,12 +12,40 @@ import {
 } from '@react-email/components';
 import * as React from 'react';
 
+/** One account the post actually landed on. */
+export type PublishedTarget = {
+  platform: string;
+  /** Handle/page name. Null when the connection never stored one. */
+  accountName?: string | null;
+  /** Direct link to the live post, when the platform returns one. */
+  permalink?: string | null;
+};
+
 type PublishedEmailProps = {
   brandName: string;
   platforms: string;
   caption: string;
   appUrl?: string;
+  /**
+   * Per-account detail. Optional: `platforms` remains the fallback so an older
+   * caller that only has the joined channel string still renders correctly.
+   */
+  targets?: PublishedTarget[];
 };
+
+const PLATFORM_LABELS: Record<string, string> = {
+  facebook: 'Facebook',
+  instagram: 'Instagram',
+  linkedin: 'LinkedIn',
+  threads: 'Threads',
+  tiktok: 'TikTok',
+  twitter: 'X',
+  youtube: 'YouTube',
+};
+
+function platformLabel(platform: string): string {
+  return PLATFORM_LABELS[platform] ?? platform.charAt(0).toUpperCase() + platform.slice(1);
+}
 
 const BRAND_PURPLE = '#864FFE';
 const BRAND_DARK = '#1A1A1C';
@@ -180,12 +208,44 @@ const footerText: React.CSSProperties = {
 
 const footerLink: React.CSSProperties = { color: GRAY_600, textDecoration: 'underline' };
 
+const targetRow: React.CSSProperties = {
+  borderBottom: `1px solid ${GRAY_100}`,
+  padding: '11px 0',
+};
+
+const targetPlatform: React.CSSProperties = {
+  margin: '0',
+  fontSize: '13px',
+  fontWeight: '600',
+  color: BRAND_DARK,
+};
+
+const targetAccount: React.CSSProperties = {
+  margin: '2px 0 0',
+  fontSize: '13px',
+  color: GRAY_600,
+};
+
+const targetLink: React.CSSProperties = {
+  fontSize: '13px',
+  fontWeight: '600',
+  color: BRAND_PURPLE,
+  textDecoration: 'none',
+};
+
 export default function PublishedEmail({
   brandName = 'Your Brand',
   platforms = 'LinkedIn',
   caption = '',
   appUrl = 'https://app.nativpost.com',
+  targets = [],
 }: PublishedEmailProps) {
+  // Prefer real account names over the bare channel list: "@acme on TikTok"
+  // tells you which of your three TikTok accounts posted; "tiktok" does not.
+  const named = targets.filter(t => t.accountName);
+  const summary = named.length > 0
+    ? named.map(t => `${t.accountName} (${platformLabel(t.platform)})`).join(', ')
+    : platforms;
   return (
     <Html lang="en">
       <Head />
@@ -213,7 +273,7 @@ export default function PublishedEmail({
               {'Content for '}
               <strong>{brandName}</strong>
               {' is now live on '}
-              <strong>{platforms}</strong>
+              <strong>{summary}</strong>
               .
             </Text>
           </Section>
@@ -226,6 +286,29 @@ export default function PublishedEmail({
                 {caption.length > 280 ? `${caption.substring(0, 280)}...` : caption}
               </Text>
             </Section>
+
+            {/* Where it landed, one row per account, each linking to the live
+                post. Platforms that don't return a permalink (some TikTok and
+                Instagram responses) still get a row — knowing it posted to a
+                given account is useful even without the deep link. */}
+            {targets.length > 0 && (
+              <>
+                <Text style={sectionLabel}>Published to</Text>
+                <Section style={{ marginBottom: '28px' }}>
+                  {targets.map(t => (
+                    <Section key={`${t.platform}-${t.accountName ?? ''}`} style={targetRow}>
+                      <Text style={targetPlatform}>{platformLabel(t.platform)}</Text>
+                      {t.accountName && <Text style={targetAccount}>{t.accountName}</Text>}
+                      {t.permalink && (
+                        <Link href={t.permalink} style={targetLink}>
+                          View post →
+                        </Link>
+                      )}
+                    </Section>
+                  ))}
+                </Section>
+              </>
+            )}
 
             <Button href={`${appUrl}/dashboard/analytics`} style={primaryButton}>
               View analytics →
