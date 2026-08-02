@@ -1,318 +1,139 @@
-import {
-  Body,
-  Button,
-  Container,
-  Head,
-  Hr,
-  Html,
-  // Img,
-  Link,
-  Preview,
-  Section,
-  Text,
-} from '@react-email/components';
+import { Button, Link, Section, Text } from '@react-email/components';
 import * as React from 'react';
+
+import {
+  APP_ORIGIN,
+  BRAND_DARK,
+  BRAND_PURPLE,
+  callout,
+  calloutText,
+  content,
+  EmailLayout,
+  GRAY_600,
+  heading,
+  paragraph,
+  primaryButton,
+  strongText,
+} from './_theme';
 
 type WelcomeEmailProps = {
   userName: string;
+  /** The brand set up during onboarding. Omitted if it isn't known yet. */
+  brandName?: string | null;
   appUrl?: string;
 };
 
-const BRAND_PURPLE = '#864FFE';
-const BRAND_DARK = '#1A1A1C';
-const GRAY_50 = '#F5F5F7';
-const GRAY_100 = '#F3F4F6';
-const GRAY_200 = '#E5E7EB';
-const GRAY_400 = '#9CA3AF';
-const GRAY_600 = '#6B7280';
-// const GRAY_700     = '#374151';
-const GRAY_800 = '#1F2937';
-const WHITE = '#FFFFFF';
-
-const main: React.CSSProperties = {
-  backgroundColor: GRAY_50,
-  fontFamily: '"DM Sans", "Inter", system-ui, -apple-system, sans-serif',
-  margin: '0',
-  padding: '24px 16px',
-};
-
-const container: React.CSSProperties = {
-  backgroundColor: WHITE,
-  margin: '0 auto',
-  maxWidth: '560px',
-  borderRadius: '16px',
-  overflow: 'hidden',
-  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-  border: `1px solid ${GRAY_200}`,
-};
-
-const header: React.CSSProperties = {
-  backgroundColor: BRAND_DARK,
-  padding: '28px 36px 24px',
-};
-
-const logoText: React.CSSProperties = {
-  margin: '0 0 6px',
-  fontSize: '24px',
-  fontWeight: '700',
-  letterSpacing: '-0.5px',
-  lineHeight: '1',
-};
-
-const logoIcon: React.CSSProperties = {
-  display: 'inline-block',
-  width: '30px',
-  height: '30px',
-  lineHeight: '30px',
-  borderRadius: '50%',
-  backgroundColor: WHITE,
-  textAlign: 'center',
-  fontSize: '14px',
-  fontWeight: '800',
-  color: BRAND_DARK,
-  marginRight: '8px',
-  verticalAlign: 'middle',
-};
-
-const logoNativ: React.CSSProperties = {
-  color: WHITE,
-  verticalAlign: 'middle',
-};
-
-const logoPost: React.CSSProperties = {
-  color: 'rgba(255,255,255,0.45)',
-  verticalAlign: 'middle',
-};
-
-const tagline: React.CSSProperties = {
-  margin: '6px 0 0',
-  fontSize: '13px',
-  color: GRAY_400,
-  letterSpacing: '0.1px',
-};
-
-const heroSection: React.CSSProperties = {
-  backgroundColor: '#F4F2FE',
-  borderTop: `3px solid ${BRAND_PURPLE}`,
-  padding: '28px 36px',
-};
-
-const heroTitle: React.CSSProperties = {
-  margin: '0 0 10px',
-  fontSize: '26px',
-  fontWeight: '700',
-  color: BRAND_DARK,
-  letterSpacing: '-0.4px',
-  lineHeight: '1.2',
-};
-
-const heroSub: React.CSSProperties = {
-  margin: '0',
-  fontSize: '15px',
-  color: '#4B5563',
-  lineHeight: '1.7',
-};
-
-const content: React.CSSProperties = {
-  padding: '32px 36px 28px',
-};
-
-const stepsTitle: React.CSSProperties = {
-  margin: '0 0 24px',
-  fontSize: '11px',
-  fontWeight: '600',
-  color: GRAY_400,
-  textTransform: 'uppercase',
-  letterSpacing: '0.8px',
-};
-
-const stepRow: React.CSSProperties = {
-  marginBottom: '20px',
-  paddingBottom: '20px',
-  borderBottom: `1px solid ${GRAY_100}`,
-};
-
-const stepNum: React.CSSProperties = {
-  display: 'inline-block',
-  width: '26px',
-  height: '26px',
-  lineHeight: '26px',
-  borderRadius: '50%',
-  backgroundColor: BRAND_PURPLE,
-  color: WHITE,
-  fontSize: '11px',
-  fontWeight: '700',
-  textAlign: 'center',
-};
-
-const stepHeading: React.CSSProperties = {
-  margin: '0 0 4px',
-  fontSize: '15px',
-  fontWeight: '600',
-  color: GRAY_800,
-  lineHeight: '1.4',
-};
-
-const stepDesc: React.CSSProperties = {
-  margin: '0',
-  fontSize: '13px',
-  color: GRAY_600,
-  lineHeight: '1.6',
-};
-
-const ctaSection: React.CSSProperties = { margin: '32px 0 20px' };
-
-const primaryButton: React.CSSProperties = {
-  backgroundColor: BRAND_PURPLE,
-  borderRadius: '8px',
-  color: WHITE,
-  fontSize: '15px',
-  fontWeight: '600',
-  textDecoration: 'none',
-  padding: '14px 28px',
-  display: 'inline-block',
-};
-
-const footnote: React.CSSProperties = {
-  margin: '0',
-  fontSize: '13px',
-  color: GRAY_400,
-  lineHeight: '1.6',
-};
-
-const divider: React.CSSProperties = {
-  borderColor: GRAY_100,
-  margin: '0 36px',
-};
-
-const footer: React.CSSProperties = { padding: '20px 36px 28px' };
-
-const footerText: React.CSSProperties = {
-  margin: '0 0 6px',
-  fontSize: '12px',
-  color: GRAY_400,
-  lineHeight: '1.6',
-  textAlign: 'center',
-};
-
-const footerLink: React.CSSProperties = {
-  color: GRAY_600,
-  textDecoration: 'underline',
-};
+/**
+ * Sent once, when onboarding completes — not at signup. By then the brand
+ * profile exists, so the email can name the brand and point at steps the
+ * account can actually do, instead of greeting an empty workspace.
+ *
+ * Written as a personal note from a founder rather than a feature grid: it's
+ * the first email a new customer gets, and replies reach a real inbox.
+ */
 
 const STEPS = [
-  {
-    num: '01',
-    heading: 'Build your Brand Profile',
-    desc: 'Tell us your voice, values, and visual identity. This is how we learn to write content that sounds like you.',
-  },
-  {
-    num: '02',
-    heading: 'Connect your social accounts',
-    desc: 'LinkedIn, Instagram, X, TikTok, Facebook — connect once and we handle publishing.',
-  },
-  {
-    num: '03',
-    heading: 'Review generated content',
-    desc: 'Your team creates 3 variants of every post. Pick the one that fits best, edit if needed, and approve.',
-  },
-  {
-    num: '04',
-    heading: 'Approve and publish',
-    desc: 'Publish now or schedule. You get a confirmation when it goes live.',
-  },
+  'Open Blitz and generate your first batch of posts',
+  'Approve the ones you like, or edit them in the studio',
+  'Schedule to TikTok, Instagram, YouTube, LinkedIn and more',
 ];
+
+const stepList: React.CSSProperties = {
+  margin: '0 0 22px',
+  padding: '0 0 0 20px',
+  fontSize: '15px',
+  color: GRAY_600,
+  lineHeight: '2',
+};
+
+const signOff: React.CSSProperties = {
+  margin: '26px 0 0',
+  fontSize: '15px',
+  color: GRAY_600,
+  lineHeight: '1.6',
+};
+
+const link: React.CSSProperties = { color: BRAND_PURPLE, fontWeight: '600' };
 
 export default function WelcomeEmail({
   userName = 'there',
-  appUrl = 'https://app.nativpost.com',
+  brandName = null,
+  appUrl = APP_ORIGIN,
 }: WelcomeEmailProps) {
   return (
-    <Html lang="en">
-      <Head />
-      <Preview>Welcome to NativPost — studio-crafted content for your brand</Preview>
-      <Body style={main}>
-        <Container style={container}>
+    <EmailLayout
+      preview="Welcome to NativPost — your content studio is ready"
+      tagline="Studio-crafted content, on autopilot."
+      reason="You're receiving this because you just finished setting up your NativPost workspace."
+      appUrl={appUrl}
+    >
+      <Section style={content}>
+        <Text style={heading}>Welcome to NativPost</Text>
 
-          {/* ── Header ─────────────────────────── */}
-          <Section style={header}>
-            <Text style={logoText}>
-              <span style={logoIcon}>N</span>
-              <span style={logoNativ}>Nativ</span>
-              <span style={logoPost}>Post</span>
-            </Text>
-            <Text style={tagline}>Studio-crafted social media content</Text>
-          </Section>
+        <Text style={paragraph}>
+          Hey
+          {' '}
+          {userName}
+          ,
+        </Text>
 
-          {/* ── Hero ───────────────────────────── */}
-          <Section style={heroSection}>
-            <Text style={heroTitle}>
-              Welcome,
-              {' '}
-              {userName}
-              .
-            </Text>
-            <Text style={heroSub}>
-              You've joined a content studio that works for you — agency-quality
-              social media content at a fraction of the cost.
-            </Text>
-          </Section>
+        <Text style={paragraph}>
+          Wilson here, one of the founders. We're really glad to have you
+          {brandName
+            ? (
+                <>
+                  {' and '}
+                  <span style={strongText}>{brandName}</span>
+                </>
+              )
+            : ''}
+          {' '}
+          on board.
+        </Text>
 
-          {/* ── Steps ──────────────────────────── */}
-          <Section style={content}>
-            <Text style={stepsTitle}>Get started in 4 steps</Text>
+        <Text style={paragraph}>
+          NativPost turns your brand into a steady stream of short-form content —
+          written in your voice, rendered as finished posts, and published to your
+          channels on a schedule. No agency, no editing timeline.
+        </Text>
 
-            {STEPS.map((step, i) => (
-              <table
-                key={step.num}
-                width="100%"
-                cellPadding="0"
-                cellSpacing="0"
-                style={i < STEPS.length - 1 ? stepRow : { marginBottom: '0' }}
-              >
-                <tbody>
-                  <tr>
-                    <td width="40" style={{ verticalAlign: 'top', paddingTop: '1px' }}>
-                      <span style={stepNum}>{step.num}</span>
-                    </td>
-                    <td>
-                      <Text style={stepHeading}>{step.heading}</Text>
-                      <Text style={stepDesc}>{step.desc}</Text>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            ))}
+        <Text style={{ ...paragraph, marginBottom: '10px', ...strongText }}>
+          Here's how to get your first posts live:
+        </Text>
+        <ol style={stepList}>
+          {STEPS.map(step => <li key={step}>{step}</li>)}
+        </ol>
 
-            <Section style={ctaSection}>
-              <Button href={`${appUrl}/dashboard/brand-profile/onboarding`} style={primaryButton}>
-                Build your Brand Profile →
-              </Button>
-            </Section>
+        <Section style={callout}>
+          <Text style={calloutText}>
+            Your free plan includes a 7-day trial of the full platform — Blitz,
+            AI Studio, and direct publishing. No card needed to start.
+          </Text>
+        </Section>
 
-            <Text style={footnote}>
-              Takes about 10 minutes. The better your profile, the better your content.
-            </Text>
-          </Section>
+        <Text style={paragraph}>
+          When you're ready, pick the plan that fits — Starter, Growth, or Pro — in
+          {' '}
+          <Link href={`${appUrl}/dashboard/settings?tab=credits`} style={link}>your billing settings</Link>
+          .
+        </Text>
 
-          <Hr style={divider} />
+        <Text style={paragraph}>
+          Questions? Reply to this email, or use the chat widget in the corner of
+          your dashboard — it answers most things instantly and can open a ticket
+          if it can't.
+        </Text>
 
-          {/* ── Footer ─────────────────────────── */}
-          <Section style={footer}>
-            <Text style={footerText}>
-              Questions? Reply to this email or reach us at
-              {' '}
-              <Link href="mailto:support@nativpost.com" style={footerLink}>support@nativpost.com</Link>
-            </Text>
-            <Text style={footerText}>
-              <Link href="https://nativpost.com" style={footerLink}>NativPost</Link>
-              {' · A product of '}
-              <Link href="https://www.appexnexis.site/" style={footerLink}>AppexNexis LTD</Link>
-            </Text>
-          </Section>
+        <Button href={`${appUrl}/dashboard/blitz`} style={primaryButton}>
+          Create your first posts →
+        </Button>
 
-        </Container>
-      </Body>
-    </Html>
+        <Text style={signOff}>
+          To your growth,
+          <br />
+          <span style={{ ...strongText, color: BRAND_DARK }}>Wilson and the NativPost team</span>
+        </Text>
+      </Section>
+    </EmailLayout>
   );
 }

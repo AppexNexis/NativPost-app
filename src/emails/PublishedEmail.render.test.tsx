@@ -36,7 +36,8 @@ describe('PublishedEmail', () => {
       }),
     );
 
-    expect(html).toContain('linkedin');
+    // Humanised, never the raw internal key.
+    expect(html).toContain('LinkedIn');
     expect(html).not.toContain('Published to');
   });
 });

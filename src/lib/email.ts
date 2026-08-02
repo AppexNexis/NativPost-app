@@ -232,6 +232,8 @@ export async function sendLowBalanceAlertEmail(
 export async function sendWelcomeEmail(
   to: string,
   userName: string,
+  /** Brand created during onboarding, when known — personalises the greeting. */
+  brandName: string | null = null,
 ): Promise<boolean> {
   if (!process.env.RESEND_API_KEY) {
     console.warn('[Email] RESEND_API_KEY not set — skipping welcome email');
@@ -240,7 +242,7 @@ export async function sendWelcomeEmail(
 
   try {
     const html = await render(
-      WelcomeEmail({ userName, appUrl: APP_URL }),
+      WelcomeEmail({ userName, brandName, appUrl: APP_URL }),
     );
 
     const { error } = await resend.emails.send({
