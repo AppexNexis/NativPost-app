@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server';
 import { addAiCredits, getAiCreditsWallet } from '@/lib/ai-studio/server';
 import { firePlanUpgradedEmail, fireSubscriptionCancelledEmail } from '@/lib/billing';
 import { getContactForOrg } from '@/lib/billing/org-contact';
+import { activateAddonFromCheckout } from '@/lib/msi/addon-service';
 import { fulfillOrder } from '@/lib/msi/provisioning';
 import { notifyBilling } from '@/lib/notifications';
 import { getPlanByPolarProductId, getPolarProductInterval, PLAN_CONFIGS } from '@/lib/plans';
@@ -255,6 +256,49 @@ async function handleOrderPaid(order: Order): Promise<void> {
     } catch (fulfilErr) {
       console.error('[Polar Webhook] msi fulfilment failed:', fulfilErr);
     }
+    return;
+  }
+
+  // ── MSI add-on: activate now that the subscription is paid for ──
+  // The add-on was deliberately NOT activated when the customer clicked
+  // "Activate" (see beginAddonActivation) — Polar cannot start a paid
+  // subscription server-side, so this is the point where entitlement is granted.
+  if (type === 'msi_addon') {
+    const addonId = order.metadata?.addonId;
+    if (typeof addonId !== 'string' || !addonId) {
+      return;
+    }
+    const rawTier = order.metadata?.tierId;
+    const tierId = typeof rawTier === 'string' && rawTier ? rawTier : null;
+
+    const result = await activateAddonFromCheckout({
+      orgId,
+      addonId,
+      tierId,
+      polarSubscriptionId: order.subscriptionId,
+    });
+
+    if (!result.ok) {
+      // The catalog rejected an add-on the customer has already paid for.
+      // Loud, because it needs a human: refund or fix the catalog.
+      console.error(
+        `[Polar Webhook] msi_addon ${addonId}${tierId ? `/${tierId}` : ''} PAID `
+        + `but not activated for org=${orgId}: ${result.error}`,
+      );
+      return;
+    }
+
+    console.log(
+      `[Polar Webhook] msi_addon activated: org=${orgId} addon=${addonId}`
+      + `${tierId ? ` tier=${tierId}` : ''} sub=${order.subscriptionId ?? 'none'}`,
+    );
+
+    void notifyBilling(
+      orgId,
+      `${result.addon.name} is active`,
+      'Your add-on is live and will be billed with your next invoice.',
+      'success',
+    );
     return;
   }
 

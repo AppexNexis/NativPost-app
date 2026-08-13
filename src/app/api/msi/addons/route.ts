@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
-import { activateAddon, deactivateAddon, listOrgAddons } from '@/lib/msi/addon-service';
+import { beginAddonActivation, deactivateAddon, listOrgAddons } from '@/lib/msi/addon-service';
 import { ADDON_CATALOG } from '@/lib/msi/addons';
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+const ADDONS_URL = `${APP_URL}/dashboard/infrastructure/addons`;
 
 // -----------------------------------------------------------
 // GET /api/msi/addons
@@ -26,6 +29,15 @@ export async function GET() {
 // POST /api/msi/addons
 // Activate or deactivate an add-on.
 // body: { addonId: string, action: 'activate' | 'deactivate', tierId?: string }
+//
+// Activation has two possible shapes, because the two billing rails differ:
+//   { ok: true, status: 'active' }          — activated server-side (Stripe, or
+//                                             an add-on that isn't separately
+//                                             billed). Nothing more to do.
+//   { ok: true, requiresCheckout: true,     — Polar: the customer must complete
+//     checkoutUrl }                           payment first. The add-on is NOT
+//                                             active yet; the webhook flips it
+//                                             once the order is paid.
 // -----------------------------------------------------------
 export async function POST(request: Request) {
   const { error, orgId } = await getAuthContext();
@@ -47,10 +59,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, addonId, status: 'cancelled' }, { status: 200 });
     }
 
-    const result = await activateAddon(orgId!, addonId, tierId);
+    const result = await beginAddonActivation({
+      orgId: orgId!,
+      addonId,
+      tierId,
+      successUrl: `${ADDONS_URL}?addon=${addonId}&activated=1`,
+      returnUrl: `${ADDONS_URL}?addon=${addonId}&cancelled=1`,
+    });
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
+
+    if (result.mode === 'checkout') {
+      return NextResponse.json(
+        { ok: true, addonId, tierId, requiresCheckout: true, checkoutUrl: result.url },
+        { status: 200 },
+      );
+    }
+
     return NextResponse.json(
       { ok: true, addonId, status: 'active', tierId },
       { status: 200 },

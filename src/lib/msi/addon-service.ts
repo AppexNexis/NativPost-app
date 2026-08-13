@@ -14,7 +14,12 @@ import { db } from '@/lib/db';
 import { getActiveBillingProvider } from '@/lib/plans';
 import { msiAddonSubscriptionSchema } from '@/models/Schema';
 
-import { removeAddonBilling, syncAddonBilling } from './addon-billing';
+import {
+  addonRequiresCheckout,
+  createAddonCheckout,
+  removeAddonBilling,
+  syncAddonBilling,
+} from './addon-billing';
 import type { MsiAddon } from './addons';
 import { validateActivation } from './addons';
 
@@ -153,6 +158,114 @@ export async function activateAddon(
   } catch (billingErr) {
     console.error('[MSI] add-on billing sync failed (activation still applied):', billingErr);
   }
+
+  return { ok: true, addon: v.addon };
+}
+
+export type BeginActivationOutcome =
+  | { ok: true; mode: 'activated'; addon: MsiAddon }
+  | { ok: true; mode: 'checkout'; url: string }
+  | { ok: false; error: string };
+
+/**
+ * Entry point for a user-initiated add-on activation.
+ *
+ * On Stripe — and on Polar for anything not separately billed — this activates
+ * immediately, exactly as before. On Polar, a flat add-on with a configured
+ * product cannot be provisioned server-side, so this returns a checkout URL and
+ * activates NOTHING; the `msi_addon` branch of the Polar webhook flips the row
+ * to active once payment lands.
+ *
+ * That ordering is deliberate. Activating first and billing after would hand
+ * out the add-on free to anyone who abandons checkout, which is exactly the
+ * failure mode Stripe avoids by billing in the same server-side call.
+ *
+ * The catalog is validated BEFORE any checkout is created so an invalid
+ * add-on/tier fails fast instead of sending the customer to a payment page.
+ */
+export async function beginAddonActivation(params: {
+  orgId: string;
+  addonId: string;
+  tierId?: string | null;
+  successUrl: string;
+  returnUrl: string;
+}): Promise<BeginActivationOutcome> {
+  const v = validateActivation(params.addonId, params.tierId);
+  if (!v.ok) {
+    return v;
+  }
+
+  const existing = await getOrgAddon(params.orgId, params.addonId);
+  const tierId = v.tier?.id ?? null;
+
+  if (
+    addonRequiresCheckout({
+      addonId: params.addonId,
+      tierId,
+      existingLinkageId: billingLinkageId(existing),
+    })
+  ) {
+    const url = await createAddonCheckout({
+      orgId: params.orgId,
+      addonId: params.addonId,
+      tierId,
+      successUrl: params.successUrl,
+      returnUrl: params.returnUrl,
+    });
+    if (url) {
+      return { ok: true, mode: 'checkout', url };
+    }
+    // createAddonCheckout returned null despite the gate agreeing a checkout was
+    // needed — configuration changed under us. Fall through and activate, which
+    // matches the unbilled behaviour of every other unconfigured add-on rather
+    // than blocking the customer.
+  }
+
+  const result = await activateAddon(params.orgId, params.addonId, tierId);
+  return result.ok
+    ? { ok: true, mode: 'activated', addon: result.addon }
+    : result;
+}
+
+/**
+ * Mark an add-on active after its Polar checkout was paid, recording the
+ * subscription that now bills it. Called only from the Polar webhook.
+ *
+ * Idempotent: the upsert is keyed on (org, addon), so a webhook redelivery
+ * rewrites the same row rather than creating a second one.
+ */
+export async function activateAddonFromCheckout(params: {
+  orgId: string;
+  addonId: string;
+  tierId?: string | null;
+  polarSubscriptionId: string | null;
+}): Promise<ActivateOutcome> {
+  const v = validateActivation(params.addonId, params.tierId);
+  if (!v.ok) {
+    return v;
+  }
+  const now = new Date();
+
+  await db
+    .insert(msiAddonSubscriptionSchema)
+    .values({
+      orgId: params.orgId,
+      addonId: params.addonId,
+      status: 'active',
+      tierId: v.tier?.id ?? null,
+      polarSubscriptionId: params.polarSubscriptionId,
+      activatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [msiAddonSubscriptionSchema.orgId, msiAddonSubscriptionSchema.addonId],
+      set: {
+        status: 'active',
+        tierId: v.tier?.id ?? null,
+        polarSubscriptionId: params.polarSubscriptionId,
+        activatedAt: now,
+        cancelledAt: null,
+      },
+    });
 
   return { ok: true, addon: v.addon };
 }

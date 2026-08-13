@@ -5,7 +5,9 @@ import {
   getPlanByPolarProductId,
   getPolarProductId,
   getPolarProductInterval,
+  getStripePriceId,
   isPlanConfiguredFor,
+  PLAN_CONFIGS,
 } from '@/lib/plans';
 
 import { getPolarServer, isPolarConfigured } from './polar-client';
@@ -38,7 +40,10 @@ describe('getActiveBillingProvider', () => {
 });
 
 describe('resolveBillingProvider', () => {
-  it('loads the matching implementation', async () => {
+  // Both branches dynamically import a provider module, which pulls in its SDK.
+  // That is ~2s cold and can exceed the 5s default under full-suite parallel
+  // load, so give it room rather than letting it flake.
+  it('loads the matching implementation', { timeout: 30_000 }, async () => {
     await expect(resolveBillingProvider('stripe')).resolves.toMatchObject({
       id: 'stripe',
       label: 'Stripe',
@@ -73,13 +78,25 @@ describe('withCheckoutIdParam', () => {
   });
 });
 
+// The catalog in plans.ts is EXPECTED to change as real ids replace the
+// `…REPLACE` placeholders, so nothing below asserts a literal id. Each test
+// derives what it expects from PLAN_CONFIGS and checks the resolver's
+// behaviour — which is what actually has to hold — rather than the catalog's
+// current contents.
+const STARTER = PLAN_CONFIGS.starter!;
+const GROWTH = PLAN_CONFIGS.growth!;
+const PRO = PLAN_CONFIGS.pro!;
+
 describe('polar plan resolution', () => {
   it('returns the monthly product by default and the annual one for year', () => {
-    expect(getPolarProductId('starter')).toBe('polar_STARTER_SANDBOX_REPLACE');
-    expect(getPolarProductId('starter', 'month')).toBe('polar_STARTER_SANDBOX_REPLACE');
+    expect(getPolarProductId('starter')).toBe(STARTER.polarProductId.dev);
+    expect(getPolarProductId('starter', 'month')).toBe(STARTER.polarProductId.dev);
     expect(getPolarProductId('starter', 'year')).toBe(
-      'polar_STARTER_ANNUAL_SANDBOX_REPLACE',
+      STARTER.polarAnnualProductId.dev,
     );
+    // The two must be distinct products — Polar cannot express both intervals
+    // on one product, so a copy-paste here would silently bill the wrong cycle.
+    expect(STARTER.polarProductId.dev).not.toBe(STARTER.polarAnnualProductId.dev);
   });
 
   it('returns null for an unknown plan', () => {
@@ -87,8 +104,8 @@ describe('polar plan resolution', () => {
   });
 
   it('maps a product id back to its plan', () => {
-    expect(getPlanByPolarProductId('polar_GROWTH_SANDBOX_REPLACE')?.id).toBe('growth');
-    expect(getPlanByPolarProductId('polar_GROWTH_ANNUAL_SANDBOX_REPLACE')?.id).toBe(
+    expect(getPlanByPolarProductId(GROWTH.polarProductId.dev)?.id).toBe('growth');
+    expect(getPlanByPolarProductId(GROWTH.polarAnnualProductId.dev)?.id).toBe(
       'growth',
     );
     expect(getPlanByPolarProductId('polar_unknown')).toBeNull();
@@ -97,38 +114,52 @@ describe('polar plan resolution', () => {
   it('recovers the interval from the product id', () => {
     // Polar has no price object, so the interval is only knowable from WHICH
     // product was bought — the webhook depends on this.
-    expect(getPolarProductInterval('polar_PRO_SANDBOX_REPLACE')).toBe('month');
-    expect(getPolarProductInterval('polar_PRO_ANNUAL_SANDBOX_REPLACE')).toBe('year');
+    expect(getPolarProductInterval(PRO.polarProductId.dev)).toBe('month');
+    expect(getPolarProductInterval(PRO.polarAnnualProductId.dev)).toBe('year');
     expect(getPolarProductInterval('polar_unknown')).toBeNull();
   });
 
   it('resolves against the prod column when BILLING_PLAN_ENV is prod', () => {
     process.env.BILLING_PLAN_ENV = 'prod';
 
-    expect(getPolarProductId('starter')).toBe('polar_STARTER_PROD_REPLACE');
+    expect(getPolarProductId('starter')).toBe(STARTER.polarProductId.prod);
+    expect(getPolarProductId('starter', 'year')).toBe(
+      STARTER.polarAnnualProductId.prod,
+    );
   });
 });
 
 describe('isPlanConfiguredFor', () => {
-  it('treats placeholder ids as not purchasable on either rail', () => {
-    // Both catalogs still hold `…REPLACE` placeholders in the dev column, so
-    // nothing is sellable until real ids are filled in.
-    expect(isPlanConfiguredFor('polar', 'starter')).toBe(false);
-    expect(isPlanConfiguredFor('stripe', 'starter')).toBe(false);
+  it('rejects an id that is still a placeholder', () => {
+    // Whatever the catalog currently holds, a `…REPLACE` id must never be
+    // treated as sellable — that is the guard stopping a half-configured
+    // deploy from sending customers to a broken checkout.
+    for (const provider of ['polar', 'stripe'] as const) {
+      const resolved = provider === 'polar'
+        ? getPolarProductId('starter')
+        : getStripePriceId('starter');
+      expect(isPlanConfiguredFor(provider, 'starter')).toBe(
+        !!resolved && !resolved.includes('REPLACE'),
+      );
+    }
   });
 
   it('treats the free and enterprise tiers as not purchasable', () => {
+    // These carry empty ids by design and never gain one, so this holds
+    // regardless of how far product setup has progressed.
     expect(isPlanConfiguredFor('polar', 'free')).toBe(false);
     expect(isPlanConfiguredFor('polar', 'enterprise')).toBe(false);
+    expect(isPlanConfiguredFor('stripe', 'free')).toBe(false);
+    expect(isPlanConfiguredFor('stripe', 'enterprise')).toBe(false);
   });
 
   it('accepts a real id', () => {
-    // Stripe's prod column holds real ids, unlike dev.
+    // Stripe's prod column has held real ids since before Polar existed, so it
+    // is the stable example of the positive case.
     process.env.BILLING_PLAN_ENV = 'prod';
 
+    expect(getStripePriceId('starter')).not.toContain('REPLACE');
     expect(isPlanConfiguredFor('stripe', 'starter')).toBe(true);
-    // Polar prod is still a placeholder until products are created.
-    expect(isPlanConfiguredFor('polar', 'starter')).toBe(false);
   });
 });
 

@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   addonPriceEnvKey,
+  addonProductEnvKey,
+  addonRequiresCheckout,
   addonTierPriceId,
+  addonTierProductId,
   isAddonBillingEnabled,
   syncAddonBilling,
 } from './addon-billing';
@@ -48,5 +51,86 @@ describe('add-on billing config', () => {
         existingItemId: 'si_existing',
       }),
     ).resolves.toBe('si_existing');
+  });
+
+  it('derives the Polar product env key from add-on + tier', () => {
+    expect(addonProductEnvKey('managed_posting', 'professional')).toBe(
+      'POLAR_ADDON_PRODUCT_MANAGED_POSTING_PROFESSIONAL',
+    );
+    expect(addonProductEnvKey('managed_expansion')).toBe(
+      'POLAR_ADDON_PRODUCT_MANAGED_EXPANSION',
+    );
+  });
+
+  it('resolves a Polar product id from the matching env var', () => {
+    process.env.POLAR_ADDON_PRODUCT_MANAGED_POSTING_TESTTIER = 'prod_abc';
+    expect(addonTierProductId('managed_posting', 'testtier')).toBe('prod_abc');
+    expect(addonTierProductId('managed_posting', 'no_such_tier_xyz')).toBeNull();
+  });
+});
+
+// The gate deciding whether activation can happen server-side or has to send
+// the customer to a payment page. Getting this wrong either bills nobody or
+// blocks activation, so every branch is pinned.
+describe('addonRequiresCheckout', () => {
+  const saved = { ...process.env };
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  function polarWithProduct() {
+    process.env.MSI_ADDON_BILLING_ENABLED = 'true';
+    process.env.BILLING_PROVIDER = 'polar';
+    process.env.POLAR_ADDON_PRODUCT_MANAGED_POSTING_TESTTIER = 'prod_abc';
+  }
+
+  it('requires checkout for a first activation on Polar', () => {
+    polarWithProduct();
+    expect(
+      addonRequiresCheckout({ addonId: 'managed_posting', tierId: 'testtier' }),
+    ).toBe(true);
+  });
+
+  it('does NOT require checkout for a tier change on Polar', () => {
+    // An existing subscription can be moved to the new product in place, so
+    // the customer must not be asked to pay again.
+    polarWithProduct();
+    expect(
+      addonRequiresCheckout({
+        addonId: 'managed_posting',
+        tierId: 'testtier',
+        existingLinkageId: 'sub_existing',
+      }),
+    ).toBe(false);
+  });
+
+  it('never requires checkout on Stripe', () => {
+    // Stripe bills add-ons as items on the org's existing subscription, with no
+    // customer interaction — the whole reason the two flows differ.
+    process.env.MSI_ADDON_BILLING_ENABLED = 'true';
+    process.env.BILLING_PROVIDER = 'stripe';
+    process.env.POLAR_ADDON_PRODUCT_MANAGED_POSTING_TESTTIER = 'prod_abc';
+    expect(
+      addonRequiresCheckout({ addonId: 'managed_posting', tierId: 'testtier' }),
+    ).toBe(false);
+  });
+
+  it('does not require checkout when the add-on has no configured product', () => {
+    // Unconfigured add-ons activate immediately and unbilled on both rails —
+    // matching the pre-Polar behaviour rather than blocking the customer.
+    process.env.MSI_ADDON_BILLING_ENABLED = 'true';
+    process.env.BILLING_PROVIDER = 'polar';
+    expect(
+      addonRequiresCheckout({ addonId: 'managed_posting', tierId: 'no_such_tier_xyz' }),
+    ).toBe(false);
+  });
+
+  it('does not require checkout while add-on billing is switched off', () => {
+    delete process.env.MSI_ADDON_BILLING_ENABLED;
+    process.env.BILLING_PROVIDER = 'polar';
+    process.env.POLAR_ADDON_PRODUCT_MANAGED_POSTING_TESTTIER = 'prod_abc';
+    expect(
+      addonRequiresCheckout({ addonId: 'managed_posting', tierId: 'testtier' }),
+    ).toBe(false);
   });
 });

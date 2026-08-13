@@ -110,12 +110,45 @@ polarAnnualProductId: { dev: '<sandbox id>', prod: '<production id>' },
 `dev` = sandbox, `prod` = production, selected by `BILLING_PLAN_ENV` — the same
 split Stripe and Paystack already use in that file.
 
-Also create, and put their ids in env:
+To copy an id: **⋮** on the product row → **Copy Product ID** (a UUID like
+`099faa4d-14a4-4a0f-836f-d68a78fb7bc1`).
 
-- a **one-time** "AI Credits" product → `POLAR_CREDITS_PRODUCT_ID`
-  (the price is overridden per checkout, so one product covers every pack size)
-- a **recurring monthly** "Managed social account" product →
-  `POLAR_MSI_ACCOUNT_PRODUCT_ID`
+### 1b. Two more products, for the non-plan purchases
+
+These are the `POLAR_CREDITS_PRODUCT_ID` / `POLAR_MSI_ACCOUNT_PRODUCT_ID` env
+vars. Both use **ad-hoc pricing**: the app overrides the amount on every
+checkout, so the price you set in the catalog is only a placeholder and never
+what the customer pays. That is why one product covers every credit pack size
+and every managed-account quantity, instead of needing dozens of products.
+
+**AI Credits** → `POLAR_CREDITS_PRODUCT_ID`
+
+| Field | Value |
+| --- | --- |
+| Name | `NativPost AI Credits` |
+| Billing | **One-time purchase** |
+| Price | Fixed, `$10` (placeholder — overridden per checkout) |
+
+The real amount comes from the top-up form: $1 buys 10 credits, so a $25 top-up
+is sent to Polar as `2500` cents with `credits: 250` in metadata. The webhook
+reads that metadata to grant the credits.
+
+**Managed social account** → `POLAR_MSI_ACCOUNT_PRODUCT_ID`
+
+| Field | Value |
+| --- | --- |
+| Name | `Managed social account` |
+| Billing | **Recurring — monthly** |
+| Price | Fixed, `$80` (placeholder — overridden per checkout) |
+
+$80 is `MSI_PER_ACCOUNT_USD` in `src/lib/msi/pricing.ts`. An order for 3
+accounts is charged as one line of `$240`, because Polar checkout has no
+per-line quantity for a fixed price — the real quantity stays on the
+`msi_provisioning_order` row and fulfilment fans out from there, unchanged.
+
+> Set these in the **same** Polar instance as your token. Sandbox products are
+> invisible to a production token and vice versa, and a mismatch fails at
+> checkout with a 404 on the product id, not at boot.
 
 ### 2. Environment
 
@@ -226,26 +259,48 @@ grace period is safe.
 
 ---
 
-## Known gap: flat add-on subscriptions on Polar
+## Add-ons: two different activation flows
 
-`syncAddonBilling()` cannot create a Polar subscription server-side, because
 Polar only creates **paid** subscriptions through a checkout the customer
-completes (`POST /v1/subscriptions` accepts free products only).
+completes (`POST /v1/subscriptions` accepts free products only), so a flat
+add-on cannot be provisioned server-side the way Stripe does it. The add-on
+flow therefore branches by rail — but the branch is contained in
+`beginAddonActivation()`, and the UI just follows what the API returns.
 
-So on the Polar rail:
+| | Stripe | Polar |
+| --- | --- | --- |
+| First activation | subscription **item** added to the org's plan subscription, immediately | customer sent to **checkout**; the add-on activates from the `msi_addon` webhook branch once paid |
+| Tier change | item re-priced in place (`proration_behavior: 'none'`) | subscription moved to the new product (`prorationBehavior: 'prorate'`) — no checkout |
+| Deactivation | subscription item deleted | add-on's own subscription revoked |
+| One-off fees | invoice item on the next invoice | metered units on `nativpost_addon_fee`, same economic outcome |
 
-- **One-off add-on fees work fully** — billed as metered units on the
-  `nativpost_addon_fee` meter, landing on the next invoice exactly as a Stripe
-  invoice item would.
-- **Flat recurring add-on tiers are not auto-billed on activation.**
-  `syncAddonBilling()` logs a warning instead of silently pretending it billed.
-  `createAddonCheckout()` is provided to send the customer through a Polar
-  checkout for the add-on product; the resulting subscription id is recorded
-  from the webhook, and `removeAddonBilling()` revokes it on deactivation.
+**Activation is deliberately ordered payment-first on Polar.** Activating the
+row and billing afterwards would hand the add-on out free to anyone who
+abandons checkout — exactly the failure Stripe avoids by billing in the same
+server-side call. So `beginAddonActivation()` returns a checkout URL and writes
+nothing; `activateAddonFromCheckout()` (called only by the webhook) is what
+grants entitlement.
 
-This only matters when `MSI_ADDON_BILLING_ENABLED=true` **and**
-`BILLING_PROVIDER=polar`. Wiring `createAddonCheckout()` into the add-on
-activation UI is the remaining piece of work.
+`POST /api/msi/addons` with `action: 'activate'` returns one of:
+
+```jsonc
+{ "ok": true, "status": "active" }                        // activated server-side
+{ "ok": true, "requiresCheckout": true, "checkoutUrl": … } // customer must pay first
+```
+
+The add-ons page redirects on the second shape and shows a "payment received"
+banner on return, refetching after ~2s to cover webhook lag.
+
+Per-add-on product ids come from env, mirroring the Stripe price keys:
+
+```bash
+POLAR_ADDON_PRODUCT_MANAGED_POSTING_STARTER=…       # cf. STRIPE_ADDON_PRICE_…
+POLAR_ADDON_PRODUCT_MANAGED_POSTING_PROFESSIONAL=…
+POLAR_ADDON_PRODUCT_MANAGED_CONTENT_LITE=…
+```
+
+An add-on with no configured product id activates immediately and unbilled on
+both rails — the same behaviour as today with `MSI_ADDON_BILLING_ENABLED` off.
 
 ---
 

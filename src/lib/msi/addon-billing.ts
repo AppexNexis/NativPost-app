@@ -129,15 +129,37 @@ export async function syncAddonBilling(params: {
 
   if (getActiveBillingProvider() === 'polar') {
     const productId = addonTierProductId(params.addonId, params.tierId);
-    if (productId && !params.existingItemId) {
-      console.warn(
-        `[MSI] add-on ${params.addonId}${params.tierId ? `/${params.tierId}` : ''} `
-        + 'activated on the Polar rail but not yet billed: Polar has no '
-        + 'subscription-item API, so a flat add-on needs its own subscription. '
-        + 'Send the customer through createAddonCheckout() to start it.',
-      );
+    if (!productId) {
+      return params.existingItemId ?? null;
     }
-    return params.existingItemId ?? null;
+
+    // TIER CHANGE. Polar can move a live subscription to a different product,
+    // so this half needs no customer interaction and mirrors Stripe's in-place
+    // re-price. Stripe passes proration_behavior:'none'; Polar has no 'none',
+    // so 'prorate' is used — the customer is credited for the unused remainder
+    // of the old tier rather than paying twice.
+    if (params.existingItemId) {
+      const { getPolarClient } = await import('@/lib/billing/polar-client');
+      const polar = await getPolarClient();
+      await polar.subscriptions.update({
+        id: params.existingItemId,
+        subscriptionUpdate: { productId, prorationBehavior: 'prorate' },
+      });
+      return params.existingItemId;
+    }
+
+    // FIRST ACTIVATION. Polar cannot start a paid subscription server-side, so
+    // there is nothing to bill here. beginAddonActivation() routes the customer
+    // through createAddonCheckout() instead and the webhook activates on
+    // payment — reaching this line means a caller bypassed that path, so say so
+    // rather than silently leaving the add-on unbilled.
+    console.warn(
+      `[MSI] add-on ${params.addonId}${params.tierId ? `/${params.tierId}` : ''} `
+      + 'activated on the Polar rail WITHOUT billing: Polar has no '
+      + 'subscription-item API, so a flat add-on needs its own subscription. '
+      + 'Activate via beginAddonActivation() so the customer is sent to checkout.',
+    );
+    return null;
   }
 
   const priceId = addonTierPriceId(params.addonId, params.tierId);
@@ -165,6 +187,29 @@ export async function syncAddonBilling(params: {
     proration_behavior: 'none',
   });
   return item.id;
+}
+
+/**
+ * Whether activating this add-on has to go through a customer-facing checkout
+ * rather than being provisioned server-side.
+ *
+ * True only on the Polar rail, with billing enabled, for an add-on that has a
+ * configured product, and only when the org has no live subscription for it
+ * yet — a tier change on an existing add-on is handled in place by
+ * syncAddonBilling(). Stripe always returns false: it bills add-ons as items on
+ * the org's existing subscription with no customer interaction.
+ */
+export function addonRequiresCheckout(params: {
+  addonId: string;
+  tierId?: string | null;
+  existingLinkageId?: string | null;
+}): boolean {
+  return (
+    isAddonBillingEnabled()
+    && getActiveBillingProvider() === 'polar'
+    && !params.existingLinkageId
+    && !!addonTierProductId(params.addonId, params.tierId)
+  );
 }
 
 /**

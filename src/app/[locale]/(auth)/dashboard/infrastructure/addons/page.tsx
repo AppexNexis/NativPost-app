@@ -3,7 +3,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Bot, Check, Cpu, Loader2, User, Users } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/features/dashboard/ErrorBanner';
@@ -77,11 +78,28 @@ function priceLabel(p: AddonPricing): string {
   }
 }
 
-export default function AddonsPage() {
+function AddonsPageInner() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [tierChoice, setTierChoice] = useState<Record<string, string>>({});
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Returning from a Polar add-on checkout. The add-on is activated by the
+  // webhook, not by this redirect, so the row can still read inactive for a
+  // moment — refetch shortly after landing rather than showing a stale card.
+  const justActivated = searchParams.get('activated') === '1';
+  const justCancelled = searchParams.get('cancelled') === '1';
+
+  useEffect(() => {
+    if (!justActivated) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      void queryClient.invalidateQueries({ queryKey: ['msi-addons'] });
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [justActivated, queryClient]);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['msi-addons'],
@@ -121,10 +139,21 @@ export default function AddonsPage() {
       if (!res.ok) {
         throw new Error(body.error || 'Something went wrong.');
       }
+
+      // Polar bills a flat add-on as its own subscription, which can only be
+      // started by the customer. The add-on is not active yet — the webhook
+      // activates it once payment lands — so hand off to checkout WITHOUT
+      // clearing the pending state, keeping the button disabled through the
+      // redirect so it cannot be fired twice.
+      if (body.requiresCheckout && body.checkoutUrl) {
+        window.location.href = body.checkoutUrl;
+        return;
+      }
+
       await queryClient.invalidateQueries({ queryKey: ['msi-addons'] });
+      setPendingId(null);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Something went wrong.');
-    } finally {
       setPendingId(null);
     }
   }
@@ -147,6 +176,24 @@ export default function AddonsPage() {
       {actionError && (
         <div className="mb-4">
           <ErrorBanner title="Couldn't update the add-on" detail={actionError} />
+        </div>
+      )}
+
+      {justActivated && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm">
+          <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+          <p className="text-muted-foreground">
+            <span className="font-medium text-foreground">Payment received.</span>
+            {' '}
+            Your add-on is being switched on — this page updates in a moment.
+          </p>
+        </div>
+      )}
+
+      {justCancelled && (
+        <div className="mb-4 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+          Checkout was cancelled — the add-on was not activated and you have not
+          been charged.
         </div>
       )}
 
@@ -302,5 +349,15 @@ export default function AddonsPage() {
         </>
       )}
     </div>
+  );
+}
+
+// useSearchParams needs a Suspense boundary above it, matching how
+// /dashboard/billing reads its post-checkout query params.
+export default function AddonsPage() {
+  return (
+    <Suspense fallback={<GridPageSkeleton cards={6} />}>
+      <AddonsPageInner />
+    </Suspense>
   );
 }
