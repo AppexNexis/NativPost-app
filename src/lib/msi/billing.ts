@@ -9,6 +9,8 @@
 // never load the Stripe SDK (the client is imported lazily; see below).
 import type Stripe from 'stripe';
 
+import { getActiveBillingProvider } from '@/lib/plans';
+
 export type PublishEventInput = {
   orgId: string;
   managedAccountId: string;
@@ -57,6 +59,11 @@ export type UsageRecord = {
   // The org's Stripe customer id, resolved by the reporter (which owns DB
   // access). Absent/null for orgs that aren't Stripe customers — the Stripe
   // provider cannot meter those and the reporter skips them.
+  //
+  // Polar needs no equivalent: it keys usage on `external_customer_id`, and
+  // NativPost passes the Clerk orgId as that everywhere, so `orgId` above is
+  // already the customer reference. That is why the Polar provider can meter
+  // an org the moment it exists, with no id-resolution step.
   stripeCustomerId?: string | null;
   // When the publish happened — used as the meter-event timestamp when recent.
   occurredAt?: Date;
@@ -65,15 +72,28 @@ export type UsageRecord = {
 /** Outcome of reporting one event: the provider's record id for reconciliation. */
 export type ReportResult = { providerRecordId: string | null };
 
+export type BillingServiceId = 'noop' | 'stripe' | 'polar';
+
 export type BillingService = {
+  readonly id: BillingServiceId;
   readonly enabled: boolean;
+  /**
+   * Whether this provider has everything it needs to meter this record. False
+   * means "not yet" — the reporter leaves the event un-reported for a later
+   * tick rather than dropping it or stamping it as done.
+   */
+  canReport: (record: UsageRecord) => boolean;
   /** Report one usage unit to the provider. No-op when disabled. */
   reportUsage: (record: UsageRecord) => Promise<ReportResult>;
 };
 
 /** Disabled provider — the default until metered billing is turned on. */
 export const noopBillingService: BillingService = {
+  id: 'noop',
   enabled: false,
+  canReport() {
+    return false;
+  },
   async reportUsage() {
     // Intentionally does nothing — events accumulate un-reported until a real
     // provider is wired and the flag is enabled.
@@ -116,7 +136,13 @@ async function getStripeClient(): Promise<Stripe> {
  */
 export function createStripeBillingService(): BillingService {
   return {
+    id: 'stripe',
     enabled: true,
+    canReport(record: UsageRecord): boolean {
+      // The Stripe meter call is keyed on the Stripe customer id, so an org
+      // that has never transacted on Stripe cannot be metered yet.
+      return !!record.stripeCustomerId;
+    },
     async reportUsage(record: UsageRecord): Promise<ReportResult> {
       if (!record.stripeCustomerId) {
         throw new Error(
@@ -148,6 +174,69 @@ export function createStripeBillingService(): BillingService {
   };
 }
 
+// The meter's event `name` in Polar (Usage Billing → Meters). Kept as its own
+// env var rather than reusing the Stripe one so the two catalogs can be named
+// independently, though the default matches.
+const POLAR_METER_EVENT_NAME
+  = process.env.POLAR_MSI_METER_EVENT_NAME
+    || process.env.STRIPE_MSI_METER_EVENT_NAME
+    || 'nativpost_managed_post';
+
+/**
+ * Polar metered-billing provider. Reports one usage unit per managed post via
+ * the Events Ingestion API.
+ *
+ * Two differences from the Stripe provider, both in NativPost's favour:
+ *
+ *  - No customer-id resolution. Polar keys events on `external_customer_id`,
+ *    and NativPost passes the Clerk orgId as that on every checkout, so any
+ *    org can be metered immediately — there is no "skipped, no customer id"
+ *    class of event on this rail.
+ *
+ *  - Idempotency is `external_id`, which Polar dedups on ingest. We send the
+ *    billable-event row id, so a retried or replayed tick is counted once and
+ *    reported back in the response's `duplicates` count rather than
+ *    double-billing.
+ *
+ * Note Polar attributes usage to a billing period by RECEIPT time, not by the
+ * event timestamp: a late reporter run bills into the current period instead
+ * of reopening a closed invoice. The timestamp is still sent for accurate
+ * usage reporting to the customer.
+ */
+export function createPolarBillingService(): BillingService {
+  return {
+    id: 'polar',
+    enabled: true,
+    canReport(): boolean {
+      // orgId is the external customer id — always present on a usage record.
+      return true;
+    },
+    async reportUsage(record: UsageRecord): Promise<ReportResult> {
+      const { getPolarClient } = await import('@/lib/billing/polar-client');
+      const polar = await getPolarClient();
+
+      await polar.events.ingest({
+        events: [
+          {
+            name: POLAR_METER_EVENT_NAME,
+            externalCustomerId: record.orgId,
+            externalId: record.eventId,
+            ...(record.occurredAt ? { timestamp: record.occurredAt } : {}),
+            metadata: {
+              billing_period: record.billingPeriod,
+              units: 1,
+            },
+          },
+        ],
+      });
+
+      // Polar's ingest response returns counts, not per-event ids, so the
+      // external_id we sent IS the reconciliation anchor.
+      return { providerRecordId: record.eventId };
+    },
+  };
+}
+
 /** True when metered billing is switched on via env flag. */
 export function isMeteredBillingEnabled(
   flag: string | undefined = process.env.MSI_METERED_BILLING_ENABLED,
@@ -155,9 +244,15 @@ export function isMeteredBillingEnabled(
   return flag === 'true' || flag === '1';
 }
 
-/** Resolve the active provider from the feature flag. */
+/**
+ * Resolve the active metered provider: the kill-switch decides whether
+ * anything is reported at all, BILLING_PROVIDER decides where to.
+ */
 export function getBillingService(): BillingService {
-  return isMeteredBillingEnabled()
-    ? createStripeBillingService()
-    : noopBillingService;
+  if (!isMeteredBillingEnabled()) {
+    return noopBillingService;
+  }
+  return getActiveBillingProvider() === 'polar'
+    ? createPolarBillingService()
+    : createStripeBillingService();
 }

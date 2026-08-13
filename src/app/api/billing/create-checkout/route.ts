@@ -1,15 +1,10 @@
-import { eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import Stripe from 'stripe';
 
 import { getAuthContext } from '@/lib/auth';
-import { getStripePriceId, isPlanConfigured, PLAN_CONFIGS } from '@/lib/plans';
-// import { db } from '@/libs/DB';
-import { getDb } from '@/libs/DB';
-import { organizationSchema } from '@/models/Schema';
+import { BillingConfigError, getBillingProvider } from '@/lib/billing/provider';
+import { PLAN_CONFIGS } from '@/lib/plans';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 // -----------------------------------------------------------
@@ -22,9 +17,12 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 // There is no setup fee and no pre-dashboard purchase step — every
 // org is auto-enrolled on the free plan at signup. Checkout charges
 // the plan price and nothing else.
+//
+// The rail (Stripe or Polar) is chosen by BILLING_PROVIDER and resolved
+// through src/lib/billing/provider.ts — this route is provider-agnostic.
+// Paystack is NOT reached from here; it has its own route.
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
-  const db = await getDb();
   const { error, orgId } = await getAuthContext();
   if (error) {
     return error;
@@ -39,62 +37,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid plan.' }, { status: 400 });
     }
 
-    // Load org record
-    const [org] = await db
-      .select()
-      .from(organizationSchema)
-      .where(eq(organizationSchema.id, orgId!))
-      .limit(1);
-
-    // Get or create Stripe customer
-    let customerId = org?.stripeCustomerId;
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        metadata: { orgId: orgId! },
-      });
-      customerId = customer.id;
-      await db
-        .update(organizationSchema)
-        .set({ stripeCustomerId: customerId, paymentType: 'stripe' })
-        .where(eq(organizationSchema.id, orgId!));
-    } else {
-      // Existing Stripe customer — ensure paymentType is recorded
-      await db
-        .update(organizationSchema)
-        .set({ paymentType: 'stripe' })
-        .where(eq(organizationSchema.id, orgId!));
-    }
-
-    // ── Plan subscription (no trial, no setup fee) ──
-    if (!isPlanConfigured(planId)) {
-      return NextResponse.json(
-        { error: 'This plan is not yet available for purchase. Contact support.' },
-        { status: 400 },
-      );
-    }
-
-    const priceId = getStripePriceId(planId, interval as 'month' | 'year')!;
-
-    const session = await stripe.checkout.sessions.create({
-      customer: customerId,
-      mode: 'subscription',
-      line_items: [{ price: priceId, quantity: 1 }],
-      allow_promotion_codes: true,
-      // No trial — they already had their trial
-      subscription_data: {
-        metadata: { orgId: orgId!, planId, billingInterval: interval },
-      },
-      billing_address_collection: 'auto',
-      success_url: `${APP_URL}/dashboard/billing?success=true&plan=${planId}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${APP_URL}/dashboard/billing?cancelled=true`,
-      metadata: { orgId: orgId!, planId, billingInterval: interval },
+    const provider = await getBillingProvider();
+    const { url } = await provider.createSubscriptionCheckout({
+      orgId: orgId!,
+      planId,
+      interval: interval === 'year' ? 'year' : 'month',
+      // The provider appends its own checkout-id placeholder to this URL —
+      // Stripe and Polar spell that token differently.
+      successUrl: `${APP_URL}/dashboard/billing?success=true&plan=${planId}`,
+      cancelUrl: `${APP_URL}/dashboard/billing?cancelled=true`,
     });
 
-    return NextResponse.json({ url: session.url });
+    return NextResponse.json({ url });
   } catch (err: any) {
-    console.error('[Stripe Checkout] Error type:', err?.type);
-    console.error('[Stripe Checkout] Error code:', err?.code);
-    console.error('[Stripe Checkout] Error message:', err?.message);
+    // Configuration problems are an answer for the user, not a crash — an
+    // unconfigured plan id or a missing provider key. Surface them as 400.
+    if (err instanceof BillingConfigError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    console.error('[Billing Checkout] Error type:', err?.type);
+    console.error('[Billing Checkout] Error code:', err?.code);
+    console.error('[Billing Checkout] Error message:', err?.message);
     return NextResponse.json(
       { error: 'Failed to create checkout session.' },
       { status: 500 },

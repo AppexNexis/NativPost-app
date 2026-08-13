@@ -13,9 +13,22 @@
  *     (FREE_TRIAL_DAYS) carrying FREE_PLAN_FEATURES; when it lapses the
  *     org stays signed in but is routed to /dashboard/billing to pick a
  *     paid plan. The one-time setup fee was removed entirely in this pass.
+ *
+ * v5: Polar.sh alongside Stripe — polarProductId / polarAnnualProductId on
+ *     every PlanConfig, selected by BILLING_PROVIDER. Polar has no separate
+ *     "price" object: a product IS its pricing, so monthly and yearly are two
+ *     distinct products, which is why there are two id fields rather than one
+ *     product with two intervals.
  */
 
 export type BillingInterval = 'month' | 'year';
+
+/**
+ * The international billing rails. Paystack is deliberately NOT in this union:
+ * it is a regional rail chosen per-customer at checkout, not the app-wide
+ * provider selected by BILLING_PROVIDER.
+ */
+export type BillingProviderId = 'stripe' | 'polar';
 
 export type PlanFeatures = {
   postsPerMonth: number; // -1 = unlimited
@@ -55,6 +68,10 @@ export type PlanConfig = {
   features: PlanFeatures;
   stripePriceId: { dev: string; prod: string };
   stripeAnnualPriceId: { dev: string; prod: string };
+  /** Polar product id for the monthly plan. `dev` = sandbox, `prod` = production. */
+  polarProductId: { dev: string; prod: string };
+  /** Polar product id for the annual plan — a separate product, not an interval. */
+  polarAnnualProductId: { dev: string; prod: string };
   paystackPlanCode: { dev: string; prod: string };
   paystackAnnualPlanCode: { dev: string; prod: string };
   popular?: boolean;
@@ -97,6 +114,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     },
     stripePriceId: { dev: '', prod: '' },
     stripeAnnualPriceId: { dev: '', prod: '' },
+    polarProductId: { dev: '', prod: '' },
+    polarAnnualProductId: { dev: '', prod: '' },
     paystackPlanCode: { dev: '', prod: '' },
     paystackAnnualPlanCode: { dev: '', prod: '' },
   },
@@ -134,6 +153,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     },
     stripePriceId: { dev: 'price_STARTER_DEV_REPLACE', prod: 'price_1TLfHe8UA4orc9zNIcmWwP1d' },
     stripeAnnualPriceId: { dev: 'price_STARTER_ANNUAL_DEV_REPLACE', prod: 'price_1TuJun8UA4orc9zNttOr2wxC' },
+    polarProductId: { dev: 'polar_STARTER_SANDBOX_REPLACE', prod: 'polar_STARTER_PROD_REPLACE' },
+    polarAnnualProductId: { dev: 'polar_STARTER_ANNUAL_SANDBOX_REPLACE', prod: 'polar_STARTER_ANNUAL_PROD_REPLACE' },
     paystackPlanCode: { dev: 'PLN_jjfdqyrgr1vbsvv', prod: 'PLN_4jzn7zd6blqssag' },
     paystackAnnualPlanCode: { dev: 'PLN_STARTER_ANNUAL_DEV_REPLACE', prod: 'PLN_unm6nqz8wcialev' },
   },
@@ -171,6 +192,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     },
     stripePriceId: { dev: 'price_GROWTH_DEV_REPLACE', prod: 'price_1TLfIW8UA4orc9zN5SvYEWkD' },
     stripeAnnualPriceId: { dev: 'price_GROWTH_ANNUAL_DEV_REPLACE', prod: 'price_1TuK1Z8UA4orc9zNsShuDFMu' },
+    polarProductId: { dev: 'polar_GROWTH_SANDBOX_REPLACE', prod: 'polar_GROWTH_PROD_REPLACE' },
+    polarAnnualProductId: { dev: 'polar_GROWTH_ANNUAL_SANDBOX_REPLACE', prod: 'polar_GROWTH_ANNUAL_PROD_REPLACE' },
     paystackPlanCode: { dev: 'PLN_8h1kodnrprlt3sp', prod: 'PLN_u39i4zlh6416qbb' },
     paystackAnnualPlanCode: { dev: 'PLN_GROWTH_ANNUAL_DEV_REPLACE', prod: 'PLN_qya2639txqy4tm2' },
   },
@@ -208,6 +231,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     },
     stripePriceId: { dev: 'price_PRO_DEV_REPLACE', prod: 'price_1TLfJ08UA4orc9zNrNzFnRr7' },
     stripeAnnualPriceId: { dev: 'price_PRO_ANNUAL_DEV_REPLACE', prod: 'price_1TuK308UA4orc9zNdT2A3trX' },
+    polarProductId: { dev: 'polar_PRO_SANDBOX_REPLACE', prod: 'polar_PRO_PROD_REPLACE' },
+    polarAnnualProductId: { dev: 'polar_PRO_ANNUAL_SANDBOX_REPLACE', prod: 'polar_PRO_ANNUAL_PROD_REPLACE' },
     paystackPlanCode: { dev: 'PLN_fdwtqby00izl4ro', prod: 'PLN_o7ebuljkyw9iyaw' },
     paystackAnnualPlanCode: { dev: 'PLN_PRO_ANNUAL_DEV_REPLACE', prod: 'PLN_iqo2svs8izudauv' },
   },
@@ -245,6 +270,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     },
     stripePriceId: { dev: 'price_AGENCY_DEV_REPLACE', prod: 'price_1TLfKa8UA4orc9zNw27oyVak' },
     stripeAnnualPriceId: { dev: 'price_AGENCY_ANNUAL_DEV_REPLACE', prod: 'price_1TuK9K8UA4orc9zNzhdEgB9m' },
+    polarProductId: { dev: 'polar_AGENCY_SANDBOX_REPLACE', prod: 'polar_AGENCY_PROD_REPLACE' },
+    polarAnnualProductId: { dev: 'polar_AGENCY_ANNUAL_SANDBOX_REPLACE', prod: 'polar_AGENCY_ANNUAL_PROD_REPLACE' },
     paystackPlanCode: { dev: 'PLN_lu1zsbqua45q58b', prod: 'PLN_uevdm7btk36wdhg' },
     paystackAnnualPlanCode: { dev: 'PLN_AGENCY_ANNUAL_DEV_REPLACE', prod: 'PLN_mjoh9tddm7t6wp6' },
   },
@@ -282,6 +309,8 @@ export const PLAN_CONFIGS: Record<string, PlanConfig> = {
     },
     stripePriceId: { dev: '', prod: '' },
     stripeAnnualPriceId: { dev: '', prod: '' },
+    polarProductId: { dev: '', prod: '' },
+    polarAnnualProductId: { dev: '', prod: '' },
     paystackPlanCode: { dev: '', prod: '' },
     paystackAnnualPlanCode: { dev: '', prod: '' },
   },
@@ -339,6 +368,51 @@ export function getPlanByStripePriceId(priceId: string): PlanConfig | null {
   ) ?? null;
 }
 
+// -----------------------------------------------------------
+// POLAR
+//
+// Polar products carry their own pricing, so the monthly and annual tiers are
+// two separate products. `dev` maps to the Polar sandbox, `prod` to production
+// — the same BILLING_PLAN_ENV split Stripe and Paystack already use.
+// -----------------------------------------------------------
+
+export function getPolarProductId(planId: string, interval?: BillingInterval): string | null {
+  const plan = PLAN_CONFIGS[planId];
+  if (!plan) {
+    return null;
+  }
+  if (interval === 'year') {
+    return plan.polarAnnualProductId[getEnv()];
+  }
+  return plan.polarProductId[getEnv()];
+}
+
+export function getPlanByPolarProductId(productId: string): PlanConfig | null {
+  const env = getEnv();
+  return Object.values(PLAN_CONFIGS).find(
+    p => p.polarProductId[env] === productId || p.polarAnnualProductId[env] === productId,
+  ) ?? null;
+}
+
+/**
+ * Which interval a Polar product id represents, or null when the id belongs to
+ * no configured plan. The Polar webhook needs this because — unlike Stripe,
+ * where the interval is a property of the price — the interval is only
+ * knowable from *which* product was bought.
+ */
+export function getPolarProductInterval(productId: string): BillingInterval | null {
+  const env = getEnv();
+  for (const plan of Object.values(PLAN_CONFIGS)) {
+    if (plan.polarAnnualProductId[env] === productId) {
+      return 'year';
+    }
+    if (plan.polarProductId[env] === productId) {
+      return 'month';
+    }
+  }
+  return null;
+}
+
 export function getPlanByPaystackCode(planCode: string): PlanConfig | null {
   const env = getEnv();
   return Object.values(PLAN_CONFIGS).find(
@@ -359,9 +433,37 @@ export function getEffectivePlanFeatures(planId: string, planStatus: string): Pl
   return PLAN_CONFIGS[planId]?.features ?? FREE_PLAN_FEATURES;
 }
 
+/**
+ * The provider the app is currently selling through. Paystack is never
+ * returned here — it is chosen per-customer at checkout, not app-wide.
+ */
+export function getActiveBillingProvider(
+  raw: string | undefined = process.env.BILLING_PROVIDER,
+): BillingProviderId {
+  return raw === 'polar' ? 'polar' : 'stripe';
+}
+
+/**
+ * Whether a plan can actually be bought on a given provider+interval, i.e. a
+ * real id exists and isn't still a `…REPLACE` placeholder.
+ */
+export function isPlanConfiguredFor(
+  provider: BillingProviderId,
+  planId: string,
+  interval?: BillingInterval,
+): boolean {
+  const id = provider === 'polar'
+    ? getPolarProductId(planId, interval)
+    : getStripePriceId(planId, interval);
+  return !!id && !id.includes('REPLACE');
+}
+
+/**
+ * Monthly-plan configuration check on the ACTIVE provider. Kept for the
+ * existing callers; prefer `isPlanConfiguredFor` when the interval matters.
+ */
 export function isPlanConfigured(planId: string): boolean {
-  const priceId = getStripePriceId(planId);
-  return !!priceId && !priceId.includes('REPLACE');
+  return isPlanConfiguredFor(getActiveBillingProvider(), planId);
 }
 
 export function getAnnualPrice(planId: string): number | null {

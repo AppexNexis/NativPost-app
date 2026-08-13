@@ -87,6 +87,9 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
     return clerkMiddleware(async (auth, req) => {
       if (
         req.nextUrl.pathname.startsWith('/api/billing/stripe-webhook')
+        // Polar signs with Standard Webhooks (POLAR_WEBHOOK_SECRET), verified
+        // inside the route — never a Clerk session.
+        || req.nextUrl.pathname.startsWith('/api/billing/polar-webhook')
         || req.nextUrl.pathname.startsWith('/api/billing/paystack-webhook')
         || req.nextUrl.pathname.startsWith('/api/cron/')
         || req.nextUrl.pathname.startsWith('/api/ai-studio/webhook/')

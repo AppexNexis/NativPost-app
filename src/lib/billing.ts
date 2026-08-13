@@ -38,6 +38,8 @@ export type OrgBillingState = {
   trialEndsAt: Date | null;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
+  polarCustomerId: string | null;
+  polarSubscriptionId: string | null;
   paystackCustomerCode: string | null;
   paystackSubscriptionCode: string | null;
   paymentType: string;
@@ -134,6 +136,8 @@ export function buildFreePlanRow(orgId: string) {
     setupFeePaid: false,
     stripeCustomerId: null,
     stripeSubscriptionId: null,
+    polarCustomerId: null,
+    polarSubscriptionId: null,
     paystackCustomerCode: null,
     paystackSubscriptionCode: null,
   };
@@ -189,6 +193,7 @@ export async function ensureOrgFreePlan(orgId: string): Promise<void> {
         eq(organizationSchema.id, orgId),
         eq(organizationSchema.planStatus, 'inactive'),
         isNull(organizationSchema.stripeSubscriptionId),
+        isNull(organizationSchema.polarSubscriptionId),
         isNull(organizationSchema.paystackSubscriptionCode),
       ),
     );
@@ -278,6 +283,8 @@ export async function getOrgBillingState(orgId: string): Promise<OrgBillingState
     trialEndsAt: org.trialEndsAt ?? null,
     stripeCustomerId: org.stripeCustomerId ?? null,
     stripeSubscriptionId: org.stripeSubscriptionId ?? null,
+    polarCustomerId: org.polarCustomerId ?? null,
+    polarSubscriptionId: org.polarSubscriptionId ?? null,
     paystackCustomerCode: org.paystackCustomerCode ?? null,
     paystackSubscriptionCode: org.paystackSubscriptionCode ?? null,
     paymentType: org.paymentType ?? 'stripe',

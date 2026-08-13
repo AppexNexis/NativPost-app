@@ -3,7 +3,12 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { getOrgBillingState, getOrgUsage } from '@/lib/billing';
-import { FREE_PLAN_FEATURES, FREE_PLAN_ID, FREE_TRIAL_DAYS } from '@/lib/plans';
+import {
+  FREE_PLAN_FEATURES,
+  FREE_PLAN_ID,
+  FREE_TRIAL_DAYS,
+  getActiveBillingProvider,
+} from '@/lib/plans';
 
 // -----------------------------------------------------------
 // GET /api/billing/status
@@ -15,6 +20,11 @@ export async function GET(_request: NextRequest) {
   if (error) {
     return error;
   }
+
+  // Which international rail new checkouts will use. The billing page renders
+  // this as the non-Paystack payment option, so the UI never offers a rail the
+  // server isn't actually configured to charge on.
+  const activeProvider = getActiveBillingProvider();
 
   try {
     const [billing, usage] = await Promise.all([
@@ -40,8 +50,10 @@ export async function GET(_request: NextRequest) {
         trialEndsAt: null,
         setupFeePaid: false,
         hasStripe: false,
+        hasPolar: false,
         hasPaystack: false,
-        paymentType: 'stripe',
+        paymentType: activeProvider,
+        activeProvider,
         features: FREE_PLAN_FEATURES,
         usage: {
           postsThisMonth: 0,
@@ -63,14 +75,19 @@ export async function GET(_request: NextRequest) {
       trialEndsAt: billing.trialEndsAt?.toISOString() ?? null,
       setupFeePaid: billing.setupFeePaid,
       hasStripe: !!billing.stripeCustomerId,
+      hasPolar: !!billing.polarCustomerId,
       hasPaystack: !!billing.paystackCustomerCode,
       hasPaystackSub: !!billing.paystackSubscriptionCode,
       // Derive payment type from actual subscription fields first — the column
       // may be wrong for orgs created before the migration. hasPaystackSub means
       // they definitely used Paystack. hasPaystack && !hasStripe is also Paystack.
-      paymentType: (!!billing.paystackSubscriptionCode || (!!billing.paystackCustomerCode && !billing.stripeCustomerId))
+      // A recorded Polar customer wins over a stale `paymentType` for the same
+      // reason: an org that moved rails has BOTH sets of ids on its row.
+      paymentType: (!!billing.paystackSubscriptionCode || (!!billing.paystackCustomerCode && !billing.stripeCustomerId && !billing.polarCustomerId))
         ? 'paystack'
-        : (billing.paymentType ?? 'stripe'),
+        : (billing.polarSubscriptionId ? 'polar' : (billing.paymentType ?? activeProvider)),
+      // What a NEW checkout would use, independent of this org's history.
+      activeProvider,
       billingInterval: billing.billingInterval ?? 'month',
       features: billing.features,
       usage: {

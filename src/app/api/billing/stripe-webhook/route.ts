@@ -6,6 +6,7 @@ import Stripe from 'stripe';
 
 import { addAiCredits } from '@/lib/ai-studio/server';
 import { firePlanUpgradedEmail, fireSubscriptionCancelledEmail } from '@/lib/billing';
+import { getEmailForOrg, getNameForOrg } from '@/lib/billing/org-contact';
 import { fulfillOrder } from '@/lib/msi/provisioning';
 import { notifyBilling } from '@/lib/notifications';
 import { getPlanByStripePriceId, PLAN_CONFIGS } from '@/lib/plans';
@@ -20,83 +21,8 @@ function getField(obj: object, key: string): unknown {
   return (obj as Record<string, unknown>)[key];
 }
 
-// -----------------------------------------------------------
-// Helpers — resolve user email and name from orgId via Clerk
-// -----------------------------------------------------------
-async function getEmailForOrg(orgId: string): Promise<string | null> {
-  try {
-    const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY;
-    if (!CLERK_SECRET_KEY) {
-      return null;
-    }
-
-    const res = await fetch(
-      `https://api.clerk.com/v1/organizations/${orgId}/memberships?limit=10`,
-      {
-        headers: new Headers({
-          'Authorization': `Bearer ${CLERK_SECRET_KEY}`,
-          'Content-Type': 'application/json',
-        }),
-      },
-    );
-    if (!res.ok) {
-      return null;
-    }
-
-    const json = await res.json();
-    const members: Array<{ role: string; public_user_data: { identifier: string } }> = json.data ?? json;
-    const admin = members.find(
-      m => m.role === 'admin' && m.public_user_data?.identifier !== 'admin@nativpost.com',
-    );
-    return admin?.public_user_data?.identifier ?? null;
-  } catch {
-    return null;
-  }
-}
-
-async function getNameForOrg(orgId: string): Promise<string | null> {
-  try {
-    const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY;
-    if (!CLERK_SECRET_KEY) {
-      return null;
-    }
-
-    const res = await fetch(
-      `https://api.clerk.com/v1/organizations/${orgId}/memberships?limit=10`,
-      {
-        headers: new Headers({
-          'Authorization': `Bearer ${CLERK_SECRET_KEY}`,
-          'Content-Type': 'application/json',
-        }),
-      },
-    );
-    if (!res.ok) {
-      return null;
-    }
-
-    const json = await res.json();
-    const members: Array<{
-      role: string;
-      public_user_data: {
-        identifier: string;
-        first_name?: string;
-        last_name?: string;
-      };
-    }> = json.data ?? json;
-
-    const admin = members.find(
-      m => m.role === 'admin' && m.public_user_data?.identifier !== 'admin@nativpost.com',
-    );
-    if (!admin) {
-      return null;
-    }
-
-    const { first_name, last_name } = admin.public_user_data;
-    return [first_name, last_name].filter(Boolean).join(' ') || null;
-  } catch {
-    return null;
-  }
-}
+// Email/name resolution lives in @/lib/billing/org-contact so the Stripe and
+// Polar webhooks cannot drift apart on who receives billing mail.
 
 // -----------------------------------------------------------
 // POST /api/billing/stripe-webhook

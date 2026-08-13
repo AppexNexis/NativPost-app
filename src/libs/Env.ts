@@ -1,13 +1,50 @@
 import { createEnv } from '@t3-oss/env-nextjs';
 import { z } from 'zod';
 
+/**
+ * An optional secret that may be declared-but-blank.
+ *
+ * `.env` files commonly carry placeholder keys with empty values (`FOO=`) for
+ * documentation. Plain `z.string().min(1).optional()` rejects those, because
+ * the variable IS present — it is just empty — so a blank placeholder would
+ * fail startup for everyone. This coerces '' to undefined first, so blank and
+ * absent mean the same thing: not configured.
+ */
+const optionalSecret = z.preprocess(
+  v => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+  z.string().min(1).optional(),
+);
+
+/** Same treatment for an optional enum with a blank placeholder. */
+function optionalEnum<T extends readonly [string, ...string[]]>(values: T) {
+  return z.preprocess(
+    v => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.enum(values).optional(),
+  );
+}
+
 export const Env = createEnv({
   server: {
     CLERK_SECRET_KEY: z.string().min(1),
     DATABASE_URL: z.string().optional(),
     LOGTAIL_SOURCE_TOKEN: z.string().optional(),
-    STRIPE_SECRET_KEY: z.string().min(1),
-    STRIPE_WEBHOOK_SECRET: z.string().min(1),
+    // Which international billing provider is live. Paystack is a separate,
+    // region-specific rail and is NOT selected by this switch — it stays
+    // available alongside whichever provider is chosen here.
+    // Unset → 'stripe', so existing deployments keep their current behaviour.
+    BILLING_PROVIDER: optionalEnum(['stripe', 'polar']),
+    // Optional so the app can boot on a Polar-only deployment. The Stripe
+    // provider fails loudly at call time when it is selected without these.
+    STRIPE_SECRET_KEY: optionalSecret,
+    STRIPE_WEBHOOK_SECRET: optionalSecret,
+    // Polar (Merchant of Record). Organization Access Token from
+    // polar.sh → Settings → Developers. Optional for the same reason.
+    POLAR_ACCESS_TOKEN: optionalSecret,
+    POLAR_WEBHOOK_SECRET: optionalSecret,
+    // Which Polar instance the access token belongs to. Sandbox tokens do NOT
+    // work against production and vice versa. Unset → derived from
+    // BILLING_PLAN_ENV ('prod' → production, anything else → sandbox).
+    POLAR_SERVER: optionalEnum(['sandbox', 'production']),
     BILLING_PLAN_ENV: z.enum(['dev', 'test', 'prod']),
     ANTHROPIC_API_KEY: z.string().min(1).optional(),
     RESEND_API_KEY: z.string().min(1).optional(),
@@ -36,14 +73,15 @@ export const Env = createEnv({
     MSI_VAULT_BUCKET: z.string().min(1).optional(), // defaults to 'vault'
     // Metered publish billing kill-switch. Off by default: billable events are
     // still RECORDED, but nothing is reported to the billing provider until
-    // this is 'true'. Flip only after wiring the real Stripe usage call.
+    // this is 'true'. Reporting goes to whichever BILLING_PROVIDER is active.
     MSI_METERED_BILLING_ENABLED: z.string().optional(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().optional(),
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().min(1),
     NEXT_PUBLIC_CLERK_SIGN_IN_URL: z.string().min(1),
-    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().min(1),
+    // Optional — a Polar-only deployment has no Stripe publishable key.
+    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: optionalSecret,
     // Optional — only controls sidebar link visibility, not actual access.
     NEXT_PUBLIC_NATIVPOST_TEAM_ORG_ID: z.string().min(1).optional(),
   },
@@ -54,8 +92,12 @@ export const Env = createEnv({
     CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
     DATABASE_URL: process.env.DATABASE_URL,
     LOGTAIL_SOURCE_TOKEN: process.env.LOGTAIL_SOURCE_TOKEN,
+    BILLING_PROVIDER: process.env.BILLING_PROVIDER,
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+    POLAR_ACCESS_TOKEN: process.env.POLAR_ACCESS_TOKEN,
+    POLAR_WEBHOOK_SECRET: process.env.POLAR_WEBHOOK_SECRET,
+    POLAR_SERVER: process.env.POLAR_SERVER,
     BILLING_PLAN_ENV: process.env.BILLING_PLAN_ENV,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     RESEND_API_KEY: process.env.RESEND_API_KEY,

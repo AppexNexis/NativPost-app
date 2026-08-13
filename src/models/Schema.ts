@@ -31,6 +31,19 @@ export const organizationSchema = pgTable(
     stripeSubscriptionCurrentPeriodEnd: integer(
       'stripe_subscription_current_period_end',
     ),
+    // Polar.sh — the Merchant-of-Record rail, mirroring the Stripe columns
+    // above. Both sets can be populated on one org: an account that subscribed
+    // on Stripe and later re-subscribed on Polar keeps its Stripe history.
+    // `paymentType` records which rail the LIVE subscription is on.
+    polarCustomerId: text('polar_customer_id'),
+    polarSubscriptionId: text('polar_subscription_id'),
+    // Polar has no separate price object — a product IS its pricing — so this
+    // is the product id, not a price id.
+    polarProductId: text('polar_product_id'),
+    polarSubscriptionStatus: text('polar_subscription_status'),
+    polarSubscriptionCurrentPeriodEnd: integer(
+      'polar_subscription_current_period_end',
+    ),
     paystackCustomerCode: text('paystack_customer_code'),
     paystackCustomerEmail: text('paystack_customer_email'),
     paystackSubscriptionCode: text('paystack_subscription_code'),
@@ -1014,7 +1027,7 @@ export const blitzMediaUsageSchema = pgTable(
     // Cloudinary public_id (or media_asset.id UUID for legacy rows).
     assetPublicId: text('asset_public_id').notNull(),
     assetType: text('asset_type').notNull(), // 'image' | 'video'
-    // eslint-disable-next-line ts/no-use-before-define
+
     contentItemId: uuid('content_item_id').references(() => contentItemSchema.id, {
       onDelete: 'set null',
     }),
@@ -1023,7 +1036,7 @@ export const blitzMediaUsageSchema = pgTable(
     }),
     usedAt: timestamp('used_at', { mode: 'date' }).defaultNow().notNull(),
   },
-  (t) => ({
+  t => ({
     orgAssetIdx: index('blitz_media_usage_org_asset_idx').on(
       t.orgId,
       t.assetPublicId,
@@ -1048,7 +1061,7 @@ export const blitzTemplateUsageSchema = pgTable(
     templateId: uuid('template_id')
       .references(() => contentTemplateSchema.id, { onDelete: 'cascade' })
       .notNull(),
-    // eslint-disable-next-line ts/no-use-before-define
+
     contentItemId: uuid('content_item_id').references(() => contentItemSchema.id, {
       onDelete: 'set null',
     }),
@@ -1057,7 +1070,7 @@ export const blitzTemplateUsageSchema = pgTable(
     }),
     usedAt: timestamp('used_at', { mode: 'date' }).defaultNow().notNull(),
   },
-  (t) => ({
+  t => ({
     orgTplIdx: index('blitz_template_usage_org_tpl_idx').on(
       t.orgId,
       t.templateId,
@@ -1222,6 +1235,9 @@ export const msiProvisioningOrderSchema = pgTable(
       .notNull(),
     stripeCheckoutSessionId: text('stripe_checkout_session_id'),
     stripeSubscriptionId: text('stripe_subscription_id'),
+    // Polar equivalents — populated when the order was paid through Polar.
+    polarCheckoutId: text('polar_checkout_id'),
+    polarSubscriptionId: text('polar_subscription_id'),
     quantity: integer('quantity').default(1).notNull(),
     // Snapshot of the requested config: { country, platform, niche, handlePreferences }
     configSnapshot: jsonb('config_snapshot').default({}).notNull(),
@@ -1636,6 +1652,11 @@ export const msiBillablePublishEventSchema = pgTable(
     // The provider's returned usage-record id — reconciliation anchor written
     // by the reporter when it ships this event to Stripe.
     stripeUsageRecordId: text('stripe_usage_record_id'),
+    // Same anchor for Polar. Holds the `external_id` we send with the ingested
+    // event (which is this row's id), since Polar's ingest response returns
+    // counts rather than per-event ids. Exactly one of the two is set per row,
+    // which also records WHICH provider metered the event.
+    polarUsageEventId: text('polar_usage_event_id'),
     createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
   },
   t => ({
@@ -1671,6 +1692,10 @@ export const msiAddonSubscriptionSchema = pgTable(
     tierId: text('tier_id'),
     // Stripe subscription item that bills this add-on, when metered/subscribed.
     stripeSubscriptionItemId: text('stripe_subscription_item_id'),
+    // Polar has no per-item subscription API — an add-on bought on Polar is its
+    // OWN subscription against a dedicated add-on product. This holds that
+    // subscription's id. See src/lib/msi/addon-billing.ts for the mapping.
+    polarSubscriptionId: text('polar_subscription_id'),
     // Per-add-on configuration (e.g. ad budgets, reply scope, target markets).
     config: jsonb('config').$type<Record<string, unknown>>().default({}).notNull(),
     activatedAt: timestamp('activated_at', { mode: 'date' }),

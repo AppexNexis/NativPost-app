@@ -1,25 +1,24 @@
 import { eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import Stripe from 'stripe';
 
 import { addAiCredits } from '@/lib/ai-studio/server';
 import { getAuthContext } from '@/lib/auth';
 import { chargePaystackAuthorization } from '@/lib/billing/paystack-charge';
+import { BillingConfigError, getBillingProvider } from '@/lib/billing/provider';
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 
 export const dynamic = 'force-dynamic';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nativpost.com';
 const CREDITS_PER_DOLLAR = 10;
 const MIN_USD = 10;
 const MAX_USD = 1000;
 
-interface PurchaseBody {
+type PurchaseBody = {
   amountUsd?: number;
-}
+};
 
 /**
  * POST /api/credits/purchase
@@ -29,12 +28,15 @@ interface PurchaseBody {
  * If the org has a saved Paystack authorization: charge it off-session,
  * credit the wallet, and return { mode: 'off_session', creditsAdded }.
  *
- * Otherwise: create a Stripe Checkout Session and return
- * { mode: 'checkout', url } for a redirect flow.
+ * Otherwise: create a hosted checkout on the active international rail
+ * (Stripe or Polar, per BILLING_PROVIDER) and return { mode: 'checkout', url }
+ * for a redirect flow. That rail's webhook credits the wallet.
  */
 export async function POST(request: NextRequest) {
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   let body: PurchaseBody;
   try {
@@ -104,47 +106,30 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Fallback: Stripe hosted Checkout for orgs without a saved off-session PM.
-  let customerId = org.stripeCustomerId;
-  if (!customerId) {
-    const customer = await stripe.customers.create({ metadata: { orgId: orgId! } });
-    customerId = customer.id;
-    await db
-      .update(organizationSchema)
-      .set({ stripeCustomerId: customerId, paymentType: 'stripe' })
-      .where(eq(organizationSchema.id, orgId!));
-  }
-
-  const session = await stripe.checkout.sessions.create({
-    customer: customerId,
-    mode: 'payment',
-    line_items: [
-      {
-        price_data: {
-          currency: 'usd',
-          product_data: {
-            name: `${credits} AI Credits`,
-            description: `One-time top-up of ${credits} AI Studio credits.`,
-          },
-          unit_amount: Math.round(roundedUsd * 100),
-        },
-        quantity: 1,
-      },
-    ],
-    metadata: {
+  // Fallback: hosted Checkout on the active international rail (Stripe or
+  // Polar, per BILLING_PROVIDER) for orgs without a saved off-session PM.
+  // The wallet is credited by that provider's webhook, not here.
+  try {
+    const provider = await getBillingProvider();
+    const { url } = await provider.createCreditsCheckout({
       orgId: orgId!,
-      type: 'ai_credits',
-      credits: String(credits),
-    },
-    success_url: `${APP_URL}/dashboard/settings?tab=credits&topup=success`,
-    cancel_url: `${APP_URL}/dashboard/settings?tab=credits&topup=cancelled`,
-  });
+      credits,
+      amountUsd: roundedUsd,
+      successUrl: `${APP_URL}/dashboard/settings?tab=credits&topup=success`,
+      cancelUrl: `${APP_URL}/dashboard/settings?tab=credits&topup=cancelled`,
+    });
 
-  return NextResponse.json({
-    ok: true,
-    mode: 'checkout',
-    url: session.url,
-    creditsAdded: 0,
-    amountUsd: roundedUsd,
-  });
+    return NextResponse.json({
+      ok: true,
+      mode: 'checkout',
+      url,
+      creditsAdded: 0,
+      amountUsd: roundedUsd,
+    });
+  } catch (err) {
+    if (err instanceof BillingConfigError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    throw err;
+  }
 }

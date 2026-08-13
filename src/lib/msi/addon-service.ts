@@ -1,24 +1,47 @@
 // MSI add-on activation service (docs §19). Thin DB layer over the pure catalog
 // (addons.ts). Activating an add-on is an upsert into `msi_addon_subscription`
 // keyed by (org, addon); deactivating flips status to cancelled. Billing linkage
-// (Stripe subscription item per tier) mirrors the metered pattern and is wired
+// mirrors the metered pattern and is wired
 // separately — this layer stores the selection and stays billing-ready.
+//
+// The linkage id means different things per rail (a Stripe subscription ITEM
+// vs a Polar SUBSCRIPTION — see addon-billing.ts), so it lives in two columns
+// and `billingLinkageId` below reads whichever belongs to the active provider.
 
 import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
+import { getActiveBillingProvider } from '@/lib/plans';
 import { msiAddonSubscriptionSchema } from '@/models/Schema';
 
 import { removeAddonBilling, syncAddonBilling } from './addon-billing';
 import type { MsiAddon } from './addons';
 import { validateActivation } from './addons';
 
-export interface OrgAddon {
+export type OrgAddon = {
   addonId: string;
   status: string;
   tierId: string | null;
   stripeSubscriptionItemId: string | null;
+  polarSubscriptionId: string | null;
   activatedAt: Date | null;
+};
+
+/** The billing linkage id for the rail currently in use. */
+export function billingLinkageId(addon: OrgAddon | null | undefined): string | null {
+  if (!addon) {
+    return null;
+  }
+  return getActiveBillingProvider() === 'polar'
+    ? addon.polarSubscriptionId
+    : addon.stripeSubscriptionItemId;
+}
+
+/** The column the linkage id belongs in, for the rail currently in use. */
+function linkageColumn(id: string | null) {
+  return getActiveBillingProvider() === 'polar'
+    ? { polarSubscriptionId: id }
+    : { stripeSubscriptionItemId: id };
 }
 
 export type ActivateOutcome =
@@ -33,6 +56,7 @@ export async function listOrgAddons(orgId: string): Promise<OrgAddon[]> {
       status: msiAddonSubscriptionSchema.status,
       tierId: msiAddonSubscriptionSchema.tierId,
       stripeSubscriptionItemId: msiAddonSubscriptionSchema.stripeSubscriptionItemId,
+      polarSubscriptionId: msiAddonSubscriptionSchema.polarSubscriptionId,
       activatedAt: msiAddonSubscriptionSchema.activatedAt,
     })
     .from(msiAddonSubscriptionSchema)
@@ -47,6 +71,7 @@ export async function getOrgAddon(orgId: string, addonId: string): Promise<OrgAd
       status: msiAddonSubscriptionSchema.status,
       tierId: msiAddonSubscriptionSchema.tierId,
       stripeSubscriptionItemId: msiAddonSubscriptionSchema.stripeSubscriptionItemId,
+      polarSubscriptionId: msiAddonSubscriptionSchema.polarSubscriptionId,
       activatedAt: msiAddonSubscriptionSchema.activatedAt,
     })
     .from(msiAddonSubscriptionSchema)
@@ -81,9 +106,10 @@ export async function activateAddon(
     return v;
   }
   const now = new Date();
-  // Know the prior billing item (if any) so a re-activation / tier change
-  // re-prices it instead of orphaning a Stripe item.
+  // Know the prior billing linkage (if any) so a re-activation / tier change
+  // re-prices it instead of orphaning a Stripe item or Polar subscription.
   const existing = await getOrgAddon(orgId, addonId);
+  const existingLinkage = billingLinkageId(existing);
 
   await db
     .insert(msiAddonSubscriptionSchema)
@@ -104,19 +130,19 @@ export async function activateAddon(
       },
     });
 
-  // Best-effort billing: a Stripe hiccup must never fail activation. No-op until
-  // MSI_ADDON_BILLING_ENABLED + the price env vars are configured.
+  // Best-effort billing: a provider hiccup must never fail activation. No-op
+  // until MSI_ADDON_BILLING_ENABLED + the price/product env vars are configured.
   try {
     const itemId = await syncAddonBilling({
       orgId,
       addonId,
       tierId: v.tier?.id ?? null,
-      existingItemId: existing?.stripeSubscriptionItemId ?? null,
+      existingItemId: existingLinkage,
     });
-    if (itemId && itemId !== existing?.stripeSubscriptionItemId) {
+    if (itemId && itemId !== existingLinkage) {
       await db
         .update(msiAddonSubscriptionSchema)
-        .set({ stripeSubscriptionItemId: itemId })
+        .set(linkageColumn(itemId))
         .where(
           and(
             eq(msiAddonSubscriptionSchema.orgId, orgId),
@@ -135,16 +161,16 @@ export async function activateAddon(
 export async function deactivateAddon(orgId: string, addonId: string): Promise<void> {
   const existing = await getOrgAddon(orgId, addonId);
 
-  // Best-effort: remove the Stripe subscription item so billing stops.
+  // Best-effort: drop the provider-side linkage so billing stops.
   try {
-    await removeAddonBilling(existing?.stripeSubscriptionItemId ?? null);
+    await removeAddonBilling(billingLinkageId(existing));
   } catch (billingErr) {
     console.error('[MSI] add-on billing removal failed (deactivation still applied):', billingErr);
   }
 
   await db
     .update(msiAddonSubscriptionSchema)
-    .set({ status: 'cancelled', cancelledAt: new Date(), stripeSubscriptionItemId: null })
+    .set({ status: 'cancelled', cancelledAt: new Date(), ...linkageColumn(null) })
     .where(
       and(
         eq(msiAddonSubscriptionSchema.orgId, orgId),

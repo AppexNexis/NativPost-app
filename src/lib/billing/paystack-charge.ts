@@ -13,20 +13,20 @@
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 
-export interface PaystackChargeInput {
+export type PaystackChargeInput = {
   email: string;
   authorizationCode: string;
   /** Amount to charge, in US dollars. Converted to kobo for Paystack. */
   amountUsd: number;
   metadata?: Record<string, unknown>;
-}
+};
 
-export interface PaystackChargeResult {
+export type PaystackChargeResult = {
   ok: boolean;
   reference: string | null;
   message: string;
   gatewayResponse?: string;
-}
+};
 
 /**
  * Charge a saved Paystack authorization off-session.
@@ -50,7 +50,7 @@ export async function chargePaystackAuthorization(
     const res = await fetch('https://api.paystack.co/transaction/charge_authorization', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET}`,
+        'Authorization': `Bearer ${PAYSTACK_SECRET}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

@@ -1,12 +1,18 @@
 // Billing usage reporter (docs §6). The buildable half of metered billing:
 // reads immutable events that haven't been reported yet and ships them to the
 // billing provider, stamping reported_at + the provider's record id. Decoupled
-// from the publish pipeline — enabling billing is: implement the Stripe call in
-// createStripeBillingService, flip MSI_METERED_BILLING_ENABLED, run this tick.
+// from the publish pipeline — enabling billing is: flip
+// MSI_METERED_BILLING_ENABLED, point BILLING_PROVIDER at the rail you want,
+// run this tick.
 //
 // When the flag is OFF the provider is the no-op (enabled=false) and this tick
-// is a deliberate skip — events stay un-reported until a real provider exists,
-// so nothing is ever marked reported without actually being reported.
+// is a deliberate skip — events stay un-reported until reporting is switched
+// on, so nothing is ever marked reported without actually being reported.
+//
+// The provider decides whether a given event is reportable yet (canReport):
+// Stripe needs the org's Stripe customer id, Polar needs nothing beyond the
+// orgId it already meters on. Events that aren't reportable are left alone for
+// a later tick rather than dropped or falsely stamped.
 
 import { eq, isNull } from 'drizzle-orm';
 
@@ -45,33 +51,44 @@ export async function runBillingReportTick(
   let reported = 0;
   let skippedNoCustomer = 0;
   for (const event of pending) {
-    // The Stripe meter call needs a customer id. Orgs without one (e.g. not yet
-    // a Stripe customer) are left un-reported so they can be metered once the
-    // customer exists — never stamped as reported, never silently dropped.
-    if (!event.stripeCustomerId) {
-      skippedNoCustomer += 1;
-      continue;
-    }
-    // Report one unit. A provider error propagates and fails the tick (loud) —
-    // the event stays un-reported (reported_at null) and is retried next tick.
-    const { providerRecordId } = await service.reportUsage({
+    const record = {
       orgId: event.orgId,
       billingPeriod: event.billingPeriod,
       eventId: event.id,
       stripeCustomerId: event.stripeCustomerId,
       occurredAt: event.occurredAt,
-    });
+    };
+
+    // Not reportable on this provider yet (Stripe: org isn't a Stripe customer).
+    // Left un-reported so it can be metered once it becomes reportable — never
+    // stamped as reported, never silently dropped.
+    if (!service.canReport(record)) {
+      skippedNoCustomer += 1;
+      continue;
+    }
+
+    // Report one unit. A provider error propagates and fails the tick (loud) —
+    // the event stays un-reported (reported_at null) and is retried next tick.
+    const { providerRecordId } = await service.reportUsage(record);
+
+    // Stamp the column belonging to the provider that actually metered it, so
+    // a row records WHICH rail billed it and reconciliation never crosses over.
     await db
       .update(msiBillablePublishEventSchema)
-      .set({ reportedAt: new Date(), stripeUsageRecordId: providerRecordId })
+      .set({
+        reportedAt: new Date(),
+        ...(service.id === 'polar'
+          ? { polarUsageEventId: providerRecordId }
+          : { stripeUsageRecordId: providerRecordId }),
+      })
       .where(eq(msiBillablePublishEventSchema.id, event.id));
     reported += 1;
   }
 
   if (skippedNoCustomer > 0) {
     console.warn(
-      `[MSI billing] ${skippedNoCustomer} billable event(s) skipped — no Stripe `
-      + 'customer id on the org. They remain un-reported for a later tick.',
+      `[MSI billing] ${skippedNoCustomer} billable event(s) not yet reportable on `
+      + `the ${service.id} provider. They remain un-reported for a later tick.`,
     );
   }
 

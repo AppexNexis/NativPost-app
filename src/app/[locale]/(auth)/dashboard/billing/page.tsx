@@ -65,15 +65,26 @@ type BillingStatus = {
   trialEndsAt: string | null;
   setupFeePaid: boolean;
   hasStripe: boolean;
+  hasPolar: boolean;
   hasPaystack: boolean;
   hasPaystackSub: boolean;
-  paymentType: 'stripe' | 'paystack';
+  /** The rail this org's LIVE subscription is on. */
+  paymentType: 'stripe' | 'polar' | 'paystack';
+  /** The international rail a NEW checkout would use (BILLING_PROVIDER). */
+  activeProvider: 'stripe' | 'polar';
   features: Record<string, unknown>;
   usage: {
     postsThisMonth: number;
     postsLimit: number;
     platformsLimit: number;
   };
+};
+
+/** Display names for each billing rail, keyed by the `paymentType` column. */
+const PROVIDER_LABELS: Record<string, string> = {
+  stripe: 'Stripe',
+  polar: 'Polar',
+  paystack: 'Paystack',
 };
 
 // -----------------------------------------------------------
@@ -592,8 +603,14 @@ function BillingContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'paystack'>('stripe');
+  // 'international' is whichever of Stripe/Polar the server has switched on —
+  // the UI never hardcodes one, it just labels whatever /api/billing/status
+  // reports as `activeProvider`. Paystack is the separate regional rail.
+  const [paymentMethod, setPaymentMethod] = useState<'international' | 'paystack'>('international');
   const [interval, setBillingInterval] = useState<BillingInterval>('month');
+  // Label for the international option. Defaults to Stripe until status loads,
+  // matching the server's own default when BILLING_PROVIDER is unset.
+  const internationalLabel = billing?.activeProvider === 'polar' ? 'Polar' : 'Stripe';
   const [error, setError] = useState<string | null>(null);
   const [showPaystackPortal, setShowPaystackPortal] = useState(false);
 
@@ -627,12 +644,13 @@ function BillingContent() {
         setBilling(data);
 
         // Use payment_type from DB as the source of truth.
-        // Fall back to Paystack if they have any Paystack data but no Stripe sub.
+        // Fall back to Paystack if they have any Paystack data but no
+        // international-rail customer record.
         const isPaystack
         = data.paymentType === 'paystack'
           || data.hasPaystackSub
-          || (data.hasPaystack && !data.hasStripe);
-        setPaymentMethod(isPaystack ? 'paystack' : 'stripe');
+          || (data.hasPaystack && !data.hasStripe && !data.hasPolar);
+        setPaymentMethod(isPaystack ? 'paystack' : 'international');
       }
     } catch (err) {
       console.error('Failed to load billing:', err);
@@ -649,7 +667,7 @@ function BillingContent() {
     setCheckoutLoading(planId);
     setError(null);
     try {
-      if (paymentMethod === 'stripe') {
+      if (paymentMethod === 'international') {
         const res = await fetch('/api/billing/create-checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1007,7 +1025,10 @@ function BillingContent() {
               <div className="flex items-center gap-2">
                 <span className="text-meta text-muted-foreground">Billed via</span>
                 <span className="rounded-lg border bg-muted/50 px-4 py-1.5 text-xs font-bold">
-                  {paymentMethod === 'paystack' ? 'Paystack' : 'Stripe'}
+                  {/* The rail this subscription actually runs on, which may
+                      differ from the one new checkouts use if the provider was
+                      switched after they subscribed. */}
+                  {PROVIDER_LABELS[billing.paymentType] ?? 'Card'}
                 </span>
               </div>
             ) : (
@@ -1017,13 +1038,13 @@ function BillingContent() {
                   <div className="flex rounded-lg border bg-muted/50 p-0.5">
                     <button
                       type="button"
-                      onClick={() => setPaymentMethod('stripe')}
-                      className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${paymentMethod === 'stripe'
+                      onClick={() => setPaymentMethod('international')}
+                      className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${paymentMethod === 'international'
                         ? 'border bg-background text-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
                       }`}
                     >
-                      Stripe
+                      {internationalLabel}
                     </button>
                     <button
                       type="button"
@@ -1037,7 +1058,7 @@ function BillingContent() {
                     </button>
                   </div>
                 </div>
-                {paymentMethod === 'stripe' && (
+                {paymentMethod === 'international' && (
                   <span className="text-micro text-muted-foreground">
                     Have a promo code? Enter it on the next page.
                   </span>

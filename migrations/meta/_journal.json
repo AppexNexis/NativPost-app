@@ -407,6 +407,13 @@
       "when": 1785166604476,
       "tag": "0057_volatile_squadron_sinister",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1786570915284,
+      "tag": "0059_polar_billing_columns",
+      "breakpoints": true
     }
   ]
 }

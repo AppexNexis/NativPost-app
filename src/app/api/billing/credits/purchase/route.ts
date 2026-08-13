@@ -1,13 +1,12 @@
 import { eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import Stripe from 'stripe';
 
 import { getAuthContext } from '@/lib/auth';
+import { BillingConfigError, getBillingProvider } from '@/lib/billing/provider';
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY!;
 
@@ -17,20 +16,27 @@ const CREDITS_PER_DOLLAR = 10;
 // -----------------------------------------------------------
 // POST /api/billing/credits/purchase
 //
-// Body: { credits: number, paymentProvider: 'stripe' | 'paystack' }
+// Body: { credits: number, paymentProvider?: 'international' | 'paystack' }
 //
 // Creates a one-time payment for additional AI credits.
-// Stripe → returns { url: checkoutSessionUrl }
-// Paystack → returns { url: authorizationUrl }
+// international (default) → the rail selected by BILLING_PROVIDER
+//   (Stripe or Polar) → returns { url: hostedCheckoutUrl }
+// paystack → returns { url: authorizationUrl }
+//
+// 'stripe' is still accepted for `paymentProvider` for backwards
+// compatibility with clients that predate the Polar switch; it means
+// "not Paystack", i.e. whichever international rail is live.
 // -----------------------------------------------------------
 export async function POST(request: NextRequest) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   try {
     const body = await request.json();
-    const { credits, paymentProvider = 'stripe' } = body;
+    const { credits, paymentProvider = 'international' } = body;
 
     if (!credits || credits < 10 || credits > 10000) {
       return NextResponse.json(
@@ -42,7 +48,6 @@ export async function POST(request: NextRequest) {
     // Round to nearest 10
     const normalizedCredits = Math.round(credits / 10) * 10;
     const amountUsd = normalizedCredits / CREDITS_PER_DOLLAR; // $1 per 10 credits
-    const amountCents = Math.round(amountUsd * 100);
 
     // Load org
     const [org] = await db
@@ -59,63 +64,26 @@ export async function POST(request: NextRequest) {
       return await handlePaystackPurchase(org, orgId!, normalizedCredits, amountUsd);
     }
 
-    return await handleStripePurchase(org, orgId!, normalizedCredits, amountCents);
+    const provider = await getBillingProvider();
+    const { url } = await provider.createCreditsCheckout({
+      orgId: orgId!,
+      credits: normalizedCredits,
+      amountUsd,
+      successUrl: `${APP_URL}/ai-studio?credits=purchased`,
+      cancelUrl: `${APP_URL}/ai-studio?credits=cancelled`,
+    });
+
+    return NextResponse.json({ url });
   } catch (err: any) {
+    if (err instanceof BillingConfigError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     console.error('[Credits Purchase] Error:', err?.message || err);
     return NextResponse.json(
       { error: 'Failed to create credit purchase.' },
       { status: 500 },
     );
   }
-}
-
-async function handleStripePurchase(
-  org: Record<string, any>,
-  orgId: string,
-  credits: number,
-  amountCents: number,
-) {
-  const stripeInstance = stripe;
-  const db = await getDb();
-  let customerId = org.stripeCustomerId;
-
-  if (!customerId) {
-    const customer = await stripeInstance.customers.create({
-      metadata: { orgId },
-    });
-    customerId = customer.id;
-    await db
-      .update(organizationSchema)
-      .set({ stripeCustomerId: customerId, paymentType: 'stripe' })
-      .where(eq(organizationSchema.id, orgId));
-  }
-
-  const session = await stripeInstance.checkout.sessions.create({
-    customer: customerId,
-    mode: 'payment',
-    line_items: [
-      {
-        price_data: {
-          currency: 'usd',
-          product_data: {
-            name: `${credits} AI Credits`,
-            description: `One-time purchase of ${credits} additional AI credits for NativPost AI Studio.`,
-          },
-          unit_amount: amountCents,
-        },
-        quantity: 1,
-      },
-    ],
-    metadata: {
-      orgId,
-      type: 'ai_credits',
-      credits: String(credits),
-    },
-    success_url: `${APP_URL}/ai-studio?credits=purchased`,
-    cancel_url: `${APP_URL}/ai-studio?credits=cancelled`,
-  });
-
-  return NextResponse.json({ url: session.url });
 }
 
 async function handlePaystackPurchase(
@@ -127,7 +95,7 @@ async function handlePaystackPurchase(
   const paystackRes = await fetch('https://api.paystack.co/transaction/initialize', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${PAYSTACK_SECRET}`,
+      'Authorization': `Bearer ${PAYSTACK_SECRET}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
