@@ -377,7 +377,19 @@ async function handleSubscriptionRevoked(subscription: Subscription): Promise<vo
 export async function POST(request: NextRequest) {
   const webhookSecret = process.env.POLAR_WEBHOOK_SECRET;
   if (!webhookSecret) {
-    console.error('[Polar Webhook] POLAR_WEBHOOK_SECRET is not set — rejecting.');
+    // Deliberately a 5xx rather than a silent 2xx: acknowledging an event we
+    // cannot verify would drop real subscription state on the floor, and the
+    // org would keep access it stopped paying for.
+    //
+    // The cost of that choice: Polar AUTO-DISABLES an endpoint after repeated
+    // failed deliveries, so leaving this unset does not merely lose events, it
+    // takes the endpoint offline and needs a manual re-enable in the dashboard.
+    console.error(
+      '[Polar Webhook] POLAR_WEBHOOK_SECRET is not set — rejecting with 500.\n'
+      + '  Polar disables endpoints after repeated failures, so fix this before\n'
+      + '  it retries: copy the secret from the endpoint in Polar → Settings →\n'
+      + '  Webhooks, or from the `polar listen` output when testing locally.',
+    );
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 });
   }
 
