@@ -34,7 +34,7 @@ import { getPolarProductId, isPlanConfiguredFor, PLAN_CONFIGS } from '@/lib/plan
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 
-import { getPolarClient, isPolarConfigured } from './polar-client';
+import { getPolarClient, getPolarServer, isPolarConfigured } from './polar-client';
 import type {
   BillingProvider,
   CheckoutResult,
@@ -54,6 +54,50 @@ const POLAR_CHECKOUT_TOKEN = '{CHECKOUT_ID}';
  * this just documents the contract and keeps the shape consistent across calls.
  */
 type PolarMetadata = Record<string, string>;
+
+/**
+ * Turn Polar's opaque 401 into a diagnosis.
+ *
+ * Polar returns `invalid_token` — "expired, revoked, malformed, or invalid for
+ * other reasons" — for BOTH a genuinely bad token and the far more common
+ * setup mistake: a token from one instance used against the other. Sandbox and
+ * production are separate deployments with separate tokens, so a production
+ * token sent to sandbox-api.polar.sh is "invalid" in exactly this way.
+ *
+ * Nothing here reaches the customer; it goes to the server log, because the
+ * fix is an env change and the user can do nothing with it.
+ */
+function explainAuthFailure(err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err);
+  if (!message.includes('401') && !message.includes('invalid_token')) {
+    return;
+  }
+  const server = getPolarServer();
+  console.error(
+    `[Polar] 401 invalid_token while talking to the ${server} API.\n`
+    + `  POLAR_SERVER resolves to '${server}' `
+    + `(POLAR_SERVER=${process.env.POLAR_SERVER ?? 'unset'}, `
+    + `BILLING_PLAN_ENV=${process.env.BILLING_PLAN_ENV ?? 'unset'}).\n`
+    + `  The token in POLAR_ACCESS_TOKEN must have been created in the '${server}' `
+    + `instance — sandbox tokens come from sandbox.polar.sh, production tokens `
+    + `from polar.sh, and they are NOT interchangeable.\n`
+    + `  If the token is right, check it has not been revoked and carries the `
+    + `checkouts:write / customer_sessions:write scopes.`,
+  );
+}
+
+/**
+ * Run a Polar API call, annotating auth failures on the way out. The error
+ * still propagates unchanged — this only makes the log say what to fix.
+ */
+async function polarCall<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    explainAuthFailure(err);
+    throw err;
+  }
+}
 
 /**
  * Whether a Polar SDK error means "this customer does not exist" rather than
@@ -135,7 +179,7 @@ export const polarProvider: BillingProvider = {
       billingInterval: interval,
     };
 
-    const checkout = await polar.checkouts.create({
+    const checkout = await polarCall(() => polar.checkouts.create({
       products: [productId],
       externalCustomerId: orgId,
       ...(email ? { customerEmail: email } : {}),
@@ -148,7 +192,7 @@ export const polarProvider: BillingProvider = {
       ),
       returnUrl: cancelUrl,
       allowDiscountCodes: true,
-    });
+    }));
 
     await markPolarCustomer(orgId);
     return { url: checkout.url };
@@ -178,7 +222,7 @@ export const polarProvider: BillingProvider = {
       credits: String(credits),
     };
 
-    const checkout = await polar.checkouts.create({
+    const checkout = await polarCall(() => polar.checkouts.create({
       products: [productId],
       prices: {
         [productId]: [
@@ -195,7 +239,7 @@ export const polarProvider: BillingProvider = {
       metadata,
       successUrl,
       returnUrl: cancelUrl,
-    });
+    }));
 
     await markPolarCustomer(orgId);
     return { url: checkout.url };
@@ -231,7 +275,7 @@ export const polarProvider: BillingProvider = {
     // Polar checkout has no per-line quantity for a fixed price, so N accounts
     // are billed as one line at N × the per-account rate. The order row keeps
     // the real quantity, and fulfilment fans out from there exactly as before.
-    const checkout = await polar.checkouts.create({
+    const checkout = await polarCall(() => polar.checkouts.create({
       products: [productId],
       prices: {
         [productId]: [
@@ -247,7 +291,7 @@ export const polarProvider: BillingProvider = {
       metadata,
       successUrl,
       returnUrl: cancelUrl,
-    });
+    }));
 
     await markPolarCustomer(orgId);
     return { url: checkout.url };

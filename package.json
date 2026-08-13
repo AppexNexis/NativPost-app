@@ -29,6 +29,7 @@
     "msi:teardown-live-ig": "dotenv -c production -- tsx scripts/msi-seed-live-ig.ts teardown",
     "msi:reset-live-ig": "dotenv -c production -- tsx scripts/msi-seed-live-ig.ts reset",
     "msi:live-ig-status": "dotenv -c production -- tsx scripts/msi-live-ig-status.ts",
+    "polar:setup-products": "dotenv -- tsx scripts/polar-setup-products.ts",
     "msi:verify-billing-config": "dotenv -c production -- tsx scripts/msi-verify-billing-config.ts",
     "msi:verify-addon-billing": "dotenv -c production -- tsx scripts/msi-verify-addon-billing.ts",
     "msi:validate-addon": "dotenv -c production -- tsx scripts/msi-validate-addon.ts",
