@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowLeft, Check, Loader2, Save, X } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation';
 
 import { useEditor } from './EditorContext';
+import { composeCaptionFromScript } from '@/lib/editor/derive-script';
 import { renderEditorVideo } from '@/lib/editor/render-editor-video';
 import { renderEditorImage } from '@/lib/editor/render-editor-image';
 import { getEditorKind, getEditorLabel } from '@/lib/editor/content-type-registry';
@@ -158,6 +159,13 @@ export function EditorLayout({
     // ── Branch A: existing content item — single PATCH, await it.
     if (state.edit?.contentItemId) {
       const updateBody: Record<string, any> = { enrichmentData };
+      // Publish the copy that's on screen. This PATCH used to omit `caption`
+      // entirely, so an edited hook never reached the published post and a
+      // cleared script left the original generated caption behind for the
+      // detail page to keep rendering. Gated on `scriptTouched` so merely
+      // opening a legacy post doesn't rewrite its caption from the derived
+      // (and budget-capped) script.
+      if (state.scriptTouched) updateBody.caption = composeCaptionFromScript(state.script);
       if (compiledVideoUrl) updateBody.graphicUrls = [compiledVideoUrl];
       if (compiledImageUrls && compiledImageUrls.length > 0) updateBody.graphicUrls = compiledImageUrls;
       if (state.aspectRatio) updateBody.aspectRatio = state.aspectRatio;
@@ -192,11 +200,7 @@ export function EditorLayout({
       }
     }
 
-    const caption = [
-      state.script?.hookText,
-      state.script?.bodyText,
-      state.script?.ctaText,
-    ].filter(Boolean).join('\n\n');
+    const caption = composeCaptionFromScript(state.script);
 
     try {
       const res = await fetch('/api/content', {

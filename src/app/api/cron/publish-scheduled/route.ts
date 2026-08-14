@@ -423,10 +423,29 @@ export async function GET(request: NextRequest) {
 
         // 3. Publish to each platform
         for (const platform of platforms) {
-          const account = accounts.find(
+          let account = accounts.find(
             a => a.platform === platform
               && (selectedAccountIds.length === 0 || selectedAccountIds.includes(a.id)),
           );
+
+          // Stale pinned-account recovery — same reasoning as the manual
+          // publish route. `targetAccountIds` is a snapshot from campaign
+          // build time; reconnecting an account mints a new social_account
+          // row, so the pinned id dies while the platform stays connected.
+          // TikTok is reconnected far more often than Meta (24h tokens), so
+          // in practice this is what made scheduled campaign posts publish
+          // everywhere except TikTok, with "No connected tiktok account".
+          if (!account && selectedAccountIds.length > 0) {
+            const fallback = accounts.find(a => a.platform === platform);
+            if (fallback) {
+              console.warn(
+                `[Cron] Item ${item.id}: pinned ${platform} account(s) `
+                + `[${selectedAccountIds.join(', ')}] no longer exist — falling back to `
+                + `active ${platform} account ${fallback.id}.`,
+              );
+              account = fallback;
+            }
+          }
 
           if (!account) {
             platformResults.push({ platform, success: false, error: `No connected ${platform} account` });

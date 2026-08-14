@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { getEditorKind } from '@/lib/editor/content-type-registry';
+import { resolveItemScript } from '@/lib/editor/derive-script';
 import type { ContentItem } from '@/types/v2';
 
 import { getOverlayText, VIDEO_CONTENT_TYPES, VIDEO_RE } from '../preview-helpers';
@@ -91,28 +92,11 @@ export function ContentPreview({
     return overlay ? [overlay] : undefined;
   }, [enrichment.editorScript, mediaSlots.slides, item]);
 
-  // Video branch — reconstruct editor state fallback from caption.
-  const scriptWithFallback = useMemo(() => {
-    const ed = enrichment.editorScript as { hookText?: string; bodyText?: string; ctaText?: string } | undefined;
-    if (ed && (ed.hookText || ed.bodyText || ed.ctaText)) {
-      return ed;
-    }
-    const lines = (item.caption || '').split('\n').map(l => l.trim()).filter(Boolean);
-    if (lines.length === 0) {
-      return {};
-    }
-    if (lines.length === 1) {
-      return { hookText: lines[0] };
-    }
-    if (lines.length === 2) {
-      return { hookText: lines[0], bodyText: lines[1] };
-    }
-    return {
-      hookText: lines[0],
-      bodyText: lines.slice(1, -1).join('\n'),
-      ctaText: lines[lines.length - 1],
-    };
-  }, [enrichment.editorScript, item.caption]);
+  // Video branch — the authored script, or a caption split for items that
+  // never went through the editor. `resolveItemScript` decides on key
+  // PRESENCE, so a script whose fields were deliberately emptied stays empty
+  // instead of being refilled from the caption it was authored out of.
+  const scriptWithFallback = useMemo(() => resolveItemScript(item), [item]);
 
   const hasEditorState = Boolean(
     (scriptWithFallback && (scriptWithFallback.hookText || scriptWithFallback.bodyText || scriptWithFallback.ctaText))

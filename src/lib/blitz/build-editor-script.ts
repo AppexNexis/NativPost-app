@@ -20,6 +20,7 @@
  */
 
 import { TEXT_LIMITS } from '@/components/editor/compositions/text-limits';
+import { tightenCta } from '@/lib/editor/derive-script';
 
 const SLIDE_CHAR_CAP = 110;
 const WALL_CHAR_CAP = 300;
@@ -29,8 +30,12 @@ const WALL_CHAR_CAP = 300;
 // disagreed the longest one won at write time and the shortest one chopped at
 // render time, leaving a trailing ellipsis in published captions.
 const HOOK_CHAR_CAP = TEXT_LIMITS.hook;
-const BODY_CHAR_CAP = 200;
-const CTA_CHAR_CAP = 60;
+// Body comes from TEXT_LIMITS for the same reason the hook does: it was 200
+// against a renderer that fits 160, so generated copy cleared this stage and
+// then got cut when the MP4 baked. The CTA is handled by `tightenCta`, which
+// carries TEXT_LIMITS.cta (40) — the old 60-char cap let a whole sentence
+// through as a "call to action".
+const BODY_CHAR_CAP = TEXT_LIMITS.body;
 
 /**
  * Fit text to a caption box WITHOUT advertising that anything was cut.
@@ -133,7 +138,9 @@ export function buildEditorScript(
     bodyText: lines.length > 2
       ? clip(lines.slice(1, -1).join(' '), BODY_CHAR_CAP)
       : clip(lines[1], BODY_CHAR_CAP),
-    ctaText: lines.length > 1 ? clip(lines[lines.length - 1], CTA_CHAR_CAP) : undefined,
+    // A caption's last line is its closing paragraph, not a CTA. Keep only its
+    // final sentence, inside the CTA budget — see tightenCta.
+    ctaText: lines.length > 1 ? (tightenCta(lines[lines.length - 1]) || undefined) : undefined,
   };
 }
 

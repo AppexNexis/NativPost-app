@@ -402,6 +402,20 @@ export function BlitzDailyView({
       }
 
       await refresh();
+
+      // A job can reach status 'done' having produced NOTHING — every post
+      // failed, or the template pool came back empty. Nothing here used to
+      // check, so the queue stayed empty and the view fell through to
+      // "You're done for today". A hard generation failure was therefore
+      // indistinguishable from a finished day, which is how a broken Blitz
+      // went weeks being misread as an API-credit problem. Say it plainly.
+      if ((lastJob?.postsCompleted ?? 0) === 0 && (lastJob?.postsFailed ?? 0) > 0) {
+        throw new Error(
+          lastJob?.errorMessage
+          || `Generation finished without producing any posts (${lastJob.postsFailed} failed). `
+          + `This usually means no approved templates matched today's content mix.`,
+        );
+      }
     } catch (err: any) {
       setError(err?.message || 'Generation failed');
     } finally {

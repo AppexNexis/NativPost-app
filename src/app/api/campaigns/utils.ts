@@ -865,6 +865,13 @@ async function fetchCampaignTemplates(
   niche?: string | null,
   /** Sliding window (days) for cross-batch template dedup. Default 90. */
   templateDedupWindowDays: number = 90,
+  /**
+   * How many templates this batch needs. When the dedup-filtered pool falls
+   * short, least-recently-used templates are let back in to reach this number
+   * (see the relaxation ladder at the end of this function). 0 disables the
+   * top-up and keeps the strict behaviour.
+   */
+  minPool: number = 0,
 ): Promise<CampaignTemplateRow[]> {
   const mixKeys = Object.entries(contentMix)
     .filter(([, v]) => (v || 0) > 0)
@@ -1020,7 +1027,10 @@ async function fetchCampaignTemplates(
     }
   }
 
-  return (templates as any[])
+  // Shared row → CampaignTemplateRow normaliser. Applied to the strict pool
+  // and to the relaxation ladder's candidates so both are filtered the same
+  // way (right content type, has renderable media) and order is preserved.
+  const toUsableRows = (rows: any[]): CampaignTemplateRow[] => rows
     .filter((t: any) => uniqueTypes.includes(t.contentType))
     .filter((t: any) => {
       // A template with no renderable media can't produce a Blitz card.
@@ -1063,6 +1073,126 @@ async function fetchCampaignTemplates(
       likeCount: t.likeCount ?? null,
       commentCount: t.commentCount ?? null,
     }));
+
+  const strictPool = toUsableRows(templates as any[]);
+
+  // ── Dedup relaxation ladder ────────────────────────────────────────────
+  //
+  // The 90-day cross-batch dedup above is a PREFERENCE — "don't show this org
+  // a template it saw recently" — but it was written as a hard filter, so an
+  // org that works through the approved library simply stops getting posts.
+  // That is not hypothetical: by 2026-08-14 the NativPost workspace had
+  // consumed 582 of the 622 approved templates inside the window, leaving 0
+  // for its Blitz mix (the 40 survivors were all content_type 'custom', which
+  // no mix requests). Phase 1 then allocated 0 posts, the whole batch fell
+  // through to the engine, and Blitz produced nothing — "it worked perfectly,
+  // then stopped", with no error anywhere because every layer treated an empty
+  // pool as a legitimate result.
+  //
+  // So: when the strict pool can't cover the batch, let templates back in
+  // ordered by LEAST RECENTLY USED. Freshness degrades gracefully (the oldest
+  // reuse first, and `variant` still rewrites the copy) instead of the queue
+  // going empty. Types the strict pool missed entirely are topped up first —
+  // an absent type drops out of the content-mix rotation altogether.
+  if (minPool <= 0) {
+    return strictPool;
+  }
+
+  const coveredTypes = new Set(strictPool.map(t => t.contentType));
+  const missingTypes = uniqueTypes.filter(t => !coveredTypes.has(t));
+  if (strictPool.length >= minPool && missingTypes.length === 0) {
+    return strictPool;
+  }
+
+  const relaxedWhere: any[] = [
+    eq(contentTemplateSchema.curationStatus, 'approved'),
+    eq(contentTemplateSchema.isActive, true),
+    inArray(contentTemplateSchema.contentType, uniqueTypes),
+  ];
+  if (videoOnlyTypes.length > 0) {
+    relaxedWhere.push(sql`(
+      ${contentTemplateSchema.contentType} NOT IN (${sql.join(
+        videoOnlyTypes.map(t => sql`${t}`),
+        sql`, `,
+      )})
+      OR ${contentTemplateSchema.sourceMediaType} = 'video'
+      OR ${contentTemplateSchema.mediaUrl} ~* '/video/upload/'
+      OR ${contentTemplateSchema.mediaUrl} ~* '\\.(mp4|mov|webm|m4v)($|\\?)'
+      OR ${contentTemplateSchema.sourceUrl} ~* '/video/upload/'
+      OR ${contentTemplateSchema.sourceUrl} ~* '\\.(mp4|mov|webm|m4v)($|\\?)'
+    )`);
+  }
+
+  let relaxedRows: any[] = [];
+  try {
+    relaxedRows = await db
+      .select({
+        ...templateColumns,
+        // Table-qualified literals, NOT `${schema.column}` interpolation:
+        // inside a select field drizzle renders columns UNQUALIFIED, so
+        // `${blitzTemplateUsageSchema.templateId} = ${contentTemplateSchema.id}`
+        // becomes `"template_id" = "id"` and both resolve inside the subquery's
+        // own table — the correlation to the outer row is lost and Postgres
+        // rejects it ("operator does not exist: uuid = integer"). The WHERE
+        // clauses above can interpolate safely because drizzle qualifies names
+        // there. Only `orgId` is a bound parameter.
+        lastUsedAt: sql<Date | null>`(
+          SELECT MAX(u.used_at)
+          FROM blitz_template_usage u
+          WHERE u.template_id = content_template.id
+            AND u.org_id = ${orgId}
+        )`.as('last_used_at'),
+      })
+      .from(contentTemplateSchema)
+      .where(and(...relaxedWhere))
+      // Oldest reuse first; never-used rows (NULL) ahead of everything.
+      .orderBy(sql`last_used_at ASC NULLS FIRST`);
+  } catch (err: any) {
+    console.warn('[Campaign] LRU relaxation query failed, keeping strict pool:', err?.message || err);
+    return strictPool;
+  }
+
+  const alreadyIn = new Set(strictPool.map(t => t.id));
+  const candidates = toUsableRows(relaxedRows).filter(t => !alreadyIn.has(t.id));
+  const result = [...strictPool];
+
+  // Cover the missing types first, then top up to minPool from anything left.
+  const perTypeTarget = Math.max(1, Math.ceil(minPool / Math.max(uniqueTypes.length, 1)));
+  const takenPerType: Record<string, number> = {};
+  for (const t of candidates) {
+    if (!missingTypes.includes(t.contentType)) {
+      continue;
+    }
+    const taken = takenPerType[t.contentType] ?? 0;
+    if (taken >= perTypeTarget) {
+      continue;
+    }
+    takenPerType[t.contentType] = taken + 1;
+    alreadyIn.add(t.id);
+    result.push(t);
+  }
+  for (const t of candidates) {
+    if (result.length >= minPool) {
+      break;
+    }
+    if (alreadyIn.has(t.id)) {
+      continue;
+    }
+    alreadyIn.add(t.id);
+    result.push(t);
+  }
+
+  if (result.length > strictPool.length) {
+    console.warn(
+      `[Campaign] Template dedup relaxed: ${strictPool.length} unused template(s) for `
+      + `[${uniqueTypes.join(', ')}] but ${minPool} needed`
+      + `${missingTypes.length > 0 ? ` (no unused rows at all for [${missingTypes.join(', ')}])` : ''}`
+      + ` — re-admitted ${result.length - strictPool.length} least-recently-used, ${result.length} total. `
+      + `Import more templates for this content mix to keep the queue fresh.`,
+    );
+  }
+
+  return result;
 }
 
 // ── Caption sanitization ─────────────────────────────────────────────────────
@@ -1355,7 +1485,10 @@ export async function generateCampaignPosts(
   // (or swapped for a matching Set on safe-swap content types).
   // If contentMix asks for types with no matching approved templates,
   // the engine will fall back to text-only generation for those posts.
-  const templates = await fetchCampaignTemplates(db, orgId, contentMix, niche);
+  // `postsToCreate` is passed as the minimum pool so the dedup window can
+  // relax (LRU) rather than starve the batch — see the relaxation ladder in
+  // fetchCampaignTemplates.
+  const templates = await fetchCampaignTemplates(db, orgId, contentMix, niche, 90, postsToCreate);
   // Pad with off-niche templates when the niche pool is thin. Old logic
   // only re-fetched on ZERO matches, so a "Startup" niche with 3 approved
   // templates gave a monotonous Blitz even when the library had 493.
@@ -1363,7 +1496,7 @@ export async function generateCampaignPosts(
   // post count, dedup by id, and prepend the on-niche results so ranking
   // still favours them.
   if (templates.length < postsToCreate * 3) {
-    const wider = await fetchCampaignTemplates(db, orgId, contentMix, null);
+    const wider = await fetchCampaignTemplates(db, orgId, contentMix, null, 90, postsToCreate * 3);
     const seen = new Set(templates.map((t: any) => t.id));
     for (const t of wider) {
       if (!seen.has(t.id)) {

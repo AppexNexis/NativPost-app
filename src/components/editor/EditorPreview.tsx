@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Loader2, RefreshCw, Sparkles } from 'lucide-react';
 
+import { deriveScriptFromCaption } from '@/lib/editor/derive-script';
+
 import { useEditor } from './EditorContext';
 import { RemotionPreviewPlayer } from './RemotionPreviewPlayer';
 
@@ -33,13 +35,16 @@ async function regenerateScript(
   const variant = data.variants?.[0];
   if (!variant) return null;
 
-  // Split the caption back into hook/body/cta by newlines or sentence structure
-  const full: string = variant.caption || '';
-  const lines = full.split('\n').filter((l: string) => l.trim());
+  // Split the caption back into hook/body/CTA, to the SAME budgets the
+  // renderer enforces. This split used to be uncapped, so Improve/Regen
+  // routed the caption's whole closing paragraph into `ctaText` — the source
+  // of 90+ character "CTAs" that a CTA box was never sized for. The shared
+  // splitter keeps the closing sentence and fits it to TEXT_LIMITS.cta.
+  const derived = deriveScriptFromCaption(variant.caption || '');
   return {
-    hookText: lines[0] || state.script.hookText,
-    bodyText: lines.slice(1, -1).join('\n') || state.script.bodyText,
-    ctaText: lines[lines.length - 1] || state.script.ctaText,
+    hookText: derived.hookText || state.script.hookText,
+    bodyText: derived.bodyText || state.script.bodyText,
+    ctaText: derived.ctaText || state.script.ctaText,
   };
 }
 

@@ -19,6 +19,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 import { PageHeader } from '@/features/dashboard/PageHeader';
+import { resolveItemScript } from '@/lib/editor/derive-script';
 import type { ContentItem } from '@/types/v2';
 import type { TikTokPublishSettings } from '@/components/tiktok/TikTokPublishModal';
 import { TikTokPublishModal } from '@/components/tiktok/TikTokPublishModal';
@@ -97,17 +98,7 @@ export function ContentDetailClient({ id }: Props) {
   // ── Remotion preview props for TikTok modal (before early return — rules of hooks) ──
   const tiktokRemotionProps = useMemo(() => {
     if (!item) return null;
-    const ed = (item.enrichmentData as Record<string, any>)?.editorScript as
-      { hookText?: string; bodyText?: string; ctaText?: string } | undefined;
-    const script = ed && (ed.hookText || ed.bodyText || ed.ctaText)
-      ? ed
-      : (() => {
-          const lines = (item.caption || '').split('\n').map(l => l.trim()).filter(Boolean);
-          if (lines.length === 0) return {};
-          if (lines.length === 1) return { hookText: lines[0] };
-          if (lines.length === 2) return { hookText: lines[0], bodyText: lines[1] };
-          return { hookText: lines[0], bodyText: lines.slice(1, -1).join('\n'), ctaText: lines[lines.length - 1] };
-        })();
+    const script = resolveItemScript(item);
     const mediaSlots = resolveMediaSlots(item);
     const aspectRatio = item.aspectRatio || '9:16';
     const bgUrl = mediaSlots.background?.url

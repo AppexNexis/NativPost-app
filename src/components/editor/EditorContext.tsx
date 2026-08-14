@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect, useRef, ReactNode } from 'react';
 
+import { composeCaptionFromScript, deriveScriptFromCaption, isAuthoredScript } from '@/lib/editor/derive-script';
 import type { ContentEdit, ContentEditScript, TextStyle, MediaSlots, AudioTrack, ContentEditTiming } from '@/types/v2';
 
 // ---------------------------------------------------------------------------
@@ -11,23 +12,15 @@ import type { ContentEdit, ContentEditScript, TextStyle, MediaSlots, AudioTrack,
 // never blank on publish. Without this, `state.script` stays `{}` and the
 // content-detail page falls through to raw-video display because
 // `hasEditorState` is false.
-function deriveScriptFromCaption(caption?: string | null): ContentEditScript {
-  if (!caption || typeof caption !== 'string') return {};
-  const lines = caption.split('\n').map(l => l.trim()).filter(Boolean);
-  if (lines.length === 0) return {};
-  if (lines.length === 1) return { hookText: lines[0] };
-  if (lines.length === 2) return { hookText: lines[0], bodyText: lines[1] };
-  return {
-    hookText: lines[0],
-    bodyText: lines.slice(1, -1).join('\n'),
-    ctaText: lines[lines.length - 1],
-  };
-}
-
+//
+// The split — and the "is this script authored?" test — live in
+// lib/editor/derive-script so this surface, the detail page, the card overlay
+// and the TikTok review modal cannot disagree. The test is key PRESENCE, not
+// truthiness: emptying every field leaves `hookText: ''` behind, and reopening
+// the editor must NOT re-derive the deleted copy back out of the caption.
 function initialScript(edit?: ContentEdit | null): ContentEditScript {
   const s = edit?.script;
-  const hasContent = s && (s.hookText || s.bodyText || s.ctaText || s.wallText);
-  if (hasContent) return s;
+  if (isAuthoredScript(s)) return s as ContentEditScript;
   // Fall back to caption-derived script — supports items opened directly from
   // the content library without a persisted editor session.
   return deriveScriptFromCaption((edit as any)?.caption);
@@ -60,6 +53,19 @@ export type EditorState = {
   contentMode: string;
   isSaving: boolean;
   isDirty: boolean;
+  /**
+   * Set once the author edits hook / body / CTA / slide copy in THIS session.
+   *
+   * Gates the caption mirror. The post's `caption` is the copy that gets
+   * published, and until now nothing wrote it back for an existing item — so
+   * editing the hook, or clearing every field, left the old generated caption
+   * on the row and the detail page kept rendering it. Mirroring on every save
+   * would be worse: opening a legacy post whose script is merely DERIVED from
+   * its caption would rewrite that caption from the derivation, silently
+   * trimming it to the overlay's budget. Writing only what the author touched
+   * gets both cases right.
+   */
+  scriptTouched: boolean;
   error: string | null;
 };
 
@@ -97,10 +103,11 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
         targetPlatforms: action.payload.targetPlatforms || [],
         contentMode: action.payload.contentMode || 'normal',
         isDirty: false,
+        scriptTouched: false,
         error: null,
       };
     case 'UPDATE_SCRIPT':
-      return { ...state, script: { ...state.script, ...action.payload }, isDirty: true };
+      return { ...state, script: { ...state.script, ...action.payload }, isDirty: true, scriptTouched: true };
     case 'UPDATE_STYLE':
       return { ...state, style: { ...state.style, ...action.payload }, isDirty: true };
     case 'SET_LAYOUT':
@@ -188,6 +195,7 @@ export function EditorProvider({
     contentMode: initialEdit?.contentMode || 'normal',
     isSaving: false,
     isDirty: false,
+    scriptTouched: false,
     error: null,
   });
 
@@ -249,6 +257,9 @@ export function EditorProvider({
               sourceMediaSlots: state.mediaSlots,
               audioTrack: state.audioTrack,
             },
+            // Publish copy follows the authored overlay — including down to
+            // empty when every field was cleared. See `scriptTouched`.
+            ...(state.scriptTouched ? { caption: composeCaptionFromScript(state.script) } : {}),
             aspectRatio: state.aspectRatio,
             contentMode: state.contentMode,
           }),
@@ -269,7 +280,7 @@ export function EditorProvider({
       dispatch({ type: 'SET_SAVING', payload: false });
       return false;
     }
-  }, [state.edit, state.isDirty, state.script, state.style, state.layout, state.timing, state.mediaSlots, state.audioTrack, state.aspectRatio, state.targetPlatforms, state.contentMode]);
+  }, [state.edit, state.isDirty, state.script, state.scriptTouched, state.style, state.layout, state.timing, state.mediaSlots, state.audioTrack, state.aspectRatio, state.targetPlatforms, state.contentMode]);
 
   const discardPending = useCallback(() => {
     discardRef.current = true;
@@ -311,11 +322,12 @@ export function EditorProvider({
           sourceMediaSlots: state.mediaSlots,
           audioTrack: state.audioTrack,
         },
+        ...(state.scriptTouched ? { caption: composeCaptionFromScript(state.script) } : {}),
         aspectRatio: state.aspectRatio,
         contentMode: state.contentMode,
       }),
     });
-  }, [state.edit, state.script, state.style, state.layout, state.mediaSlots, state.audioTrack, state.aspectRatio, state.contentMode]);
+  }, [state.edit, state.script, state.scriptTouched, state.style, state.layout, state.mediaSlots, state.audioTrack, state.aspectRatio, state.contentMode]);
 
   // Autosave: debounce 1500ms whenever isDirty becomes true
   useEffect(() => {

@@ -29,6 +29,7 @@
  */
 
 import { getEditorKind } from '@/lib/editor/content-type-registry';
+import { isAuthoredScript } from '@/lib/editor/derive-script';
 import { resolveFont } from '@/lib/editor/fonts';
 import type { ContentItem } from '@/types/v2';
 
@@ -94,6 +95,10 @@ export function getOverlayTextParts(item: ContentItem | null | undefined): Overl
   }
   const enrichment = (item.enrichmentData ?? {}) as Record<string, any>;
   const script = (enrichment.editorScript ?? {}) as Record<string, any>;
+  // An editor-authored script is authoritative even when every field is empty
+  // — that is the author clearing the overlay, not a missing script. Falling
+  // through to `item.caption` there is what redrew deleted copy on the card.
+  const authored = isAuthoredScript(script);
 
   if (item.contentType === 'slideshow' || item.contentType === 'carousel') {
     const slideCopy = Array.isArray(script.slideCopy) ? script.slideCopy : [];
@@ -111,6 +116,9 @@ export function getOverlayTextParts(item: ContentItem | null | undefined): Overl
   if (script.bodyText && typeof script.bodyText === 'string') {
     // EditorComposition draws body at fontSize * 0.8 (floored at 16px @1080).
     return { text: script.bodyText, scale: 0.8 };
+  }
+  if (authored) {
+    return { text: '', scale: 1 };
   }
   return { text: item.caption ?? '', scale: 1 };
 }

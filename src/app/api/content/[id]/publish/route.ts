@@ -316,17 +316,42 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // 3. Publish to each platform's selected / connected accounts
     for (const platform of platforms) {
-      const platformAccounts = effectiveAccounts.filter(
+      let platformAccounts = effectiveAccounts.filter(
         a =>
           a.platform === platform
           && (selectedAccountIds.length === 0 || selectedAccountIds.includes(a.id)),
       );
 
-      if (platformAccounts.length === 0) {
-        // Explicit account selection that doesn't include this platform → skip.
-        if (selectedAccountIds.length > 0) {
-          continue;
+      // ── Stale pinned-account recovery ────────────────────────────────
+      // `targetAccountIds` is a snapshot taken when the campaign was built.
+      // Reconnecting an account creates a NEW social_account row (the OAuth
+      // callback only updates in place when the platform user id still
+      // matches, and a delete-then-reconnect can't match at all), so the
+      // pinned id goes dead while the platform stays connected. TikTok hits
+      // this constantly — its tokens expire in 24h so it gets reconnected far
+      // more often than Meta's — which is why campaign posts published
+      // everywhere EXCEPT TikTok, failing with "No connected tiktok account"
+      // while publishing the very same post by hand worked (a hand publish
+      // carries no pinned ids and takes the first-match path).
+      //
+      // The platform is in `targetPlatforms`, so the user asked to publish
+      // there. A pinned id that resolves to nothing is a stale pointer, not a
+      // deliberate exclusion — fall back to the platform's active accounts.
+      // `effectiveAccounts` is already Blitz-filtered, so an account the user
+      // turned off for Blitz still can't come back in through here.
+      if (platformAccounts.length === 0 && selectedAccountIds.length > 0) {
+        const live = effectiveAccounts.filter(a => a.platform === platform);
+        if (live.length > 0) {
+          console.warn(
+            `[publish] Item ${id}: pinned ${platform} account(s) `
+            + `[${selectedAccountIds.join(', ')}] no longer exist — falling back to `
+            + `${live.length} active ${platform} account(s).`,
+          );
+          platformAccounts = live;
         }
+      }
+
+      if (platformAccounts.length === 0) {
         // For Blitz posts, a missing account can mean the user disabled it in
         // the Blitz settings drawer — silent skip, never a failure.
         const wasDisabledForBlitz = accounts.find(a => a.platform === platform) != null;
