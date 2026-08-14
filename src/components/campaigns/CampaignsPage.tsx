@@ -163,8 +163,12 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
+      {/* Stacks below sm. As an unconditional `justify-between` row the long
+          description squeezed the action button until its label wrapped and
+          overflowed — this header is hand-rolled rather than the responsive
+          shared PageHeader. */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">Campaigns</h1>
           <p className="mt-0.5 text-body text-muted-foreground">
             Create and manage automated content campaigns. Generate, review, and schedule posts in bulk.
@@ -172,14 +176,16 @@ export function CampaignsPage({ campaigns, angles, accounts, influencers }: Camp
         </div>
         <button
           onClick={() => setActiveTab('new')}
-          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          className="flex shrink-0 items-center gap-2 self-start whitespace-nowrap rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           <Plus className="size-4" />
           New Campaign
         </button>
       </div>
 
-      <div className="flex gap-1 rounded-lg border bg-muted/50 p-1">
+      {/* The three tabs total ~376px of intrinsic width — wider than a phone.
+          Scroll the strip inside its own box instead of overflowing the page. */}
+      <div className="flex gap-1 overflow-x-auto rounded-lg border bg-muted/50 p-1 [&>button]:shrink-0">
         <button
           onClick={() => setActiveTab('active')}
           className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${

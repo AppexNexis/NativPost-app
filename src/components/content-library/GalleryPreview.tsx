@@ -123,7 +123,7 @@ export function GalleryPreview({ slides, slideCopy, aspectRatio, layout, align, 
     return (
       <div
         className="relative flex items-center justify-center overflow-hidden rounded-[2rem] border-[1.5px] border-white/[0.06] bg-neutral-900/40 text-xs text-white/60 shadow-2xl"
-        style={{ width: frameWidth, aspectRatio: aspectCss }}
+        style={{ width: frameWidth, maxWidth: '100%', aspectRatio: aspectCss }}
       >
         No slides
       </div>
@@ -137,7 +137,7 @@ export function GalleryPreview({ slides, slideCopy, aspectRatio, layout, align, 
   return (
     <div
       className="group relative overflow-hidden rounded-[2rem] border-[1.5px] border-white/[0.06] bg-neutral-900/40 shadow-2xl"
-      style={{ width: frameWidth, aspectRatio: aspectCss }}
+      style={{ width: frameWidth, maxWidth: '100%', aspectRatio: aspectCss }}
     >
       <SlideView
         backgroundUrl={enhanceImage(currentUrl)}

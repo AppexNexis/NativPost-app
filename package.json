@@ -44,7 +44,8 @@
     "storybook:serve": "http-server storybook-static --port 6006 --silent",
     "serve-storybook": "run-s storybook:*",
     "test-storybook:ci": "start-server-and-test serve-storybook http://127.0.0.1:6006 test-storybook",
-    "prepare": "husky"
+    "prepare": "husky",
+    "learn:upload-videos": "dotenv -- tsx scripts/upload-learn-videos.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.1",

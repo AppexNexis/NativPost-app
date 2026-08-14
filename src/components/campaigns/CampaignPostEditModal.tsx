@@ -546,7 +546,15 @@ export function CampaignPostEditModal({
           </header>
 
           {/* ── Three-column body ── */}
-          <div className="flex flex-1 overflow-hidden">
+          {/*
+            * Three columns only from lg up. The two side panels are `w-80`
+            * and `w-64` — 576px of fixed width before the preview gets a
+            * pixel — so as an unconditional row this modal could not fit any
+            * phone or small tablet: the right-hand text controls sat entirely
+            * off screen with no way to reach them. Below lg the columns stack
+            * and the whole body scrolls as one.
+            */}
+          <div className="flex flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
 
             {/* ─ LEFT ─────────────────────────────────────────────────────── */}
             {/* Sidebar is a flex-col so the slides list can flex-grow and
@@ -556,7 +564,7 @@ export function CampaignPostEditModal({
                 slide slideshow pushed the Regenerate button below the
                 viewport with no scroll cue, making it look like the
                 section didn't fit. */}
-            <aside className="flex h-full w-80 shrink-0 flex-col border-r bg-card">
+            <aside className="flex w-full shrink-0 flex-col border-b bg-card lg:h-full lg:w-80 lg:border-b-0 lg:border-r">
               {/* ASSETS — slideshow mode shows slide thumbnails */}
               {isSlideshow ? (
                 <section className="flex min-h-0 flex-1 flex-col p-5 pb-3">
@@ -565,7 +573,10 @@ export function CampaignPostEditModal({
                     {slides.length}
                     )
                   </p>
-                  <ScrollArea className="min-h-0 flex-1 pr-1">
+                  {/* Fixed height while stacked — `flex-1` has no basis to
+                      resolve against in an auto-height column, so the slides
+                      list would collapse to zero on mobile. */}
+                  <ScrollArea className="h-56 pr-1 lg:h-auto lg:min-h-0 lg:flex-1">
                     <div className="space-y-2">
                       {slides.map((slide, idx) => (
                         <div
@@ -727,11 +738,12 @@ export function CampaignPostEditModal({
             </aside>
 
             {/* ─ CENTER — preview ─────────────────────────────────────────── */}
-            <main className="flex flex-1 flex-col items-center justify-center gap-4 overflow-hidden bg-muted/30 p-6">
-              {/* Phone mockup */}
+            <main className="flex flex-1 flex-col items-center justify-center gap-4 overflow-hidden bg-muted/30 p-4 lg:p-6">
+              {/* Phone mockup — shorter while stacked so the panels above and
+                  below it stay reachable without a long scroll. */}
               <div
-                className="relative overflow-hidden rounded-2xl shadow-2xl"
-                style={{ aspectRatio: '9/16', maxHeight: '78vh', width: 'auto' }}
+                className="relative max-h-[55vh] overflow-hidden rounded-2xl shadow-2xl lg:max-h-[78vh]"
+                style={{ aspectRatio: '9/16', width: 'auto' }}
               >
                 {isSlideshow ? (
                   /* Slideshow carousel */
@@ -829,7 +841,7 @@ export function CampaignPostEditModal({
             </main>
 
             {/* ─ RIGHT — text controls ────────────────────────────────────── */}
-            <ScrollArea className="h-full w-64 shrink-0 border-l bg-card">
+            <ScrollArea className="w-full shrink-0 border-t bg-card lg:h-full lg:w-64 lg:border-l lg:border-t-0">
               <div className="space-y-1 p-4 pb-16">
 
                 {/* TEXT accordion header */}

@@ -282,28 +282,30 @@ export function EditorLayout({
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
       {/* ── Top bar ───────────────────────────────────────────── */}
-      <header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-4 py-2.5">
-        <div className="flex items-center gap-3">
+      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-3 py-2.5 sm:px-4">
+        {/* min-w-0 + truncate: the action group on the right is the part that
+            must stay reachable, so the title yields first on narrow screens. */}
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <button
             onClick={handleBack}
-            className="inline-flex items-center gap-1.5 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             title="Back"
           >
             <ArrowLeft className="size-4" />
           </button>
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm font-semibold text-foreground leading-none">
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="truncate text-sm font-semibold text-foreground leading-none">
               {isBlitzEdit ? 'Blitz Edit' : isRemix ? 'Remix Editor' : 'Editor'}
             </h1>
             {displayType && (
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+              <span className="hidden shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary sm:inline">
                 {displayType}
               </span>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {/* ── Save status ────────────────────────────────── */}
           <div className="hidden items-center gap-1.5 sm:flex">
             {state.isSaving ? (
@@ -422,14 +424,23 @@ export function EditorLayout({
       )}
 
       {/* ── Main content: sidebar + preview ──────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
+      {/*
+        * Below lg this stacks: preview on top, controls in a scrollable panel
+        * beneath it. `flex-col-reverse` keeps the sidebar first in the DOM
+        * (so tab order still starts with the controls) while showing the
+        * preview first. The old markup was an unconditional row with a
+        * `w-96 shrink-0` sidebar — 384px of non-negotiable width, wider than
+        * a 375px phone on its own, which pushed the preview entirely off
+        * screen and left the page scrolling sideways.
+        */}
+      <div className="flex flex-1 flex-col-reverse overflow-hidden lg:flex-row">
         {/* Sidebar */}
-        <aside className="w-96 shrink-0 overflow-hidden border-r border-border bg-card">
+        <aside className="max-h-[45vh] w-full shrink-0 overflow-y-auto border-t border-border bg-card lg:max-h-none lg:w-96 lg:overflow-hidden lg:border-r lg:border-t-0">
           {sidebar}
         </aside>
 
         {/* Preview area */}
-        <main className="flex flex-1 items-center justify-center overflow-hidden">
+        <main className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
           {preview}
         </main>
       </div>

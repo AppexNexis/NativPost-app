@@ -76,8 +76,10 @@ export default function SupportWidget({ currentPath }: { currentPath: string }) 
       style={{ display: currentPath.includes('/support') ? 'none' : 'flex' }}
     >
       {/* Panel */}
+      {/* max-w keeps the panel inside the viewport on narrow phones, where a
+          flat w-80 (320px) plus the 24px inset overflowed. */}
       {step !== 'closed' && (
-        <div className="w-80 overflow-hidden rounded-2xl border bg-background shadow-2xl shadow-black/10">
+        <div className="w-80 max-w-[calc(100vw-3rem)] overflow-hidden rounded-2xl border bg-background shadow-2xl shadow-black/10">
           {/* Header */}
           <div className="flex items-center justify-between bg-primary px-4 py-3.5">
             <div className="flex items-center gap-2.5">

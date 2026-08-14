@@ -258,11 +258,14 @@ function InlineEditorBody({
       </header>
 
       {/* ── Main content: sidebar + preview ────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="w-96 shrink-0 overflow-hidden border-r border-border bg-card">
+      {/* Stacks below lg — see the matching note in EditorLayout. A fixed
+        * `w-96` sidebar is wider than a phone, so as a row it pushed the
+        * preview off screen entirely. */}
+      <div className="flex flex-1 flex-col-reverse overflow-hidden lg:flex-row">
+        <aside className="max-h-[45vh] w-full shrink-0 overflow-y-auto border-t border-border bg-card lg:max-h-none lg:w-96 lg:overflow-hidden lg:border-r lg:border-t-0">
           <EditorSidebar />
         </aside>
-        <main className="flex flex-1 items-center justify-center overflow-hidden">
+        <main className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
           <EditorPreviewDispatcher />
         </main>
       </div>

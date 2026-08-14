@@ -76,9 +76,13 @@ export function ApiKeyTable({ rows, onRevokeRequest }: Props) {
     );
   }
 
+  // `overflow-hidden` CLIPPED the overflow instead of letting it scroll, so on
+  // a phone the last columns of this 5-column table were unreachable.
+  // `overflow-x-auto` + a min width lets it scroll inside its own box rather
+  // than crushing the columns or widening the page.
   return (
-    <div className="overflow-hidden rounded-xl border">
-      <table className="w-full text-sm">
+    <div className="overflow-x-auto rounded-xl border">
+      <table className="w-full min-w-[560px] text-sm">
         <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
             <th className="px-4 py-3 font-medium">Name</th>

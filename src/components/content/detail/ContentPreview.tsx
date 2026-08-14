@@ -221,7 +221,7 @@ export function ContentPreview({
                 <div className="flex justify-center">
                   <div
                     className="relative overflow-hidden rounded-[2rem] border-[1.5px] border-white/[0.06] bg-neutral-900/40 shadow-2xl"
-                    style={{ width: frameWidth, aspectRatio: aspectCss }}
+                    style={{ width: frameWidth, maxWidth: '100%', aspectRatio: aspectCss }}
                   >
                     <RemotionPreviewPlayer
                       contentType={item.contentType}
@@ -238,7 +238,7 @@ export function ContentPreview({
                 <div className="flex justify-center">
                   <div
                     className="relative overflow-hidden rounded-[2rem] border-[1.5px] border-white/[0.06] bg-neutral-900/40 shadow-2xl"
-                    style={{ width: frameWidth, aspectRatio: aspectCss }}
+                    style={{ width: frameWidth, maxWidth: '100%', aspectRatio: aspectCss }}
                   >
                     <video
                       src={toVideoSrc(videoUrl)}
@@ -264,7 +264,7 @@ export function ContentPreview({
                 <div className="flex justify-center">
                   <div
                     className="relative overflow-hidden rounded-[2rem] border-[1.5px] border-white/[0.06] bg-neutral-900/40 shadow-lg"
-                    style={{ width: frameWidth, aspectRatio: aspectCss }}
+                    style={{ width: frameWidth, maxWidth: '100%', aspectRatio: aspectCss }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img

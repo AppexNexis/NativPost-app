@@ -105,6 +105,9 @@ export const NAV_ITEMS: NavItem[] = [
     external: true,
     footer: true,
   },
+  // Sits directly above Support: the two are the same intent ("I'm stuck"),
+  // and self-serve should be the first thing reached for.
+  { label: 'Learn', href: '/dashboard/learn', icon: 'GraduationCap', roles: ['admin', 'editor', 'member'], group: 'Account', footer: true },
   { label: 'Support', href: '/dashboard/support', icon: 'LifeBuoy', roles: ['admin', 'editor', 'member'], group: 'Account', footer: true },
   { label: 'Settings', href: '/dashboard/settings', icon: 'Settings', roles: ['admin', 'editor', 'member'], group: 'Account', footer: true },
   { label: 'Billing', href: '/dashboard/billing', icon: 'CreditCard', roles: ['admin', 'member'], group: 'Account', footer: true },

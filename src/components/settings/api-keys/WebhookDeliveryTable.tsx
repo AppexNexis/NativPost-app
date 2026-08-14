@@ -91,8 +91,8 @@ export function WebhookDeliveryTable({ endpointId, refreshKey = 0 }: Props) {
                 </p>
               )
             : (
-                <div className="overflow-hidden rounded-lg border text-xs">
-                  <table className="w-full">
+                <div className="overflow-x-auto rounded-lg border text-xs">
+                  <table className="w-full min-w-[480px]">
                     <thead className="bg-muted/40 text-left text-[10px] uppercase tracking-wider text-muted-foreground">
                       <tr>
                         <th className="px-3 py-2 font-medium">Status</th>
