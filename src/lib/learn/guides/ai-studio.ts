@@ -9,7 +9,9 @@ export const aiStudio: Guide = {
   category: 'creating',
   order: 1,
   readingMinutes: 4,
-  video: { src: 'nativpost/learn/guide-06-ai-studio', duration: '1:15' },
+  // No video yet — guide-06 has not been rendered, so there is nothing at
+  // nativpost/learn/guide-06-ai-studio. Restore this line once the mp4 exists
+  // and `npm run learn:upload-videos` has published it.
   readNext: ['blitz-daily-queue', 'campaigns'],
   sections: [
     {

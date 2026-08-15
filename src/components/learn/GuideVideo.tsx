@@ -30,11 +30,17 @@ export function GuideVideo({
   rounded?: string;
 }) {
   const [playing, setPlaying] = useState(false);
+  // A resolvable URL is not a present asset. `resolveVideoSrc` happily builds a
+  // Cloudinary URL for a public id that was never uploaded, so a guide whose
+  // video hasn't been rendered yet would otherwise draw a play button over a
+  // broken poster. Treat a failed poster load as "no video" and fall back to
+  // the text-only guide, which is what the reader wants either way.
+  const [assetMissing, setAssetMissing] = useState(false);
 
   const src = resolveVideoSrc(video?.src);
   const poster = resolveVideoPoster(video);
 
-  if (!src) {
+  if (!src || assetMissing) {
     return null;
   }
 
@@ -62,7 +68,13 @@ export function GuideVideo({
               {poster
                 ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={poster} alt="" className="size-full object-cover" loading="lazy" />
+                    <img
+                      src={poster}
+                      alt=""
+                      className="size-full object-cover"
+                      loading="lazy"
+                      onError={() => setAssetMissing(true)}
+                    />
                   )
                 : (
                     <span className="block size-full bg-gradient-to-br from-primary/30 via-neutral-900 to-neutral-900" />

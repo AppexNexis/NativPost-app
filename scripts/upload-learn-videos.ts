@@ -34,12 +34,18 @@ function publicIdFor(filename: string): string {
 async function main() {
   const force = process.argv.includes('--force');
 
-  const { CLOUDINARY_KEY_NAME, CLOUDINARY_API_SECRET, NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME, NEXT_PUBLIC_CLOUDINARY_API_KEY } = process.env;
+  const { CLOUDINARY_API_SECRET, NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME, NEXT_PUBLIC_CLOUDINARY_API_KEY } = process.env;
   const cloudName = NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-  const apiKey = NEXT_PUBLIC_CLOUDINARY_API_KEY ?? CLOUDINARY_KEY_NAME;
+  // Deliberately NOT falling back to CLOUDINARY_KEY_NAME: despite the name it
+  // holds a cloud/key *label* ("nativpost"), not the numeric API key, so using
+  // it produces an opaque 401 rather than a missing-credential message.
+  const apiKey = NEXT_PUBLIC_CLOUDINARY_API_KEY;
 
   if (!cloudName || !apiKey || !CLOUDINARY_API_SECRET) {
-    console.error('Missing Cloudinary credentials. Need NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME, an API key and CLOUDINARY_API_SECRET.');
+    console.error(
+      'Missing Cloudinary credentials. Need NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME, '
+      + 'NEXT_PUBLIC_CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET.',
+    );
     process.exit(1);
   }
 
