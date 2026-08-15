@@ -52,7 +52,15 @@ export async function renderEditorVideo(
       aspectRatio: input.aspectRatio,
       contentType: input.contentType,
       backgroundUrl: input.mediaSlots?.background?.url,
+      // The measured length of the background clip is what lets the engine
+      // render the FULL upload. Without it the renderer falls back to its 8s
+      // floor and publishes a truncated, silent cut — the preview would look
+      // right and the published MP4 would not.
+      backgroundDurationSeconds: input.mediaSlots?.background?.durationSeconds ?? null,
+      backgroundVolume: input.mediaSlots?.background?.volume ?? null,
+      backgroundMuted: input.mediaSlots?.background?.muted ?? false,
       hookVideoUrl: input.mediaSlots?.hookVideo?.url,
+      hookVideoDurationSeconds: input.mediaSlots?.hookVideo?.durationSeconds ?? null,
       slides: input.mediaSlots?.slides,
       audioTrack: input.audioTrack ?? null,
       voiceoverUrl: input.voiceoverUrl ?? null,

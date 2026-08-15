@@ -16,7 +16,12 @@ import {
 // keeps preview + engine in sync (see the WYSIWYG contract in that file).
 import { resolveFont } from '@/lib/editor/fonts';
 
-import { EDITOR_FIXED_DURATION_SECONDS } from '@/lib/editor-constants';
+import {
+  DEFAULT_MUSIC_VOLUME,
+  DEFAULT_ORIGINAL_AUDIO_VOLUME,
+  EDITOR_FIXED_DURATION_SECONDS,
+  toRemotionVolume,
+} from '@/lib/editor-constants';
 
 import { isVideoUrl } from './media-detect';
 import { limitBodyMaybe, limitCtaMaybe, limitHookMaybe } from './text-limits';
@@ -51,11 +56,25 @@ export interface EditorAudioTrack {
   url: string;
   publicId?: string;
   source?: 'original' | 'library' | 'upload';
+  /** 0-100. Mixed UNDER the clip's own audio, never replacing it. */
   volume?: number;
+  /** Silence the music without detaching the track. */
+  muted?: boolean;
 }
 
 export interface EditorInputProps {
   backgroundUrl?: string;
+  /**
+   * Measured length of the background clip. The composition duration is
+   * derived from it upstream (RemotionPreviewPlayer / the engine's
+   * calcDurationEditor), so it is part of the props contract even though the
+   * component body reads only the audio settings.
+   */
+  backgroundDurationSeconds?: number | null;
+  /** 0-100 volume for the background clip's OWN audio. Defaults to full. */
+  backgroundVolume?: number | null;
+  /** Silence the background clip's own audio. */
+  backgroundMuted?: boolean;
   hookVideoUrl?: string;
   slides?: EditorSlide[];
   script: EditorScript;
@@ -170,6 +189,8 @@ function FadeInText({ text, style, startFrame, duration, noAnimation }: {
 
 export function EditorComposition({
   backgroundUrl,
+  backgroundVolume: backgroundVolumeProp,
+  backgroundMuted = false,
   hookVideoUrl,
   slides,
   script,
@@ -246,6 +267,19 @@ export function EditorComposition({
   const ctaText = limitCtaMaybe(script.ctaText, previewMode);
   const activeText = hookText || bodyText || ctaText;
   const totalFrames = (durationSeconds ?? EDITOR_FIXED_DURATION_SECONDS) * fps;
+
+  // ── Background clip audio + looping ──────────────────────────────────────
+  // A clip only loops when it is genuinely SHORTER than the composition (e.g.
+  // a 3s clip under the 8s readable minimum). A clip that drives the duration
+  // plays through once, with its own audio. When the duration is unknown —
+  // media that predates duration capture, or a failed probe — we keep the old
+  // loop-and-mute behaviour rather than risk a frozen last frame.
+  const backgroundVolume = toRemotionVolume(backgroundVolumeProp, DEFAULT_ORIGINAL_AUDIO_VOLUME);
+  // Deliberately NOT looping — see the matching note in the engine
+  // composition. The app's <Video> supports `loop` and the engine's
+  // <OffthreadVideo> does not, so looping here would make the preview
+  // disagree with the published file. A short clip holds its final frame in
+  // both.
   const textStartFrame = noAnimation ? 0 : 10;
   const hookStartFrame = noAnimation ? 0 : 15;
 
@@ -264,7 +298,21 @@ export function EditorComposition({
       {backgroundUrl ? (
         isVideoUrl(backgroundUrl) ? (
           <Sequence from={0} durationInFrames={totalFrames}>
-            <Video src={backgroundUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted loop />
+            {/*
+              * The clip's own audio is CONTENT and plays by default. This was
+              * `muted loop`, which stripped the uploaded video's soundtrack and
+              * repeated the opening seconds to fill a fixed 8s window.
+              *
+              * The clip plays through once with its sound. It is not looped:
+              * the engine's <OffthreadVideo> cannot loop, so looping here
+              * would desync preview from the published file.
+              */}
+            <Video
+              src={backgroundUrl}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              muted={backgroundMuted}
+              volume={backgroundVolume}
+            />
           </Sequence>
         ) : (
           <Sequence from={0} durationInFrames={totalFrames}>
@@ -345,12 +393,17 @@ export function EditorComposition({
         </Sequence>
       )}
 
-      {/* Background audio — baked into compiled MP4, played during preview */}
-      {audioTrack && audioTrack.url && (
-        <Audio
-          src={audioTrack.url}
-          volume={Math.max(0, Math.min(1, (audioTrack.volume ?? 80) / 100))}
-        />
+      {/* Background music — ADDITIVE. It mixes under the clip's own audio and
+          never replaces it; muting one leaves the other untouched. Wrapped in a
+          Sequence so a track longer than the video is trimmed to length rather
+          than extending or being cut arbitrarily by the encoder. */}
+      {audioTrack && audioTrack.url && !audioTrack.muted && (
+        <Sequence from={0} durationInFrames={totalFrames}>
+          <Audio
+            src={audioTrack.url}
+            volume={toRemotionVolume(audioTrack.volume, DEFAULT_MUSIC_VOLUME)}
+          />
+        </Sequence>
       )}
 
       {/* ElevenLabs voice-over (Phase A Blitz). Independent of audioTrack;

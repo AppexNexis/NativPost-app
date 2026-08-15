@@ -443,6 +443,17 @@ export type MediaSlot = {
   publicId?: string;
   assetType?: 'image' | 'video';
   label?: string;
+  /**
+   * Real duration of this clip, measured when it is selected (see
+   * `probeVideoDuration`). This is what lets a composition run for as long as
+   * the video actually is — without it the pipeline fell back to a flat 8s and
+   * silently truncated every upload.
+   */
+  durationSeconds?: number;
+  /** 0-100 volume for this clip's OWN audio. Defaults to full. */
+  volume?: number;
+  /** Silence this clip's own audio without removing the media. */
+  muted?: boolean;
 };
 
 export type MediaSlots = {
@@ -458,7 +469,12 @@ export type AudioTrack = {
   url: string;
   publicId?: string;
   source: 'original' | 'library' | 'upload';
+  /** 0-100. Mixed UNDER the clip's own audio, never replacing it. */
   volume?: number;
+  /** Silence the music without detaching the track. */
+  muted?: boolean;
+  /** Track length, when known — used to show trim behaviour in the picker. */
+  durationSeconds?: number;
 };
 
 export type TimingSegment = {

@@ -3,6 +3,7 @@ import { Film, Loader2, X } from 'lucide-react';
 
 import { useEditor } from '../EditorContext';
 import { getVideoPosterUrl } from '@/lib/cloudinary';
+import { MediaTooLongError, probeAndValidateVideo } from '@/lib/editor/probe-media';
 import type { ContentTemplate } from '@/types/v2';
 import { getEditorMediaSlots } from '@/lib/editor/content-type-registry';
 
@@ -258,6 +259,9 @@ const SLOT_LABELS: Record<string, string> = {
 export function MediaTab() {
   const { state, dispatch } = useEditor();
   const [activeSlot, setActiveSlot] = useState<string | null>(null);
+  // Surfaced when a chosen video exceeds the render ceiling. The slot is
+  // cleared rather than accepted-and-trimmed.
+  const [mediaError, setMediaError] = useState<string | null>(null);
 
   const contentType = state.edit?.contentType ?? '';
   const slots = state.mediaSlots || {};
@@ -378,10 +382,41 @@ export function MediaTab() {
           });
       }
     } else {
+      // Set the slot immediately so the preview swaps without waiting on the
+      // probe, then measure and patch the duration in. The probe only fetches
+      // the container header, so this normally lands within a few hundred ms.
       dispatch({
         type: 'UPDATE_MEDIA_SLOTS',
         payload: { [slot]: { url, assetType } },
       });
+
+      if (assetType === 'video') {
+        setMediaError(null);
+        probeAndValidateVideo(url)
+          .then((durationSeconds) => {
+            if (durationSeconds === null) {
+              // Unmeasurable (CORS, odd container). Keep the media — the
+              // composition falls back to the minimum duration rather than
+              // blocking the user.
+              console.warn('[MediaTab] could not measure video duration for', url);
+              return;
+            }
+            dispatch({
+              type: 'UPDATE_MEDIA_SLOTS',
+              payload: { [slot]: { url, assetType, durationSeconds } },
+            });
+          })
+          .catch((err: unknown) => {
+            // Over the ceiling — drop the slot and tell the user, rather than
+            // accepting it and silently publishing a truncated cut.
+            if (err instanceof MediaTooLongError) {
+              dispatch({ type: 'UPDATE_MEDIA_SLOTS', payload: { [slot]: null } });
+              setMediaError(err.message);
+              return;
+            }
+            console.warn('[MediaTab] duration probe failed:', err);
+          });
+      }
     }
     setActiveSlot(null);
   };
@@ -401,6 +436,20 @@ export function MediaTab() {
       <p className="text-xs text-muted-foreground">
         Select replacement media for each slot.
       </p>
+
+      {mediaError && (
+        <div className="flex items-start justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+          <p className="text-xs text-amber-700 dark:text-amber-300">{mediaError}</p>
+          <button
+            type="button"
+            onClick={() => setMediaError(null)}
+            className="shrink-0 rounded p-0.5 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300"
+            title="Dismiss"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
 
       {visibleSlots.map(slot => {
         const slotKey = slot as keyof typeof slots;

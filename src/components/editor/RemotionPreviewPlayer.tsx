@@ -6,7 +6,7 @@ import { Player } from '@remotion/player';
 import { EditorComposition } from './compositions/EditorComposition';
 import { SlideshowComposition } from './compositions/SlideshowComposition';
 import { DataStoryComposition } from './compositions/DataStoryComposition';
-import { EDITOR_TOTAL_FRAMES, EDITOR_FPS } from '@/lib/editor-constants';
+import { EDITOR_FPS, resolveEditorDurationSeconds } from '@/lib/editor-constants';
 
 // Per-content-type Remotion composition dispatch. See
 // lib/editor/content-type-registry for the enum this table mirrors.
@@ -45,11 +45,32 @@ interface RemotionPreviewPlayerProps {
   inputProps: Record<string, any>;
 }
 
-// Voice-over extends the preview budget up to this ceiling, matching the
-// engine's calcDurationEditor clamp. Silent renders keep the legacy 8s
-// (EDITOR_TOTAL_FRAMES). See nativpost-editor-composition-frame-budget
-// memory for the wider frame-budget contract.
-const MAX_PREVIEW_SECONDS = 15;
+/**
+ * Pull the longest real video duration out of the media slots.
+ *
+ * Background is the usual driver, but a hook/demo/face clip can be the only
+ * video present, so the composition has to run for the longest of them or the
+ * others get cut off mid-shot.
+ */
+function longestSlotDurationSeconds(mediaSlots: Record<string, any> | undefined): number {
+  if (!mediaSlots) {
+    return 0;
+  }
+  const candidates = [
+    mediaSlots.background,
+    mediaSlots.hookVideo,
+    mediaSlots.demoVideo,
+    mediaSlots.faceVideo,
+  ];
+  let longest = 0;
+  for (const slot of candidates) {
+    const d = slot?.durationSeconds;
+    if (typeof d === 'number' && d > longest) {
+      longest = d;
+    }
+  }
+  return longest;
+}
 
 export function RemotionPreviewPlayer({ contentType, inputProps }: RemotionPreviewPlayerProps) {
   const Composition = COMPOSITION_BY_TYPE[contentType] || EditorComposition;
@@ -62,22 +83,24 @@ export function RemotionPreviewPlayer({ contentType, inputProps }: RemotionPrevi
     return { width: Math.round(w * scale), height: Math.round(h * scale) };
   }, [inputProps.aspectRatio]);
 
-  // Derive composition duration from voice-over length. Mirrors engine
-  // calcDurationEditor(voiceoverDurationMs) so app preview and compiled
-  // MP4 match frame-for-frame (WYSIWYG contract). When no voice-over is
-  // present, falls back to EDITOR_TOTAL_FRAMES (8s).
+  // Composition duration = the longest real input, floored at the readable
+  // minimum and capped at the ceiling. Uses the SAME resolver the render
+  // payload uses, and mirrors the engine's calcDurationEditor, so the preview
+  // and the published MP4 cannot disagree (WYSIWYG contract).
+  //
+  // This used to read ONLY `audioDurationMs`, so an uploaded video with no
+  // voice-over always rendered as 8 looping seconds no matter its real length.
   const { durationInFrames, durationSeconds } = useMemo(() => {
-    const audioDurationMs = inputProps.audioDurationMs;
-    if (typeof audioDurationMs !== 'number' || audioDurationMs <= 0) {
-      return { durationInFrames: EDITOR_TOTAL_FRAMES, durationSeconds: undefined };
-    }
-    const legacySeconds = EDITOR_TOTAL_FRAMES / EDITOR_FPS;
-    const clamped = Math.min(MAX_PREVIEW_SECONDS, Math.max(legacySeconds, audioDurationMs / 1000));
+    const mediaDurationSeconds = longestSlotDurationSeconds(inputProps.mediaSlots);
+    const seconds = resolveEditorDurationSeconds({
+      mediaDurationSeconds,
+      voiceoverDurationMs: inputProps.audioDurationMs,
+    });
     return {
-      durationInFrames: Math.round(clamped * EDITOR_FPS),
-      durationSeconds: clamped,
+      durationInFrames: Math.round(seconds * EDITOR_FPS),
+      durationSeconds: seconds,
     };
-  }, [inputProps.audioDurationMs]);
+  }, [inputProps.mediaSlots, inputProps.audioDurationMs]);
 
   // Inject durationSeconds into inputProps so per-type compositions
   // reading it (EditorComposition today; per-type ones as they migrate)

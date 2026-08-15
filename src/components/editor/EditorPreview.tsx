@@ -133,6 +133,9 @@ export function EditorPreview() {
                     // video_hook, slideshow, carousel, data_story). Passing
                     // both keeps every dispatch target happy.
                     backgroundUrl: state.mediaSlots?.background?.url,
+                    backgroundDurationSeconds: state.mediaSlots?.background?.durationSeconds ?? null,
+                    backgroundVolume: state.mediaSlots?.background?.volume ?? null,
+                    backgroundMuted: state.mediaSlots?.background?.muted ?? false,
                     hookVideoUrl: state.mediaSlots?.hookVideo?.url,
                     slides: state.mediaSlots?.slides,
                     mediaSlots: state.mediaSlots,
@@ -172,6 +175,9 @@ export function EditorPreview() {
               contentType={contentType}
               inputProps={{
                 backgroundUrl: state.mediaSlots?.background?.url,
+                backgroundDurationSeconds: state.mediaSlots?.background?.durationSeconds ?? null,
+                backgroundVolume: state.mediaSlots?.background?.volume ?? null,
+                backgroundMuted: state.mediaSlots?.background?.muted ?? false,
                 hookVideoUrl: state.mediaSlots?.hookVideo?.url,
                 slides: state.mediaSlots?.slides,
                 mediaSlots: state.mediaSlots,
