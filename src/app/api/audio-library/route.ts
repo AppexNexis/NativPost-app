@@ -31,7 +31,18 @@ cloudinary.config({
 });
 
 const CLOUD = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME!;
+
+/**
+ * Shared, curated catalogue — the "Default Audio" tab. Every org sees it.
+ * Adding or replacing tracks is an upload into this folder; no code change,
+ * no deploy. That is what keeps the library scalable.
+ */
 const AUDIO_FOLDER = 'nativpost/audio';
+
+/** Per-org uploads — the "My Library" tab. Namespaced so orgs never mix. */
+export function userAudioFolder(orgId: string): string {
+  return `nativpost/audio-user/${orgId}`;
+}
 
 export type AudioAsset = {
   publicId: string;
@@ -80,11 +91,16 @@ function normalize(resource: any): AudioAsset {
 }
 
 export async function GET(request: NextRequest) {
-  const { error } = await getAuthContext();
+  const { error, orgId } = await getAuthContext();
   if (error) return error;
 
   const { searchParams } = new URL(request.url);
   const limit = Math.min(Number(searchParams.get('limit') || 50), 200);
+
+  // scope=default → the shared catalogue; scope=mine → this org's uploads.
+  // Anything else falls back to the catalogue rather than leaking folders.
+  const scope = searchParams.get('scope') === 'mine' ? 'mine' : 'default';
+  const prefix = scope === 'mine' ? userAudioFolder(orgId!) : AUDIO_FOLDER;
 
   try {
     const results: AudioAsset[] = [];
@@ -95,7 +111,7 @@ export async function GET(request: NextRequest) {
       const res: any = await cloudinary.api.resources({
         type: 'upload',
         resource_type: 'video',
-        prefix: AUDIO_FOLDER,
+        prefix,
         max_results: 100,
         context: true,
         tags: true,
@@ -111,7 +127,7 @@ export async function GET(request: NextRequest) {
       return bt - at;
     });
 
-    return NextResponse.json({ assets: results.slice(0, limit), total: results.length });
+    return NextResponse.json({ assets: results.slice(0, limit), total: results.length, scope });
   } catch (err) {
     console.error('[AudioLibrary] Cloudinary fetch error:', err);
     return NextResponse.json({ error: 'Failed to fetch audio library.', assets: [] }, { status: 500 });

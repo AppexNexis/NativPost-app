@@ -12,6 +12,21 @@
  *   npx tsx scripts/seed-audio-library.ts --limit=10
  *   npx tsx scripts/seed-audio-library.ts --dry-run   # preview only
  *
+ * ── Growing the library without touching this file ─────────────────────────
+ * The editor reads whatever is in Cloudinary's `nativpost/audio/` folder, so
+ * the catalogue scales by adding FILES, not code. Two ingestion modes:
+ *
+ *   --from-dir=<path>       Upload every audio file in a local folder. This is
+ *                           how you add licensed tracks you already hold
+ *                           rights to (Epidemic Sound, Artlist, Uppbeat…).
+ *
+ *   --manifest=<file.json>  Upload from a JSON array of
+ *                           { title, url, artist?, tags? } entries.
+ *
+ * Both paths run the same verification as the built-in list: a URL that is not
+ * reachable audio is REFUSED rather than uploaded, so the picker can never
+ * show a track that plays silence.
+ *
  * With env file:
  *   dotenv -c production -- npx tsx scripts/seed-audio-library.ts
  */
@@ -29,9 +44,12 @@ import { join } from 'path';
 
 interface TrackEntry {
   title: string;
+  /** Remote source. Empty for --from-dir entries, which carry localPath. */
   url: string;
   artist: string;
   tags: string[];
+  /** Set by --from-dir: upload this file instead of downloading a URL. */
+  localPath?: string;
 }
 
 const TRACKS: TrackEntry[] = [
@@ -60,6 +78,10 @@ interface CliArgs {
   limit: number;
   concurrency: number;
   dryRun: boolean;
+  /** Ingest every audio file in this local folder. */
+  fromDir?: string;
+  /** Ingest from a JSON array of { title, url, artist?, tags? }. */
+  manifest?: string;
 }
 
 function parseArgs(): CliArgs {
@@ -74,6 +96,8 @@ function parseArgs(): CliArgs {
     limit: Number(getFlag('limit') || TRACKS.length),
     concurrency: Number(getFlag('concurrency') || 8),
     dryRun: hasFlag('dry-run'),
+    fromDir: getFlag('from-dir'),
+    manifest: getFlag('manifest'),
   };
 }
 
