@@ -110,10 +110,16 @@ export function getOverlayTextParts(item: ContentItem | null | undefined): Overl
       return { text: String(slides[0].caption), scale: 1 };
     }
   }
-  if (script.hookText && typeof script.hookText === 'string') {
+  // Per-element visibility (editorStyle.showHook/showBody) — mirrors
+  // EditorComposition so a card overlay cannot draw text the video hides.
+  // Absent === visible.
+  const style = (enrichment.editorStyle ?? {}) as Record<string, any>;
+  const showHook = style.showHook !== false;
+  const showBody = style.showBody !== false;
+  if (showHook && script.hookText && typeof script.hookText === 'string') {
     return { text: script.hookText, scale: 1 };
   }
-  if (script.bodyText && typeof script.bodyText === 'string') {
+  if (showBody && script.bodyText && typeof script.bodyText === 'string') {
     // EditorComposition draws body at fontSize * 0.8 (floored at 16px @1080).
     return { text: script.bodyText, scale: 0.8 };
   }
@@ -140,6 +146,10 @@ export type CaptionStyleInput = {
   italic?: boolean | null;
   underline?: boolean | null;
   backgroundDimming?: number | null;
+  /** Hide the hook/body overlay text. Absent === visible. */
+  showHook?: boolean | null;
+  showBody?: boolean | null;
+  showCta?: boolean | null;
 };
 
 // ── Spec resolver ─────────────────────────────────────────────────────────

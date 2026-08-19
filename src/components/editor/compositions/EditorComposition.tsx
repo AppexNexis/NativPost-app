@@ -45,6 +45,14 @@ export interface EditorStyle {
   italic?: boolean;
   underline?: boolean;
   backgroundDimming?: number;
+  /**
+   * Per-element overlay visibility. Copy is still in `script` (and publishes
+   * as post content) — these only suppress the on-video overlay. Absent
+   * === visible, so legacy rows and engine payloads render unchanged.
+   */
+  showHook?: boolean;
+  showBody?: boolean;
+  showCta?: boolean;
 }
 
 export interface EditorSlide {
@@ -265,7 +273,12 @@ export function EditorComposition({
   const hookText = limitHookMaybe(script.hookText, previewMode);
   const bodyText = limitBodyMaybe(script.bodyText, previewMode);
   const ctaText = limitCtaMaybe(script.ctaText, previewMode);
-  const activeText = hookText || bodyText || ctaText;
+  // Per-element visibility — hide the on-video overlay without touching the
+  // copy (which still publishes as post content). Absent === visible.
+  const showHook = (style as EditorStyle).showHook ?? true;
+  const showBody = (style as EditorStyle).showBody ?? true;
+  const showCta = (style as EditorStyle).showCta ?? true;
+  const activeText = (showHook && hookText) || (showBody && bodyText) || (showCta && ctaText);
   const totalFrames = (durationSeconds ?? EDITOR_FIXED_DURATION_SECONDS) * fps;
 
   // ── Background clip audio + looping ──────────────────────────────────────
@@ -340,7 +353,7 @@ export function EditorComposition({
           padding: pos.padding, zIndex: 10,
         }}>
           <div style={{ maxWidth: '90%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {hookText && (
+            {showHook && hookText && (
               <FadeInText
                 text={hookText}
                 style={textBaseStyle}
@@ -349,7 +362,7 @@ export function EditorComposition({
                 noAnimation={noAnimation}
               />
             )}
-            {bodyText && (
+            {showBody && bodyText && (
               <FadeInText
                 text={bodyText}
                 style={{ ...textBaseStyle, fontSize: bodyFontSize }}
@@ -358,7 +371,7 @@ export function EditorComposition({
                 noAnimation={noAnimation}
               />
             )}
-            {ctaText && (
+            {showCta && ctaText && (
               <FadeInText
                 text={ctaText}
                 style={{

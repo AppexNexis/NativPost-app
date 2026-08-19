@@ -436,6 +436,14 @@ export type TextStyle = {
   noAnimation?: boolean;
   /** 0-1 fraction — full-bleed dark scrim applied under text overlay. */
   backgroundDimming?: number;
+  /**
+   * Hide hook / body / CTA from the PREVIEW and the RENDERED video. The copy
+   * stays in `script` and still publishes as post content — only the on-video
+   * overlay is suppressed. Default true (absent === visible).
+   */
+  showHook?: boolean;
+  showBody?: boolean;
+  showCta?: boolean;
 };
 
 export type MediaSlot = {

@@ -170,7 +170,7 @@ export function SlideshowComposition({ script, style, layout, mediaSlots, slides
       })}
 
       {/* Hook overlay at start if no slides */}
-      {slides.length === 0 && limitHookMaybe(script.hookText, previewMode) && (
+      {(style as any).showHook !== false && slides.length === 0 && limitHookMaybe(script.hookText, previewMode) && (
         <Sequence from={0} durationInFrames={fps * 3}>
           <AbsoluteFill
             style={{

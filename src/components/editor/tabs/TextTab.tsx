@@ -289,6 +289,43 @@ export function TextTab() {
                 onCheckedChange={checked => updateScript('mentionBusiness' as any, checked ? 'true' : 'false')}
               />
             </div>
+
+            {/* Text visibility — video overlay only. Hiding a field takes it
+                off the PREVIEW and the RENDERED video; the copy stays in
+                `script` and still publishes as post content. The image engine
+                renders no hook/body/cta text, so the toggles are meaningless
+                for image kinds (same gating as the Animation toggle below). */}
+            {kind === 'video' && (
+              <div className="space-y-2 rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-medium text-foreground">Text visibility</span>
+                    <p className="text-[11px] text-muted-foreground">Hide from video only — copy still posts</p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-foreground">Hook</span>
+                  <Switch
+                    checked={(state.style as any).showHook ?? true}
+                    onCheckedChange={checked => updateStyle('showHook', checked)}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-foreground">Body</span>
+                  <Switch
+                    checked={(state.style as any).showBody ?? true}
+                    onCheckedChange={checked => updateStyle('showBody', checked)}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-foreground">CTA</span>
+                  <Switch
+                    checked={(state.style as any).showCta ?? true}
+                    onCheckedChange={checked => updateStyle('showCta', checked)}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </AccordionContent>
       </AccordionItem>

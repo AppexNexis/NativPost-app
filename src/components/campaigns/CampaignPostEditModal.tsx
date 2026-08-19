@@ -42,6 +42,7 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { getEditorKind } from '@/lib/editor/content-type-registry';
+import { isAuthoredScript } from '@/lib/editor/derive-script';
 // Importing EDITOR_FONTS runs the fonts.ts loadFont() side effects, which
 // inject the @font-face rules globally — that is what makes the registry
 // families render in this modal's own preview without next/font.
@@ -325,16 +326,31 @@ export function CampaignPostEditModal({
   const [backgroundDimming, setBackgroundDimming] = useState(Number(textStyle.backgroundDimming ?? 0));
   const [ctaBackgroundColor, setCtaBackgroundColor] = useState(String(textStyle.ctaBackgroundColor ?? '#864FFE'));
   const [noAnimation, setNoAnimation] = useState(Boolean(textStyle.noAnimation ?? false));
+  // Per-element visibility (mirrors the shared TextTab toggles). Absent === visible.
+  const [showHook, setShowHook] = useState(textStyle.showHook !== false);
+  const [showBody, setShowBody] = useState(textStyle.showBody !== false);
+  const [showCta, setShowCta] = useState(textStyle.showCta !== false);
 
   // ── Saving ────────────────────────────────────────────────────────────────
   const [isSaving, setIsSaving] = useState(false);
 
   // ── Derived ───────────────────────────────────────────────────────────────
   // For slideshows: show the current slide's own caption as overlay text.
-  // For video types: show hookText or bodyText from the editor script.
+  // For video types: show hookText or bodyText from the editor script, each
+  // gated on its visibility toggle (hide = no overlay, copy still publishes).
+  // Mirrors caption-spec.getOverlayTextParts: an authored script is
+  // authoritative even when every field is empty/hidden — only non-authored
+  // (legacy caption) posts fall back to `item.caption`, so the live preview
+  // cannot draw text the rendered video won't show.
   const overlayText = isSlideshow
     ? (slides[slideIndex]?.caption ?? String(script.hookText ?? item.caption ?? ''))
-    : String(script.hookText ?? script.bodyText ?? item.caption ?? '');
+    : String(
+        (showHook && script.hookText)
+          ? script.hookText
+          : (showBody && script.bodyText)
+            ? script.bodyText
+            : (isAuthoredScript(script) ? '' : (item.caption ?? '')),
+      );
 
   // (anyPickerOpen state guard removed — using pickerWasOpen ref instead to
   //  avoid the race where state resets before Radix fires the outer dialog event)
@@ -357,6 +373,9 @@ export function CampaignPostEditModal({
         italic,
         underline,
         backgroundDimming,
+        showHook,
+        showBody,
+        showCta,
       },
       text: overlayText,
     }),
@@ -372,6 +391,9 @@ export function CampaignPostEditModal({
       italic,
       underline,
       backgroundDimming,
+      showHook,
+      showBody,
+      showCta,
       overlayText,
     ],
   );
@@ -441,6 +463,11 @@ export function CampaignPostEditModal({
         backgroundDimming,
         ctaBackgroundColor,
         noAnimation,
+        // Per-element visibility — hides the overlay on preview/render only;
+        // the copy stays in `script` and still publishes as post content.
+        showHook,
+        showBody,
+        showCta,
       };
 
       const updatedScript = isSlideshow
@@ -1051,6 +1078,40 @@ export function CampaignPostEditModal({
                       fallbackHex="#864FFE"
                     />
                   </div>
+
+                  {/* Text visibility — video only (matches the shared TextTab
+                      section). Hiding a field takes it off the PREVIEW and the
+                      RENDERED video; the copy stays in `script` and still
+                      publishes as post content. */}
+                  {isVideo && (
+                    <div className="space-y-2 rounded-lg border border-border p-3">
+                      <div>
+                        <span className="text-xs font-medium text-foreground">Text visibility</span>
+                        <p className="text-[10px] text-muted-foreground">Hide from video only — copy still posts</p>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-foreground">Hook</span>
+                        <Switch
+                          checked={showHook}
+                          onCheckedChange={setShowHook}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-foreground">Body</span>
+                        <Switch
+                          checked={showBody}
+                          onCheckedChange={setShowBody}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-foreground">CTA</span>
+                        <Switch
+                          checked={showCta}
+                          onCheckedChange={setShowCta}
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {/* Animation — video only (matches the shared TextTab gate) */}
                   {isVideo && (
