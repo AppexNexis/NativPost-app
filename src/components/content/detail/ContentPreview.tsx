@@ -139,8 +139,15 @@ export function ContentPreview({
       posterUrl,
       audioUrl,
       audioDurationMs,
+      // Editor audio choices — background volume/mute live on the media slot,
+      // the music track on enrichmentData.audioTrack (mirrored by saveEdit).
+      // Without these the detail preview silently drops the audio the editor
+      // preview was playing (WYSIWYG).
+      backgroundVolume: mediaSlots.background?.volume ?? null,
+      backgroundMuted: mediaSlots.background?.muted ?? false,
+      audioTrack: (enrichment.audioTrack as Record<string, unknown> | null) ?? null,
     };
-  }, [mediaSlots, scriptWithFallback, enrichment.editorStyle, enrichment.editorLayout, aspectRatio, item, posterUrl, audioUrl, audioDurationMs]);
+  }, [mediaSlots, scriptWithFallback, enrichment.editorStyle, enrichment.editorLayout, aspectRatio, item, posterUrl, audioUrl, audioDurationMs, enrichment.audioTrack]);
   // VIDEO_RE-guard the graphicUrls fallback so we never feed an image URL to
   // `<video src>` — that produces a silent black frame. When no real video
   // exists, we render the poster image instead (see the fallback branch below).

@@ -80,6 +80,10 @@ export function EditorLayout({
       // overwritten with the compiled MP4 after render, so without this stash
       // we lose the original background forever.
       sourceMediaSlots: state.mediaSlots,
+      // The music track selection. saveEdit() mirrors it for existing items,
+      // but brand-new items only persist through this POST, so it must be in
+      // the payload here or their previews render without the chosen audio.
+      audioTrack: state.audioTrack,
     };
 
     // Kind-aware render: image kind (single_image / slideshow / carousel /

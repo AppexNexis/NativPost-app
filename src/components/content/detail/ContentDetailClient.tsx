@@ -117,6 +117,17 @@ export function ContentDetailClient({ id }: Props) {
       contentType: item.contentType,
       previewMode: true,
       posterUrl: item.graphicUrls?.[0] || '',
+      // Editor audio choices — same forwarding as the detail-page preview so
+      // the TikTok publish modal renders exactly what the editor preview did.
+      backgroundVolume: mediaSlots.background?.volume ?? null,
+      backgroundMuted: mediaSlots.background?.muted ?? false,
+      audioTrack: (enrichment.audioTrack as Record<string, unknown> | null) ?? null,
+      audioUrl: ((enrichment.audio as { url?: string; status?: string } | undefined)?.status === 'ready'
+        ? (enrichment.audio as { url?: string }).url
+        : undefined),
+      audioDurationMs: ((enrichment.audio as { durationMs?: number; status?: string } | undefined)?.status === 'ready'
+        ? (enrichment.audio as { durationMs?: number }).durationMs
+        : undefined),
     };
   }, [item]);
 
