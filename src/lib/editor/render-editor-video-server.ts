@@ -60,7 +60,14 @@ export async function renderEditorVideoServer(
         aspectRatio: input.aspectRatio || '9:16',
         contentType: input.contentType || 'text',
         backgroundUrl: input.mediaSlots?.background?.url,
+        // The measured clip lengths and volume/mute must reach the engine or
+        // the render truncates to the 8s floor and loses the video's own
+        // audio. Mirrors the browser helper payload exactly (WYSIWYG).
+        backgroundDurationSeconds: input.mediaSlots?.background?.durationSeconds ?? null,
+        backgroundVolume: input.mediaSlots?.background?.volume ?? null,
+        backgroundMuted: input.mediaSlots?.background?.muted ?? false,
         hookVideoUrl: input.mediaSlots?.hookVideo?.url,
+        hookVideoDurationSeconds: input.mediaSlots?.hookVideo?.durationSeconds ?? null,
         slides: input.mediaSlots?.slides || [],
         audioTrack: input.audioTrack?.url ? input.audioTrack : null,
         // ElevenLabs voice-over.

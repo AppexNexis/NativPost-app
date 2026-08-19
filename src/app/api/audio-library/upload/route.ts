@@ -20,7 +20,7 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 
-import { userAudioFolder } from '../route';
+import { userAudioFolder } from '@/lib/audio-library';
 
 cloudinary.config({
   cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
