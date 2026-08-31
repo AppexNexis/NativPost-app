@@ -19,6 +19,9 @@ import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { socialAccountSchema } from '@/models/Schema';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 const TIKTOK_CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY || '';
 const TIKTOK_CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET || '';
 
@@ -35,15 +38,21 @@ async function refreshTikTokToken(refreshToken: string): Promise<{ accessToken: 
       }),
     });
     const data = await res.json() as { access_token?: string; refresh_token?: string };
-    if (!data.access_token) return null;
+    if (!data.access_token) {
+      return null;
+    }
     return { accessToken: data.access_token, refreshToken: data.refresh_token || refreshToken };
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 export async function GET(_request: NextRequest) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   // Find connected TikTok account
   const [account] = await db
@@ -130,7 +139,7 @@ export async function GET(_request: NextRequest) {
       max_video_post_duration_sec?: number;
       creator_username?: string;
       can_post?: boolean;
-    }
+    };
   }).data;
 
   if (!d) {

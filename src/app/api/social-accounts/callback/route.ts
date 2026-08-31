@@ -6,9 +6,12 @@ import { getAuthContext } from '@/lib/auth';
 import { buildFreePlanRow } from '@/lib/billing';
 import { decodePlatformFromState, exchangeCodeForTokens, PLATFORM_CONFIGS, type SocialPlatform } from '@/lib/social-oauth';
 import { fireWebhook } from '@/lib/webhook-dispatcher';
+import { resolveAndSaveWhatsAppAccount } from '@/lib/whatsapp-callback';
 import { getDb } from '@/libs/DB';
 import { organizationSchema, socialAccountSchema } from '@/models/Schema';
-import { resolveAndSaveWhatsAppAccount } from '@/lib/whatsapp-callback';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 // const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
@@ -115,26 +118,26 @@ export async function GET(request: NextRequest) {
     // to platform-level dedupe to avoid orphaning.
     const existing = profile?.id
       ? await db
-          .select({ id: socialAccountSchema.id })
-          .from(socialAccountSchema)
-          .where(
-            and(
-              eq(socialAccountSchema.orgId, orgId!),
-              eq(socialAccountSchema.platform, platform),
-              eq(socialAccountSchema.platformUserId, profile.id),
-            ),
-          )
-          .limit(1)
+        .select({ id: socialAccountSchema.id })
+        .from(socialAccountSchema)
+        .where(
+          and(
+            eq(socialAccountSchema.orgId, orgId!),
+            eq(socialAccountSchema.platform, platform),
+            eq(socialAccountSchema.platformUserId, profile.id),
+          ),
+        )
+        .limit(1)
       : await db
-          .select({ id: socialAccountSchema.id })
-          .from(socialAccountSchema)
-          .where(
-            and(
-              eq(socialAccountSchema.orgId, orgId!),
-              eq(socialAccountSchema.platform, platform),
-            ),
-          )
-          .limit(1);
+        .select({ id: socialAccountSchema.id })
+        .from(socialAccountSchema)
+        .where(
+          and(
+            eq(socialAccountSchema.orgId, orgId!),
+            eq(socialAccountSchema.platform, platform),
+          ),
+        )
+        .limit(1);
 
     const tokenExpiresAt = tokens.expiresIn
       ? new Date(Date.now() + tokens.expiresIn * 1000)

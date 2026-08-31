@@ -1,10 +1,13 @@
-import { eq, and, desc, gte } from 'drizzle-orm';
+import { and, desc, eq, gte } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { contentTemplateSchema } from '@/models/Schema';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 // -----------------------------------------------------------
 // GET /api/analytics/templates
@@ -13,7 +16,9 @@ import { contentTemplateSchema } from '@/models/Schema';
 export async function GET(request: NextRequest) {
   const db = await getDb();
   const { error } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { searchParams } = new URL(request.url);
   const timeRange = searchParams.get('timeRange') || '30d';
@@ -53,14 +58,14 @@ export async function GET(request: NextRequest) {
 
     // Calculate trending flag (top 20% by engagement score in this period)
     const sortedByEngagement = [...items].sort((a, b) =>
-      (b.engagementScore || 0) - (a.engagementScore || 0)
+      (b.engagementScore || 0) - (a.engagementScore || 0),
     );
     const top20Index = Math.floor(sortedByEngagement.length * 0.2);
     const trendingIds = new Set(
-      sortedByEngagement.slice(0, Math.max(1, top20Index)).map((i) => i.id)
+      sortedByEngagement.slice(0, Math.max(1, top20Index)).map(i => i.id),
     );
 
-    const templates = items.map((item) => ({
+    const templates = items.map(item => ({
       id: item.id,
       sourceUrl: item.sourceUrl,
       sourcePlatform: item.sourcePlatform,

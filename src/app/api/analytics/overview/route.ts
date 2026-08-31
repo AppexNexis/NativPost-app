@@ -1,18 +1,20 @@
-import { eq, and, desc, sql, gte } from 'drizzle-orm';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import {
-  contentItemSchema,
-  campaignSchema,
-  contentTemplateSchema,
   aiInfluencerSchema,
-  engineRequestLogSchema,
+  campaignSchema,
   contentAngleSchema,
+  contentItemSchema,
+  contentTemplateSchema,
+  engineRequestLogSchema,
 } from '@/models/Schema';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 // -----------------------------------------------------------
 // GET /api/analytics/overview
 // Dashboard overview with aggregated stats
@@ -20,7 +22,9 @@ import {
 export async function GET(request: NextRequest) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { searchParams } = new URL(request.url);
   const timeRange = searchParams.get('timeRange') || '30d';
@@ -109,7 +113,9 @@ export async function GET(request: NextRequest) {
       totalReach += itemReach;
 
       const ct = item.contentType || 'unknown';
-      if (!contentTypeBreakdown[ct]) contentTypeBreakdown[ct] = { count: 0, engagement: 0 };
+      if (!contentTypeBreakdown[ct]) {
+        contentTypeBreakdown[ct] = { count: 0, engagement: 0 };
+      }
       contentTypeBreakdown[ct]!.count += 1;
       contentTypeBreakdown[ct]!.engagement += itemLikes + itemComments + itemShares;
     }
@@ -141,7 +147,7 @@ export async function GET(request: NextRequest) {
           eq(contentAngleSchema.isActive, true),
         ),
       );
-    const topAngles = angles.slice(0, 5).map((a) => ({
+    const topAngles = angles.slice(0, 5).map(a => ({
       name: a.name,
       count: Math.floor(Math.random() * 20) + 1, // Placeholder: in production, count actual usage
       avgEngagement: Math.round((Math.random() * 0.05 + 0.02) * 1000) / 1000,
@@ -181,7 +187,7 @@ export async function GET(request: NextRequest) {
       avgEngagementRate,
       bestPerformingCampaign,
       topAngles,
-      topTemplates: topTemplates.map((t) => ({
+      topTemplates: topTemplates.map(t => ({
         id: t.id,
         sourceUrl: t.sourceUrl,
         remixCount: t.remixCount,

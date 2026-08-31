@@ -10,6 +10,9 @@ import {
   socialAccountSchema,
 } from '@/models/Schema';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 // -----------------------------------------------------------
 // GET /api/cron/sync-analytics
 //
@@ -275,10 +278,14 @@ async function fetchLinkedInMetrics(postUrn: string, accessToken: string): Promi
     },
   );
 
-  if (!statsRes.ok) return null;
+  if (!statsRes.ok) {
+    return null;
+  }
   const statsData = await statsRes.json();
   const orgStats = statsData.elements?.[0]?.totalShareStatistics;
-  if (!orgStats) return null;
+  if (!orgStats) {
+    return null;
+  }
 
   return {
     likes: orgStats.likeCount || 0,

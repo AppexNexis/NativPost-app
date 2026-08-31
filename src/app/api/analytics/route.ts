@@ -7,6 +7,9 @@ import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { contentItemSchema, publishingQueueSchema } from '@/models/Schema';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 // -----------------------------------------------------------
 // GET /api/analytics
 // Returns aggregated analytics for the current org.

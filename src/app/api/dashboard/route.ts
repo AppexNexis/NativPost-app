@@ -5,7 +5,10 @@ import { NextResponse } from 'next/server';
 import { getAuthContext } from '@/lib/auth';
 // import { db } from '@/libs/DB';
 import { getDb } from '@/libs/DB';
-import { contentItemSchema, publishingQueueSchema, brandProfileSchema, socialAccountSchema } from '@/models/Schema';
+import { brandProfileSchema, contentItemSchema, publishingQueueSchema, socialAccountSchema } from '@/models/Schema';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 // -----------------------------------------------------------
 // GET /api/dashboard

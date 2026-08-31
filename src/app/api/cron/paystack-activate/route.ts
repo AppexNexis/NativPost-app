@@ -6,6 +6,9 @@ import { getPaystackPlanCode, PLAN_CONFIGS } from '@/lib/plans';
 import { getDb } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY!;
 
 // -----------------------------------------------------------

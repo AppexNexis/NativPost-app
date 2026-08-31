@@ -1,10 +1,13 @@
-import { sql, eq, and, desc } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { contentTemplateSchema } from '@/models/Schema';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 // -----------------------------------------------------------
 // GET /api/templates/queue
@@ -15,7 +18,9 @@ export async function GET(request: NextRequest) {
   const db = await getDb();
   // const { error, orgId, userId } = await getAuthContext();
   const { error } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   // Admin check: in production, verify user has admin role via Clerk metadata
   // or a roles table. For now, allow any authenticated user to view queue.

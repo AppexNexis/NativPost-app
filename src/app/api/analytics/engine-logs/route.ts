@@ -1,10 +1,13 @@
-import { eq, and, desc, gte } from 'drizzle-orm';
+import { and, desc, eq, gte } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { engineRequestLogSchema } from '@/models/Schema';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 // -----------------------------------------------------------
 // GET /api/analytics/engine-logs
@@ -14,7 +17,9 @@ import { engineRequestLogSchema } from '@/models/Schema';
 export async function GET(request: NextRequest) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { searchParams } = new URL(request.url);
   const timeRange = searchParams.get('timeRange') || '30d';

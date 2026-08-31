@@ -19,6 +19,8 @@ import {
 } from '@/models/Schema';
 import { isVideoContentType } from '@/types/v2';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 // Vercel Hobby cap; compile step for each video post needs budget
 export const maxDuration = 300;
 

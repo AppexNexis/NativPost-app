@@ -1,10 +1,13 @@
-import { eq, and, desc, gte, inArray } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
-import { campaignSchema, campaignContentSchema, contentItemSchema } from '@/models/Schema';
+import { campaignContentSchema, campaignSchema, contentItemSchema } from '@/models/Schema';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 // -----------------------------------------------------------
 // GET /api/analytics/campaigns
@@ -13,7 +16,9 @@ import { campaignSchema, campaignContentSchema, contentItemSchema } from '@/mode
 export async function GET(request: NextRequest) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   const { searchParams } = new URL(request.url);
   const campaignId = searchParams.get('campaignId');
@@ -34,7 +39,7 @@ export async function GET(request: NextRequest) {
       .where(and(...conditions))
       .orderBy(desc(campaignSchema.createdAt));
 
-    const campaignIds = campaigns.map((c) => c.id);
+    const campaignIds = campaigns.map(c => c.id);
 
     // Fetch campaign content items with engagement data
     const campaignContent = campaignIds.length > 0
@@ -47,7 +52,7 @@ export async function GET(request: NextRequest) {
         .where(inArray(campaignContentSchema.campaignId, campaignIds))
       : [];
 
-    const contentItemIds = campaignContent.map((cc) => cc.contentItemId);
+    const contentItemIds = campaignContent.map(cc => cc.contentItemId);
 
     const contentItems = contentItemIds.length > 0
       ? await db
@@ -69,12 +74,12 @@ export async function GET(request: NextRequest) {
     // Build result
     const result = campaigns.map((campaign) => {
       const items = campaignContent
-        .filter((cc) => cc.campaignId === campaign.id)
-        .map((cc) => contentItems.find((ci) => ci.id === cc.contentItemId))
+        .filter(cc => cc.campaignId === campaign.id)
+        .map(cc => contentItems.find(ci => ci.id === cc.contentItemId))
         .filter(Boolean);
 
       const totalPosts = items.length;
-      const publishedPosts = items.filter((i) => i?.publishedAt).length;
+      const publishedPosts = items.filter(i => i?.publishedAt).length;
 
       let totalEngagement = 0;
       let totalImpressions = 0;
@@ -84,7 +89,9 @@ export async function GET(request: NextRequest) {
       const performanceOverTime: Record<string, { date: string; engagementRate: number; count: number }> = {};
 
       for (const item of items) {
-        if (!item) continue;
+        if (!item) {
+          continue;
+        }
         const eng = (item.engagementData as Record<string, any>) || {};
         let itemLikes = 0;
         let itemComments = 0;
@@ -108,14 +115,18 @@ export async function GET(request: NextRequest) {
 
         // Content type stats
         const ct = item.contentType || 'unknown';
-        if (!contentTypeStats[ct]) contentTypeStats[ct] = { count: 0, engagement: 0 };
+        if (!contentTypeStats[ct]) {
+          contentTypeStats[ct] = { count: 0, engagement: 0 };
+        }
         contentTypeStats[ct]!.count += 1;
         contentTypeStats[ct]!.engagement += engagement;
 
         // Performance over time
         const date = item.publishedAt ? new Date(item.publishedAt).toISOString().split('T')[0] : null;
         if (date) {
-          if (!performanceOverTime[date]) performanceOverTime[date] = { date, engagementRate: 0, count: 0 };
+          if (!performanceOverTime[date]) {
+            performanceOverTime[date] = { date, engagementRate: 0, count: 0 };
+          }
           performanceOverTime[date]!.count += 1;
           performanceOverTime[date]!.engagementRate += engagement;
         }
@@ -144,7 +155,7 @@ export async function GET(request: NextRequest) {
         : 0;
 
       // Finalize performance over time
-      const perfArray = Object.values(performanceOverTime).map((p) => ({
+      const perfArray = Object.values(performanceOverTime).map(p => ({
         date: p.date,
         engagementRate: p.count > 0 ? Math.round((p.engagementRate / p.count / (totalImpressions || 1)) * 1000) / 1000 : 0,
       })).sort((a, b) => a.date.localeCompare(b.date));

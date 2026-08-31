@@ -1,10 +1,13 @@
-import { eq, and, desc, gte, inArray } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth';
 import { getDb } from '@/libs/DB';
 import { aiInfluencerSchema, contentItemSchema } from '@/models/Schema';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 // -----------------------------------------------------------
 // GET /api/analytics/influencers
@@ -13,7 +16,9 @@ import { aiInfluencerSchema, contentItemSchema } from '@/models/Schema';
 export async function GET(_request: NextRequest) {
   const db = await getDb();
   const { error, orgId } = await getAuthContext();
-  if (error) return error;
+  if (error) {
+    return error;
+  }
 
   try {
     const influencers = await db
@@ -23,7 +28,7 @@ export async function GET(_request: NextRequest) {
       .orderBy(desc(aiInfluencerSchema.usageCount));
 
     // Get content items that reference these influencers
-    const influencerIds = influencers.map((inf) => inf.id);
+    const influencerIds = influencers.map(inf => inf.id);
     const contentItems = influencerIds.length > 0
       ? await db
         .select({
@@ -45,7 +50,7 @@ export async function GET(_request: NextRequest) {
 
     const result = influencers.map((inf) => {
       // Filter content items to only those referencing this influencer.
-      const influencerItems = contentItems.filter((item) => item.influencerId === inf.id);
+      const influencerItems = contentItems.filter(item => item.influencerId === inf.id);
       const posts = influencerItems.map((item) => {
         const eng = (item.engagementData as Record<string, any>) || {};
         let likes = 0;
@@ -70,7 +75,7 @@ export async function GET(_request: NextRequest) {
           contentType: item.contentType,
           publishedAt: item.publishedAt,
         };
-      }).filter((p) => p.engagementRate > 0);
+      }).filter(p => p.engagementRate > 0);
 
       const avgEngagementRate = posts.length > 0
         ? Math.round((posts.reduce((sum, p) => sum + p.engagementRate, 0) / posts.length) * 1000) / 1000
@@ -91,7 +96,9 @@ export async function GET(_request: NextRequest) {
       let topPlatform = '—';
       let topCount = 0;
       for (const [p, c] of Object.entries(platformCounts)) {
-        if (c > topCount) { topPlatform = p; topCount = c; }
+        if (c > topCount) {
+          topPlatform = p; topCount = c;
+        }
       }
 
       return {
