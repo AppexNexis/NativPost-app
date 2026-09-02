@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
 import { FactoryDemand } from '@/components/admin/factory/FactoryDemand';
+import { FactoryPageShell } from '@/components/admin/factory/FactoryPageShell';
 
 export const metadata: Metadata = {
   title: 'Content Demand | NativPost Admin',
@@ -8,8 +9,8 @@ export const metadata: Metadata = {
 
 export default function FactoryDemandPage() {
   return (
-    <div className="container mx-auto py-6">
+    <FactoryPageShell>
       <FactoryDemand />
-    </div>
+    </FactoryPageShell>
   );
 }

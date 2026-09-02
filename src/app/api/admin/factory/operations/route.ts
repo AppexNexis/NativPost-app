@@ -150,7 +150,7 @@ export async function GET() {
     // 6. Cost tracking (from output metadata)
     const costResult = await db
       .select({
-        totalCost: sql<string>`COALESCE(SUM(
+        totalCost: sql<number>`COALESCE(SUM(
           CAST(${generationJobSchema.output}->>'cost' AS DECIMAL)
         ), 0)`,
         totalJobs: count(),
@@ -178,7 +178,7 @@ export async function GET() {
         return acc;
       }, {} as Record<string, { providerId: string | null; modelId: string | null; statuses: Record<string, number> }>),
       costStats: {
-        totalCost: costStats?.totalCost ?? 0,
+        totalCost: Number(costStats?.totalCost ?? 0),
         totalJobs: costStats?.totalJobs ?? 0,
         costPerJob: costStats?.totalJobs
           ? Number(costStats.totalCost) / costStats.totalJobs

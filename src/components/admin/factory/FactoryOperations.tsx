@@ -115,6 +115,10 @@ export function FactoryOperations() {
 
   const { pipeline, recentJobs, failedJobs, providerStats, costStats } = data;
 
+  const totalCost = Number(costStats?.totalCost ?? 0);
+  const totalJobs = Number(costStats?.totalJobs ?? 0);
+  const costPerJob = totalJobs > 0 ? totalCost / totalJobs : 0;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -137,11 +141,11 @@ export function FactoryOperations() {
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
             {[
-              { label: 'Queued', value: pipeline.queued, color: 'text-blue-500' },
-              { label: 'Generating', value: pipeline.generating, color: 'text-yellow-500' },
-              { label: 'Processing', value: pipeline.processing, color: 'text-orange-500' },
-              { label: 'Ready', value: pipeline.ready, color: 'text-green-500' },
-              { label: 'Failed', value: pipeline.failed, color: 'text-red-500' },
+              { label: 'Queued', value: pipeline?.queued ?? 0, color: 'text-blue-500' },
+              { label: 'Generating', value: pipeline?.generating ?? 0, color: 'text-yellow-500' },
+              { label: 'Processing', value: pipeline?.processing ?? 0, color: 'text-orange-500' },
+              { label: 'Ready', value: pipeline?.ready ?? 0, color: 'text-green-500' },
+              { label: 'Failed', value: pipeline?.failed ?? 0, color: 'text-red-500' },
             ].map(item => (
               <div key={item.label} className="text-center">
                 <div className={`text-3xl font-bold tabular-nums ${item.color}`}>
@@ -167,19 +171,19 @@ export function FactoryOperations() {
           <div className="grid grid-cols-3 gap-4">
             <div className="text-center p-4 border rounded-lg">
               <div className="text-2xl font-bold tabular-nums">
-                ${costStats.totalCost.toFixed(2)}
+                ${totalCost.toFixed(2)}
               </div>
               <div className="text-sm text-muted-foreground">Total Cost</div>
             </div>
             <div className="text-center p-4 border rounded-lg">
               <div className="text-2xl font-bold tabular-nums">
-                {costStats.totalJobs}
+                {totalJobs}
               </div>
               <div className="text-sm text-muted-foreground">Completed Jobs</div>
             </div>
             <div className="text-center p-4 border rounded-lg">
               <div className="text-2xl font-bold tabular-nums">
-                ${costStats.costPerJob.toFixed(4)}
+                ${costPerJob.toFixed(4)}
               </div>
               <div className="text-sm text-muted-foreground">Cost per Job</div>
             </div>
@@ -208,9 +212,9 @@ export function FactoryOperations() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {Object.values(providerStats).map((stat, index) => {
-                const completed = stat.statuses['completed'] ?? 0;
-                const failed = stat.statuses['failed'] ?? 0;
+              {Object.values(providerStats ?? {}).map((stat, index) => {
+                const completed = stat.statuses?.['completed'] ?? 0;
+                const failed = stat.statuses?.['failed'] ?? 0;
                 const total = completed + failed;
                 const successRate = total > 0 ? completed / total : 0;
 
@@ -267,7 +271,7 @@ export function FactoryOperations() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {recentJobs.map(job => {
+                {(recentJobs ?? []).map(job => {
                   const statusConfig = STATUS_CONFIG[job.status] ?? { color: 'bg-gray-500', icon: Clock };
                   const Icon = statusConfig.icon;
 
@@ -280,15 +284,15 @@ export function FactoryOperations() {
                         </div>
                       </TableCell>
                       <TableCell className="font-mono text-xs">
-                        {job.id.slice(0, 12)}...
+                        {job.id?.slice(0, 12) ?? '-'}...
                       </TableCell>
                       <TableCell>{job.providerId ?? '-'}</TableCell>
                       <TableCell>{job.modelId ?? '-'}</TableCell>
                       <TableCell className="text-center tabular-nums">
-                        {job.attemptCount}
+                        {job.attemptCount ?? 0}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {new Date(job.createdAt).toLocaleString()}
+                        {job.createdAt ? new Date(job.createdAt).toLocaleString() : '-'}
                       </TableCell>
                     </TableRow>
                   );
@@ -300,7 +304,7 @@ export function FactoryOperations() {
       </Card>
 
       {/* Failed Jobs */}
-      {failedJobs.length > 0 && (
+      {(failedJobs?.length ?? 0) > 0 && (
         <Card className="border-red-200 dark:border-red-800">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-red-600 dark:text-red-400">
@@ -319,20 +323,20 @@ export function FactoryOperations() {
                     <TableHead>Failed At</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
-                  {failedJobs.map(job => (
+              <TableBody>
+                {(failedJobs ?? []).map(job => (
                     <TableRow key={job.id}>
                       <TableCell className="font-mono text-xs">
-                        {job.id.slice(0, 12)}...
+                        {job.id?.slice(0, 12) ?? '-'}...
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate">
-                        {JSON.stringify(job.input).slice(0, 100)}
+                        {job.input ? JSON.stringify(job.input).slice(0, 100) : '-'}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {new Date(job.createdAt).toLocaleString()}
+                        {job.createdAt ? new Date(job.createdAt).toLocaleString() : '-'}
                       </TableCell>
                     </TableRow>
-                  ))}
+                ))}
                 </TableBody>
               </Table>
             </div>
