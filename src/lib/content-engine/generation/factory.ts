@@ -685,8 +685,8 @@ export class GenerationFactory {
     await db.insert(mediaAssetSchema).values({
       id: assetId,
       orgId: job.orgId,
-      status: 'pending_review',  // Phase 4 will validate
-      originType: 'generated',
+      status: 'generated',  // Phase 4 will validate and move to 'validated' or 'rejected'
+      originType: 'ai_generated',
       assetType: output.assetType ?? 'unknown',
       url: output.urls[0] ?? '',
       mimeType: output.mimeType,
@@ -695,7 +695,7 @@ export class GenerationFactory {
       durationSeconds: output.durationSeconds,
       fileSize: output.fileSize,
       hasAudio: output.hasAudio ?? false,
-      audioStatus: output.hasAudio ? 'unknown' : 'no_audio',
+      audioStatus: output.hasAudio ? 'unknown' : 'invalid',
       audioDurationMs: output.audio?.durationMs,
       audioCodec: output.audio?.codec,
       audioSampleRate: output.audio?.sampleRate,
