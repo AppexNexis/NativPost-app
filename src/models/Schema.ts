@@ -819,33 +819,91 @@ export const influencerAngleSchema = pgTable('influencer_angle', {
 // -----------------------------------------------------------
 // MEDIA ASSET
 // -----------------------------------------------------------
-export const mediaAssetSchema = pgTable('media_asset', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  orgId: text('org_id')
-    .references(() => organizationSchema.id, { onDelete: 'cascade' })
-    .notNull(),
-  uploadcareUuid: text('uploadcare_uuid'),
-  influencerId: uuid('influencer_id').references(() => aiInfluencerSchema.id, { onDelete: 'set null' }),
-  url: text('url').notNull(),
-  thumbnailUrl: text('thumbnail_url'),
-  assetType: text('asset_type').notNull(),
-  mimeType: text('mime_type'),
-  fileSize: integer('file_size'),
-  width: integer('width'),
-  height: integer('height'),
-  aspectRatio: text('aspect_ratio'),
-  durationSeconds: real('duration_seconds'),
-  tags: jsonb('tags').default([]),
-  description: text('description'),
-  source: text('source').default('upload'),
-  aiMetadata: jsonb('ai_metadata').default({}),
-  usageCount: integer('usage_count').default(0),
-  updatedAt: timestamp('updated_at', { mode: 'date' })
-    .defaultNow()
-    .$onUpdate(() => new Date())
-    .notNull(),
-  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
-});
+export const mediaAssetSchema = pgTable(
+  'media_asset',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    // Legacy columns (pre-Content Intelligence)
+    uploadcareUuid: text('uploadcare_uuid'),
+    influencerId: uuid('influencer_id').references(() => aiInfluencerSchema.id, { onDelete: 'set null' }),
+    tags: jsonb('tags').default([]),
+    description: text('description'),
+    source: text('source').default('upload'),
+    aiMetadata: jsonb('ai_metadata').default({}),
+    // Content Intelligence Engine columns (0061)
+    status: text('status').default('generated').notNull(),
+    originType: text('origin_type').default('user_uploaded').notNull(),
+    generationJobId: uuid('generation_job_id')
+      .references(() => generationJobSchema.id, { onDelete: 'set null' }),
+    providerId: text('provider_id')
+      .references(() => providerSchema.id, { onDelete: 'set null' }),
+    modelId: text('model_id')
+      .references(() => modelSchema.id, { onDelete: 'set null' }),
+    providerJobId: text('provider_job_id'),
+    generationInput: jsonb('generation_input'),
+    generationVersion: text('generation_version'),
+    cloudinaryPublicId: text('cloudinary_public_id'),
+    url: text('url').notNull(),
+    thumbnailUrl: text('thumbnail_url'),
+    assetType: text('asset_type').notNull(),
+    mimeType: text('mime_type'),
+    fileSize: integer('file_size'),
+    width: integer('width'),
+    height: integer('height'),
+    aspectRatio: text('aspect_ratio'),
+    durationSeconds: real('duration_seconds'),
+    hasAudio: boolean('has_audio').default(false).notNull(),
+    audioStatus: text('audio_status').default('unknown').notNull(),
+    audioDurationMs: integer('audio_duration_ms'),
+    audioCodec: text('audio_codec'),
+    audioSampleRate: integer('audio_sample_rate'),
+    audioChannels: integer('audio_channels'),
+    audioSource: text('audio_source'),
+    audioLoudnessLufs: real('audio_loudness_lufs'),
+    fileHash: text('file_hash'),
+    perceptualHash: text('perceptual_hash'),
+    visualQualityScore: real('visual_quality_score'),
+    technicalQualityScore: real('technical_quality_score'),
+    audioQualityScore: real('audio_quality_score'),
+    compositionQualityScore: real('composition_quality_score'),
+    semanticQualityScore: real('semantic_quality_score'),
+    safetyQualityScore: real('safety_quality_score'),
+    qualityScore: real('quality_score'),
+    qualityFlags: jsonb('quality_flags').default([]).$type<string[]>(),
+    qualityCheckedAt: timestamp('quality_checked_at', { mode: 'date' }),
+    // Vector columns exist in DB but are omitted here — use raw SQL for similarity search
+    embeddingModel: text('embedding_model'),
+    embeddingVersion: text('embedding_version'),
+    embeddedAt: timestamp('embedded_at', { mode: 'date' }),
+    deletedAt: timestamp('deleted_at', { mode: 'date' }),
+    metadata: jsonb('metadata').default({}).notNull(),
+    usageCount: integer('usage_count').default(0).notNull(),
+    lastUsedAt: timestamp('last_used_at', { mode: 'date' }),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  (t) => ({
+    orgIdx: index('media_asset_org_id_idx').on(t.orgId),
+    statusIdx: index('media_asset_status_idx').on(t.status),
+    originTypeIdx: index('media_asset_origin_type_idx').on(t.originType),
+    generationJobIdx: index('media_asset_generation_job_id_idx').on(t.generationJobId),
+    providerIdx: index('media_asset_provider_id_idx').on(t.providerId),
+    modelIdx: index('media_asset_model_id_idx').on(t.modelId),
+    assetTypeIdx: index('media_asset_asset_type_idx').on(t.assetType),
+    audioStatusIdx: index('media_asset_audio_status_idx').on(t.audioStatus),
+    fileHashIdx: index('media_asset_file_hash_idx').on(t.fileHash),
+    qualityScoreIdx: index('media_asset_quality_score_idx').on(t.qualityScore),
+    orgAssetTypeIdx: index('media_asset_org_asset_type_idx').on(t.orgId, t.assetType),
+    orgCreatedIdx: index('media_asset_org_created_at_idx').on(t.orgId, t.createdAt),
+    deletedAtIdx: index('media_asset_deleted_at_idx').on(t.deletedAt),
+  }),
+);
 
 // -----------------------------------------------------------
 // AUTOMATION RULE
@@ -1805,5 +1863,340 @@ export const msiCommunityReplySchema = pgTable(
   },
   t => ({
     orgIdx: index('msi_community_reply_org_idx').on(t.orgId),
+  }),
+);
+
+// ============================================================
+// CONTENT INTELLIGENCE ENGINE — Phase 1
+// Migration: 0061_content_intelligence_engine.sql
+// ============================================================
+
+// -----------------------------------------------------------
+// PROVIDER — Who can generate for us
+// -----------------------------------------------------------
+export const providerSchema = pgTable('provider', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  type: text('type').notNull(),
+  config: jsonb('config').default({}).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  priority: integer('priority').default(0).notNull(),
+  createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { mode: 'date' })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+// -----------------------------------------------------------
+// MODEL — What each provider can do
+// -----------------------------------------------------------
+export const modelSchema = pgTable(
+  'model',
+  {
+    id: text('id').primaryKey(),
+    providerId: text('provider_id')
+      .references(() => providerSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    name: text('name').notNull(),
+    type: text('type').notNull(),
+    inputSchema: jsonb('input_schema'),
+    outputSchema: jsonb('output_schema'),
+    costPerCall: real('cost_per_call'),
+    costPerSecond: real('cost_per_second'),
+    capabilities: jsonb('capabilities').default({}).notNull(),
+    isActive: boolean('is_active').default(true).notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  (t) => ({
+    providerIdx: index('model_provider_id_idx').on(t.providerId),
+    typeIdx: index('model_type_idx').on(t.type),
+  }),
+);
+
+// -----------------------------------------------------------
+// GENERATION JOB — Every AI generation request
+// -----------------------------------------------------------
+export const generationJobSchema = pgTable(
+  'generation_job',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    providerId: text('provider_id')
+      .references(() => providerSchema.id, { onDelete: 'restrict' })
+      .notNull(),
+    modelId: text('model_id')
+      .references(() => modelSchema.id, { onDelete: 'restrict' })
+      .notNull(),
+    kind: text('kind').notNull(),
+    status: text('status').default('planned').notNull(),
+    step: text('step'),
+    input: jsonb('input').notNull(),
+    output: jsonb('output'),
+    externalJobId: text('external_job_id'),
+    externalStatus: text('external_status'),
+    creditsReserved: integer('credits_reserved').default(0).notNull(),
+    creditsCharged: integer('credits_charged').default(0),
+    estimatedCost: real('estimated_cost'),
+    actualCost: real('actual_cost'),
+    costCurrency: text('cost_currency').default('USD'),
+    costUnits: text('cost_units'),
+    errorMessage: text('error_message'),
+    errorCode: text('error_code'),
+    attempts: integer('attempts').default(0).notNull(),
+    maxAttempts: integer('max_attempts').default(3).notNull(),
+    nextAttemptAt: timestamp('next_attempt_at', { mode: 'date' }),
+    processingVersion: text('processing_version'),
+    mediaAssetId: uuid('media_asset_id'),
+    webhookReceivedAt: timestamp('webhook_received_at', { mode: 'date' }),
+    startedAt: timestamp('started_at', { mode: 'date' }),
+    completedAt: timestamp('completed_at', { mode: 'date' }),
+    durationMs: integer('duration_ms'),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => ({
+    orgIdx: index('generation_job_org_id_idx').on(t.orgId),
+    providerIdx: index('generation_job_provider_id_idx').on(t.providerId),
+    modelIdx: index('generation_job_model_id_idx').on(t.modelId),
+    statusIdx: index('generation_job_status_idx').on(t.status),
+    orgCreatedIdx: index('generation_job_org_created_at_idx').on(t.orgId, t.createdAt),
+    statusUpdatedIdx: index('generation_job_status_updated_at_idx').on(t.status, t.updatedAt),
+    mediaAssetIdx: index('generation_job_media_asset_id_idx').on(t.mediaAssetId),
+    externalJobIdIdx: uniqueIndex('generation_job_external_job_id_idx').on(t.externalJobId),
+  }),
+);
+
+// -----------------------------------------------------------
+// GENERATION ATTEMPT — Per-attempt history
+// -----------------------------------------------------------
+export const generationAttemptSchema = pgTable(
+  'generation_attempt',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    jobId: uuid('job_id')
+      .references(() => generationJobSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    attemptNumber: integer('attempt_number').notNull(),
+    providerId: text('provider_id')
+      .references(() => providerSchema.id, { onDelete: 'restrict' })
+      .notNull(),
+    modelId: text('model_id')
+      .references(() => modelSchema.id, { onDelete: 'restrict' })
+      .notNull(),
+    status: text('status').notNull(),
+    input: jsonb('input').notNull(),
+    output: jsonb('output'),
+    externalJobId: text('external_job_id'),
+    errorMessage: text('error_message'),
+    errorCode: text('error_code'),
+    durationMs: integer('duration_ms'),
+    creditsCharged: integer('credits_charged').default(0),
+    costUsd: real('cost_usd'),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+    completedAt: timestamp('completed_at', { mode: 'date' }),
+  },
+  (t) => ({
+    jobIdx: index('generation_attempt_job_id_idx').on(t.jobId),
+    statusIdx: index('generation_attempt_status_idx').on(t.status),
+    providerIdx: index('generation_attempt_provider_id_idx').on(t.providerId),
+    jobNumberIdx: uniqueIndex('generation_attempt_job_number_unique_idx').on(t.jobId, t.attemptNumber),
+  }),
+);
+
+// -----------------------------------------------------------
+// TAG — Hierarchical taxonomy
+// NOTE: Vector column (embedding) is in the database but omitted
+// here for Drizzle compatibility. Use raw SQL for vector searches.
+// -----------------------------------------------------------
+export const tagSchema = pgTable(
+  'tag',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    parentId: uuid('parent_id'),
+    type: text('type').notNull(),
+    color: text('color'),
+    description: text('description'),
+    usageCount: integer('usage_count').default(0).notNull(),
+    isSystem: boolean('is_system').default(false).notNull(),
+    isActive: boolean('is_active').default(true).notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  (t) => ({
+    slugIdx: uniqueIndex('tag_slug_idx').on(t.slug),
+    parentIdx: index('tag_parent_id_idx').on(t.parentId),
+    typeIdx: index('tag_type_idx').on(t.type),
+    usageCountIdx: index('tag_usage_count_idx').on(t.usageCount),
+  }),
+);
+
+// -----------------------------------------------------------
+// ASSET TAG — Many-to-many: assets ↔ tags
+// -----------------------------------------------------------
+export const assetTagSchema = pgTable(
+  'asset_tag',
+  {
+    assetId: uuid('asset_id')
+      .references(() => mediaAssetSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    tagId: uuid('tag_id')
+      .references(() => tagSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    confidence: real('confidence').default(1.0).notNull(),
+    source: text('source').default('manual').notNull(),
+    version: integer('version').default(1).notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  (t) => ({
+    pkey: index('asset_tag_pkey').on(t.assetId, t.tagId),
+    tagIdx: index('asset_tag_tag_id_idx').on(t.tagId),
+    sourceIdx: index('asset_tag_source_idx').on(t.source),
+  }),
+);
+
+// -----------------------------------------------------------
+// CONTENT TYPE — Content format definitions
+// -----------------------------------------------------------
+export const contentTypeSchema = pgTable(
+  'content_type',
+  {
+    id: text('id').primaryKey(),
+    slug: text('slug').notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    minAssets: integer('min_assets').default(1).notNull(),
+    maxAssets: integer('max_assets').default(1).notNull(),
+    requiresVideo: boolean('requires_video').default(false).notNull(),
+    requiresAudio: boolean('requires_audio').default(true).notNull(),
+    requiresTextOverlay: boolean('requires_text_overlay').default(false).notNull(),
+    requiresCaption: boolean('requires_caption').default(true).notNull(),
+    slotSchema: jsonb('slot_schema').notNull(),
+    qualificationRules: jsonb('qualification_rules').default({}).notNull(),
+    constructionRules: jsonb('construction_rules').default({}).notNull(),
+    renderConfig: jsonb('render_config').default({}).notNull(),
+    isActive: boolean('is_active').default(true).notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  (t) => ({
+    slugIdx: uniqueIndex('content_type_slug_idx').on(t.slug),
+  }),
+);
+
+// -----------------------------------------------------------
+// CONTENT COMPOSITION — How assets combine into content
+// -----------------------------------------------------------
+export const contentCompositionSchema = pgTable(
+  'content_composition',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    contentTypeId: text('content_type_id')
+      .references(() => contentTypeSchema.id, { onDelete: 'restrict' })
+      .notNull(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' }),
+    name: text('name'),
+    version: integer('version').default(1).notNull(),
+    slots: jsonb('slots').notNull(),
+    metadata: jsonb('metadata').default({}).notNull(),
+    qualityScore: real('quality_score'),
+    isComplete: boolean('is_complete').default(false).notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => ({
+    contentTypeIdIdx: index('content_composition_content_type_id_idx').on(t.contentTypeId),
+    orgIdx: index('content_composition_org_id_idx').on(t.orgId),
+    isCompleteIdx: index('content_composition_is_complete_idx').on(t.isComplete),
+  }),
+);
+
+// -----------------------------------------------------------
+// LIBRARY CONTENT — Final library items
+// -----------------------------------------------------------
+export const libraryContentSchema = pgTable(
+  'library_content',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    contentTypeId: text('content_type_id')
+      .references(() => contentTypeSchema.id, { onDelete: 'restrict' })
+      .notNull(),
+    compositionId: uuid('composition_id')
+      .references(() => contentCompositionSchema.id, { onDelete: 'set null' }),
+    campaignId: uuid('campaign_id')
+      .references(() => campaignSchema.id, { onDelete: 'set null' }),
+    title: text('title'),
+    caption: text('caption'),
+    hashtags: jsonb('hashtags').default([]).$type<string[]>().notNull(),
+    targetPlatforms: jsonb('target_platforms').default([]).$type<string[]>().notNull(),
+    targetAccountIds: jsonb('target_account_ids').default([]).$type<string[]>().notNull(),
+    status: text('status').default('draft').notNull(),
+    scheduledFor: timestamp('scheduled_for', { mode: 'date' }),
+    publishedAt: timestamp('published_at', { mode: 'date' }),
+    qualityScore: real('quality_score'),
+    qualityFlags: jsonb('quality_flags').default([]).$type<string[]>().notNull(),
+    antiSlopScore: real('anti_slop_score'),
+    metadata: jsonb('metadata').default({}).notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => ({
+    orgIdx: index('library_content_org_id_idx').on(t.orgId),
+    contentTypeIdIdx: index('library_content_content_type_id_idx').on(t.contentTypeId),
+    compositionIdx: index('library_content_composition_id_idx').on(t.compositionId),
+    campaignIdx: index('library_content_campaign_id_idx').on(t.campaignId),
+    statusIdx: index('library_content_status_idx').on(t.status),
+    orgStatusIdx: index('library_content_org_status_idx').on(t.orgId, t.status),
+    orgContentTypeIdx: index('library_content_org_content_type_idx').on(t.orgId, t.contentTypeId),
+    qualityScoreIdx: index('library_content_quality_score_idx').on(t.qualityScore),
+    scheduledForIdx: index('library_content_scheduled_for_idx').on(t.scheduledFor),
+  }),
+);
+
+// -----------------------------------------------------------
+// ASSET USAGE — Track where assets are used
+// -----------------------------------------------------------
+export const assetUsageSchema = pgTable(
+  'asset_usage',
+  {
+    id: serial('id').primaryKey(),
+    assetId: uuid('asset_id')
+      .references(() => mediaAssetSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    orgId: text('org_id')
+      .references(() => organizationSchema.id, { onDelete: 'cascade' })
+      .notNull(),
+    contentId: uuid('content_id')
+      .references(() => libraryContentSchema.id, { onDelete: 'set null' }),
+    compositionId: uuid('composition_id')
+      .references(() => contentCompositionSchema.id, { onDelete: 'set null' }),
+    campaignId: uuid('campaign_id')
+      .references(() => campaignSchema.id, { onDelete: 'set null' }),
+    usageType: text('usage_type').notNull(),
+    usageContext: jsonb('usage_context').default({}),
+    usedAt: timestamp('used_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  (t) => ({
+    assetIdx: index('asset_usage_asset_id_idx').on(t.assetId),
+    orgIdx: index('asset_usage_org_id_idx').on(t.orgId),
+    contentIdx: index('asset_usage_content_id_idx').on(t.contentId),
+    compositionIdx: index('asset_usage_composition_id_idx').on(t.compositionId),
+    campaignIdx: index('asset_usage_campaign_id_idx').on(t.campaignId),
+    usageTypeIdx: index('asset_usage_usage_type_idx').on(t.usageType),
   }),
 );

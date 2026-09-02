@@ -62,6 +62,15 @@ const NAV = [
     ],
   },
   {
+    group: 'Content Factory',
+    items: [
+      { label: 'Factory Overview', href: '/admin/factory', icon: LayoutDashboard },
+      { label: 'Demand', href: '/admin/factory/demand', icon: Megaphone },
+      { label: 'Operations', href: '/admin/factory/operations', icon: Boxes },
+      { label: 'Library', href: '/admin/factory/library', icon: Film },
+    ],
+  },
+  {
     group: 'Content library',
     items: [
       { label: 'Curation queue', href: '/admin/curation', icon: Film },
